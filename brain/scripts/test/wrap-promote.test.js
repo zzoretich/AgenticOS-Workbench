@@ -23,7 +23,7 @@ function vaultEntries() { return fs.readdirSync(VAULT); }
 test('promote item with URL + backticks + arrow does not create junk paths', () => {
   const session = [
     '## Things to Remember',
-    '- New Outlook for Mac ships NO AppleScript → use `mailto:/ms-outlook://` deep links; see `docs/superpowers/plans/2026-06-01-m365-write-skills.md`. #promote',
+    '- The desktop mail client ships NO AppleScript → use `mailto:/mail-app://` deep links; see `docs/plans/2026-06-01-mail-write-skills.md`. #promote',
   ].join('\n');
 
   const { promoted } = promoteToMemory(session);

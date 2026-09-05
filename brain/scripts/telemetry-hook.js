@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
  * telemetry-hook.js — feeds the agent-runs telemetry stream from Claude Code's
- * NATIVE hooks (no Agent SDK). Wire the SAME script to multiple events in
- * settings.json; it branches on `hook_event_name` from the stdin payload.
+ * hooks. Wire the SAME script to multiple events in settings.json; it branches
+ * on `hook_event_name` from the stdin payload.
  *
  *   SessionStart  -> open live/<id>.ndjson with a run_start header
  *   PreToolUse    -> append a tool_use_batch event

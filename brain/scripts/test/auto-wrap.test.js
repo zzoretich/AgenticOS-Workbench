@@ -181,7 +181,7 @@ test('a repeat run against a populated SESSION.md converges instead of wiping it
 
   const chat = () => JSON.stringify({
     facts: [1, 2, 3, 4, 5, 6].map((i) =>
-      `Bound the brief to the work M365 account so it cannot fall back to a personal mailbox (${i})`),
+      `Relocated the brief output from the work mail account to a personal mailbox (${i})`),
     decisions: ['Chose the residual-based budget'],
     feedback: [], threads: [], candidates: [],
   });
@@ -195,12 +195,12 @@ test('a repeat run against a populated SESSION.md converges instead of wiping it
   await runAutoWrap({ transcriptText: 'x'.repeat(200), sessionId: 'sess-i1', chatFn: chat, report: { wrote: [], counts: {} } });
   const first = fs.readFileSync(p, 'utf8');
   assert.match(first, /## Key Context This Session/);
-  assert.match(first, /cannot fall back to a personal mailbox \(6\)/, 'first run keeps every fact');
+  assert.match(first, /to a personal mailbox \(6\)/, 'first run keeps every fact');
 
   await runAutoWrap({ transcriptText: 'x'.repeat(200), sessionId: 'sess-i2', chatFn: chat, report: { wrote: [], counts: {} } });
   const second = fs.readFileSync(p, 'utf8');
   assert.match(second, /## Key Context This Session/, 'repeat run must not delete the heading');
-  assert.match(second, /cannot fall back to a personal mailbox \(6\)/, 'repeat run must not drop the facts');
+  assert.match(second, /to a personal mailbox \(6\)/, 'repeat run must not drop the facts');
   assert.equal(second, first, 'repeat run must converge byte-for-byte');
 });
 

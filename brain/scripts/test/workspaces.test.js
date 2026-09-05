@@ -11,13 +11,13 @@ test('parseManifest reads scalars, objective list, and mixed subprojects', () =>
   const text = fs.readFileSync(path.join(FIXTURES, 'full-manifest', 'workspace.md'), 'utf8');
   const m = parseManifest(text);
   assert.equal(m.status, 'active');
-  assert.equal(m.summary, 'Ship the sales coach skill');
-  assert.deepEqual(m.objectives, ['Ship sales-coach (P0)', 'QA 3 platform skills']);
+  assert.equal(m.summary, 'Ship the onboarding skill');
+  assert.deepEqual(m.objectives, ['Ship onboarding (P0)', 'QA 3 platform skills']);
   assert.deepEqual(m.subprojects, [
     { name: 'factory', path: 'factory' },
     { name: 'research', path: 'research' },
   ]);
-  assert.equal(m.next, 'Finish QA on Account Command Center');
+  assert.equal(m.next, 'Finish QA on the reporting dashboard');
 });
 
 test('parseManifest returns empty shape when no frontmatter', () => {
@@ -59,12 +59,12 @@ test('collectWorkspaces builds entries with correct provenance', () => {
   const full = byName['full-manifest'];
   assert.equal(full.status, 'active');
   assert.equal(full.statusSource, 'manifest');
-  assert.equal(full.summary, 'Ship the sales coach skill');
+  assert.equal(full.summary, 'Ship the onboarding skill');
   assert.equal(full.summarySource, 'manifest');
   assert.equal(full.objectives[0].source, 'manifest');
   assert.equal(full.isCollection, false); // manifest subprojects present
   assert.deepEqual(full.subprojects.map(s => s.name), ['factory', 'research']);
-  assert.equal(full.next.text, 'Finish QA on Account Command Center');
+  assert.equal(full.next.text, 'Finish QA on the reporting dashboard');
 
   const coll = byName['collection'];
   assert.equal(coll.isCollection, true);
