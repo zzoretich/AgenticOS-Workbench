@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 /**
  * Stop hook — runs after every Claude response.
- * - Writes a last-active marker to today's session log
- * - Every 5 user turns, summarizes via local qwen3.5:4b (Ollama) and updates BRAIN.md "Last Session"
- * - Parses transcript from transcript_path (JSONL on disk), not in-memory array
- * - Drops junk qwen output (empty-log boilerplate) before writing anywhere
- * - Also refreshes SESSION.md's "Key Context This Session"
+ * - Writes a last-active marker to today's daily note
+ * - Every 5 user turns, respawns detached and summarizes through the provider:
+ *     ollama/claude → model summary into BRAIN.md "Last Session", the daily note, SESSION.md
+ *     none          → heuristic Key Context (last prompts, files touched, commands) into SESSION.md
+ * - Parses the transcript from transcript_path (JSONL on disk)
+ * - Drops junk model output (empty-log boilerplate) before writing anywhere
+ * - Ledger: ok when something was written, skipped otherwise, always with the provider name
  */
 
 const { PATHS, dailyNotePath } = require('./lib/hook-entry.js').hookEntry();
@@ -14,6 +16,8 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { withReport } = require('./lib/pipeline-report.js');
 const { summarize } = require('./sdk/lib/qwen.js');
+const { getProvider } = require('./sdk/lib/provider.js');
+const { workingMemoryFromTranscript } = require('./lib/heuristics.js');
 const { markerPath } = require('./lib/markers.js');
 
 const VAULT = PATHS.VAULT;
@@ -25,28 +29,56 @@ const today = `${_d.getFullYear()}-${String(_d.getMonth()+1).padStart(2,'0')}-${
 const sessionFile = dailyNotePath(_d);
 const throttleFile = markerPath(`.last-summary-${today}`);
 
-// Detached worker: does the slow qwen summarization in the background so the
-// Stop hook itself returns instantly (qwen3.5:4b can take ~60s).
+// Detached worker: does the slow model call in the background so the Stop hook
+// itself returns instantly.
 async function runDetachedSummary() {
   try {
     await withReport('session-summary', async (report) => {
       const transcriptPath = process.env.BRAIN_TRANSCRIPT || '';
-      const turnCount = parseInt(process.env.BRAIN_TURN || '0', 10);
-      const transcript = loadTranscript(transcriptPath);
-      const now = new Date().toLocaleString('en-US', { hour12: false });
-      const summary = await summarizeSession(transcript, today);
-      if (summary && !isJunkSummary(summary)) {
-        writeSessionSummary(summary, now);
-        updateBrainLastSession(summary, today);
-        updateSessionWorkingMemory(summary, now);
-        report.counts.written = 1;
-        report.wrote.push('brain/_index/SESSION.md', 'brain/_index/BRAIN.md', path.relative(VAULT, sessionFile));
-      } else {
-        report.counts.skipped = 1;
-      }
+      await summaryCycle({
+        transcript: loadTranscript(transcriptPath),
+        transcriptText: readTranscriptRaw(transcriptPath),
+        report,
+      });
     });
   } catch (_) {}
   process.exit(0);
+}
+
+/**
+ * One summary cycle against an explicit provider (tests) or the resolved one.
+ *   none          → heuristic Key Context; ok when it wrote, skipped/no-signal otherwise
+ *   ollama/claude → summarizeSession through provider.chat; skipped/no-summary or
+ *                   skipped/junk-summary when there is nothing worth writing
+ */
+async function summaryCycle({ transcript, transcriptText = '', provider, chatFn, report, date = today,
+  now = new Date().toLocaleString('en-US', { hour12: false }) }) {
+  const p = provider || await getProvider('session-summary');
+  report.provider = p.name;
+
+  if (p.name === 'none') {
+    const { keyContext } = workingMemoryFromTranscript(transcriptText);
+    if (!keyContext.length) { report.skip('no-signal'); return { status: 'skipped' }; }
+    const summary = keyContext.map((l) => `- ${l}`).join('\n');
+    updateSessionWorkingMemory(summary, now);
+    report.counts.written = 1;
+    report.wrote.push('brain/_index/SESSION.md');
+    return { status: 'ok', summary };
+  }
+
+  const fn = chatFn || ((o) => p.chat({ ...o, feature: 'session-summary' }));
+  const summary = await summarizeSession(transcript, date, fn);
+  if (!summary || isJunkSummary(summary)) {
+    report.counts.skipped = 1;
+    report.skip(summary ? 'junk-summary' : 'no-summary');
+    return { status: 'skipped' };
+  }
+  writeSessionSummary(summary, now);
+  updateBrainLastSession(summary, date);
+  updateSessionWorkingMemory(summary, now);
+  report.counts.written = 1;
+  report.wrote.push('brain/_index/SESSION.md', 'brain/_index/BRAIN.md', path.relative(VAULT, sessionFile));
+  return { status: 'ok', summary };
 }
 
 function readStdinAndRun() {
@@ -84,6 +116,11 @@ if (require.main === module) {
   } else {
     readStdinAndRun();
   }
+}
+
+function readTranscriptRaw(transcriptPath) {
+  if (!transcriptPath || !fs.existsSync(transcriptPath)) return '';
+  try { return fs.readFileSync(transcriptPath, 'utf8'); } catch (_) { return ''; }
 }
 
 function loadTranscript(transcriptPath) {
@@ -247,4 +284,4 @@ async function summarizeSession(transcript, date, chatFn) {
   }
 }
 
-module.exports = { isJunkSummary, renderLastSession, renderWorkingMemory, conversationTail, summarizeSession };
+module.exports = { isJunkSummary, renderLastSession, renderWorkingMemory, conversationTail, summarizeSession, summaryCycle, readTranscriptRaw };
