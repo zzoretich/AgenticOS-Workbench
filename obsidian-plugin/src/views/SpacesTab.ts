@@ -155,7 +155,7 @@ export class SpacesTab {
     if (w.insight.status === "ok" && w.insight.text) {
       ins.createDiv({ cls: "aos-ws-text", text: w.insight.text });
       const foot = ins.createDiv({ cls: "aos-ws-insight-foot aos-dim" });
-      foot.createSpan({ text: `${w.insight.model ?? "qwen"} · ${w.insight.generatedAt ? formatRelative(w.insight.generatedAt) : "—"}` });
+      foot.createSpan({ text: `${w.insight.model ?? "local"} · ${w.insight.generatedAt ? formatRelative(w.insight.generatedAt) : "—"}` });
     } else {
       ins.createDiv({ cls: "aos-dim", text: "insights unavailable" });
     }
