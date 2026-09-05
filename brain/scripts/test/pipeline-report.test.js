@@ -78,3 +78,34 @@ test('sequential ok runs have no duplicate entries in history', async () => {
   }
   assert.ok(iValues.length > 0, 'history should not be empty after 6 runs');
 });
+
+test('report.skip records status skipped with the reason, never ok', async () => {
+  const out = await withReport('session-summary', async (report) => { report.provider = 'ollama'; report.skip('no-signal'); return 'fine'; });
+  assert.equal(out, 'fine');
+  const last = readLedgerFile().pipelines['session-summary'].lastRun;
+  assert.equal(last.status, 'skipped');
+  assert.equal(last.reason, 'no-signal');
+  assert.equal(last.provider, 'ollama');
+  assert.equal(last.error, null);
+});
+
+test('report.disable records status disabled with the reason and provider', async () => {
+  await withReport('auto-wrap', async (report) => { report.provider = 'none'; report.disable('no-provider'); });
+  const last = readLedgerFile().pipelines['auto-wrap'].lastRun;
+  assert.equal(last.status, 'disabled');
+  assert.equal(last.reason, 'no-provider');
+  assert.equal(last.provider, 'none');
+});
+
+test('a plain ok run carries provider and reason as null fields', async () => {
+  await withReport('scan-vault', async () => {});
+  const last = readLedgerFile().pipelines['scan-vault'].lastRun;
+  assert.equal(last.status, 'ok');
+  assert.equal(last.provider, null);
+  assert.equal(last.reason, null);
+});
+
+test('a throw after skip still records error', async () => {
+  await assert.rejects(() => withReport('auto-wrap', async (report) => { report.skip('x'); throw new Error('late'); }), /late/);
+  assert.equal(readLedgerFile().pipelines['auto-wrap'].lastRun.status, 'error');
+});
