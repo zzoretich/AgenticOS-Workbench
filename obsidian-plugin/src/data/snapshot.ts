@@ -190,7 +190,7 @@ export interface WorkspaceDoc {
 export interface WorkspaceInsight {
   text: string | null;
   status: "ok" | "unavailable";
-  model?: string;          // "qwen3.5:4b"
+  model?: string;          // provider model tag, or "heuristic"
   generatedAt?: string;    // ISO
   inputHash?: string;
 }
