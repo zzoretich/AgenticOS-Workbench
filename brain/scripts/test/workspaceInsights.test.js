@@ -44,3 +44,41 @@ test('generateInsight fills insight + next from a stubbed chat fn', async () => 
   assert.equal(res.next.text, 'Ship it.');
   assert.equal(res.next.source, 'ai');
 });
+
+const NONE = { name: 'none', reason: 'forced', capabilities: { chat: false, embed: false, structured: false }, chat: async () => { throw new Error('must not be called'); } };
+const ENTRY = { name: 'X', status: 'idle', summary: '', objectives: [{ text: 'a' }, { text: 'b' }, { text: 'c' }], subprojects: [], next: { text: null, source: 'derived' }, lastEvent: { ageDays: 12 }, inputHash: 'h1' };
+
+test('provider none → heuristic insight, status ok, model heuristic', async () => {
+  const res = await generateInsight(ENTRY, { provider: NONE });
+  assert.equal(res.insight.status, 'ok');
+  assert.equal(res.insight.model, 'heuristic');
+  assert.equal(res.insight.text, 'Stalled 12d · 3 objectives open · next step unset');
+  assert.equal(res.insight.inputHash, 'h1');
+  assert.deepEqual(res.next, ENTRY.next);
+});
+
+test('provider claude → heuristic unless scan.insightsUnderClaude is on', async () => {
+  const fs = require('fs'); const path = require('path');
+  const { PATHS } = require('../lib/paths.js');
+  let calls = 0;
+  const CLAUDE = { name: 'claude', reason: 'forced', capabilities: { chat: true, embed: false, structured: true }, chat: async () => { calls++; return 'INSIGHT: Claude says.\nNEXT: NONE'; } };
+  fs.writeFileSync(PATHS.CONFIG_JSON, JSON.stringify({ provider: 'none' }));
+  const off = await generateInsight(ENTRY, { provider: CLAUDE });
+  assert.equal(off.insight.model, 'heuristic');
+  assert.equal(calls, 0);
+  fs.writeFileSync(PATHS.CONFIG_JSON, JSON.stringify({ provider: 'none', scan: { insightsUnderClaude: true } }));
+  const on = await generateInsight(ENTRY, { provider: CLAUDE });
+  assert.equal(calls, 1);
+  assert.equal(on.insight.text, 'Claude says.');
+  assert.equal(on.insight.model, 'haiku');
+  fs.writeFileSync(PATHS.CONFIG_JSON, JSON.stringify({ provider: 'none' }));
+});
+
+test('provider ollama → chats with the workhorse tag and the feature label', async () => {
+  let seen;
+  const OLLAMA = { name: 'ollama', reason: 'forced', capabilities: { chat: true, embed: true, structured: true }, chat: async (o) => { seen = o; return 'INSIGHT: Fine.\nNEXT: Ship.'; } };
+  const res = await generateInsight(ENTRY, { provider: OLLAMA });
+  assert.equal(res.insight.text, 'Fine.');
+  assert.equal(seen.feature, 'workspace-insights');
+  assert.equal(res.insight.model, require('../sdk/lib/models.js').role('workhorse').tag);
+});
