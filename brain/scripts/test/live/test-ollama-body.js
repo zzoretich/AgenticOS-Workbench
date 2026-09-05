@@ -2,7 +2,7 @@
 // Unit tests for buildChatBody in brain/scripts/sdk/lib/ollama.js.
 // Run: node brain/scripts/test/live/test-ollama-body.js
 const assert = require('assert');
-const { buildChatBody, sizeContextWindow } = require('../lib/ollama.js');
+const { buildChatBody, sizeContextWindow } = require('../../sdk/lib/ollama.js');
 
 // message assembly: system first, prompt last
 const b1 = buildChatBody({ system: 'sys', prompt: 'hi', model: 'm', numPredict: 64 });

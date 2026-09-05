@@ -1,11 +1,13 @@
 {
-  "name": "claude-brain-scripts",
+  "name": "agenticos-brain",
   "private": true,
-  "version": "1.0.0",
+  "version": "0.1.0",
   "type": "commonjs",
-  "description": "Local second-brain runtime: brain MCP server, qwen3.5:4b engine, vault scanner. No Claude Agent SDK.",
+  "description": "AgenticOS brain runtime: Claude Code hooks, vault scanner, BRAIN.md compiler, recall, and the agenticos MCP server.",
+  "engines": { "node": ">=20" },
   "scripts": {
-    "test": "NODE_OPTIONS=--require=./test/setup.js node --test test/*.test.js"
+    "test": "NODE_OPTIONS=--require=./test/setup.js node --test test/*.test.js",
+    "test:live": "for f in test/live/test-*.js; do node \"$f\" || exit 1; done"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",
