@@ -19,3 +19,14 @@ test('markers live under tmpdir/agenticos/<vault-key>, never inside the vault', 
 test('marker names are sanitized', () => {
   assert.equal(path.basename(markerPath('.injected-../x y')), '.injected-.._x_y');
 });
+
+test('markerPath never throws even when the tmpdir is unwritable', () => {
+  const original = fs.mkdirSync;
+  fs.mkdirSync = () => { throw Object.assign(new Error('EROFS'), { code: 'EROFS' }); };
+  try {
+    assert.doesNotThrow(() => markerPath('.injected-ro'));
+    assert.equal(markerPath('.injected-ro'), path.join(MARKER_DIR, '.injected-ro'));
+  } finally {
+    fs.mkdirSync = original;
+  }
+});
