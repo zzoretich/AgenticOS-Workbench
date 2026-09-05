@@ -38,12 +38,16 @@ function readEvents({ sinceDays = 7 } = {}) {
   return rows;
 }
 
-function writeDraft({ title, description, body, session }) {
+function writeDraft({ title, description, body, session, needsReview = false }) {
   const slug = slugify(title);
   const abs = path.join(DRAFTS_DIR, `${slug}.md`);
   if (fs.existsSync(abs)) throw new Error(`draft already exists: ${slug}`);
   const today = new Date().toISOString().slice(0, 10);
-  const doc = `---\ntype: memory\ntags: [memory/feedback, status/draft]\ncreated: ${today}\nupdated: ${today}\nsource: feedback-autoloop\nsession: ${session ?? 'unknown'}\ndescription: ${String(description ?? '').replace(/\n/g, ' ')}\n---\n\n# ${title}\n\n${String(body ?? '').trim()}\n`;
+  // needs-review: produced by the regex prefilter with no model to distill a rule —
+  // the reviewer rewrites or rejects it (feedback-review skill).
+  const status = needsReview ? 'status/needs-review' : 'status/draft';
+  const source = needsReview ? 'prefilter' : 'feedback-autoloop';
+  const doc = `---\ntype: memory\ntags: [memory/feedback, ${status}]\ncreated: ${today}\nupdated: ${today}\nsource: ${source}\nsession: ${session ?? 'unknown'}\ndescription: ${String(description ?? '').replace(/\n/g, ' ')}\n---\n\n# ${title}\n\n${String(body ?? '').trim()}\n`;
   fs.mkdirSync(DRAFTS_DIR, { recursive: true });
   fs.writeFileSync(abs, doc);
   return { draftPath: abs, slug };

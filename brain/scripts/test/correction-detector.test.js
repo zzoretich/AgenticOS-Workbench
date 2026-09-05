@@ -82,3 +82,36 @@ test('detector failure is soft: throwing chatFn yields zero corrections, zero dr
   assert.deepEqual(out, { drafted: 0, recurred: 0, skipped: 0, reasons: [] });
   assert.equal(listDrafts().length, 0);
 });
+
+const { prefilterCorrections, needsReviewCandidate } = require('../lib/correction-detector.js');
+const { writeDraft, parseDraft } = require('../lib/feedback-drafts.js');
+
+test('prefilterCorrections finds correction-shaped user turns, capped, ignoring the assistant', () => {
+  const t = [
+    'user: no, use the other binary',
+    'assistant: actually I think this is fine',
+    'user: I said use tabs, not spaces',
+    'user: looks good',
+    'user: stop doing that in every file',
+    'user: that\'s wrong, the path is /home/alice/x',
+  ].join('\n');
+  const out = prefilterCorrections(t);
+  assert.equal(out.length, 3);
+  assert.equal(out[0].quote, 'no, use the other binary');
+  assert.equal(out[1].quote, 'I said use tabs, not spaces');
+  assert.equal(out[2].quote, 'stop doing that in every file');
+  assert.deepEqual(prefilterCorrections('user: all good\nassistant: no, wait'), []);
+});
+
+test('needsReviewCandidate passes the noise gate and writeDraft tags it needs-review', () => {
+  const { gateCandidate } = require('../lib/noise-gate.js');
+  const cand = needsReviewCandidate('no, use the other binary');
+  assert.equal(cand.type, 'feedback');
+  assert.ok(gateCandidate(cand, { existingTitles: [], revertedSlugs: new Set() }).ok);
+  const res = writeDraft({ ...cand, session: 's-nr', needsReview: true });
+  const raw = fs.readFileSync(res.draftPath, 'utf8');
+  assert.match(raw, /tags: \[memory\/feedback, status\/needs-review\]/);
+  assert.match(raw, /source: prefilter/);
+  assert.match(raw, /\*\*Evidence:\*\* "no, use the other binary"/);
+  assert.equal(parseDraft(res.draftPath).title, cand.title);
+});

@@ -49,8 +49,38 @@ const RETRYABLE_PATTERNS = /socket hang up|ollama timeout|ECONNREFUSED|ECONNRESE
  */
 function isRetryable(err) {
   if (!err) return false;
+  // Provider layer: unreachable (Ollama down, claude CLI missing/logged out) is infra;
+  // PROVIDER_NONE (no provider configured) and PROVIDER_CAP (budget) are not.
+  if (err.code === 'PROVIDER_UNREACHABLE') return true;
+  if (err.code === 'PROVIDER_NONE' || err.code === 'PROVIDER_CAP') return false;
   if (err.code && RETRYABLE_CODES.has(err.code)) return true;
   return RETRYABLE_PATTERNS.test(String((err && err.message) || err));
+}
+
+/** A row still worth retrying: young enough, attempts left, transcript still on disk. */
+function isLive(r, now) {
+  const age = now - new Date(r.queuedAt || 0).getTime();
+  if (!Number.isFinite(age) || age > MAX_AGE_MS) return false;
+  if ((r.attempts || 0) >= MAX_ATTEMPTS) return false;
+  return fs.existsSync(r.transcriptPath);
+}
+
+/**
+ * Drops dead rows on EVERY auto-wrap run, before any provider check. Until 2026-09
+ * expiry only ran inside claim(), i.e. after a successful Ollama ping — so a machine
+ * without Ollama accumulated a spool that never drained. Spends no attempts.
+ */
+async function pruneQueue() {
+  let dropped = 0;
+  if (!fs.existsSync(QUEUE_PATH)) return { dropped };
+  await withLock(LOCK_PATH, async () => {
+    const rows = readRows();
+    const now = Date.now();
+    const live = rows.filter((r) => isLive(r, now));
+    dropped = rows.length - live.length;
+    if (dropped) writeRows(live);
+  }, LOCK_OPTS);
+  return { dropped };
 }
 
 function readRows() {
@@ -119,10 +149,7 @@ async function claim({ exclude } = {}) {
       // losing the row would reset attempts on re-enqueue and defeat the
       // exhaustion guard for exactly the session that keeps failing.
       if (exclude && r.sessionId === exclude) { live.push(r); continue; }
-      const age = now - new Date(r.queuedAt || 0).getTime();
-      if (!Number.isFinite(age) || age > MAX_AGE_MS) continue;
-      if ((r.attempts || 0) >= MAX_ATTEMPTS) continue;
-      if (!fs.existsSync(r.transcriptPath)) continue;
+      if (!isLive(r, now)) continue;
       const bumped = { ...r, attempts: (r.attempts || 0) + 1 };
       due.push(bumped);
       live.push(bumped);
@@ -144,6 +171,6 @@ async function resolve(sessionId) {
 function peek() { return readRows(); }
 
 module.exports = {
-  isRetryable, enqueue, claim, resolve, peek,
+  isRetryable, enqueue, claim, resolve, peek, pruneQueue,
   QUEUE_PATH, QUEUE_MAX, MAX_ATTEMPTS, MAX_AGE_MS,
 };
