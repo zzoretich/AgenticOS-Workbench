@@ -101,3 +101,72 @@ test('conversationTail fills its budget from the END of the conversation', () =>
   assert.match(out, /turn 199/, 'newest messages included');
   assert.ok(!/turn 0 /.test(out), 'oldest messages dropped first');
 });
+
+// ---- provider paths (Plan 2) ----
+const fs = require('fs');
+const { PATHS } = require('../lib/paths.js');
+const { summaryCycle } = require('../update-session.js');
+
+const TEMPLATE = '# Current Session Working Memory\n\n## Active Task\n\n## Key Context This Session\n\n## Decisions Made\n\n## Things to Remember\n';
+function fakeReport() {
+  return { wrote: [], counts: {}, provider: null, reason: null, status: null,
+    skip(r) { this.status = 'skipped'; this.reason = r; }, disable(r) { this.status = 'disabled'; this.reason = r; } };
+}
+const NONE = { name: 'none', reason: 'forced', capabilities: { chat: false, embed: false, structured: false }, chat: async () => { throw new Error('must not be called'); } };
+const jsonl = (...entries) => entries.map((e) => JSON.stringify(e)).join('\n');
+const U = (text) => ({ type: 'user', message: { content: [{ type: 'text', text }] } });
+const A = (text) => ({ type: 'assistant', message: { content: [{ type: 'text', text }] } });
+
+test('provider none: heuristic Key Context lands in SESSION.md, ledger ok with provider none', async () => {
+  fs.writeFileSync(PATHS.SESSION_MD, TEMPLATE);
+  const text = jsonl(U('please fix the scanner'), { type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Edit', input: { file_path: '/home/alice/v/scan-vault.js' } }] } });
+  const report = fakeReport();
+  const out = await summaryCycle({ transcript: [], transcriptText: text, provider: NONE, report });
+  assert.equal(out.status, 'ok');
+  assert.equal(report.provider, 'none');
+  assert.equal(report.status, null);
+  assert.equal(report.counts.written, 1);
+  const session = fs.readFileSync(PATHS.SESSION_MD, 'utf8');
+  assert.match(session, /- Asked: please fix the scanner/);
+  assert.match(session, /Files touched: scan-vault\.js/);
+  assert.ok(session.indexOf('## Decisions Made') > session.indexOf('Asked: please fix'));
+});
+
+test('provider none with no dialogue: skipped / no-signal, SESSION.md untouched', async () => {
+  fs.writeFileSync(PATHS.SESSION_MD, TEMPLATE);
+  const report = fakeReport();
+  const out = await summaryCycle({ transcript: [], transcriptText: jsonl(A('hi')), provider: NONE, report });
+  assert.equal(out.status, 'skipped');
+  assert.equal(report.status, 'skipped');
+  assert.equal(report.reason, 'no-signal');
+  assert.equal(fs.readFileSync(PATHS.SESSION_MD, 'utf8'), TEMPLATE);
+});
+
+test('provider claude: summarize runs through provider.chat with the feature label and writes BRAIN.md', async () => {
+  fs.writeFileSync(PATHS.SESSION_MD, TEMPLATE);
+  fs.writeFileSync(PATHS.BRAIN_MD, '# BRAIN\n\n## Last Session\n- **Date**: 2026-01-01\n- **Auto-summary**: old\n');
+  let seen;
+  const CLAUDE = { name: 'claude', reason: 'forced', capabilities: { chat: true, embed: false, structured: true },
+    chat: async (o) => { seen = o; return '- Fixed the scanner budget\n- Decided to keep BM25\n- Open: rebuild the plugin'; } };
+  const transcript = [U('fix the scanner budget'), A('done, kept BM25')];
+  const report = fakeReport();
+  const out = await summaryCycle({ transcript, transcriptText: jsonl(...transcript), provider: CLAUDE, report, date: '2026-09-04' });
+  assert.equal(out.status, 'ok');
+  assert.equal(report.provider, 'claude');
+  assert.equal(seen.feature, 'session-summary');
+  assert.ok(!('format' in seen) && !('schema' in seen), 'summary is unstructured');
+  assert.match(fs.readFileSync(PATHS.BRAIN_MD, 'utf8'), /Auto-summary\*\*: - Fixed the scanner budget/);
+  assert.match(fs.readFileSync(PATHS.SESSION_MD, 'utf8'), /Decided to keep BM25/);
+});
+
+test('a junk model summary is skipped / junk-summary', async () => {
+  fs.writeFileSync(PATHS.SESSION_MD, TEMPLATE);
+  const JUNKY = { name: 'ollama', reason: 'forced', capabilities: { chat: true, embed: true, structured: true },
+    chat: async () => '- The log was empty\n- No actual conversation captured' };
+  const transcript = [U('x'), A('y')];
+  const report = fakeReport();
+  const out = await summaryCycle({ transcript, transcriptText: jsonl(...transcript), provider: JUNKY, report });
+  assert.equal(out.status, 'skipped');
+  assert.equal(report.reason, 'junk-summary');
+  assert.equal(report.counts.skipped, 1);
+});
