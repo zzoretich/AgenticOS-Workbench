@@ -2,7 +2,7 @@
 // Unit tests for brain/scripts/sdk/lib/embed.js (injected postFn — no HTTP).
 // Run: node brain/scripts/test/live/test-embed.js
 const assert = require('assert');
-const { embed, normalize } = require('../lib/embed.js');
+const { embed, normalize } = require('../../sdk/lib/embed.js');
 
 delete process.env.BRAIN_EMBEDDER;
 

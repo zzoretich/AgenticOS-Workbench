@@ -1,23 +1,21 @@
 #!/usr/bin/env node
 /**
- * brain-mcp — stdio MCP server exposing the second-brain vault as first-class tools.
+ * agenticos MCP server — stdio server exposing an AgenticOS vault as tools.
  *
- * Register with Claude Code:
- *   declared by the agenticos Claude Code plugin (plugin/.mcp.json); see docs/install.md
- *
- * Or register programmatically via `node brain/scripts/sdk/install.js`.
+ * Registration: declared by the agenticos Claude Code plugin (plugin/.mcp.json);
+ * for manual use: `claude mcp add agenticos --scope user -- node <vault>/brain/scripts/sdk/mcp-server.js`
  *
  * Tools provided:
  *   - memory_search   — fuzzy search across brain/memory/** + brain/patterns/**
  *   - memory_read     — read a specific memory or pattern file
  *   - memory_list     — list all memories grouped by type
  *   - pattern_list    — list all patterns with their front-matter tags
- *   - session_list    — recent session log filenames (dates)
- *   - session_recall  — read a specific session by date (YYYY-MM-DD)
+ *   - session_list    — recent daily-note dates
+ *   - session_recall  — read a daily note by date (YYYY-MM-DD)
  *   - feedback_rules  — return every active feedback rule
  *   - snapshot_read   — return the latest scanner snapshot JSON
  *   - brief_read      — read the current morning brief, if any
- *   - recall          — BM25-ranked, recency-boosted recall across the vault
+ *   - recall          — hybrid (BM25 + vector when available), recency-boosted recall
  */
 
 const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
@@ -27,7 +25,7 @@ const brain = require('./lib/brain.js');
 const recall = require('./lib/recall.js');
 
 const server = new McpServer(
-  { name: 'brain', version: '0.1.0' },
+  { name: 'agenticos', version: require('../package.json').version },
   { capabilities: { tools: {} } }
 );
 
