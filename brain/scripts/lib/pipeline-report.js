@@ -53,8 +53,8 @@ async function withReport(name, fn) {
   });
   const report = {
     wrote: entry.wrote, counts: entry.counts, provider: null, reason: null, status: null,
-    skip(reason) { this.status = 'skipped'; this.reason = reason == null ? null : String(reason); },
-    disable(reason) { this.status = 'disabled'; this.reason = reason == null ? null : String(reason); },
+    skip(reason) { report.status = 'skipped'; report.reason = reason == null ? null : String(reason); },
+    disable(reason) { report.status = 'disabled'; report.reason = reason == null ? null : String(reason); },
   };
   const finish = async (status, error) => {
     const endedAt = new Date().toISOString();

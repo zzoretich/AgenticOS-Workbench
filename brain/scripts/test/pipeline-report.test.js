@@ -109,3 +109,10 @@ test('a throw after skip still records error', async () => {
   await assert.rejects(() => withReport('auto-wrap', async (report) => { report.skip('x'); throw new Error('late'); }), /late/);
   assert.equal(readLedgerFile().pipelines['auto-wrap'].lastRun.status, 'error');
 });
+
+test('a detached (destructured) skip() call still records the status, not this-bound', async () => {
+  await withReport('scan-vault', async (report) => { const { skip } = report; skip('detached'); });
+  const last = readLedgerFile().pipelines['scan-vault'].lastRun;
+  assert.equal(last.status, 'skipped');
+  assert.equal(last.reason, 'detached');
+});
