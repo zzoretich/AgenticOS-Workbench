@@ -15,7 +15,11 @@ const MARKER_DIR = path.join(os.tmpdir(), 'agenticos', VAULT_KEY);
 
 function markerPath(name) {
   const safe = String(name).replace(/[^A-Za-z0-9._-]/g, '_');
-  fs.mkdirSync(MARKER_DIR, { recursive: true });
+  try {
+    fs.mkdirSync(MARKER_DIR, { recursive: true });
+  } catch {
+    /* unwritable tmpdir: return the path anyway; the caller's own marker read/write fails soft inside its guards */
+  }
   return path.join(MARKER_DIR, safe);
 }
 
