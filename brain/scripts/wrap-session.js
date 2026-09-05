@@ -5,8 +5,7 @@
  *
  * 1. Append final summary to today's session log
  * 2. Promote #promote-tagged lines from SESSION.md into permanent memory
- * 3. Update BRAIN.md "Last Session" and "Active Context"
- * 4. Reset SESSION.md to clean template
+ * 3. Reset SESSION.md to clean template
  */
 
 const fs = require('fs');
@@ -16,7 +15,6 @@ const { deriveTitle, deriveDescription, writeMemory } = require('./lib/memory-wr
 const { appendTrail } = require('./lib/promote-log.js');
 
 const VAULT = PATHS.VAULT;
-const BRAIN = path.join(VAULT, 'brain/_index/BRAIN.md');
 const SESSION_WM = path.join(VAULT, 'brain/_index/SESSION.md');
 const MEMORY_INDEX = path.join(VAULT, 'MEMORY.md');
 
@@ -202,18 +200,6 @@ function appendSessionWrap(promoted, skipped = []) {
   } catch (_) {}
 }
 
-function updateBrainActive(promoted) {
-  try {
-    let brain = readFile(BRAIN);
-    const today = todayStr();
-    // Update Session Log Index — ensure today is listed
-    if (!brain.includes(`sessions/${today}`)) {
-      brain = brain.replace(/(## Session Log Index\n)/, `$1- [[../sessions/${today}]] — wrapped ${today}\n`);
-    }
-    fs.writeFileSync(BRAIN, brain);
-  } catch (_) {}
-}
-
 function resetSessionWM() {
   const template = `---
 type: session
@@ -243,7 +229,6 @@ function main() {
   if (!session.trim()) { resetSessionWM(); return; }
   const { promoted, skipped } = promoteToMemory(session);
   appendSessionWrap(promoted, skipped);
-  updateBrainActive(promoted);
   resetSessionWM();
   const skipSuffix = skipped.length
     ? `, skipped ${skipped.length} (reasons: ${skipped.map(s => `${s.title}: ${s.reason}`).join('; ')})`

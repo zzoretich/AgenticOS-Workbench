@@ -73,7 +73,8 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
 const DEFAULT_LAYOUT = '{yyyy}/{yyyy}-{MM}-{MMMM}/{yyyy}-{MM}-{dd}.md';
 
 /** Daily-note layout from <vault>/brain/config.json (dailyNote.layout), else the default.
- *  The Obsidian plugin reads the same key (src/data/dailyNote.ts) — one owner, no twin. */
+ *  The Obsidian plugin reads the same key from brain/config.json (its src/data/dailyNote.ts
+ *  twin is replaced in a later phase) — one owner, no drift. */
 function dailyNoteLayout() {
   try {
     const c = JSON.parse(fs.readFileSync(PATHS.CONFIG_JSON, 'utf8'));

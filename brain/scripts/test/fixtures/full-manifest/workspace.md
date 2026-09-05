@@ -1,13 +1,13 @@
 ---
 type: workspace
 status: active
-summary: "Ship the sales coach skill"
+summary: "Ship the onboarding skill"
 objectives:
-  - Ship sales-coach (P0)
+  - Ship onboarding (P0)
   - QA 3 platform skills
 subprojects:
   - { name: factory, path: factory }
   - research
-next: "Finish QA on Account Command Center"
+next: "Finish QA on the reporting dashboard"
 ---
 Extra notes used as grounding context.

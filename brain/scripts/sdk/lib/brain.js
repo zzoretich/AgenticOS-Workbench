@@ -1,12 +1,12 @@
 /**
  * brain.js — shared helpers for reading the vault.
  *
- * All paths resolve relative to the vault root (auto-detected from this file's location).
+ * All paths resolve relative to the vault root, which comes from lib/paths.js
+ * (the single vault resolver).
  * Pure Node, zero external deps.
  */
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { PATHS: ROOT, dailyNotePath } = require('../../lib/paths.js');
 

@@ -1,6 +1,6 @@
 'use strict';
 /**
- * ollama.js — local LLM chat helper (replaces the Claude Agent SDK runner).
+ * ollama.js — local LLM chat helper.
  * Talks to Ollama's /api/chat. Default model qwen3.5:4b (override via BRAIN_MODEL).
  * Strips qwen's <think>…</think> reasoning blocks from the returned content.
  */
