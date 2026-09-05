@@ -1,10 +1,11 @@
 'use strict';
 /**
- * qwen.js — higher-level local-LLM helpers on top of lib/ollama.js.
- * summarize (map-reduce chunking), extract (structured JSON), classify.
- * All helpers accept an injectable chatFn for offline testing.
+ * qwen.js — higher-level model helpers: summarize (map-reduce chunking), extract
+ * (structured JSON), classify, reason. All helpers accept an injectable chatFn for
+ * offline testing; the default chat goes through sdk/lib/provider.js, so the same
+ * code runs on Ollama, headless Claude, or throws ProviderUnavailable with no model.
  */
-const { chat } = require('./ollama.js');
+const chat = (opts) => require('./provider.js').getProvider(opts.feature).then((p) => p.chat(opts));
 const { parseAgentJson } = require('./json-extract.js');
 const { role, thinkFor } = require('./models.js');
 
@@ -109,6 +110,8 @@ async function extract(text, opts = {}) {
     numPredict: opts.numPredict || 1024,
     timeoutMs: opts.timeoutMs,
     format: 'json',
+    ...(opts.jsonSchema ? { schema: opts.jsonSchema } : {}),
+    ...(opts.feature ? { feature: opts.feature } : {}),
   });
   try {
     return parseAgentJson(reply);
@@ -168,4 +171,4 @@ async function reason(prompt, opts = {}) {
   }
 }
 
-module.exports = { summarize, extract, classify, chunkText, reason, QwenEmptyError };
+module.exports = { summarize, extract, classify, chunkText, reason, summarizeSystem, QwenEmptyError };

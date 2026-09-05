@@ -5,6 +5,8 @@
  * dimensions defaults to 256 (qwen3-embedding supports Matryoshka truncation);
  * if the serving model ignores the field, whatever dimension comes back is
  * normalized and stored as-is — recall.js only compares like against like.
+ * The default path routes through sdk/lib/provider.js: a provider without
+ * embeddings (claude, none) rejects with ProviderUnavailable('PROVIDER_NONE').
  */
 const http = require('http');
 const { role } = require('./models.js');
@@ -52,8 +54,12 @@ function postEmbed(payload, timeoutMs) {
 async function embed(texts, opts = {}) {
   const arr = (Array.isArray(texts) ? texts : [texts]).map((t) => String(t || ''));
   if (!arr.length) return [];
+  if (!opts.postFn) {
+    const p = await require('./provider.js').getProvider(opts.feature || 'embed');
+    return p.embed(arr, { ...opts, postFn: postEmbed });
+  }
   const r = role('embedder');
-  const postFn = opts.postFn || postEmbed;
+  const postFn = opts.postFn;
   const out = [];
   for (let i = 0; i < arr.length; i += BATCH) {
     const embeddings = await postFn({
@@ -68,4 +74,4 @@ async function embed(texts, opts = {}) {
   return out;
 }
 
-module.exports = { embed, normalize };
+module.exports = { embed, normalize, postEmbed };
