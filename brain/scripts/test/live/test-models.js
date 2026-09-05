@@ -2,7 +2,7 @@
 // Unit tests for brain/scripts/sdk/lib/models.js — plain node, no framework.
 // Run: node brain/scripts/test/live/test-models.js
 const assert = require('assert');
-const { role, thinkFor } = require('../lib/models.js');
+const { role, thinkFor } = require('../../sdk/lib/models.js');
 
 // defaults
 delete process.env.BRAIN_MODEL; delete process.env.BRAIN_REASONER; delete process.env.BRAIN_EMBEDDER;

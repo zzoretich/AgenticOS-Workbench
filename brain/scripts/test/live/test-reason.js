@@ -2,7 +2,7 @@
 // Unit tests for reason() in brain/scripts/sdk/lib/qwen.js.
 // Run: node brain/scripts/test/live/test-reason.js
 const assert = require('assert');
-const { reason } = require('../lib/qwen.js');
+const { reason } = require('../../sdk/lib/qwen.js');
 
 delete process.env.BRAIN_MODEL; delete process.env.BRAIN_REASONER; delete process.env.BRAIN_REASONER_EFFORT;
 
