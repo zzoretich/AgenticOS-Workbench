@@ -11,7 +11,7 @@
     "build": "node scripts/gen-tokens.mjs && node esbuild.config.mjs production",
     "dev": "node scripts/gen-tokens.mjs && node esbuild.config.mjs",
     "rebuild-pty": "electron-rebuild -v 43.1.1 -m . -w node-pty",
-    "test": "npm run check:hex && node --import tsx --test \"src/**/*.test.ts\""
+    "test": "npm run check:hex && node --import tsx --test $(find src -name '*.test.ts' | sort)"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.10.0",
