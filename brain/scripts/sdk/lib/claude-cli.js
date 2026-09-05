@@ -67,6 +67,9 @@ function runClaude({ bin, args, cwd, timeoutMs, spawnFn }) {
     let settled = false;
     child.stdout.on('data', (c) => { stdout += c; });
     child.stderr.on('data', (c) => { stderr += c; });
+    const handleStreamError = (e) => { if (settled) return; settled = true; clearTimeout(timer); try { child.kill('SIGKILL'); } catch { /* already gone */ } reject(e); };
+    child.stdout.on('error', handleStreamError);
+    child.stderr.on('error', handleStreamError);
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
