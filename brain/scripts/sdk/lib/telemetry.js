@@ -1,5 +1,5 @@
 /**
- * telemetry.js — capture every Claude Agent SDK run for the Heartbeat dashboard.
+ * telemetry.js — capture every local-reasoner run for the Heartbeat dashboard.
  *
  * Emits three artifacts per run:
  *   1. Append a one-line summary to brain/_index/agent-runs/runs.jsonl
@@ -7,9 +7,9 @@
  *   3. Stream events to brain/_index/agent-runs/live/<id>.ndjson while running,
  *      delete on endRun.
  *
- * Used by lib/runner.js (which transparently wires it when callers pass a
- * `script` option) and directly by agents-sdk/src/orchestrator.ts (which
- * imports this CJS module via createRequire).
+ * Used directly by the sdk/ CLI entry points (ask.js, reason.js, local-code.js,
+ * standup.js, compress.js) and by heartbeat-writer.js; telemetry-hook.js drives
+ * the same on-disk shape from Claude Code's native hooks instead of this module.
  *
  * Env:
  *   BRAIN_AGENT_REDACT=1   omit prompt/reply text from on-disk records

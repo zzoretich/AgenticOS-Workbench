@@ -6,14 +6,14 @@ const { buildPrompt, parseInsightReply, generateInsight } = require('../collecto
 test('buildPrompt includes name, status, objectives, subproject names', () => {
   const entry = {
     name: 'SN Claude Skills', status: 'active', summary: 'skill factory',
-    objectives: [{ text: 'Ship sales-coach' }],
+    objectives: [{ text: 'Ship onboarding' }],
     subprojects: [{ name: 'factory', status: 'active' }],
     next: { text: null }, lastEvent: { ageDays: 2 },
   };
   const p = buildPrompt(entry);
   assert.match(p, /SN Claude Skills/);
   assert.match(p, /active/);
-  assert.match(p, /Ship sales-coach/);
+  assert.match(p, /Ship onboarding/);
   assert.match(p, /factory/);
 });
 
