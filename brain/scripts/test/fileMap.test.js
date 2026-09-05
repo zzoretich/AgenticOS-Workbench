@@ -150,6 +150,8 @@ const ALPHA = path.join(TMP, 'workspaces', 'Alpha');
 function resetAlpha() {
   fs.rmSync(path.join(ALPHA, 'notes.md'), { force: true });
   fs.rmSync(MAPS_DIR, { recursive: true, force: true });
+  fs.writeFileSync(path.join(ALPHA, 'README.md'), '# alpha readme'); // an earlier test unlinks it
+  fs.writeFileSync(path.join(ALPHA, 'src', 'main.js'), 'console.log(1)');
 }
 
 test('provider none: every eligible file gets a heuristic description, nothing pending, no model call', async () => {
@@ -195,5 +197,27 @@ test('provider ollama: budget from scan.fileMapBudget, overflow stays pending (n
   assert.equal(calls.length, 1);
   assert.equal(out.described, 1);
   assert.equal(readMap().pending, 1);
+  fs.writeFileSync(CONFIG, JSON.stringify({ provider: 'none' }));
+});
+
+test('switching from none to ollama re-describes heuristic rows within budget, then leaves fresh model rows alone', async () => {
+  resetAlpha();
+  fs.writeFileSync(CONFIG, JSON.stringify({ provider: 'none' }));
+  await collectFileMaps({ provider: NONE });
+  assert.deepEqual(readMap().files.map((f) => f.descSource).sort(), ['heuristic', 'heuristic']);
+
+  fs.writeFileSync(CONFIG, JSON.stringify({ provider: 'none', scan: { fileMapBudget: 2 } }));
+  let calls = [];
+  const out = await collectFileMaps({ provider: { ...CLAUDE(calls), name: 'ollama' } });
+  assert.equal(calls.length, 2);
+  assert.equal(out.described, 2);
+  const map = readMap();
+  assert.equal(map.pending, 0);
+  assert.ok(map.files.every((f) => f.descSource === 'model'));
+
+  calls = [];
+  await collectFileMaps({ provider: { ...CLAUDE(calls), name: 'ollama' } });
+  assert.equal(calls.length, 0, 'fresh model rows are not re-queued');
+
   fs.writeFileSync(CONFIG, JSON.stringify({ provider: 'none' }));
 });
