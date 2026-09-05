@@ -2,8 +2,8 @@
 'use strict';
 /**
  * feedback-conflict-check.js — pairwise contradiction audit over the active
- * feedback rules (brain/memory/feedback/*.md; _drafts/ excluded). Local
- * qwen3.5:4b only — zero Claude tokens.
+ * feedback rules (brain/memory/feedback/*.md; _drafts/ excluded). Runs through the
+ * configured provider; with no provider every pair prints as "unverified".
  *
  *   node feedback-conflict-check.js                 # all pairs (install-time)
  *   node feedback-conflict-check.js --draft <path>  # one draft vs every rule
@@ -69,20 +69,31 @@ async function checkAllPairs({ chatFn, draftPath } = {}) {
   return results;
 }
 
+/** One human-readable line per pair: CONFLICT / ok / unverified (the model could not be asked). */
+function formatLine(r) {
+  const tag = r.error ? 'unverified' : r.conflict ? 'CONFLICT' : 'ok';
+  return `${tag}: ${r.a} × ${r.b} — ${r.reason}`;
+}
+
 async function main() {
   const argv = process.argv.slice(2);
   const di = argv.indexOf('--draft');
   const draftPath = di > -1 ? argv[di + 1] : undefined;
   const asJson = argv.includes('--json');
+  // No chatFn: extract() routes through the provider; with provider "none" every pair
+  // comes back error:true and prints as unverified — never a false "ok".
   const results = await checkAllPairs({ draftPath });
   let conflicts = 0;
+  let unverified = 0;
   for (const r of results) {
     if (r.conflict) conflicts++;
-    if (asJson) console.log(JSON.stringify(r));
-    else console.log(`${r.conflict ? 'CONFLICT' : 'ok'}: ${r.a} × ${r.b} — ${r.reason}`);
+    if (r.error) unverified++;
+    console.log(asJson ? JSON.stringify(r) : formatLine(r));
   }
-  if (!asJson) console.log(`${results.length} pairs checked, ${conflicts} conflict${conflicts === 1 ? '' : 's'}`);
+  if (!asJson) {
+    console.log(`${results.length} pairs checked, ${conflicts} conflict${conflicts === 1 ? '' : 's'}, ${unverified} unverified`);
+  }
 }
 
 if (require.main === module) main();
-module.exports = { checkPair, checkAllPairs, CONFLICT_INSTRUCTIONS };
+module.exports = { checkPair, checkAllPairs, formatLine, CONFLICT_INSTRUCTIONS };

@@ -58,3 +58,11 @@ test('a missing file degrades to a non-conflict with error flag, never throws', 
   assert.equal(r.error, true);
   assert.match(r.reason, /check-failed/);
 });
+
+const { formatLine } = require('../feedback-conflict-check.js');
+
+test('formatLine prints unverified (never ok) for a failed check', () => {
+  assert.match(formatLine({ a: 'a.md', b: 'b.md', conflict: false, reason: 'check-failed: no provider', error: true }), /^unverified: a\.md × b\.md — check-failed/);
+  assert.match(formatLine({ a: 'a.md', b: 'b.md', conflict: true, reason: 'same binary' }), /^CONFLICT: /);
+  assert.match(formatLine({ a: 'a.md', b: 'b.md', conflict: false, reason: 'different topics' }), /^ok: /);
+});
