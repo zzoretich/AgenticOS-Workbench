@@ -366,3 +366,27 @@ test('wrap-session.js resets SESSION.md and thereby clears the Wrap Status banne
   assert.equal(r.status, 0, r.stderr);
   assert.ok(!fs.readFileSync(SESSION_PATH, 'utf8').includes('## Wrap Status'));
 });
+
+test('wrapCycle with provider none: prefilter draft failures reach the ledger instead of being swallowed', async () => {
+  fs.writeFileSync(SESSION_PATH, '---\ntype: session\n---\n\n# SESSION\n\n## Key Context This Session\n\n## Things to Remember\n');
+  const draftsDir = path.join(TMP, 'brain', 'memory', 'feedback', '_drafts');
+  fs.rmSync(draftsDir, { recursive: true, force: true });
+  fs.writeFileSync(draftsDir, 'not a directory'); // writeDraft's mkdirSync now throws EEXIST
+  const transcript = path.join(TMP, 'broken-drafts.jsonl');
+  fs.writeFileSync(transcript, [
+    JSON.stringify({ type: 'user', message: { content: [{ type: 'text', text: 'no, use the other binary for this' }] } }),
+    JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'ok' }] } }),
+  ].join('\n') + '\n');
+  try {
+    const out = await wrapCycle({ transcriptPath: transcript, sessionId: 'sess-draftfail', provider: NONE,
+      deps: { pruneQueue: async () => ({ dropped: 0 }), waitForOllama: async () => true } });
+    assert.equal(out.status, 'disabled');
+    const last = readLedgerFile().pipelines['auto-wrap'].lastRun;
+    assert.equal(last.status, 'disabled');
+    assert.ok(last.counts.draftErrors >= 1);
+    assert.equal(last.counts.drafted, undefined);
+  } finally {
+    fs.rmSync(draftsDir, { recursive: true, force: true });
+    fs.mkdirSync(draftsDir, { recursive: true });
+  }
+});
