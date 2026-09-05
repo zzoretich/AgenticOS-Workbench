@@ -140,3 +140,60 @@ test('describeOneFile persists a new row for a file not yet in the map', async (
   assert.equal(row.size, st.size);
   assert.equal(map.pending, 0);
 });
+
+const NONE = { name: 'none', reason: 'forced', capabilities: { chat: false, embed: false, structured: false }, chat: async () => { throw new Error('must not be called'); } };
+const CLAUDE = (calls) => ({ name: 'claude', reason: 'forced', capabilities: { chat: true, embed: false, structured: true }, chat: async () => { calls.push(1); return 'Model-described line'; } });
+const CONFIG = path.join(TMP, 'brain', 'config.json');
+const ALPHA = path.join(TMP, 'workspaces', 'Alpha');
+// The earlier describeOneFile test leaves notes.md in the shared Alpha fixture and the map cache
+// carries rows from earlier tests; the provider tests assume the two-file fixture and a clean map.
+function resetAlpha() {
+  fs.rmSync(path.join(ALPHA, 'notes.md'), { force: true });
+  fs.rmSync(MAPS_DIR, { recursive: true, force: true });
+}
+
+test('provider none: every eligible file gets a heuristic description, nothing pending, no model call', async () => {
+  resetAlpha();
+  fs.writeFileSync(CONFIG, JSON.stringify({ provider: 'none' }));
+  fs.writeFileSync(path.join(TMP, 'workspaces', 'Alpha', 'README.md'), '# alpha readme');
+  const out = await collectFileMaps({ provider: NONE });
+  const map = readMap();
+  assert.equal(map.pending, 0);
+  assert.equal(out.described, 0, 'model-described count stays zero');
+  const readme = map.files.find((f) => f.path === 'README.md');
+  assert.equal(readme.desc, 'alpha readme');
+  assert.equal(readme.descSource, 'heuristic');
+  assert.equal(readme.status, 'fresh');
+  assert.equal(map.files.find((f) => f.path === 'src/main.js').desc, 'JavaScript file');
+});
+
+test('provider claude: budget is scan.fileMapBudgetUnderClaude (default 0), rest heuristic', async () => {
+  resetAlpha();
+  fs.writeFileSync(CONFIG, JSON.stringify({ provider: 'none' }));
+  let calls = [];
+  await collectFileMaps({ provider: CLAUDE(calls) });
+  assert.equal(calls.length, 0);
+  assert.equal(readMap().pending, 0);
+  fs.rmSync(MAPS_DIR, { recursive: true, force: true });
+  fs.writeFileSync(CONFIG, JSON.stringify({ provider: 'none', scan: { fileMapBudgetUnderClaude: 1 } }));
+  calls = [];
+  const out = await collectFileMaps({ provider: CLAUDE(calls) });
+  assert.equal(calls.length, 1);
+  assert.equal(out.described, 1);
+  const map = readMap();
+  assert.equal(map.pending, 0);
+  assert.deepEqual(map.files.map((f) => f.descSource).sort(), ['heuristic', 'model']);
+  fs.writeFileSync(CONFIG, JSON.stringify({ provider: 'none' }));
+});
+
+test('provider ollama: budget from scan.fileMapBudget, overflow stays pending (no heuristics)', async () => {
+  resetAlpha();
+  fs.writeFileSync(CONFIG, JSON.stringify({ provider: 'none', scan: { fileMapBudget: 1 } }));
+  const calls = [];
+  const OLLAMA = { ...CLAUDE(calls), name: 'ollama' };
+  const out = await collectFileMaps({ provider: OLLAMA });
+  assert.equal(calls.length, 1);
+  assert.equal(out.described, 1);
+  assert.equal(readMap().pending, 1);
+  fs.writeFileSync(CONFIG, JSON.stringify({ provider: 'none' }));
+});

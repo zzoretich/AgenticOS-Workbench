@@ -31,6 +31,8 @@ const { collectWorkspaces } = require('./collectors/workspaces');
 const { generateInsight } = require('./collectors/workspaceInsights');
 const { withLock } = require('./lib/snapshotLock');
 const { collectFileMaps } = require('./collectors/fileMap.js');
+const { loadConfig } = require('./lib/config.js');
+const { getProvider } = require('./sdk/lib/provider.js');
 
 function readPrevSnapshot() {
   try {
@@ -394,12 +396,12 @@ function renderMarkdown(s) {
   return lines.join('\n') + '\n';
 }
 
-// Generate/refresh qwen insights for workspaces whose cache is empty or stale.
-async function enrichWorkspaceInsights(snapshot) {
+// Generate/refresh insights (model or heuristic per provider) for workspaces whose cache is empty or stale.
+async function enrichWorkspaceInsights(snapshot, provider) {
   if (!Array.isArray(snapshot.workspaces)) return;
   for (const ws of snapshot.workspaces) {
     if (ws.insight && ws.insight.status === 'ok' && ws.insight.inputHash === ws.inputHash) continue;
-    const { insight, next } = await generateInsight(ws);
+    const { insight, next } = await generateInsight(ws, { provider });
     ws.insight = insight;
     ws.next = next;
   }
@@ -407,12 +409,16 @@ async function enrichWorkspaceInsights(snapshot) {
 
 async function main(report) {
   const argv = new Set(process.argv.slice(2));
+  const cfg = loadConfig();
+  const provider = await getProvider('scan-vault');
+  if (report) report.provider = provider.name;
   const snapshot = scan();
-  await enrichWorkspaceInsights(snapshot);
+  snapshot.provider = { name: provider.name, reason: provider.reason };
+  await enrichWorkspaceInsights(snapshot, provider);
 
   try {
-    const cfg = (() => { try { return JSON.parse(fs.readFileSync(path.join(VAULT, 'brain', '_index', 'scanner-config.json'), 'utf8')); } catch { return {}; } })();
-    snapshot.fileMaps = await collectFileMaps({ budget: cfg.fileMapBudgetPerScan ?? 40, report });
+    const scannerCfg = (() => { try { return JSON.parse(fs.readFileSync(path.join(VAULT, 'brain', '_index', 'scanner-config.json'), 'utf8')); } catch { return {}; } })();
+    snapshot.fileMaps = await collectFileMaps({ budget: scannerCfg.fileMapBudgetPerScan ?? cfg.scan.fileMapBudget, provider, report });
   } catch (e) {
     console.error('[scan-vault] fileMap collector failed:', e.message);
     snapshot.fileMaps = null;
@@ -440,11 +446,17 @@ async function main(report) {
 
   try {
     const { refreshEmbedIndex } = require('./embed-vault.js');
-    const ecfg = (() => { try { return JSON.parse(fs.readFileSync(path.join(VAULT, 'brain', '_index', 'scanner-config.json'), 'utf8')); } catch { return {}; } })();
-    const er = await refreshEmbedIndex({ budget: ecfg.embedBudgetPerScan ?? 40 });
-    if (report) report.wrote.push(`brain/_index/embed-index.json (embedded ${er.embedded}, pending ${er.pending}, failed ${er.failed})`);
+    await withReport('embed-vault', async (r) => {
+      r.provider = provider.name;
+      if (!provider.capabilities.embed) { r.disable('no-embed'); return; }
+      const scannerCfg = (() => { try { return JSON.parse(fs.readFileSync(path.join(VAULT, 'brain', '_index', 'scanner-config.json'), 'utf8')); } catch { return {}; } })();
+      const er = await refreshEmbedIndex({ budget: scannerCfg.embedBudgetPerScan ?? cfg.scan.embedBudget, provider });
+      r.counts.embedded = er.embedded; r.counts.pending = er.pending; r.counts.failed = er.failed;
+      r.wrote.push('brain/_index/embed-index.json');
+      if (report) report.wrote.push(`brain/_index/embed-index.json (embedded ${er.embedded}, pending ${er.pending}, failed ${er.failed})`);
+    });
   } catch (e) {
-    console.error('[scan-vault] embed-index failed:', e.message);
+    console.error('[scan-vault] embed-index failed (loud in ledger):', e.message);
   }
 
   if (argv.has('--json')) {
