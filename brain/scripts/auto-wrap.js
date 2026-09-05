@@ -1,20 +1,23 @@
 #!/usr/bin/env node
 /**
- * auto-wrap.js — SessionEnd extraction engine. Replaces manual `/wrap`: every
- * session leaves a clean SESSION.md and, when the session produced something
- * durable, a promoted memory — with zero user action.
+ * auto-wrap.js — SessionEnd extraction engine. Every session leaves a clean
+ * SESSION.md and, when the session produced something durable, a promoted
+ * memory — with zero user action when a provider is available.
  *
- * Two-phase design (mirrors update-session.js's Stop-hook pattern, since a
- * local qwen3.5:4b call can take ~60s and a SessionEnd hook must not block
- * session exit for that long):
+ * Two-phase design (mirrors update-session.js's Stop-hook pattern):
  *   (hook)      Reads the SessionEnd payload on stdin, respawns itself
  *               detached, exits 0 immediately. Never fails or blocks exit.
- *   (detached)  AUTO_WRAP_DETACHED=1 — loads the transcript, runs the real
- *               extraction + gate + writes inside withReport('auto-wrap', …),
- *               exits 0 on every path.
+ *   (detached)  AUTO_WRAP_DETACHED=1 — wrapCycle(): prune the retry spool, resolve
+ *               the provider, then
+ *                 none   → "## Wrap Status" banner in SESSION.md + needs-review drafts
+ *                          from the regex prefilter; ledger disabled / no-provider
+ *                 ollama → wait for the server (spool the session if it never comes),
+ *                          drain the spool, extract the current session last
+ *                 claude → extract through headless claude -p with EXTRACTION_SCHEMA
  *
- * Core logic lives in runAutoWrap(), independently testable with an injected
- * chatFn (see test/auto-wrap.test.js).
+ * Core logic: runAutoWrap() (extract + write) and applyExtraction() (the write half,
+ * shared with the MCP wrap_session tool), both testable with an injected chatFn /
+ * a ready-made extraction (see test/auto-wrap.test.js).
  */
 
 const { PATHS } = require('./lib/hook-entry.js').hookEntry();
@@ -24,14 +27,15 @@ const { spawn } = require('child_process');
 const { extract } = require('./sdk/lib/qwen.js');
 const { ping } = require('./sdk/lib/ollama.js');
 const { withReport } = require('./lib/pipeline-report.js');
-const { isRetryable, enqueue, claim, resolve: resolveQueued } = require('./lib/wrap-queue.js');
+const { isRetryable, enqueue, claim, resolve: resolveQueued, pruneQueue } = require('./lib/wrap-queue.js');
 const { fitToBudget } = require('./lib/text-budget.js');
 const { writeMemory } = require('./lib/memory-writer.js');
 const { isJunkSummary, gateCandidate } = require('./lib/noise-gate.js');
 const { appendTrail, revertedSlugs } = require('./lib/promote-log.js');
-const { runCorrectionStage } = require('./lib/correction-detector.js');
-const { listDrafts } = require('./lib/feedback-drafts.js');
+const { runCorrectionStage, prefilterCorrections, needsReviewCandidate } = require('./lib/correction-detector.js');
+const { listDrafts, writeDraft, logEvent, activeRuleTitles } = require('./lib/feedback-drafts.js');
 const { findTranscript } = require('./auto-cost.js');
+const { getProvider } = require('./sdk/lib/provider.js');
 
 // Fix round 1 (live-fire found qwen3.5:4b continuing chat-shaped transcripts
 // conversationally instead of extracting from them): reframe the model as a
@@ -82,7 +86,29 @@ function hasExpectedShape(extraction) {
     Array.isArray(extraction.feedback) && Array.isArray(extraction.threads) && Array.isArray(extraction.candidates);
 }
 
-const SCHEMA = { facts: [], decisions: [], feedback: [], threads: [], candidates: [] };
+// Two views of the same shape: EXTRACTION_SHAPE is the example the system prompt shows
+// (Ollama's grammar-constrained `format:'json'` only guarantees *some* JSON);
+// EXTRACTION_SCHEMA is the real JSON Schema handed to `claude -p --json-schema`.
+const EXTRACTION_SHAPE = { facts: [], decisions: [], feedback: [], threads: [], candidates: [] };
+const STRINGS = { type: 'array', items: { type: 'string' } };
+const EXTRACTION_SCHEMA = {
+  type: 'object',
+  properties: {
+    facts: STRINGS, decisions: STRINGS, feedback: STRINGS, threads: STRINGS,
+    candidates: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          type: { type: 'string', enum: ['user', 'feedback', 'projects', 'reference'] },
+          title: { type: 'string' }, description: { type: 'string' }, body: { type: 'string' },
+        },
+        required: ['type', 'title', 'description', 'body'],
+      },
+    },
+  },
+  required: ['facts', 'decisions', 'feedback', 'threads', 'candidates'],
+};
 
 // Fix round 4 (live failures 2026-08-07: "no JSON object found in reply" and
 // "Bad control character in string literal" both errored the pipeline): the
@@ -98,13 +124,13 @@ async function extractSessionKnowledge(text, chatFn) {
   let first = null;
   let firstErr = null;
   try {
-    first = await extract(text, { chatFn, instructions: EXTRACTION_INSTRUCTIONS, schema: SCHEMA, numPredict: EXTRACT_NUM_PREDICT });
+    first = await extract(text, { chatFn, instructions: EXTRACTION_INSTRUCTIONS, schema: EXTRACTION_SHAPE, jsonSchema: EXTRACTION_SCHEMA, numPredict: EXTRACT_NUM_PREDICT, feature: 'auto-wrap' });
   } catch (e) {
     firstErr = e;
   }
   if (first && hasExpectedShape(first) && first.candidates.length > 0) return first;
   try {
-    const retry = await extract(text, { chatFn, instructions: RETRY_INSTRUCTIONS, schema: SCHEMA, numPredict: EXTRACT_NUM_PREDICT });
+    const retry = await extract(text, { chatFn, instructions: RETRY_INSTRUCTIONS, schema: EXTRACTION_SHAPE, jsonSchema: EXTRACTION_SCHEMA, numPredict: EXTRACT_NUM_PREDICT, feature: 'auto-wrap' });
     return hasExpectedShape(retry) ? retry : (first ?? retry);
   } catch (e) {
     if (first) return first; // retry failed — fall back to the (possibly empty/drifted) first result
@@ -278,12 +304,62 @@ function writePendingDraftsSection(count) {
   fs.writeFileSync(sessionPath, upsertSection(content, '## Pending Feedback Drafts', body));
 }
 
-/** Core extraction engine — independently testable with an injected chatFn. */
-async function runAutoWrap({ transcriptText, sessionId, chatFn, report, corrections }) {
-  const tail = String(transcriptText ?? '').slice(-50_000); // last ~50KB is the session's tail
-  const extraction = await extractSessionKnowledge(frameTranscript(tail), chatFn);
+/**
+ * Wake-time banner for a session that could not be wrapped (no provider).
+ * Upserted so repeated sessions do not stack; removed by applyExtraction and by
+ * wrap-session.js's SESSION.md reset.
+ */
+function writeWrapStatus(sessionId, providerName) {
+  const sessionPath = PATHS.SESSION_MD;
+  let content;
+  try { content = fs.readFileSync(sessionPath, 'utf8'); }
+  catch { content = '# SESSION\n\n## Key Context This Session\n\n## Things to Remember\n'; }
+  const body = `- Session ${sessionId} not wrapped (provider: ${providerName}) — run /wrap.`;
+  fs.writeFileSync(sessionPath, upsertSection(content, '## Wrap Status', body));
+}
+
+function clearWrapStatus() {
+  const sessionPath = PATHS.SESSION_MD;
+  let content;
+  try { content = fs.readFileSync(sessionPath, 'utf8'); } catch { return; }
+  if (!content.includes('## Wrap Status')) return;
+  fs.writeFileSync(sessionPath, upsertSection(content, '## Wrap Status', ''));
+}
+
+/** One draft per explicit {quote, rule, why} (the wrap_session tool's shape). */
+function draftExplicitCorrections(corrections, sessionId, reasons) {
+  let drafts = 0;
+  const existing = [...activeRuleTitles(), ...listDrafts().map((d) => d.title)];
+  const reverted = revertedSlugs();
+  for (const c of corrections) {
+    const rule = String(c?.rule ?? '').trim();
+    const why = String(c?.why ?? '').trim();
+    const quote = String(c?.quote ?? '').replace(/\s+/g, ' ').trim();
+    const cand = {
+      type: 'feedback', title: rule.slice(0, 60), description: why.slice(0, 90),
+      body: `${rule}\n\n**Why:** ${why}\n\n**How to apply:** ${rule}\n\n**Evidence:** "${quote}"`,
+    };
+    const verdict = gateCandidate(cand, { existingTitles: existing, revertedSlugs: reverted });
+    if (!verdict.ok) { reasons.push(`${cand.title || '?'}: ${verdict.reason}`); continue; }
+    try {
+      const res = writeDraft({ title: cand.title, description: cand.description, body: cand.body, session: sessionId });
+      logEvent({ event: 'captured', session: sessionId, title: cand.title, slug: res.slug });
+      existing.push(cand.title);
+      drafts++;
+    } catch (e) { reasons.push(`${cand.title}: ${e.message}`); }
+  }
+  return drafts;
+}
+
+/**
+ * The write half — shared by runAutoWrap (model extraction) and the MCP wrap_session
+ * tool (Claude-in-session extraction): gate → writeMemory → appendTrail →
+ * writeSessionSections → explicit corrections → drafts. Clears any "## Wrap Status".
+ */
+async function applyExtraction({ extraction, sessionId, corrections, report }) {
   const reasons = [];
   let written = 0, skipped = 0;
+  clearWrapStatus();
 
   // 1) memories through the gate
   const existingTitles = readExistingTitles();
@@ -307,18 +383,38 @@ async function runAutoWrap({ transcriptText, sessionId, chatFn, report, correcti
     if (report) report.wrote.push('brain/_index/SESSION.md');
   }
 
-  // 3) correction drafts (opt-in; fail-soft — must never break the wrap)
+  // 3) explicit corrections (wrap_session tool) → drafts
+  let drafts = 0;
+  if (Array.isArray(corrections) && corrections.length) {
+    drafts = draftExplicitCorrections(corrections, sessionId, reasons);
+    if (drafts) writePendingDraftsSection(listDrafts().length);
+  }
+
+  if (report) {
+    report.counts.written = written;
+    report.counts.skipped = skipped;
+    if (drafts) report.counts.drafted = drafts;
+  }
+  return { written, skipped, reasons, drafts };
+}
+
+/** Core extraction engine — independently testable with an injected chatFn. */
+async function runAutoWrap({ transcriptText, sessionId, chatFn, report, corrections }) {
+  const tail = String(transcriptText ?? '').slice(-50_000); // last ~50KB is the session's tail
+  const extraction = await extractSessionKnowledge(frameTranscript(tail), chatFn);
+  const out = await applyExtraction({ extraction, sessionId, report });
+
+  // correction detection (opt-in; fail-soft — must never break the wrap)
   if (corrections && corrections.enabled) {
     try {
       const stage = await runCorrectionStage({ transcriptText: tail, sessionId, chatFn: corrections.chatFn });
       if (report) { report.counts.drafted = stage.drafted; report.counts.recurred = stage.recurred; }
-      reasons.push(...stage.reasons);
+      out.reasons.push(...stage.reasons);
+      out.drafts += stage.drafted;
       writePendingDraftsSection(listDrafts().length);
     } catch (_) { /* detector trouble is not wrap trouble */ }
   }
-
-  if (report) { report.counts.written = written; report.counts.skipped = skipped; }
-  return { written, skipped, reasons };
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -349,10 +445,10 @@ function loadTranscriptText(transcriptPath) {
   } catch { return ''; }
 }
 
-// After the 2026-08-14 reboot, launchd took ~55s to get :11434 serving again,
-// and every pipeline that fired inside that window died on ECONNREFUSED. This
-// worker is already detached and blocks nothing, so waiting is close to free —
-// 90s covers the observed boot gap with margin.
+// After a reboot the local server can take ~60s to come back, and every pipeline that
+// fired inside that window died on ECONNREFUSED. This worker is already detached and
+// blocks nothing, so waiting is close to free — 90s covers the observed gap with margin.
+// Only the ollama provider waits; claude has nothing to wait for.
 const OLLAMA_READY_TIMEOUT_MS = 90_000;
 const OLLAMA_READY_POLL_MS = 5_000;
 
@@ -366,43 +462,75 @@ async function waitForOllama() {
   return false;
 }
 
-/** One reported extraction pass. Throws on failure so the caller can classify it. */
-function extractOnce({ transcriptPath, sessionId }) {
+/** One reported extraction pass through `provider`. Throws on failure so the caller can classify it. */
+function extractOnce({ transcriptPath, sessionId, provider }) {
+  const chatFn = (o) => provider.chat({ ...o, feature: 'auto-wrap' });
   return withReport('auto-wrap', async (report) => {
+    report.provider = provider.name;
     await runAutoWrap({
       transcriptText: loadTranscriptText(transcriptPath),
-      sessionId, chatFn: undefined, report, corrections: { enabled: true },
+      sessionId, chatFn, report, corrections: { enabled: true, chatFn },
     });
   });
 }
 
-/**
- * Detached worker: does the slow qwen extraction so the hook itself returns
- * instantly.
- *
- * Retry design (2026-08-14). Three ordering rules matter here:
- *  1. Wait for the server BEFORE doing anything, so a boot-window start spools
- *     nothing and simply runs late instead.
- *  2. Drain the spool oldest-first and run the CURRENT session LAST. Every pass
- *     rewrites SESSION.md's Key Context, so whichever session runs last is the
- *     one working memory ends up describing — and that must be this one.
- *  3. Spool only connection-class failures (see wrap-queue's isRetryable).
- */
-async function runDetached() {
-  const transcriptPath = process.env.BRAIN_TRANSCRIPT || '';
-  const sessionId = process.env.BRAIN_SESSION_ID || '';
+/** No-model correction capture: regex prefilter → needs-review drafts. Returns the count. */
+function draftPrefilteredCorrections({ transcriptText, sessionId }) {
+  let drafted = 0;
+  try {
+    const existing = [...activeRuleTitles(), ...listDrafts().map((d) => d.title)];
+    const reverted = revertedSlugs();
+    for (const { quote } of prefilterCorrections(transcriptText)) {
+      const cand = needsReviewCandidate(quote);
+      if (!gateCandidate(cand, { existingTitles: existing, revertedSlugs: reverted }).ok) continue;
+      try {
+        writeDraft({ ...cand, session: sessionId, needsReview: true });
+        logEvent({ event: 'captured', session: sessionId, title: cand.title, needsReview: true });
+        existing.push(cand.title);
+        drafted++;
+      } catch (_) { /* duplicate slug etc. — skip */ }
+    }
+  } catch (_) { /* detector trouble is not wrap trouble */ }
+  return drafted;
+}
 
-  if (!(await waitForOllama())) {
-    // Nothing has run, so nothing is half-written: spool and leave quietly.
-    try { await enqueue({ sessionId, transcriptPath }); } catch (_) { /* spool trouble is not wrap trouble */ }
-    process.exit(0);
+/**
+ * The whole detached pass minus process.exit, so tests can drive it with a fake provider.
+ * Order matters:
+ *  1. Prune the spool on EVERY run (expiry used to run only after a successful ping).
+ *  2. Resolve the provider. none → banner + disabled ledger, never spool.
+ *  3. ollama → wait for the server; if it never comes, ledger skipped and spool.
+ *  4. Drain the spool oldest-first and run the CURRENT session LAST, so working
+ *     memory ends up describing this session.
+ *  5. Spool only connection-class failures (wrap-queue's isRetryable).
+ */
+async function wrapCycle({ transcriptPath, sessionId, provider, deps = {} }) {
+  try { await (deps.pruneQueue || pruneQueue)(); } catch (_) { /* spool trouble is not wrap trouble */ }
+  const p = provider || await getProvider('auto-wrap');
+
+  if (p.name === 'none') {
+    await withReport('auto-wrap', async (report) => {
+      report.provider = 'none';
+      report.disable('no-provider');
+      writeWrapStatus(sessionId, 'none');
+      report.wrote.push('brain/_index/SESSION.md');
+      const drafted = draftPrefilteredCorrections({ transcriptText: loadTranscriptText(transcriptPath), sessionId });
+      if (drafted) { report.counts.drafted = drafted; writePendingDraftsSection(listDrafts().length); }
+    });
+    return { status: 'disabled', provider: 'none' };
+  }
+
+  if (p.name === 'ollama' && !(await (deps.waitForOllama || waitForOllama)())) {
+    await withReport('auto-wrap', async (report) => { report.provider = 'ollama'; report.skip('ollama-unreachable'); });
+    try { await enqueue({ sessionId, transcriptPath }); } catch (_) { /* best effort */ }
+    return { status: 'spooled', provider: 'ollama' };
   }
 
   let queued = [];
   try { queued = await claim({ exclude: sessionId }); } catch (_) { /* proceed with the live session regardless */ }
   for (const entry of queued) {
     try {
-      await extractOnce(entry);
+      await extractOnce({ transcriptPath: entry.transcriptPath, sessionId: entry.sessionId, provider: p });
       await resolveQueued(entry.sessionId);
     } catch (_) {
       // Stays spooled with its attempt already spent; the ledger holds the error.
@@ -410,12 +538,22 @@ async function runDetached() {
   }
 
   try {
-    await extractOnce({ transcriptPath, sessionId });
+    await extractOnce({ transcriptPath, sessionId, provider: p });
+    return { status: 'ok', provider: p.name };
   } catch (e) {
     if (isRetryable(e)) {
       try { await enqueue({ sessionId, transcriptPath }); } catch (_) { /* best effort */ }
+      return { status: 'spooled', provider: p.name };
     }
+    return { status: 'error', provider: p.name, error: e && e.message };
   }
+}
+
+async function runDetached() {
+  await wrapCycle({
+    transcriptPath: process.env.BRAIN_TRANSCRIPT || '',
+    sessionId: process.env.BRAIN_SESSION_ID || '',
+  });
   process.exit(0);
 }
 
@@ -452,4 +590,7 @@ if (require.main === module) {
   }
 }
 
-module.exports = { runAutoWrap };
+module.exports = {
+  runAutoWrap, applyExtraction, writeWrapStatus, wrapCycle, writeSessionSections, writePendingDraftsSection,
+  EXTRACTION_INSTRUCTIONS, EXTRACTION_SCHEMA, EXTRACTION_SHAPE,
+};
