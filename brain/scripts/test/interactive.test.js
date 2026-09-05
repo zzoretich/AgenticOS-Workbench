@@ -1,0 +1,81 @@
+'use strict';
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { spawnSync } = require('child_process');
+
+const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'inter-'));
+fs.mkdirSync(path.join(TMP, 'brain', '_index'), { recursive: true });
+fs.mkdirSync(path.join(TMP, 'brain', 'memory', 'reference'), { recursive: true });
+fs.writeFileSync(path.join(TMP, 'brain', 'config.json'), JSON.stringify({ provider: 'none' }));
+fs.writeFileSync(path.join(TMP, 'brain', 'memory', 'reference', 'routing.md'), '# Routing\n\nmodel routing goes to the cheapest tier\n');
+process.env.BRAIN_VAULT = TMP;
+process.env.AOS_CONFIG = path.join(TMP, 'none.json');
+const { parseMode, renderContextBlock, readWriteFile, localProvider } = require('../sdk/lib/interactive.js');
+const SDK = path.join(__dirname, '..', 'sdk');
+const ENV = { ...process.env, BRAIN_VAULT: TMP, AOS_CONFIG: path.join(TMP, 'none.json') };
+const run = (script, args, input) => spawnSync(process.execPath, [path.join(SDK, script), ...args], { encoding: 'utf8', env: ENV, input: input || '' });
+
+test('parseMode: context is the default; write takes a file; local; other args pass through', () => {
+  assert.deepEqual(parseMode(['what', 'is', 'up']), { mode: 'context', writeFile: null, rest: ['what', 'is', 'up'] });
+  assert.deepEqual(parseMode(['--local', 'q']), { mode: 'local', writeFile: null, rest: ['q'] });
+  assert.deepEqual(parseMode(['--write', '/tmp/a.md']), { mode: 'write', writeFile: '/tmp/a.md', rest: [] });
+  assert.deepEqual(parseMode(['--write=/tmp/b.md', '--style=prose']), { mode: 'write', writeFile: '/tmp/b.md', rest: ['--style=prose'] });
+  assert.deepEqual(parseMode(['--context', '--weeks=2']), { mode: 'context', writeFile: null, rest: ['--weeks=2'] });
+});
+
+test('renderContextBlock has the exact fences and the three sections', () => {
+  const s = renderContextBlock({ feature: 'ask', system: 'SYS', context: 'CTX', format: 'FMT' });
+  assert.ok(s.startsWith('<<<AOS_CONTEXT feature=ask>>>\n'));
+  assert.ok(s.endsWith('<<<END>>>\n'));
+  assert.match(s, /## System\nSYS\n/);
+  assert.match(s, /## Context\nCTX\n/);
+  assert.match(s, /## Output format\nFMT\n/);
+});
+
+test('readWriteFile reads a file; localProvider refuses provider none with PROVIDER_NONE', async () => {
+  const f = path.join(TMP, 'answer.md');
+  fs.writeFileSync(f, 'hello');
+  assert.equal(readWriteFile(f), 'hello');
+  assert.throws(() => readWriteFile(null), /--write needs a file path/);
+  await assert.rejects(() => localProvider('ask'), (e) => e.code === 'PROVIDER_NONE');
+});
+
+test('ask --context prints the assembled prompt with vault context and exits 0', () => {
+  const r = run('ask.js', ['--context', 'what did I decide about model routing']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(r.stdout.startsWith('<<<AOS_CONTEXT feature=ask>>>'));
+  assert.match(r.stdout, /=== VAULT CONTEXT ===/);
+  assert.match(r.stdout, /brain\/memory\/reference\/routing\.md/);
+  assert.match(r.stdout, /what did I decide about model routing/);
+  assert.ok(r.stdout.trim().endsWith('<<<END>>>'));
+});
+
+test('ask --write prints the answer file; ask --local with provider none exits 1 with a stderr reason', () => {
+  const f = path.join(TMP, 'ans.md');
+  fs.writeFileSync(f, 'The answer.\n');
+  const w = run('ask.js', ['--write', f]);
+  assert.equal(w.status, 0);
+  assert.equal(w.stdout, 'The answer.\n');
+  const l = run('ask.js', ['--local', 'anything']);
+  assert.equal(l.status, 1);
+  assert.match(l.stderr, /no model provider/);
+});
+
+test('compress --context wraps the input text; --write echoes the file', () => {
+  const src = path.join(TMP, 'big.log');
+  fs.writeFileSync(src, 'line one\nline two\n');
+  const c = run('compress.js', [src, '--context', '--style=prose', '--max-words=50']);
+  assert.equal(c.status, 0, c.stderr);
+  assert.ok(c.stdout.startsWith('<<<AOS_CONTEXT feature=compress>>>'));
+  assert.match(c.stdout, /tight prose paragraph/);
+  assert.match(c.stdout, /under 50 words/);
+  assert.match(c.stdout, /line two/);
+  const out = path.join(TMP, 'distillate.md');
+  fs.writeFileSync(out, '- distilled\n');
+  const w = run('compress.js', ['--write', out]);
+  assert.equal(w.status, 0);
+  assert.equal(w.stdout, '- distilled\n');
+});

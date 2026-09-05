@@ -1,15 +1,16 @@
 #!/usr/bin/env node
 /**
- * ask.js — answer a single question using the vault as context (local qwen, no SDK).
+ * ask.js — answer a single question using the vault as context.
  *
- * qwen3.5:4b has no MCP tool-calling, so instead of letting the model call the brain
- * MCP server, we retrieve relevant memories/patterns with lib/brain.js and feed them
- * inline (retrieval-augmented). Prints the answer to stdout and a telemetry run-id line
- * to stderr (contract preserved for the Agentic OS Assistant view).
+ * Retrieval-augmented: recall (BM25 + vector when available) picks the files and their
+ * content is inlined into the system prompt. Three modes (sdk/lib/interactive.js):
+ *   --context (default)  print the assembled prompt; Claude answers in-session
+ *   --write <file>       print the answer file (ask has no persistent target)
+ *   --local              answer through the provider; telemetry run-id on stderr
  *
  * Usage:
  *   node brain/scripts/sdk/ask.js "what did I decide about model routing?"
- *   echo "what was the last feedback rule?" | node brain/scripts/sdk/ask.js
+ *   node brain/scripts/sdk/ask.js --local "what did I decide about model routing?"
  */
 
 const crypto = require('crypto');
@@ -20,6 +21,7 @@ const telemetry = require('./lib/telemetry.js');
 const fsx = require('fs');
 const pathx = require('path');
 const { VAULT } = require('../lib/paths.js');
+const { parseMode, printContext, readWriteFile, localProvider } = require('./lib/interactive.js');
 
 function readQuestion() {
   const argv = process.argv.slice(2);
@@ -82,22 +84,8 @@ async function buildContext(question, charBudget = 14000) {
   return parts.length ? parts.join('\n') : buildContextLegacy(question, charBudget);
 }
 
-async function main() {
-  const question = await readQuestion();
-  if (!question) {
-    process.stderr.write('Usage: node ask.js "your question"\n');
-    process.exit(2);
-  }
-
-  let run = null;
-  try {
-    run = telemetry.startRun({ script: 'ask', prompt: `len=${question.length}` });
-  } catch (err) {
-    process.stderr.write(`[telemetry] run_id=${crypto.randomUUID()}\n`);
-  }
-
+async function buildAskPrompt(question) {
   const context = await buildContext(question);
-
   const system = [
     "You are the user's second-brain assistant. Answer using ONLY the vault context provided below.",
     'Rules:',
@@ -110,19 +98,49 @@ async function main() {
     context || '(no matching memories found)',
     '=== END VAULT CONTEXT ===',
   ].join('\n');
+  return { system, context };
+}
 
+const ASK_FORMAT = 'A markdown answer under ~200 words: lead with the answer, cite vault files in backticks.';
+
+async function main() {
+  const { mode, writeFile, rest } = parseMode(process.argv.slice(2));
+  if (mode === 'write') { process.stdout.write(readWriteFile(writeFile)); return; }
+
+  const question = rest.length ? rest.join(' ').trim() : await readQuestion();
+  if (!question) {
+    process.stderr.write('Usage: node ask.js [--context|--local|--write <file>] "your question"\n');
+    process.exit(2);
+  }
+  const { system } = await buildAskPrompt(question);
+  if (mode === 'context') { printContext({ feature: 'ask', system, context: question, format: ASK_FORMAT }); return; }
+
+  const p = await localProvider('ask');
+  let run = null;
   try {
-    const answer = await reason(question, { system, effort: 'medium', numPredict: 1024 });
+    run = telemetry.startRun({ script: 'ask', prompt: `len=${question.length}` });
+  } catch (err) {
+    process.stderr.write(`[telemetry] run_id=${crypto.randomUUID()}\n`);
+  }
+  try {
+    const answer = await reason(question, {
+      system, effort: 'medium', numPredict: 1024,
+      chatFn: (o) => p.chat({ ...o, feature: 'ask' }), noFallback: p.name !== 'ollama',
+    });
     try { await telemetry.endRun(run, { status: 'ok', reply: `len=${answer ? answer.length : 0}` }); } catch { /* fail-soft */ }
     process.stdout.write((answer || '(no answer)') + '\n');
   } catch (err) {
     try { await telemetry.endRun(run, { status: 'error', error: err }); } catch { /* fail-soft */ }
-    process.stderr.write(`[ask] ollama error: ${err.message}\n`);
+    process.stderr.write(`[ask] ${p.name} error: ${err.message}\n`);
     process.exit(1);
   }
 }
 
-main().catch((err) => {
-  process.stderr.write(`[ask] fatal: ${(err && err.stack) || err}\n`);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    process.stderr.write(`[ask] ${err.code === 'PROVIDER_NONE' ? err.message : 'fatal: ' + ((err && err.stack) || err)}\n`);
+    process.exit(1);
+  });
+}
+
+module.exports = { buildAskPrompt, buildContext, ASK_FORMAT };
