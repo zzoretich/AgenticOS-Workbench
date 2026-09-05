@@ -16,10 +16,20 @@
  */
 
 const DEFAULTS = {
-  workhorse: { tag: 'qwen3.5:4b', env: 'BRAIN_MODEL', keepAlive: -1, effort: false, numCtxCap: 32768 },
-  reasoner:  { tag: 'gpt-oss:20b', env: 'BRAIN_REASONER', keepAlive: '10m', effort: true, numCtxCap: 16384 },
-  embedder:  { tag: 'qwen3-embedding:0.6b', env: 'BRAIN_EMBEDDER', keepAlive: -1, effort: false, numCtxCap: null },
+  workhorse: { tag: 'qwen3.5:4b', env: 'BRAIN_MODEL', keepAlive: -1, effort: false, numCtxCap: 32768, provider: 'ollama' },
+  reasoner:  { tag: 'gpt-oss:20b', env: 'BRAIN_REASONER', keepAlive: '10m', effort: true, numCtxCap: 16384, provider: 'ollama' },
+  embedder:  { tag: 'qwen3-embedding:0.6b', env: 'BRAIN_EMBEDDER', keepAlive: -1, effort: false, numCtxCap: null, provider: 'ollama' },
+  // Headless Claude Code role; the tag is a Claude model alias. agenticos.json `claude.model`
+  // overrides it through provider.js; the env var is the equivalent for one-off runs.
+  claude:    { tag: 'haiku', env: 'AOS_CLAUDE_MODEL', keepAlive: null, effort: false, numCtxCap: null, provider: 'claude' },
 };
+
+/** Which provider serves a role: 'ollama' for the three local roles, 'claude' for claude. */
+function providerFor(name) {
+  const d = DEFAULTS[name];
+  if (!d) throw new Error('unknown model role: ' + name);
+  return d.provider;
+}
 
 function role(name) {
   const d = DEFAULTS[name];
@@ -37,4 +47,4 @@ function thinkFor(name, effort) {
   return r.effort ? (effort || 'medium') : false;
 }
 
-module.exports = { role, thinkFor };
+module.exports = { role, thinkFor, providerFor };

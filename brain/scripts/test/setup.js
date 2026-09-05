@@ -8,6 +8,8 @@ const path = require('path');
 if (!process.env.AOS_VAULT && !process.env.BRAIN_VAULT) {
   const v = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-test-vault-'));
   fs.mkdirSync(path.join(v, 'brain', '_index'), { recursive: true });
+  // No test may resolve a real provider: the shared temp vault forces "none".
+  fs.writeFileSync(path.join(v, 'brain', 'config.json'), JSON.stringify({ provider: 'none' }));
   process.env.BRAIN_VAULT = v;
 }
 if (!process.env.AOS_CONFIG) process.env.AOS_CONFIG = path.join(os.tmpdir(), 'aos-test-no-config.json');

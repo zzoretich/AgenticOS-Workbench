@@ -7,7 +7,7 @@
     "- Daily logs: `<year>/<year>-<month>/<date>.md`"
   ],
   "roster": { "orchestrators": {} },
-  "scan": { "fileMapBudget": 40, "embedBudget": 40, "insightsUnderClaude": false, "autoSweepOrphans": false },
+  "scan": { "fileMapBudget": 40, "embedBudget": 40, "fileMapBudgetUnderClaude": 0, "insightsUnderClaude": false, "autoSweepOrphans": false },
   "provider": "auto",
   "claude": { "model": "haiku", "perCallUsd": 0.05, "perDayUsd": 0.5 },
   "ollama": { "host": "127.0.0.1", "port": 11434 },
