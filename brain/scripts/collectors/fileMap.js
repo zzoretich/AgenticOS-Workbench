@@ -126,8 +126,10 @@ async function collectFileMaps(opts = {}) {
         status: old.status === 'changed' ? 'changed' : (old.desc ? 'fresh' : 'new') };
     });
 
-    // Spend budget oldest-mtime-first so stable files converge across scans.
-    const todo = rows.filter((r) => r.status === 'new' || r.status === 'changed')
+    // Spend budget oldest-mtime-first so stable files converge across scans. A model-capable
+    // run also re-queues rows that only carry a heuristic description (written under none/claude),
+    // so switching to Ollama upgrades the map within the same per-scan budget instead of never.
+    const todo = rows.filter((r) => r.status === 'new' || r.status === 'changed' || (!plan.heuristic && r.descSource === 'heuristic'))
       .sort((a, b) => a.mtime - b.mtime);
     let described = 0;
     for (const row of todo) {
