@@ -32,15 +32,29 @@ function parseInsightReply(text) {
   return out;
 }
 
-// generateInsight(entry, { chatFn, model, numPredict }) -> { insight, next }
-// chatFn defaults to the real ollama helper; injectable for tests.
+function heuristicInsight(entry) {
+  const { insightHeuristic } = require('../lib/heuristics.js');
+  return {
+    insight: { text: insightHeuristic(entry), status: 'ok', model: 'heuristic', generatedAt: nowIso(), inputHash: entry.inputHash },
+    next: entry.next,
+  };
+}
+
+// generateInsight(entry, { chatFn, model, provider, numPredict }) -> { insight, next }
+// chatFn injected → used as-is (tests). Otherwise the provider decides:
+//   ollama → chat; claude → chat only when scan.insightsUnderClaude; none → heuristic.
 async function generateInsight(entry, opts = {}) {
-  const model = opts.model || require('../sdk/lib/models.js').role('workhorse').tag;
   let chatFn = opts.chatFn;
+  let model = opts.model;
   if (!chatFn) {
-    const ollama = require('../sdk/lib/ollama');
-    chatFn = (o) => ollama.chat(o);
+    const p = opts.provider || await require('../sdk/lib/provider.js').getProvider('workspace-insights');
+    const cfg = require('../lib/config.js').loadConfig();
+    const useModel = p.name === 'ollama' || (p.name === 'claude' && cfg.scan.insightsUnderClaude === true);
+    if (!useModel) return heuristicInsight(entry);
+    chatFn = (o) => p.chat({ ...o, feature: 'workspace-insights' });
+    model = model || (p.name === 'claude' ? cfg.claude.model : require('../sdk/lib/models.js').role('workhorse').tag);
   }
+  model = model || require('../sdk/lib/models.js').role('workhorse').tag;
   try {
     const reply = await chatFn({
       system: SYSTEM, prompt: buildPrompt(entry), model,
@@ -59,4 +73,4 @@ async function generateInsight(entry, opts = {}) {
   }
 }
 
-module.exports = { buildPrompt, parseInsightReply, generateInsight, SYSTEM };
+module.exports = { buildPrompt, parseInsightReply, generateInsight, heuristicInsight, SYSTEM };

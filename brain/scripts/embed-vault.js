@@ -50,7 +50,14 @@ function chunkBody(body) {
 async function refreshEmbedIndex(opts = {}) {
   const vault = opts.vault || VAULT;
   const budget = opts.budget == null ? 40 : opts.budget;
-  const embedFn = opts.embedFn || require('./sdk/lib/embed.js').embed;
+  let embedFn = opts.embedFn;
+  if (!embedFn) {
+    const p = opts.provider || await require('./sdk/lib/provider.js').getProvider('embed');
+    if (!p.capabilities.embed) {
+      return { embedded: 0, skipped: 0, pending: 0, failed: 0, disabled: true, reason: 'no-embed', provider: p.name };
+    }
+    embedFn = (texts) => p.embed(texts, { feature: 'embed' });
+  }
   let prev = opts.full ? null : loadIndex(vault);
   if (prev && prev.model && prev.model !== role('embedder').tag) prev = null; // embedder changed — vectors are incompatible, full rebuild
   const files = prev && prev.files ? { ...prev.files } : {};
@@ -134,6 +141,7 @@ if (require.main === module) {
     budget: budgetArg ? Number(budgetArg.split('=')[1]) : 40,
     full: argv.includes('--full'),
   }).then((r) => {
-    console.log(`[embed-vault] embedded=${r.embedded} skipped=${r.skipped} pending=${r.pending} failed=${r.failed}`);
+    if (r.disabled) console.log(`[embed-vault] disabled (${r.reason}; provider ${r.provider})`);
+    else console.log(`[embed-vault] embedded=${r.embedded} skipped=${r.skipped} pending=${r.pending} failed=${r.failed}`);
   }).catch((e) => { console.error('[embed-vault] failed:', e.message); process.exit(1); });
 }
