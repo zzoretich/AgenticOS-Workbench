@@ -14,6 +14,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { withReport } = require('./lib/pipeline-report.js');
 const { summarize } = require('./sdk/lib/qwen.js');
+const { markerPath } = require('./lib/markers.js');
 
 const VAULT = PATHS.VAULT;
 const BRAIN = PATHS.BRAIN_MD;
@@ -22,7 +23,7 @@ const SESSION_MD = PATHS.SESSION_MD;
 const _d = new Date();
 const today = `${_d.getFullYear()}-${String(_d.getMonth()+1).padStart(2,'0')}-${String(_d.getDate()).padStart(2,'0')}`;
 const sessionFile = dailyNotePath(_d);
-const throttleFile = path.join(VAULT, `brain/_index/.last-summary-${today}`);
+const throttleFile = markerPath(`.last-summary-${today}`);
 
 // Detached worker: does the slow qwen summarization in the background so the
 // Stop hook itself returns instantly (qwen3.5:4b can take ~60s).
