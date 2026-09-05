@@ -258,3 +258,111 @@ test('corrections stage failure never breaks the wrap', async () => {
   const out = await runAutoWrap({ transcriptText: 'x'.repeat(200), sessionId: 'sess-c3', chatFn: goodChat, report: { wrote: [], counts: {} }, corrections: { enabled: true, chatFn: boom } });
   assert.equal(out.written, 1);
 });
+
+// ---- provider paths, applyExtraction, wrap status (Plan 2) ----
+const { applyExtraction, writeWrapStatus, wrapCycle, EXTRACTION_SCHEMA } = require('../auto-wrap.js');
+const { readLedgerFile } = require('../lib/pipeline-report.js');
+const q = require('../lib/wrap-queue.js');
+const SESSION_PATH = path.join(TMP, 'brain', '_index', 'SESSION.md');
+const NONE = { name: 'none', reason: 'forced', capabilities: { chat: false, embed: false, structured: false }, chat: async () => { throw new Error('must not be called'); } };
+const CLAUDE = { name: 'claude', reason: 'forced', capabilities: { chat: true, embed: false, structured: true }, chat: async () => JSON.stringify(GOOD_EXTRACTION) };
+
+test('EXTRACTION_SCHEMA is a real JSON Schema and reaches the chat call', async () => {
+  assert.equal(EXTRACTION_SCHEMA.type, 'object');
+  assert.deepEqual(EXTRACTION_SCHEMA.required, ['facts', 'decisions', 'feedback', 'threads', 'candidates']);
+  let seen;
+  await runAutoWrap({ transcriptText: 'x'.repeat(200), sessionId: 'sess-sch', chatFn: (o) => { seen = o; return goodChat(); }, report: { wrote: [], counts: {} } });
+  assert.deepEqual(seen.schema, EXTRACTION_SCHEMA);
+  assert.equal(seen.format, 'json');
+});
+
+test('applyExtraction writes memories, fills SESSION.md, and turns explicit corrections into drafts', async () => {
+  const report = { wrote: [], counts: {} };
+  const out = await applyExtraction({
+    extraction: GOOD_EXTRACTION, sessionId: 'sess-ap1', report,
+    corrections: [{ quote: 'no, never force push', rule: 'Ask before force-pushing any branch', why: 'an unrequested force push had to be reverted' }],
+  });
+  assert.equal(out.written, 1);
+  assert.equal(out.drafts, 1);
+  assert.ok(fs.existsSync(path.join(TMP, 'brain', 'memory', 'feedback', 'commit-immediately-after-green-tests.md')));
+  const drafts = fs.readdirSync(path.join(TMP, 'brain', 'memory', 'feedback', '_drafts'));
+  assert.ok(drafts.includes('ask-before-force-pushing-any-branch.md'));
+  assert.match(fs.readFileSync(path.join(TMP, 'brain', 'memory', 'feedback', '_drafts', 'ask-before-force-pushing-any-branch.md'), 'utf8'), /\*\*Evidence:\*\* "no, never force push"/);
+  const session = fs.readFileSync(SESSION_PATH, 'utf8');
+  assert.match(session, /Shipped the pipelines ledger/);
+  assert.match(session, /## Pending Feedback Drafts/);
+  assert.equal(report.counts.drafted, 1);
+});
+
+test('writeWrapStatus upserts the banner; applyExtraction clears it', async () => {
+  fs.writeFileSync(SESSION_PATH, '---\ntype: session\n---\n\n# SESSION\n\n## Key Context This Session\n\n## Things to Remember\n');
+  writeWrapStatus('abc123', 'none');
+  writeWrapStatus('abc123', 'none');
+  const s = fs.readFileSync(SESSION_PATH, 'utf8');
+  assert.equal((s.match(/## Wrap Status/g) || []).length, 1);
+  assert.match(s, /- Session abc123 not wrapped \(provider: none\) — run \/wrap\./);
+  assert.ok(s.indexOf('## Wrap Status') < s.indexOf('## Things to Remember'));
+  await applyExtraction({ extraction: GOOD_EXTRACTION, sessionId: 'sess-clear' });
+  assert.ok(!fs.readFileSync(SESSION_PATH, 'utf8').includes('## Wrap Status'));
+});
+
+test('wrapCycle with provider none: prunes first, writes the banner, ledger disabled/no-provider, no spool, needs-review drafts', async () => {
+  fs.writeFileSync(SESSION_PATH, '---\ntype: session\n---\n\n# SESSION\n\n## Key Context This Session\n\n## Things to Remember\n');
+  const transcript = path.join(TMP, 'none.jsonl');
+  fs.writeFileSync(transcript, [
+    JSON.stringify({ type: 'user', message: { content: [{ type: 'text', text: 'no, use the other binary for this' }] } }),
+    JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'ok' }] } }),
+  ].join('\n') + '\n');
+  const order = [];
+  const out = await wrapCycle({ transcriptPath: transcript, sessionId: 'sess-none', provider: NONE,
+    deps: { pruneQueue: async () => { order.push('prune'); return { dropped: 0 }; }, waitForOllama: async () => { order.push('wait'); return true; } } });
+  assert.equal(out.status, 'disabled');
+  assert.deepEqual(order, ['prune']);
+  const last = readLedgerFile().pipelines['auto-wrap'].lastRun;
+  assert.equal(last.status, 'disabled');
+  assert.equal(last.reason, 'no-provider');
+  assert.equal(last.provider, 'none');
+  assert.equal(last.counts.drafted, 1);
+  assert.match(fs.readFileSync(SESSION_PATH, 'utf8'), /Session sess-none not wrapped \(provider: none\)/);
+  assert.ok(!fs.existsSync(q.QUEUE_PATH), 'nothing is spooled without a provider');
+  const drafts = fs.readdirSync(path.join(TMP, 'brain', 'memory', 'feedback', '_drafts')).filter((n) => n.endsWith('.md'));
+  assert.equal(drafts.length, 1);
+  assert.match(fs.readFileSync(path.join(TMP, 'brain', 'memory', 'feedback', '_drafts', drafts[0]), 'utf8'), /status\/needs-review/);
+});
+
+test('wrapCycle with provider claude: no Ollama wait, extraction through provider.chat, ledger ok/claude', async () => {
+  fs.writeFileSync(SESSION_PATH, '---\ntype: session\n---\n\n# SESSION\n\n## Key Context This Session\n\n## Things to Remember\n');
+  const transcript = path.join(TMP, 'claude.jsonl');
+  fs.writeFileSync(transcript, JSON.stringify({ type: 'user', message: { content: [{ type: 'text', text: 'build it' }] } }) + '\n');
+  let waited = false;
+  const out = await wrapCycle({ transcriptPath: transcript, sessionId: 'sess-cl', provider: CLAUDE,
+    deps: { pruneQueue: async () => ({ dropped: 0 }), waitForOllama: async () => { waited = true; return true; } } });
+  assert.equal(out.status, 'ok');
+  assert.equal(waited, false);
+  const last = readLedgerFile().pipelines['auto-wrap'].lastRun;
+  assert.equal(last.status, 'ok');
+  assert.equal(last.provider, 'claude');
+  assert.equal(last.counts.written, 1);
+});
+
+test('wrapCycle with provider ollama that never comes up: ledger skipped/ollama-unreachable and the session is spooled', async () => {
+  const transcript = path.join(TMP, 'ollama.jsonl');
+  fs.writeFileSync(transcript, '{}\n');
+  const OLLAMA = { ...CLAUDE, name: 'ollama' };
+  const out = await wrapCycle({ transcriptPath: transcript, sessionId: 'sess-ol', provider: OLLAMA,
+    deps: { pruneQueue: async () => ({ dropped: 0 }), waitForOllama: async () => false } });
+  assert.equal(out.status, 'spooled');
+  const last = readLedgerFile().pipelines['auto-wrap'].lastRun;
+  assert.equal(last.status, 'skipped');
+  assert.equal(last.reason, 'ollama-unreachable');
+  assert.ok(q.peek().some((r) => r.sessionId === 'sess-ol'));
+  await q.resolve('sess-ol');
+});
+
+test('wrap-session.js resets SESSION.md and thereby clears the Wrap Status banner', () => {
+  const { spawnSync } = require('child_process');
+  writeWrapStatus('sess-ws', 'none');
+  const r = spawnSync(process.execPath, [path.join(__dirname, '..', 'wrap-session.js')], { encoding: 'utf8', env: { ...process.env, BRAIN_VAULT: TMP } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(!fs.readFileSync(SESSION_PATH, 'utf8').includes('## Wrap Status'));
+});
