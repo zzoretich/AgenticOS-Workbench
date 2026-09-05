@@ -127,3 +127,29 @@ test('enqueue ignores an incomplete hook payload', async () => {
   assert.equal(await q.enqueue({ sessionId: 's1', transcriptPath: '' }), 0);
   assert.deepEqual(q.peek(), []);
 });
+
+test('isRetryable: provider errors — unreachable retries, none and cap do not', () => {
+  assert.equal(q.isRetryable(err('claude CLI: Not logged in', 'PROVIDER_UNREACHABLE')), true);
+  assert.equal(q.isRetryable(err('no model provider', 'PROVIDER_NONE')), false);
+  assert.equal(q.isRetryable(err('daily cap reached', 'PROVIDER_CAP')), false);
+});
+
+test('pruneQueue drops expired, exhausted and transcript-less rows without touching live ones', async () => {
+  const stale = new Date(Date.now() - q.MAX_AGE_MS - 60_000).toISOString();
+  const fresh = new Date().toISOString();
+  fs.writeFileSync(q.QUEUE_PATH, [
+    JSON.stringify({ sessionId: 'old', transcriptPath: T1, queuedAt: stale, attempts: 0 }),
+    JSON.stringify({ sessionId: 'spent', transcriptPath: T1, queuedAt: fresh, attempts: q.MAX_ATTEMPTS }),
+    JSON.stringify({ sessionId: 'gone', transcriptPath: path.join(TMP, 'nope.jsonl'), queuedAt: fresh, attempts: 0 }),
+    JSON.stringify({ sessionId: 'live', transcriptPath: T2, queuedAt: fresh, attempts: 1 }),
+  ].join('\n') + '\n');
+  assert.deepEqual(await q.pruneQueue(), { dropped: 3 });
+  assert.deepEqual(q.peek().map((r) => r.sessionId), ['live']);
+  assert.equal(q.peek()[0].attempts, 1, 'pruning never spends an attempt');
+  assert.deepEqual(await q.pruneQueue(), { dropped: 0 });
+});
+
+test('pruneQueue on a missing spool is a no-op', async () => {
+  assert.deepEqual(await q.pruneQueue(), { dropped: 0 });
+  assert.ok(!fs.existsSync(q.QUEUE_PATH));
+});

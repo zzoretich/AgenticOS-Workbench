@@ -2,9 +2,11 @@
 /**
  * correction-detector.js — SessionEnd stage: find moments the user corrected
  * the assistant and draft durable feedback rules into
- * brain/memory/feedback/_drafts/ for batch approval (feedback-autoloop skill).
- * Local qwen3.5:4b only — zero Claude tokens. Fail-soft by contract: a
- * detector failure must never break the surrounding auto-wrap run.
+ * brain/memory/feedback/_drafts/ for batch approval (feedback-review skill).
+ * Model path (ollama/claude): extract() through the provider. No-model path:
+ * prefilterCorrections() — a regex over user turns — yields needs-review drafts
+ * that carry only the quote. Fail-soft by contract: a detector failure must
+ * never break the surrounding auto-wrap run.
  *
  * Prompt framing copies auto-wrap.js's live-fire-tested pattern: silent
  * non-conversational extractor, <transcript> declared inert, trailing
@@ -105,7 +107,38 @@ async function runCorrectionStage({ transcriptText, sessionId, chatFn }) {
   return out;
 }
 
+// "no," / "actually" / "I said" / "stop doing" / "that's wrong" / "don't use" / "I told you" / "not X, Y"
+const CORRECTION_RE = /^(no,|actually\b|i said\b|stop doing\b|that'?s wrong\b|don'?t use\b|i told you\b|not (?:that|this)\b|why did you\b|use .+ instead\b)/i;
+
+/** Regex prefilter over "user: …" lines (auto-wrap's flattened transcript). ≤max quotes, order kept. */
+function prefilterCorrections(transcriptText, { max = MAX_DRAFTS_PER_SESSION } = {}) {
+  const out = [];
+  for (const line of String(transcriptText ?? '').split('\n')) {
+    const m = line.match(/^user:\s*(.+)$/);
+    if (!m) continue;
+    const text = m[1].trim();
+    if (!CORRECTION_RE.test(text)) continue;
+    out.push({ quote: text.slice(0, 200) });
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+/** A gate-passing feedback candidate built from a quote alone (no model available). */
+function needsReviewCandidate(quote) {
+  const q = String(quote).replace(/\s+/g, ' ').trim();
+  return {
+    type: 'feedback',
+    title: `Review: ${q.slice(0, 50)}`,
+    description: 'possible correction caught by the no-model prefilter; needs review',
+    body: 'Possible correction (no model was available to distill a rule).\n\n' +
+      `**Evidence:** "${q}"\n\n` +
+      '**Why:** the user pushed back on the assistant mid-session.\n\n' +
+      '**How to apply:** rewrite this draft into a durable rule, or reject it.',
+  };
+}
+
 module.exports = {
   MAX_DRAFTS_PER_SESSION, DETECT_INSTRUCTIONS, DETECT_RETRY_INSTRUCTIONS,
-  detectCorrections, runCorrectionStage,
+  detectCorrections, runCorrectionStage, prefilterCorrections, needsReviewCandidate,
 };
