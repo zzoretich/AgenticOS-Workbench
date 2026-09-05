@@ -117,6 +117,25 @@ test('timeout kills the child and rejects', async () => {
   assert.equal(calls[0].killed, 'SIGKILL');
 });
 
+test('stream error (stdout/stderr emit error) kills child and rejects, nothing ledgered', async () => {
+  const calls = [];
+  const streamErrorSpawn = (bin, args, opts) => {
+    calls.push({ bin, args, opts, killed: null });
+    const rec = calls[calls.length - 1];
+    const child = new EventEmitter();
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    child.kill = (sig) => { rec.killed = sig; };
+    setImmediate(() => child.stdout.emit('error', new Error('pipe broke')));
+    return child;
+  };
+  await assert.rejects(
+    () => cli.claudeCall({ prompt: 'p', bin: '/x/claude', spawnFn: streamErrorSpawn }),
+    /pipe broke/);
+  assert.equal(calls[0].killed, 'SIGKILL');
+  assert.ok(!fs.existsSync(SPEND_PATH));
+});
+
 test('loginProbe: true on a good reply, false on Not logged in, false with no binary', async () => {
   assert.equal(await cli.loginProbe({ bin: '/x/claude', spawnFn: fakeSpawn({ stdout: OK_REPLY }, []) }), true);
   assert.equal(await cli.loginProbe({ bin: '/x/claude', spawnFn: fakeSpawn({ stdout: 'Not logged in', code: 1 }, []) }), false);
