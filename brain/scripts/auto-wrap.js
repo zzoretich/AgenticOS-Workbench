@@ -474,9 +474,15 @@ function extractOnce({ transcriptPath, sessionId, provider }) {
   });
 }
 
-/** No-model correction capture: regex prefilter → needs-review drafts. Returns the count. */
+/**
+ * No-model correction capture: regex prefilter → needs-review drafts. Fail-soft by
+ * contract (must never throw out of the `none` branch) but every real failure is
+ * collected into `errors` so the ledger can distinguish "broken" from "found nothing".
+ * Gate rejections are normal, not errors, and stay silent.
+ */
 function draftPrefilteredCorrections({ transcriptText, sessionId }) {
   let drafted = 0;
+  const errors = [];
   try {
     const existing = [...activeRuleTitles(), ...listDrafts().map((d) => d.title)];
     const reverted = revertedSlugs();
@@ -488,10 +494,10 @@ function draftPrefilteredCorrections({ transcriptText, sessionId }) {
         logEvent({ event: 'captured', session: sessionId, title: cand.title, needsReview: true });
         existing.push(cand.title);
         drafted++;
-      } catch (_) { /* duplicate slug etc. — skip */ }
+      } catch (e) { errors.push(e.message); }
     }
-  } catch (_) { /* detector trouble is not wrap trouble */ }
-  return drafted;
+  } catch (e) { errors.push(`prefilter: ${e.message}`); }
+  return { drafted, errors };
 }
 
 /**
@@ -514,8 +520,9 @@ async function wrapCycle({ transcriptPath, sessionId, provider, deps = {} }) {
       report.disable('no-provider');
       writeWrapStatus(sessionId, 'none');
       report.wrote.push('brain/_index/SESSION.md');
-      const drafted = draftPrefilteredCorrections({ transcriptText: loadTranscriptText(transcriptPath), sessionId });
+      const { drafted, errors } = draftPrefilteredCorrections({ transcriptText: loadTranscriptText(transcriptPath), sessionId });
       if (drafted) { report.counts.drafted = drafted; writePendingDraftsSection(listDrafts().length); }
+      if (errors.length) report.counts.draftErrors = errors.length;
     });
     return { status: 'disabled', provider: 'none' };
   }
@@ -550,10 +557,12 @@ async function wrapCycle({ transcriptPath, sessionId, provider, deps = {} }) {
 }
 
 async function runDetached() {
-  await wrapCycle({
-    transcriptPath: process.env.BRAIN_TRANSCRIPT || '',
-    sessionId: process.env.BRAIN_SESSION_ID || '',
-  });
+  try {
+    await wrapCycle({
+      transcriptPath: process.env.BRAIN_TRANSCRIPT || '',
+      sessionId: process.env.BRAIN_SESSION_ID || '',
+    });
+  } catch (_) { /* the ledger already holds the error; the worker must exit 0 */ }
   process.exit(0);
 }
 
