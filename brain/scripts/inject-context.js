@@ -1,17 +1,17 @@
 #!/usr/bin/env node
 /**
  * UserPromptSubmit hook — injects BRAIN.md + SESSION.md on the first user turn of a session.
- * Uses a per-session marker file for idempotency. Claude Code pipes hook input as JSON to stdin.
+ * Uses a per-session marker file under the OS temp dir (lib/markers.js) for idempotency. Claude Code pipes hook input as JSON to stdin.
  */
 
 const { PATHS, dailyNotePath } = require('./lib/hook-entry.js').hookEntry();
 const fs = require('fs');
 const path = require('path');
+const { markerPath } = require('./lib/markers.js');
 
 const VAULT = PATHS.VAULT;
 const BRAIN = PATHS.BRAIN_MD;
 const SESSION = PATHS.SESSION_MD;
-const MARKER_DIR = PATHS.INDEX;
 
 let raw = '';
 process.stdin.on('data', chunk => raw += chunk);
@@ -32,7 +32,7 @@ process.stdin.on('end', () => {
     }
 
     // Per-session idempotency: only inject once per session_id
-    const marker = path.join(MARKER_DIR, `.injected-${sessionId}`);
+    const marker = markerPath(`.injected-${sessionId}`);
     if (fs.existsSync(marker)) process.exit(0);
 
     // Secondary safety: count user turns in transcript JSONL if available
