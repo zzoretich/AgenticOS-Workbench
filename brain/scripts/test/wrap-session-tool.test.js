@@ -15,10 +15,10 @@ fs.writeFileSync(path.join(TMP, 'MEMORY.md'), '# Memory Index\n\n## User\n\n## F
 fs.writeFileSync(path.join(TMP, 'brain', '_index', 'SESSION.md'), '---\ntype: session\n---\n\n# Current Session Working Memory\n\n## Active Task\n\n## Key Context This Session\n\n## Decisions Made\n\n## Things to Remember\n\n## Promote to Memory on Close\n');
 const SERVER = path.join(__dirname, '..', 'sdk', 'mcp-server.js');
 
-async function withClient(fn) {
+async function withClient(fn, extraEnv) {
   const transport = new StdioClientTransport({
     command: process.execPath, args: [SERVER],
-    env: { ...process.env, AOS_VAULT: TMP, AOS_CONFIG: path.join(TMP, 'none.json') },
+    env: { ...process.env, AOS_VAULT: TMP, AOS_CONFIG: path.join(TMP, 'none.json'), ...extraEnv },
   });
   const client = new Client({ name: 'wrap-session-test', version: '0.0.0' });
   await client.connect(transport);
@@ -71,4 +71,17 @@ test('wrap_session rejects a malformed candidate type', async () => {
     } });
     assert.equal(res.isError, true);
   });
+});
+
+test('wrap_session refuses under AOS_HEADLESS=1 without exiting the server', async () => {
+  await withClient(async (client) => {
+    const res = await client.callTool({ name: 'wrap_session', arguments: {
+      facts: [], decisions: [], feedback: [], threads: [], candidates: [],
+    } });
+    assert.equal(res.isError, true);
+    assert.match(res.content[0].text, /AOS_HEADLESS/);
+    const names = (await client.listTools()).tools.map((t) => t.name).sort();
+    assert.deepEqual(names, ['brief_read', 'feedback_rules', 'memory_list', 'memory_read', 'memory_search', 'pattern_list',
+      'recall', 'session_list', 'session_recall', 'snapshot_read', 'wrap_session']);
+  }, { AOS_HEADLESS: '1' });
 });
