@@ -5,12 +5,15 @@
  * and a telemetry run-id to stderr (same contract as ask.js).
  *
  * Usage:
- *   node brain/scripts/sdk/reason.js [--effort=low|medium|high] "question"
- *   echo "question" | node brain/scripts/sdk/reason.js
+ *   node extras/ollama/reason.js [--effort=low|medium|high] "question"
+ *   echo "question" | node extras/ollama/reason.js
  */
 const crypto = require('crypto');
-const { reason } = require('./lib/qwen.js');
-const telemetry = require('./lib/telemetry.js');
+const path = require('path');
+const SCRIPTS = path.join(__dirname, '..', '..', 'brain', 'scripts');
+const { reason } = require(path.join(SCRIPTS, 'sdk', 'lib', 'qwen.js'));
+const ollama = require(path.join(SCRIPTS, 'sdk', 'lib', 'ollama.js'));
+const telemetry = require(path.join(SCRIPTS, 'sdk', 'lib', 'telemetry.js'));
 
 function readQuestion(flagless) {
   if (flagless.length) return Promise.resolve(flagless.join(' ').trim());
@@ -44,7 +47,7 @@ async function main() {
   const system = 'You are a careful reasoning assistant running locally. Work the problem through, then answer directly and concisely. No preamble.';
   let answer;
   try {
-    answer = await reason(question, { system, effort });
+    answer = await reason(question, { system, effort, chatFn: (o) => ollama.chat(o) });
   } catch (err) {
     try { await telemetry.endRun(run, { status: 'error', error: err }); } catch { /* fail-soft */ }
     throw err;
@@ -53,4 +56,6 @@ async function main() {
   process.stdout.write((answer || '(no answer)') + '\n');
 }
 
-main().catch((err) => { process.stderr.write(`[reason] fatal: ${err.message}\n`); process.exit(1); });
+if (require.main === module) {
+  main().catch((err) => { process.stderr.write(`[reason] fatal: ${err.message}\n`); process.exit(1); });
+}
