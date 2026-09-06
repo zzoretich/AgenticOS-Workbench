@@ -11,8 +11,8 @@
  * standup.js, compress.js) and by heartbeat-writer.js; telemetry-hook.js drives
  * the same on-disk shape from Claude Code's native hooks instead of this module.
  *
- * Env:
- *   BRAIN_AGENT_REDACT=1   omit prompt/reply text from on-disk records
+ * Redaction: on when config telemetry.redact (default true) or BRAIN_AGENT_REDACT=1 —
+ * prompt/reply text is omitted from on-disk records.
  */
 
 const fs = require('fs');
@@ -27,7 +27,8 @@ const TRUNC = 500;
 const SUMMARY_MAX = 200;
 
 function isRedacted() {
-  return process.env.BRAIN_AGENT_REDACT === '1';
+  if (process.env.BRAIN_AGENT_REDACT === '1') return true;
+  try { return require('../../lib/config.js').loadConfig().telemetry.redact !== false; } catch { return true; }
 }
 
 function ensureDirs() {
