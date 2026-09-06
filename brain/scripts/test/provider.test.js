@@ -84,6 +84,17 @@ test('auto: logged-in claude → claude provider; chat maps format json → sche
   await assert.rejects(() => p.embed(['x']), (e) => e.code === 'PROVIDER_NONE' && e.provider === 'claude');
 });
 
+test('config.ollama host/port reaches the ping seam', async () => {
+  fs.writeFileSync(CONFIG, JSON.stringify({ ollama: { host: '10.0.0.9', port: 4242 } }));
+  const pings = [];
+  const p = await resolveProvider({
+    mode: 'auto',
+    deps: { ping: async (...args) => { pings.push(args); return false; }, resolveClaudeBin: () => null, loginProbe: never },
+  });
+  assert.equal(p.name, 'none');
+  assert.deepEqual(pings, [[2000, { host: '10.0.0.9', port: 4242 }]]);
+});
+
 test('forced ollama / none skip every probe; forced claude still runs the login probe', async () => {
   let pings = 0, probes = 0;
   const deps = { ping: async () => { pings++; return false; }, resolveClaudeBin: () => '/x', loginProbe: async () => { probes++; return true; } };
