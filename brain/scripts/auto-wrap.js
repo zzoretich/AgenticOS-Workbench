@@ -119,8 +119,13 @@ const EXTRACTION_SCHEMA = {
 // bodies) cannot truncate mid-JSON under extract()'s old 1024 default.
 const EXTRACT_NUM_PREDICT = 2048;
 
-/** Extracts session knowledge, retrying once with harder framing on a drifted, empty, or unparseable result. */
-async function extractSessionKnowledge(text, chatFn) {
+/**
+ * Extracts session knowledge, retrying once with harder framing on a drifted or unparseable
+ * result. `retryOnEmpty` also retries a well-formed result with zero candidates — worth a second
+ * call for a local model that drifts, but pure waste when the provider is schema-constrained and
+ * an empty array is simply the honest answer.
+ */
+async function extractSessionKnowledge(text, chatFn, { retryOnEmpty = true } = {}) {
   let first = null;
   let firstErr = null;
   try {
@@ -128,7 +133,7 @@ async function extractSessionKnowledge(text, chatFn) {
   } catch (e) {
     firstErr = e;
   }
-  if (first && hasExpectedShape(first) && first.candidates.length > 0) return first;
+  if (first && hasExpectedShape(first) && (first.candidates.length > 0 || !retryOnEmpty)) return first;
   try {
     const retry = await extract(text, { chatFn, instructions: RETRY_INSTRUCTIONS, schema: EXTRACTION_SHAPE, jsonSchema: EXTRACTION_SCHEMA, numPredict: EXTRACT_NUM_PREDICT, feature: 'auto-wrap' });
     return hasExpectedShape(retry) ? retry : (first ?? retry);
@@ -399,9 +404,9 @@ async function applyExtraction({ extraction, sessionId, corrections, report }) {
 }
 
 /** Core extraction engine — independently testable with an injected chatFn. */
-async function runAutoWrap({ transcriptText, sessionId, chatFn, report, corrections }) {
+async function runAutoWrap({ transcriptText, sessionId, chatFn, report, corrections, structured }) {
   const tail = String(transcriptText ?? '').slice(-50_000); // last ~50KB is the session's tail
-  const extraction = await extractSessionKnowledge(frameTranscript(tail), chatFn);
+  const extraction = await extractSessionKnowledge(frameTranscript(tail), chatFn, { retryOnEmpty: !structured });
   const out = await applyExtraction({ extraction, sessionId, report });
 
   // correction detection (opt-in; fail-soft — must never break the wrap)
@@ -470,6 +475,10 @@ function extractOnce({ transcriptPath, sessionId, provider }) {
     await runAutoWrap({
       transcriptText: loadTranscriptText(transcriptPath),
       sessionId, chatFn, report, corrections: { enabled: true, chatFn },
+      // Only claude counts as "structured" here. Ollama also reports capabilities.structured,
+      // but that is grammar-constrained decoding by a small local model that still drifts to an
+      // empty result — the retry exists for exactly that case, so it stays on for ollama.
+      structured: provider.name === 'claude',
     });
   });
 }

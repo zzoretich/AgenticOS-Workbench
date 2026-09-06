@@ -11,7 +11,7 @@ for (const d of ['brain/_index', 'brain/memory/feedback/_drafts']) {
 }
 fs.writeFileSync(path.join(TMP, 'CLAUDE.md'), '# t');
 process.env.BRAIN_VAULT = TMP;
-const { detectCorrections, runCorrectionStage, MAX_DRAFTS_PER_SESSION } = require('../lib/correction-detector.js');
+const { detectCorrections, runCorrectionStage, MAX_DRAFTS_PER_SESSION, DETECT_SCHEMA } = require('../lib/correction-detector.js');
 const { listDrafts, readEvents, METRICS_PATH } = require('../lib/feedback-drafts.js');
 
 after(() => fs.rmSync(TMP, { recursive: true, force: true }));
@@ -74,6 +74,14 @@ test('detectCorrections retries once on wrong shape, then recovers', async () =>
   const out = await detectCorrections(FIXTURE, { chatFn: driftThenGood });
   assert.equal(calls, 2);
   assert.equal(out.length, 2);
+});
+
+test('detectCorrections hands the provider a real JSON Schema and its feature label', async () => {
+  const seen = [];
+  const out = await detectCorrections(FIXTURE, { chatFn: (o) => { seen.push(o); return twoChat(); } });
+  assert.equal(out.length, 2);
+  assert.deepEqual(seen[0].schema, DETECT_SCHEMA);
+  assert.equal(seen[0].feature, 'correction-detector');
 });
 
 test('detector failure is soft: throwing chatFn yields zero corrections, zero drafts', async () => {
