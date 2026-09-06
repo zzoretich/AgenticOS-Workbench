@@ -97,6 +97,22 @@ test('"Not logged in" → ProviderUnavailable PROVIDER_UNREACHABLE, nothing ledg
   assert.ok(!fs.existsSync(SPEND_PATH));
 });
 
+test('a successful result that merely quotes "Not logged in" resolves and is ledgered', async () => {
+  const reply = JSON.stringify({
+    type: 'result', subtype: 'success', is_error: false, duration_api_ms: 12, session_id: 'abc',
+    result: 'Reply: Not logged in is a state the CLI reports', total_cost_usd: 0.0021,
+    usage: { input_tokens: 10, output_tokens: 4 }, structured_output: { word: 'ok' },
+  });
+  const out = await cli.claudeCall({
+    prompt: 'p', feature: 'quoted-phrase', bin: '/x/claude', spawnFn: fakeSpawn({ stdout: reply }, []),
+  });
+  assert.equal(out.text, 'Reply: Not logged in is a state the CLI reports');
+  assert.deepEqual(out.structured, { word: 'ok' });
+  const rows = fs.readFileSync(SPEND_PATH, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].feature, 'quoted-phrase');
+});
+
 test('a non-zero exit without JSON → plain Error carrying stderr', async () => {
   await assert.rejects(
     () => cli.claudeCall({ prompt: 'p', bin: '/x/claude', spawnFn: fakeSpawn({ stderr: 'boom: bad flag', code: 2 }, []) }),

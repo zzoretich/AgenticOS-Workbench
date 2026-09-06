@@ -99,9 +99,6 @@ async function claudeCall({
   if (!exe) throw new ProviderUnavailable('PROVIDER_UNREACHABLE', 'claude CLI not found on PATH or in ~/.local/bin', 'claude');
   const args = buildArgs({ prompt, model, system, schema, maxBudgetUsd });
   const { code, stdout, stderr, ms } = await runClaude({ bin: exe, args, cwd, timeoutMs, spawnFn: spawnFn || spawn });
-  if (NOT_LOGGED_IN.test(stdout + '\n' + stderr)) {
-    throw new ProviderUnavailable('PROVIDER_UNREACHABLE', 'claude CLI: Not logged in (run `claude login`)', 'claude');
-  }
   let parsed = null;
   try { parsed = JSON.parse(stdout); } catch { parsed = null; }
   const obj = parsed && typeof parsed === 'object' ? parsed : null;
@@ -115,6 +112,12 @@ async function claudeCall({
   // A cost-free result is ledgered only on the success path, so the non-JSON, non-zero-exit
   // and "Not logged in" paths — nothing to record — stay out of the ledger.
   if (usd > 0) ledger();
+  // "Not logged in" is only ever a diagnosis of a FAILED call. Matching it on a success would
+  // misread a model reply that merely quotes the phrase as an unreachable provider (and, via
+  // isRetryable, spool and retry a call that already succeeded).
+  if ((code !== 0 || !obj || obj.is_error) && NOT_LOGGED_IN.test(stdout + '\n' + stderr)) {
+    throw new ProviderUnavailable('PROVIDER_UNREACHABLE', 'claude CLI: Not logged in (run `claude login`)', 'claude');
+  }
   if (code !== 0 || !obj) {
     throw new Error(`claude -p exited ${code}: ${(stderr || stdout).trim().slice(0, 300)}`);
   }
