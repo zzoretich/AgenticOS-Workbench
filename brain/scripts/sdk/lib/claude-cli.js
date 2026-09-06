@@ -87,9 +87,9 @@ function runClaude({ bin, args, cwd, timeoutMs, spawnFn }) {
 }
 
 /**
- * One headless call. Resolves { text, structured, usd, usage, ms }; every successful
- * call is appended to the spend ledger. "Not logged in" anywhere in the output →
- * ProviderUnavailable('PROVIDER_UNREACHABLE').
+ * One headless call. Resolves { text, structured, usd, usage, ms }; every successful call
+ * AND every billed failure is appended to the spend ledger. "Not logged in" anywhere in the
+ * output → ProviderUnavailable('PROVIDER_UNREACHABLE').
  */
 async function claudeCall({
   system = '', prompt, schema, model = 'haiku', maxBudgetUsd = 0.05, timeoutMs = 120000,
@@ -104,23 +104,31 @@ async function claudeCall({
   }
   let parsed = null;
   try { parsed = JSON.parse(stdout); } catch { parsed = null; }
-  if (code !== 0 || !parsed || typeof parsed !== 'object') {
+  const obj = parsed && typeof parsed === 'object' ? parsed : null;
+  const usage = obj && obj.usage && typeof obj.usage === 'object' ? obj.usage : {};
+  const usd = obj ? Number(obj.total_cost_usd) || 0 : 0;
+  const apiMs = obj && typeof obj.duration_api_ms === 'number' ? obj.duration_api_ms : ms;
+  const ledger = () => recordSpend({ feature, provider: 'claude', model, usd,
+    inputTokens: usage.input_tokens ?? null, outputTokens: usage.output_tokens ?? null, ms: apiMs });
+  // A BILLED result is ledgered before success/failure is decided: a failed result can still
+  // carry cost (subtype error_max_budget does), and spendToday() must not under-count it.
+  // A cost-free result is ledgered only on the success path, so the non-JSON, non-zero-exit
+  // and "Not logged in" paths — nothing to record — stay out of the ledger.
+  if (usd > 0) ledger();
+  if (code !== 0 || !obj) {
     throw new Error(`claude -p exited ${code}: ${(stderr || stdout).trim().slice(0, 300)}`);
   }
-  if (parsed.is_error) {
-    throw new Error(`claude -p error (${parsed.subtype || 'unknown'}): ${String(parsed.result || '').slice(0, 300)}`);
+  if (obj.is_error) {
+    throw new Error(`claude -p error (${obj.subtype || 'unknown'}): ${String(obj.result || '').slice(0, 300)}`);
   }
-  const usage = parsed.usage && typeof parsed.usage === 'object' ? parsed.usage : {};
-  const out = {
-    text: typeof parsed.result === 'string' ? parsed.result : '',
-    structured: parsed.structured_output === undefined ? null : parsed.structured_output,
-    usd: Number(parsed.total_cost_usd) || 0,
+  if (usd === 0) ledger();
+  return {
+    text: typeof obj.result === 'string' ? obj.result : '',
+    structured: obj.structured_output === undefined ? null : obj.structured_output,
+    usd,
     usage,
-    ms: typeof parsed.duration_api_ms === 'number' ? parsed.duration_api_ms : ms,
+    ms: apiMs,
   };
-  recordSpend({ feature, provider: 'claude', model, usd: out.usd,
-    inputTokens: usage.input_tokens ?? null, outputTokens: usage.output_tokens ?? null, ms: out.ms });
-  return out;
 }
 
 /** One cheap call; true iff it returns a result. Any failure (not logged in, no binary, timeout) → false. */
