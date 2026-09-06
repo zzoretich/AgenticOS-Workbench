@@ -6,10 +6,22 @@
  */
 const http = require('http');
 
-const HOST = process.env.OLLAMA_HOST || '127.0.0.1';
-const PORT = Number(process.env.OLLAMA_PORT || 11434);
 const { role } = require('./models.js');
 const MODEL = role('workhorse').tag; // same BRAIN_MODEL env semantics as before
+
+/**
+ * endpoint({ host, port }) -> where to reach Ollama. Explicit opts win (provider.js threads
+ * config.ollama through every call), then OLLAMA_HOST/OLLAMA_PORT, then the local default.
+ */
+function endpoint(opts = {}) {
+  return {
+    host: opts.host || process.env.OLLAMA_HOST || '127.0.0.1',
+    port: Number(opts.port || process.env.OLLAMA_PORT || 11434),
+  };
+}
+
+// Resolved once at load for legacy readers; live callers go through endpoint(opts).
+const { host: HOST, port: PORT } = endpoint();
 
 function stripThink(s) {
   return String(s || '').replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
@@ -60,13 +72,14 @@ function buildChatBody(opts = {}) {
  */
 function chat(opts = {}) {
   const { timeoutMs = 180000 } = opts;
+  const { host, port } = endpoint(opts);
 
   return new Promise((resolve, reject) => {
     const body = JSON.stringify(buildChatBody(opts));
 
     const req = http.request({
-      hostname: HOST,
-      port: PORT,
+      hostname: host,
+      port,
       path: '/api/chat',
       method: 'POST',
       headers: {
@@ -97,8 +110,8 @@ function chat(opts = {}) {
 }
 
 /**
- * ping(timeoutMs) -> Promise<boolean>. Liveness probe against /api/tags. Never
- * throws — a dead or absent listener resolves false.
+ * ping(timeoutMs, { host, port }) -> Promise<boolean>. Liveness probe against /api/tags.
+ * Never throws — a dead or absent listener resolves false.
  *
  * Added 2026-08-14: the Mac rebooted mid-generation and launchd took ~55s to get
  * :11434 serving again. Every pipeline that fired in that window discovered the
@@ -106,9 +119,10 @@ function chat(opts = {}) {
  * afford to wait (auto-wrap's detached SessionEnd worker) should poll this
  * first instead.
  */
-function ping(timeoutMs = 2000) {
+function ping(timeoutMs = 2000, opts = {}) {
+  const { host, port } = endpoint(opts);
   return new Promise((resolve) => {
-    const req = http.request({ hostname: HOST, port: PORT, path: '/api/tags', method: 'GET' }, (res) => {
+    const req = http.request({ hostname: host, port, path: '/api/tags', method: 'GET' }, (res) => {
       res.resume(); // drain, so the socket closes instead of leaking the agent
       resolve(!!res.statusCode && res.statusCode < 400);
     });
@@ -118,4 +132,4 @@ function ping(timeoutMs = 2000) {
   });
 }
 
-module.exports = { chat, ping, stripThink, sizeContextWindow, buildChatBody, MODEL, HOST, PORT };
+module.exports = { chat, ping, endpoint, stripThink, sizeContextWindow, buildChatBody, MODEL, HOST, PORT };

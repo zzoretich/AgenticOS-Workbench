@@ -10,9 +10,8 @@
  */
 const http = require('http');
 const { role } = require('./models.js');
+const { endpoint } = require('./ollama.js');
 
-const HOST = process.env.OLLAMA_HOST || '127.0.0.1';
-const PORT = Number(process.env.OLLAMA_PORT || 11434);
 const BATCH = 16;
 const DEFAULT_DIMS = 256;
 
@@ -23,11 +22,12 @@ function normalize(v) {
   return v.map((x) => x / len);
 }
 
-function postEmbed(payload, timeoutMs) {
+function postEmbed(payload, timeoutMs, opts = {}) {
+  const { host, port } = endpoint(opts);
   return new Promise((resolve, reject) => {
     const body = JSON.stringify(payload);
     const req = http.request({
-      hostname: HOST, port: PORT, path: '/api/embed', method: 'POST',
+      hostname: host, port, path: '/api/embed', method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
     }, (res) => {
       let data = '';
@@ -68,7 +68,7 @@ async function embed(texts, opts = {}) {
       keep_alive: r.keepAlive,
       truncate: true,
       dimensions: opts.dimensions || DEFAULT_DIMS,
-    }, opts.timeoutMs || 120000);
+    }, opts.timeoutMs || 120000, { host: opts.host, port: opts.port });
     out.push(...embeddings.map(normalize));
   }
   return out;
