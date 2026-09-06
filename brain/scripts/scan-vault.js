@@ -486,6 +486,13 @@ async function main(report) {
 
   writeDailyRecord(snapshot);
   const pruned = prune();
+  try {
+    const { pruneAgentRuns } = require('./lib/telemetry-retention.js');
+    const tr = pruneAgentRuns({ runsDir: path.join(VAULT, 'brain', '_index', 'agent-runs'), retentionDays: cfg.telemetry.retentionDays });
+    if (report) { report.counts.telemetryPrunedDirs = tr.removedDirs; report.counts.telemetryPrunedRows = tr.droppedRows; }
+  } catch (e) {
+    console.error('[scan-vault] telemetry retention failed:', e.message);
+  }
 
   if (!argv.has('--quiet')) {
     const cap = snapshot.capabilities;
