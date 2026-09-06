@@ -16,6 +16,7 @@
  *   - snapshot_read   — return the latest scanner snapshot JSON
  *   - brief_read      — read the current morning brief, if any
  *   - recall          — hybrid (BM25 + vector when available), recency-boosted recall
+ *   - wrap_session    — the ONLY write tool: apply an in-session extraction (memories, SESSION.md, drafts)
  */
 
 const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
@@ -23,6 +24,7 @@ const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio
 const { z } = require('zod');
 const brain = require('./lib/brain.js');
 const recall = require('./lib/recall.js');
+const { withReport } = require('../lib/pipeline-report.js');
 
 const server = new McpServer(
   { name: 'agenticos', version: require('../package.json').version },
@@ -200,6 +202,41 @@ server.registerTool(
     const b = brain.readBrief();
     if (!b) return textResult('No morning brief found (checked brain/_index/brief.md and AOS_BRIEF_PATH).');
     return textResult(`# Brief (${b.path}, ${b.ageHours}h old)\n\n${b.content}`);
+  }
+);
+
+const CANDIDATE = z.object({
+  type: z.enum(['user', 'feedback', 'projects', 'reference']),
+  title: z.string(), description: z.string(), body: z.string(),
+});
+const CORRECTION = z.object({ quote: z.string(), rule: z.string(), why: z.string() });
+
+server.registerTool(
+  'wrap_session',
+  {
+    title: 'Write session knowledge into the vault',
+    description: 'The only write tool. Applies an extraction exactly as auto-wrap would: candidates pass the noise gate and ' +
+      'become memories (+ MEMORY.md lines + promote trail), facts/decisions/feedback fill SESSION.md "Key Context This Session", ' +
+      'threads fill "Open Threads", corrections become draft feedback rules under brain/memory/feedback/_drafts/. ' +
+      'Prefer zero candidates over weak ones; bodies for feedback carry **Why:** and **How to apply:**.',
+    inputSchema: {
+      sessionId: z.string().optional().describe('Claude Code session id, if known'),
+      facts: z.array(z.string()).describe('What happened (≤8)'),
+      decisions: z.array(z.string()).describe('Choices made and why (≤5)'),
+      feedback: z.array(z.string()).describe('Corrections or preferences the user expressed (≤5)'),
+      threads: z.array(z.string()).describe('Open follow-ups (≤5)'),
+      candidates: z.array(CANDIDATE).describe('Durable memories worth keeping (≤3)'),
+      corrections: z.array(CORRECTION).optional().describe('Moments the user corrected the assistant: quote, the rule to draft, why'),
+    },
+  },
+  async (input) => {
+    const { applyExtraction } = require('../auto-wrap.js');
+    const extraction = { facts: input.facts, decisions: input.decisions, feedback: input.feedback, threads: input.threads, candidates: input.candidates };
+    const out = await withReport('auto-wrap', async (report) => {
+      report.provider = 'in-session';
+      return applyExtraction({ extraction, sessionId: input.sessionId || 'in-session', corrections: input.corrections || [], report });
+    });
+    return jsonResult({ written: out.written, skipped: out.skipped, reasons: out.reasons, drafts: out.drafts });
   }
 );
 
