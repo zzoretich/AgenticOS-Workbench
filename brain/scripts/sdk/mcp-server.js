@@ -230,6 +230,18 @@ server.registerTool(
     },
   },
   async (input) => {
+    // auto-wrap.js's hook prologue (lib/hook-entry.js) runs at require time and calls
+    // process.exit(0) unconditionally when AOS_HEADLESS=1 — that would kill this MCP
+    // server, not just skip a hook. Refuse before requiring it so a server that ever
+    // inherits AOS_HEADLESS=1 stays up for every other tool call. Otherwise, requiring
+    // auto-wrap.js only resolves the vault (the same resolver the server already used
+    // at startup); its stdin loop is separately gated by `require.main === module`.
+    if (process.env.AOS_HEADLESS === '1') {
+      return {
+        content: [{ type: 'text', text: 'wrap_session is disabled under AOS_HEADLESS=1: background headless calls never write the vault' }],
+        isError: true,
+      };
+    }
     const { applyExtraction } = require('../auto-wrap.js');
     const extraction = { facts: input.facts, decisions: input.decisions, feedback: input.feedback, threads: input.threads, candidates: input.candidates };
     const out = await withReport('auto-wrap', async (report) => {
