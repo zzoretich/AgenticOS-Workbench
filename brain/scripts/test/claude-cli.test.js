@@ -103,10 +103,16 @@ test('a non-zero exit without JSON → plain Error carrying stderr', async () =>
     (e) => !(e instanceof ProviderUnavailable) && /exited 2/.test(e.message) && /bad flag/.test(e.message));
 });
 
-test('a result with is_error → Error, nothing ledgered', async () => {
+test('a billed is_error result is ledgered, then throws', async () => {
   const bad = JSON.stringify({ type: 'result', is_error: true, subtype: 'error_max_budget', result: 'over budget', total_cost_usd: 0.05 });
-  await assert.rejects(() => cli.claudeCall({ prompt: 'p', bin: '/x/claude', spawnFn: fakeSpawn({ stdout: bad }, []) }), /over budget/);
-  assert.ok(!fs.existsSync(SPEND_PATH));
+  await assert.rejects(
+    () => cli.claudeCall({ prompt: 'p', feature: 'billed-failure', bin: '/x/claude', spawnFn: fakeSpawn({ stdout: bad }, []) }),
+    /over budget/);
+  const rows = fs.readFileSync(SPEND_PATH, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].usd, 0.05);
+  assert.equal(rows[0].feature, 'billed-failure');
+  assert.equal(rows[0].provider, 'claude');
 });
 
 test('timeout kills the child and rejects', async () => {
