@@ -79,3 +79,66 @@ test('compress --context wraps the input text; --write echoes the file', () => {
   assert.equal(w.status, 0);
   assert.equal(w.stdout, '- distilled\n');
 });
+
+test('standup --context prints headings for notes, git and agent activity; --write appends to the daily note', () => {
+  const c = run('standup.js', ['--context']);
+  assert.equal(c.status, 0, c.stderr);
+  assert.ok(c.stdout.startsWith('<<<AOS_CONTEXT feature=standup>>>'));
+  assert.match(c.stdout, /## Recent daily notes/);
+  assert.match(c.stdout, /## Git \(last 24h\)/);
+  assert.match(c.stdout, /## Agent activity/);
+  assert.match(c.stdout, /\*\*Did\*\*/);
+  const body = path.join(TMP, 'standup.md');
+  fs.writeFileSync(body, '**Did**\n- shipped it\n');
+  const w = run('standup.js', ['--write', body]);
+  assert.equal(w.status, 0, w.stderr);
+  assert.match(w.stdout, /## Standup — \d\d:\d\d\n\n\*\*Did\*\*\n- shipped it/);
+  const { dailyNotePath } = require('../lib/paths.js');
+  assert.match(fs.readFileSync(dailyNotePath(new Date()), 'utf8'), /- shipped it/);
+});
+
+test('reflect-week --context uses this week\'s notes; --write stores brain/reflections/<week>.md with frontmatter', () => {
+  const { dailyNotePath } = require('../lib/paths.js');
+  const brain = require('../sdk/lib/brain.js');
+  const note = dailyNotePath(new Date());
+  fs.mkdirSync(path.dirname(note), { recursive: true });
+  fs.appendFileSync(note, '\n## Claude Code Sessions\n- refactored the provider layer\n');
+  const c = run('reflect-week.js', ['--context']);
+  assert.equal(c.status, 0, c.stderr);
+  assert.ok(c.stdout.startsWith('<<<AOS_CONTEXT feature=reflect-week>>>'));
+  assert.match(c.stdout, /refactored the provider layer/);
+  assert.match(c.stdout, /## Highlights \(what actually moved\)/);
+  const week = brain.isoWeek(new Date());
+  const f = path.join(TMP, 'reflection.md');
+  fs.writeFileSync(f, '## Highlights (what actually moved)\n- a win\n');
+  const w = run('reflect-week.js', ['--write', f]);
+  assert.equal(w.status, 0, w.stderr);
+  const out = fs.readFileSync(path.join(TMP, 'brain', 'reflections', `${week}.md`), 'utf8');
+  assert.match(out, /^---\ntype: reflection\nweek: /);
+  assert.match(out, /- a win/);
+});
+
+test('consolidate-memory --context lists memory files; --write stores brain/_index/memory-consolidation.md', () => {
+  fs.mkdirSync(path.join(TMP, 'brain', 'patterns'), { recursive: true });
+  fs.writeFileSync(path.join(TMP, 'brain', 'patterns', 'p1.md'), '# P1\n\nsome pattern\n');
+  const c = run('consolidate-memory.js', ['--context']);
+  assert.equal(c.status, 0, c.stderr);
+  assert.ok(c.stdout.startsWith('<<<AOS_CONTEXT feature=consolidate-memory>>>'));
+  assert.match(c.stdout, /=== brain\/memory\/reference\/routing\.md \(reference\) ===/);
+  assert.match(c.stdout, /=== brain\/patterns\/p1\.md \(pattern\) ===/);
+  const f = path.join(TMP, 'consol.md');
+  fs.writeFileSync(f, '## Summary\n- total files reviewed: 2\n');
+  const w = run('consolidate-memory.js', ['--write', f]);
+  assert.equal(w.status, 0, w.stderr);
+  const out = fs.readFileSync(path.join(TMP, 'brain', '_index', 'memory-consolidation.md'), 'utf8');
+  assert.match(out, /^---\ntype: memory-consolidation-draft\n/);
+  assert.match(out, /total files reviewed: 2/);
+});
+
+test('each script refuses --local with provider none (exit 1, reason on stderr)', () => {
+  for (const s of ['standup.js', 'reflect-week.js', 'consolidate-memory.js']) {
+    const r = run(s, ['--local']);
+    assert.equal(r.status, 1, `${s}: ${r.stdout}`);
+    assert.match(r.stderr, /no model provider/, s);
+  }
+});
