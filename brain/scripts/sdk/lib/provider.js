@@ -3,7 +3,7 @@
  * provider.js — the one model abstraction. Every script asks for a provider and never
  * for Ollama or Claude directly.
  *
- *   ollama  → 127.0.0.1:11434 (chat + embed)
+ *   ollama  → config.ollama.{host,port}, default 127.0.0.1:11434 (chat + embed)
  *   claude  → headless `claude -p --model <cfg>` via claude-cli.js (chat only; capped + ledgered)
  *   none    → chat/embed throw ProviderUnavailable('PROVIDER_NONE'); callers fall back to heuristics
  *
@@ -49,14 +49,16 @@ function messagesToPrompt(opts) {
   return (Array.isArray(opts.messages) ? opts.messages : []).map((m) => `${m.role}: ${m.content}`).join('\n');
 }
 
-function makeOllama(reason) {
+/** cfg.ollama ({ host, port }) rides along on every call so config, not just env, picks the address. */
+function makeOllama(reason, cfg) {
+  const net = (cfg && cfg.ollama) || {};
   return {
     name: 'ollama', reason,
     capabilities: { chat: true, embed: true, structured: true },
-    chat: (opts = {}) => ollama.chat(opts),
+    chat: (opts = {}) => ollama.chat({ ...net, ...opts }),
     // postEmbed is the raw HTTP path; embed.js's default postFn routes back through getProvider().
-    embed: (texts, opts = {}) => embedModule.embed(texts, { ...opts, postFn: opts.postFn || embedModule.postEmbed }),
-    ping: () => ollama.ping(),
+    embed: (texts, opts = {}) => embedModule.embed(texts, { ...net, ...opts, postFn: opts.postFn || embedModule.postEmbed }),
+    ping: () => ollama.ping(2000, net),
   };
 }
 
@@ -105,18 +107,18 @@ async function resolveProvider({ mode, feature = 'unknown', deps = {} } = {}) {
   const iso = new Date(now).toISOString();
 
   let chosen;
-  if (m === 'ollama') chosen = makeOllama('forced');
+  if (m === 'ollama') chosen = makeOllama('forced', cfg);
   else if (m === 'none') chosen = makeNone('forced');
   else {
     let ollamaOk = false;
     if (m === 'auto') {
       if (isFresh(state.ollama, OLLAMA_TTL_MS, now)) ollamaOk = !!state.ollama.reachable;
       else {
-        ollamaOk = await pingFn(2000);
+        ollamaOk = await pingFn(2000, cfg.ollama);
         state.ollama = { reachable: ollamaOk, checkedAt: iso };
       }
     }
-    if (ollamaOk) chosen = makeOllama('ollama-reachable');
+    if (ollamaOk) chosen = makeOllama('ollama-reachable', cfg);
     else {
       let loggedIn = false;
       let bin = null;
