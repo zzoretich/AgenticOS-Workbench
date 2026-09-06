@@ -9,6 +9,7 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'awrap-'));
 for (const d of ['brain/_index', 'brain/memory/feedback', 'brain/memory/projects']) {
   fs.mkdirSync(path.join(TMP, d), { recursive: true });
 }
+fs.writeFileSync(path.join(TMP, 'brain', 'config.json'), JSON.stringify({ provider: 'none' }));
 fs.writeFileSync(path.join(TMP, 'CLAUDE.md'), '# t');
 fs.writeFileSync(path.join(TMP, 'MEMORY.md'), '# Index\n');
 fs.writeFileSync(path.join(TMP, 'brain', '_index', 'SESSION.md'),
@@ -112,6 +113,18 @@ test('a drifted first extraction gets one harder-framed retry and recovers', asy
   const out = await runAutoWrap({ transcriptText: 'x'.repeat(200), sessionId: 'sess-t6', chatFn: driftThenGoodChat, report: { wrote: [], counts: {} } });
   assert.equal(calls, 2, 'chatFn should be called twice: once, then a harder-framed retry');
   assert.equal(out.written, 1);
+});
+
+test('structured: an honest empty-candidates result is NOT retried; unstructured still retries', async () => {
+  const EMPTY = '{"facts":["a"],"decisions":["b"],"feedback":[],"threads":[],"candidates":[]}';
+  let structuredCalls = 0;
+  await runAutoWrap({ transcriptText: 'x'.repeat(200), sessionId: 'sess-se1', structured: true,
+    chatFn: () => { structuredCalls++; return EMPTY; }, report: { wrote: [], counts: {} } });
+  assert.equal(structuredCalls, 1, 'a schema-constrained empty answer is final');
+  let looseCalls = 0;
+  await runAutoWrap({ transcriptText: 'x'.repeat(200), sessionId: 'sess-se2',
+    chatFn: () => { looseCalls++; return EMPTY; }, report: { wrote: [], counts: {} } });
+  assert.equal(looseCalls, 2, 'without a schema, an empty result still earns one harder-framed retry');
 });
 
 test('an unparseable first reply gets the harder-framed retry and recovers', async () => {

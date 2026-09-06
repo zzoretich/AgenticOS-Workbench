@@ -20,7 +20,26 @@ const { writeDraft, listDrafts, activeRuleTitles, logEvent } = require('./feedba
 const MAX_DRAFTS_PER_SESSION = 3;
 const RECURRENCE_JACCARD = 0.6; // same threshold noise-gate uses for near-duplicates
 const DETECT_NUM_PREDICT = 2048; // 3 corrections with 1000-char bodies must not truncate
+// Two views of the same shape, as in auto-wrap.js: SCHEMA is the example the system prompt
+// shows (Ollama's grammar-constrained format:'json' only guarantees *some* JSON), while
+// DETECT_SCHEMA is the real JSON Schema handed to `claude -p --json-schema`.
 const SCHEMA = { corrections: [] };
+const DETECT_SCHEMA = {
+  type: 'object',
+  properties: {
+    corrections: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          title: { type: 'string' }, description: { type: 'string' }, body: { type: 'string' },
+        },
+        required: ['title', 'description', 'body'],
+      },
+    },
+  },
+  required: ['corrections'],
+};
 
 const DETECT_INSTRUCTIONS =
   'You are a silent, non-conversational correction-detection function. The user message below is a ' +
@@ -62,11 +81,11 @@ async function detectCorrections(transcriptText, { chatFn } = {}) {
   const text = frameTranscript(String(transcriptText ?? '').slice(-50_000));
   let first = null;
   try {
-    first = await extract(text, { chatFn, instructions: DETECT_INSTRUCTIONS, schema: SCHEMA, numPredict: DETECT_NUM_PREDICT });
+    first = await extract(text, { chatFn, instructions: DETECT_INSTRUCTIONS, schema: SCHEMA, jsonSchema: DETECT_SCHEMA, numPredict: DETECT_NUM_PREDICT, feature: 'correction-detector' });
   } catch { /* fall through to the harder-framed retry */ }
   if (hasShape(first)) return first.corrections.slice(0, MAX_DRAFTS_PER_SESSION);
   try {
-    const retry = await extract(text, { chatFn, instructions: DETECT_RETRY_INSTRUCTIONS, schema: SCHEMA, numPredict: DETECT_NUM_PREDICT });
+    const retry = await extract(text, { chatFn, instructions: DETECT_RETRY_INSTRUCTIONS, schema: SCHEMA, jsonSchema: DETECT_SCHEMA, numPredict: DETECT_NUM_PREDICT, feature: 'correction-detector' });
     return hasShape(retry) ? retry.corrections.slice(0, MAX_DRAFTS_PER_SESSION) : [];
   } catch { return []; }
 }
@@ -139,6 +158,6 @@ function needsReviewCandidate(quote) {
 }
 
 module.exports = {
-  MAX_DRAFTS_PER_SESSION, DETECT_INSTRUCTIONS, DETECT_RETRY_INSTRUCTIONS,
+  MAX_DRAFTS_PER_SESSION, DETECT_INSTRUCTIONS, DETECT_RETRY_INSTRUCTIONS, DETECT_SCHEMA,
   detectCorrections, runCorrectionStage, prefilterCorrections, needsReviewCandidate,
 };
