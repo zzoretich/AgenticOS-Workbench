@@ -159,6 +159,29 @@ test('provider claude: summarize runs through provider.chat with the feature lab
   assert.match(fs.readFileSync(PATHS.SESSION_MD, 'utf8'), /Decided to keep BM25/);
 });
 
+test('a provider at its daily cap is skipped / daily-cap, not no-summary', async () => {
+  fs.writeFileSync(PATHS.SESSION_MD, TEMPLATE);
+  const CAPPED = { name: 'claude', reason: 'forced', capabilities: { chat: true, embed: false, structured: true },
+    chat: async () => { throw Object.assign(new Error('cap'), { code: 'PROVIDER_CAP' }); } };
+  const transcript = [U('x'), A('y')];
+  const report = fakeReport();
+  const out = await summaryCycle({ transcript, transcriptText: jsonl(...transcript), provider: CAPPED, report });
+  assert.equal(out.status, 'skipped');
+  assert.equal(report.reason, 'daily-cap');
+  assert.equal(report.counts.skipped, 1);
+});
+
+test('any other provider failure surfaces as an error instead of a silent skip', async () => {
+  fs.writeFileSync(PATHS.SESSION_MD, TEMPLATE);
+  const BROKEN = { name: 'claude', reason: 'forced', capabilities: { chat: true, embed: false, structured: true },
+    chat: async () => { throw new Error('boom'); } };
+  const transcript = [U('x'), A('y')];
+  const report = fakeReport();
+  await assert.rejects(
+    () => summaryCycle({ transcript, transcriptText: jsonl(...transcript), provider: BROKEN, report }),
+    /boom/);
+});
+
 test('a junk model summary is skipped / junk-summary', async () => {
   fs.writeFileSync(PATHS.SESSION_MD, TEMPLATE);
   const JUNKY = { name: 'ollama', reason: 'forced', capabilities: { chat: true, embed: true, structured: true },
