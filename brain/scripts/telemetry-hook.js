@@ -15,7 +15,8 @@
  * by the Obsidian plugin's orphan sweep. Best-effort throughout: never throws,
  * never blocks the session.
  *
- * Env: BRAIN_AGENT_REDACT=1 omits tool input/output summaries.
+ * Redaction (tool name + input length only) is ON by default: config telemetry.redact
+ * (default true) or BRAIN_AGENT_REDACT=1. telemetry.enabled=false → the hook writes nothing.
  */
 
 const { PATHS } = require('./lib/hook-entry.js').hookEntry();
@@ -24,7 +25,12 @@ const path = require('path');
 const { RUNS_DIR, LIVE_DIR, SUMMARY_LOG } = require('./sdk/lib/telemetry.js');
 
 const TRUNC = 300;
-const redacted = process.env.BRAIN_AGENT_REDACT === '1';
+const { loadConfig } = require('./lib/config.js');
+function telemetryConfig() {
+  try { return loadConfig().telemetry || {}; } catch (_) { return {}; }
+}
+const TELEMETRY = telemetryConfig();
+const redacted = process.env.BRAIN_AGENT_REDACT === '1' || TELEMETRY.redact !== false;
 
 function truncate(s, n = TRUNC) {
   if (s == null) return null;
@@ -42,6 +48,7 @@ function toolEvent(input) {
   const t = {
     name: input.tool_name || 'unknown',
     input_summary: redacted ? null : truncate(input.tool_input),
+    input_length: (() => { try { return JSON.stringify(input.tool_input ?? null).length; } catch (_) { return null; } })(),
   };
   if (t.name === 'Task' || t.name === 'Agent') { // subagent spawn (Task in CLI, Agent in this harness)
     const ti = input.tool_input || {};
@@ -139,6 +146,7 @@ process.stdin.on('end', () => {
     const input = JSON.parse(raw || '{}');
     const sessionId = input.session_id || input.sessionId || 'unknown';
     const event = input.hook_event_name || input.hookEventName || '';
+    if (TELEMETRY.enabled === false) { process.exit(0); }
 
     switch (event) {
       case 'SessionStart':
