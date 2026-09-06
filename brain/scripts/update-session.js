@@ -66,8 +66,23 @@ async function summaryCycle({ transcript, transcriptText = '', provider, chatFn,
     return { status: 'ok', summary };
   }
 
-  const fn = chatFn || ((o) => p.chat({ ...o, feature: 'session-summary' }));
+  // summarizeSession swallows every throw and returns null, so the provider's own failure is
+  // captured here: a daily cap is an honest skip, anything else must surface as an error
+  // instead of being reported as "no-summary".
+  let providerErr = null;
+  const fn = chatFn || (async (o) => {
+    try { return await p.chat({ ...o, feature: 'session-summary' }); }
+    catch (e) { providerErr = e; throw e; }
+  });
   const summary = await summarizeSession(transcript, date, fn);
+  if (!summary && providerErr) {
+    if (providerErr.code === 'PROVIDER_CAP') {
+      report.counts.skipped = 1;
+      report.skip('daily-cap');
+      return { status: 'skipped' };
+    }
+    throw providerErr;
+  }
   if (!summary || isJunkSummary(summary)) {
     report.counts.skipped = 1;
     report.skip(summary ? 'junk-summary' : 'no-summary');
