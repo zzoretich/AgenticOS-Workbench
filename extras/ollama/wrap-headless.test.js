@@ -1,7 +1,15 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { renderLastSession } = require('../sdk/wrap-headless.js');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+// Standalone (not under brain/scripts' preload): give paths.js a vault before the require.
+const v = fs.mkdtempSync(path.join(os.tmpdir(), 'extras-'));
+fs.mkdirSync(path.join(v, 'brain', '_index'), { recursive: true });
+process.env.BRAIN_VAULT = v;
+process.env.AOS_CONFIG = path.join(v, 'none.json');
+const { renderLastSession } = require('./wrap-headless.js');
 
 const NEW_SECTION = '## Last Session\n- **Date**: 2026-08-06\n- **Auto-summary**: new summary\n';
 

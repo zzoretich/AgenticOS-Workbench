@@ -5,12 +5,15 @@
  * production changes.
  *
  * Usage:
- *   node brain/scripts/sdk/local-code.js [--file=/path/to/source] "task or question"
+ *   node extras/ollama/local-code.js [--file=/path/to/source] "task or question"
  */
 const fs = require('fs');
 const crypto = require('crypto');
-const { reason } = require('./lib/qwen.js');
-const telemetry = require('./lib/telemetry.js');
+const path = require('path');
+const SCRIPTS = path.join(__dirname, '..', '..', 'brain', 'scripts');
+const { reason } = require(path.join(SCRIPTS, 'sdk', 'lib', 'qwen.js'));
+const ollama = require(path.join(SCRIPTS, 'sdk', 'lib', 'ollama.js'));
+const telemetry = require(path.join(SCRIPTS, 'sdk', 'lib', 'telemetry.js'));
 
 const MAX_SOURCE_CHARS = 36000; // ~12K tokens — leaves the 16K reasoner window room for the 3072-token answer
 
@@ -39,7 +42,7 @@ async function main() {
   const prompt = source ? `${task}\n\n---SOURCE---\n${source}\n---END SOURCE---` : task;
   let answer;
   try {
-    answer = await reason(prompt, { system, effort: 'high', numPredict: 3072 });
+    answer = await reason(prompt, { system, effort: 'high', numPredict: 3072, chatFn: (o) => ollama.chat(o) });
   } catch (err) {
     try { await telemetry.endRun(run, { status: 'error', error: err }); } catch { /* fail-soft */ }
     throw err;
@@ -48,4 +51,6 @@ async function main() {
   process.stdout.write((answer || '(no answer)') + '\n');
 }
 
-main().catch((err) => { process.stderr.write(`[local-code] fatal: ${err.message}\n`); process.exit(1); });
+if (require.main === module) {
+  main().catch((err) => { process.stderr.write(`[local-code] fatal: ${err.message}\n`); process.exit(1); });
+}
