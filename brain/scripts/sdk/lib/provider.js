@@ -127,7 +127,10 @@ async function resolveProvider({ mode, feature = 'unknown', deps = {} } = {}) {
         bin = state.claude.bin || null;
       } else {
         bin = resolveBin();
-        loggedIn = bin ? await probe({ bin }) : false;
+        // The probe runs inside hooks (SessionEnd included), so it is capped well below
+        // loginProbe's own 60 s default: a login that has not answered in 10 s is a "no"
+        // for this run, and the 24 h cache means the wait is paid at most once a day.
+        loggedIn = bin ? await probe({ bin, timeoutMs: deps.probeTimeoutMs || 10_000 }) : false;
         state.claude = { loggedIn, checkedAt: iso, bin };
       }
       if (!loggedIn) chosen = makeNone(bin ? 'claude-not-logged-in' : 'no-provider');

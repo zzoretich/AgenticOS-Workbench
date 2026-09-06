@@ -46,9 +46,11 @@ test('auto: no Ollama, no claude binary → none / no-provider; chat, embed, pin
 });
 
 test('auto: claude present but not logged in → none / claude-not-logged-in, and the probe is cached for 24h', async () => {
-  const p = await resolveProvider({ mode: 'auto', deps: { ping: async () => false, resolveClaudeBin: () => '/home/alice/.local/bin/claude', loginProbe: async () => false } });
+  let probeOpts;
+  const p = await resolveProvider({ mode: 'auto', deps: { ping: async () => false, resolveClaudeBin: () => '/home/alice/.local/bin/claude', loginProbe: async (o) => { probeOpts = o; return false; } } });
   assert.equal(p.name, 'none');
   assert.equal(p.reason, 'claude-not-logged-in');
+  assert.equal(probeOpts.timeoutMs, 10000, 'hook-sized cap, not loginProbe\'s 60 s default');
   const st = JSON.parse(fs.readFileSync(STATE_PATH, 'utf8'));
   assert.equal(st.claude.loggedIn, false);
   assert.equal(st.claude.bin, '/home/alice/.local/bin/claude');
