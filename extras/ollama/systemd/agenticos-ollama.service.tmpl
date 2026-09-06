@@ -1,0 +1,13 @@
+[Unit]
+Description=AgenticOS - keep a local Ollama server alive (extras/ollama/ollama-serve.sh)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/bin/sh {{EXTRAS}}/ollama-serve.sh
+Restart=always
+RestartSec=10
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+
+[Install]
+WantedBy=default.target

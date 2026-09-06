@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * wrap-headless.js — autonomous session-end wrap. Local qwen (no SDK).
+ * wrap-headless.js — autonomous session-end wrap through a local Ollama (extras; not part of the product's hooks).
  *
  *   1. Run brain/scripts/wrap-session.js (mechanical: promote #promote, reset SESSION.md)
  *   2. qwen writes a narrative summary; we append it to today's daily note and
@@ -8,17 +8,18 @@
  *   3. Optional scoped commit of brain files only (default OFF — pass --commit).
  *
  * Usage:
- *   node brain/scripts/sdk/wrap-headless.js            # wrap, no commit
- *   node brain/scripts/sdk/wrap-headless.js --commit   # also commit brain files
- *   node brain/scripts/sdk/wrap-headless.js --print
+ *   node extras/ollama/wrap-headless.js            # wrap, no commit
+ *   node extras/ollama/wrap-headless.js --commit   # also commit brain files
+ *   node extras/ollama/wrap-headless.js --print
  */
 
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const brain = require('./lib/brain.js');
-const { dailyNotePath } = require('../lib/paths.js');
-const { chat } = require('./lib/ollama.js');
+const SCRIPTS = path.join(__dirname, '..', '..', 'brain', 'scripts');
+const brain = require(path.join(SCRIPTS, 'sdk', 'lib', 'brain.js'));
+const { dailyNotePath } = require(path.join(SCRIPTS, 'lib', 'paths.js'));
+const { chat } = require(path.join(SCRIPTS, 'sdk', 'lib', 'ollama.js'));
 
 const flags = new Set(process.argv.slice(2));
 const COMMIT = flags.has('--commit'); // default OFF — safe for a busy repo
