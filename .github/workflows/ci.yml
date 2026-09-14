@@ -3,6 +3,14 @@ on:
   push:
     branches: [main]
   pull_request:
+# GITHUB_TOKEN is read-only for every job: nothing here pushes, comments, or publishes. A job that ever needs more
+# scopes its own `permissions:` instead of widening this block.
+permissions:
+  contents: read
+# A newer commit on the same ref supersedes an in-flight run; both jobs are side-effect free, so cancelling is safe.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   test:
     strategy:

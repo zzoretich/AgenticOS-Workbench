@@ -17,10 +17,10 @@ drafts — is identical to the hook path.
 1. Skim the whole conversation once. Ignore tool noise; keep what a future session would need.
 2. Build the extraction:
    - `facts`: durable statements learned this session (paths, versions, how a thing works). ≤ 8, one sentence each.
-   - `decisions`: choices made and why. ≤ 6.
-   - `feedback`: how the user wants you to work, in their words. ≤ 4.
-   - `threads`: open items and next steps. ≤ 6.
-   - `candidates`: memories worth a file. ≤ 5, each `{ type, title, description, body }` with `type` ∈ `user | feedback | projects | reference`, `title` ≤ 60 chars, `description` ≤ 90 chars, `body` at least three sentences of self-contained markdown. No secrets, no tokens, no credentials, nothing the user marked private.
+   - `decisions`: choices made and why. ≤ 5.
+   - `feedback`: how the user wants you to work, in their words. ≤ 5.
+   - `threads`: open items and next steps. ≤ 5.
+   - `candidates`: memories worth a file. ≤ 3, each `{ type, title, description, body }` with `type` ∈ `user | feedback | projects | reference`, `title` ≤ 60 chars, `description` ≤ 90 chars, `body` at least three sentences of self-contained markdown. No secrets, no tokens, no credentials, nothing the user marked private. (These caps are the same ones the background `auto-wrap` prompt and the `wrap_session` schema state.)
    - `corrections`: every place the user corrected you: `{ quote, rule, why }` (`quote` verbatim, `rule` as an imperative, `why` one line). These become drafts under `brain/memory/feedback/_drafts/` for the `feedback-review` skill, never live rules.
 3. Call `wrap_session` **once** with that object (add `sessionId` when the injected context shows it).
 4. Read the result `{ written, skipped, reasons, drafts }`. Report one line: `wrap_session: N written, M skipped (reasons…), K drafts`. A skip with reason "duplicate title" or "junk summary" is the noise gate doing its job — do not retry with a reworded candidate.
