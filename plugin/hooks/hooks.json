@@ -1,0 +1,46 @@
+{
+  "description": "AgenticOS Workbench: brain context injection, session capture, telemetry, and dashboard refresh. Every command runs through bin/aos, which exits 0 when the workbench has not been initialized, so a hook never fails a session.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/bin/aos\" telemetry-hook", "timeout": 10 }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/bin/aos\" inject-context", "timeout": 10 }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/bin/aos\" telemetry-hook", "timeout": 10 }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/bin/aos\" update-session", "timeout": 10 },
+          { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/bin/aos\" heartbeat-writer", "timeout": 10 }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/bin/aos\" telemetry-hook", "timeout": 15 },
+          { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/bin/aos\" auto-cost", "timeout": 15 },
+          { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/bin/aos\" heartbeat-writer", "timeout": 15 },
+          { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/bin/aos\" auto-wrap", "timeout": 15 },
+          { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/bin/aos\" scan-vault --quiet", "timeout": 15 }
+        ]
+      }
+    ]
+  }
+}
