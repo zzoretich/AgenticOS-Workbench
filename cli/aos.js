@@ -429,23 +429,30 @@ function installPlugin(ctx, bin) {
   if (already) { out.log(`   plugin already installed: ${already.id}`); return; }
   const add = run(bin, ['plugin', 'marketplace', 'add', source], { allowFail: true, capture: true });
   if (add.status !== 0 && !/already/i.test(add.stdout + add.stderr)) out.warn(`marketplace add: ${(add.stderr || add.stdout).trim()}`);
-  run(bin, ['plugin', 'install', PLUGIN_ID]);
+  const inst = run(bin, ['plugin', 'install', PLUGIN_ID], { allowFail: true, capture: true });
+  if (inst.status !== 0) out.warn(`plugin install failed (${(inst.stderr || inst.stdout).trim() || 'exit ' + inst.status}); finish the rest of init, then run: claude plugin install ${PLUGIN_ID}`);
+  else if (inst.stdout.trim()) out.log(inst.stdout.trim());
 }
 
-function download(url, dest, hops = 0) {
+/** GET url → dest (follows ≤5 redirects). `getFn` is injectable so tests can drive stream failures without the network. */
+function download(url, dest, hops = 0, getFn = (u, o, cb) => https.get(u, o, cb)) {
   return new Promise((resolve, reject) => {
-    https.get(url, { headers: { 'user-agent': 'agenticos-installer' } }, (res) => {
+    const fail = (e) => { try { fs.unlinkSync(dest); } catch { /* nothing written */ } reject(e); };
+    const req = getFn(url, { headers: { 'user-agent': 'agenticos-installer' } }, (res) => {
       if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location && hops < 5) {
         res.resume();
-        return resolve(download(res.headers.location, dest, hops + 1));
+        return resolve(download(res.headers.location, dest, hops + 1, getFn));
       }
       if (res.statusCode !== 200) { res.resume(); return reject(new Error(`HTTP ${res.statusCode} for ${url}`)); }
       fs.mkdirSync(path.dirname(dest), { recursive: true });
       const file = fs.createWriteStream(dest);
+      res.on('error', fail);
+      file.on('error', fail);
+      file.on('finish', () => file.close((e) => (e ? fail(e) : resolve())));
       res.pipe(file);
-      file.on('finish', () => file.close(resolve));
-      file.on('error', reject);
-    }).on('error', reject);
+    });
+    req.on('error', fail);
+    if (typeof req.setTimeout === 'function') req.setTimeout(30000, () => req.destroy(new Error(`timeout after 30 s for ${url}`)));
   });
 }
 
@@ -526,7 +533,8 @@ async function init(flags) {
   const yes = !!flags.yes;
   const repo = repoRoot(flags);
   const version = productVersion(repo);
-  const provider = flags.provider || 'auto';
+  // An explicit --provider wins; otherwise a re-run keeps the mode already in agenticos.json (e.g. after `aos provider ollama`).
+  const provider = flags.provider || ((readJson(configPath()) || {}).provider) || 'auto';
   if (!PROVIDERS.includes(provider)) throw new UsageError(`--provider must be one of ${PROVIDERS.join('|')}`);
   const written = [];
   let n = 0;
