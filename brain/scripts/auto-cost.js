@@ -19,7 +19,10 @@
  * Hook mode hands the heavy work to a detached --cost-one worker so session exit is never blocked or cancelled.
  */
 
-const { PATHS } = require('./lib/hook-entry.js').hookEntry();
+// The hook prologue (AOS_HEADLESS guard, vault-missing guard) runs only when this file is the process entry point.
+// auto-wrap.js requires this module for findTranscript() after running its own prologue, and the tests require it
+// for pure functions; at module scope the prologue could process.exit(0) the requiring process. `PATHS` was unused here.
+if (require.main === module) require('./lib/hook-entry.js').hookEntry();
 const fs = require('fs');
 const os = require('os');
 const path = require('path');

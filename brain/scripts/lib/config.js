@@ -22,7 +22,9 @@ function deepMerge(base, over) {
 function loadConfig() {
   const vaultCfg = readJson(PATHS.CONFIG_JSON) || {};
   const userCfg = readJson(configFile()) || {};
-  return deepMerge(deepMerge(DEFAULTS, vaultCfg), userCfg);
+  // A deep clone: deepMerge aliases every untouched nested object/array of the require-cached DEFAULTS, so a caller
+  // mutating its config would otherwise mutate the shipped defaults for the rest of the process.
+  return structuredClone(deepMerge(deepMerge(DEFAULTS, vaultCfg), userCfg));
 }
 
 module.exports = { loadConfig, deepMerge, DEFAULTS };
