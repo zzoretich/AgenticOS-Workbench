@@ -16,7 +16,8 @@
  * Platforms: macOS and Linux. Windows is unsupported in v1.
  * Config file: $AOS_CONFIG when set (the launcher exports it), else <configDir>/agenticos.json — the same
  * rule as lib/paths.js configFile(), so every aos subcommand reads the file the hooks read.
- * Test seams (env): AOS_CONFIG, AOS_CLAUDE_BIN, AOS_NPM_BIN, AOS_SKIP_NPM=1, AOS_CONFIRM_DELETE=<vault path>.
+ * Test seams (env): AOS_CONFIG, AOS_CLAUDE_BIN, AOS_NPM_BIN, AOS_SKIP_NPM=1, AOS_CONFIRM_DELETE=<vault path>,
+ * AOS_SKIP_OLLAMA_PROBE=1.
  */
 const fs = require('fs');
 const os = require('os');
@@ -140,6 +141,8 @@ function ollamaEndpoint(cfg) {
   const o = (cfg && cfg.ollama) || {};
   return { host: o.host || process.env.OLLAMA_HOST || '127.0.0.1', port: Number(o.port || process.env.OLLAMA_PORT || 11434) };
 }
+/** True when the informational Ollama probe must not run (tests and offline rehearsals set AOS_SKIP_OLLAMA_PROBE=1). */
+function ollamaProbeSkipped() { return process.env.AOS_SKIP_OLLAMA_PROBE === '1'; }
 function ask(question, def) {
   if (!process.stdin.isTTY) return Promise.resolve(def);
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -236,7 +239,8 @@ async function doctor() {
   }
   if (vault) add('obsidian plugin', exists(path.join(vault, '.obsidian', 'plugins', OBSIDIAN_PLUGIN_ID, 'main.js')), `${vault}/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/main.js`, 'warn');
   const { host, port } = ollamaEndpoint(cfg);
-  add('ollama reachable', await httpProbe(`http://${host}:${port}/api/tags`), `${host}:${port} (informational)`, 'info');
+  if (ollamaProbeSkipped()) add('ollama reachable', false, `${host}:${port} not probed (AOS_SKIP_OLLAMA_PROBE=1)`, 'info');
+  else add('ollama reachable', await httpProbe(`http://${host}:${port}/api/tags`), `${host}:${port} (informational)`, 'info');
   if (cfg && cfg.cost && cfg.cost.enabled) {
     const py = python3Version();
     add('python3 >= 3.9', python3Ok(py), py ? `${py.major}.${py.minor}` : 'python3 not found (needed because cost is enabled)');
@@ -568,7 +572,7 @@ async function init(flags) {
   out.log(`preflight: claude ${bin ? bin : 'absent'} · obsidian ${obsidianDetected() ? 'detected' : 'not detected (optional)'}`);
   if (flags.cost && !python3Ok(python3Version())) throw new CheckFailed('--cost needs python3 >= 3.9');
   const oll = ollamaEndpoint(readJson(configPath()));
-  out.log(`preflight: ollama ${oll.host}:${oll.port} ${(await httpProbe(`http://${oll.host}:${oll.port}/api/tags`)) ? 'reachable' : 'not reachable (auto falls back to claude, then none)'}`);
+  out.log(`preflight: ollama ${oll.host}:${oll.port} ${ollamaProbeSkipped() ? 'not probed (AOS_SKIP_OLLAMA_PROBE=1)' : (await httpProbe(`http://${oll.host}:${oll.port}/api/tags`)) ? 'reachable' : 'not reachable (auto falls back to claude, then none)'}`);
 
   // 2. vault path
   let vault = flags.vault ? path.resolve(flags.vault) : DEFAULT_VAULT;
@@ -838,7 +842,7 @@ if (require.main === module) {
 
 module.exports = {
   parseArgs, deepMerge, configDir, configPath, readJson, writeJson, exists, isDir, insideDir, localDay,
-  run, which, claudeBin, npmBin, claudeLoggedIn, installedPlugin, python3Version, python3Ok, obsidianDetected, httpProbe, ollamaEndpoint, ask,
+  run, which, claudeBin, npmBin, claudeLoggedIn, installedPlugin, python3Version, python3Ok, obsidianDetected, httpProbe, ollamaEndpoint, ollamaProbeSkipped, ask,
   runScript, scriptPath, mcpProbe, spendRowsToday, spendToday, isDutyFeature, isHookFeature, loadConfigOrThrow,
   doctor, status, provider, main,
   init, repoRoot, productVersion, copyTree, assertVaultOk, dailyNotesJson, buildUserConfig, linkLauncher, vendorRuntime,
