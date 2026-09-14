@@ -509,6 +509,8 @@ async function main(report) {
 }
 
 if (require.main === module) {
+  // Hook mode (SessionEnd `scan-vault --quiet`): detach so session exit is never blocked.
+  if (require('./lib/detach.js').respawnDetached()) process.exit(0);
   withReport('scan-vault', async (report) => {
     await main(report);
   }).catch((e) => { console.error('[scan-vault]', e.message); process.exit(1); });
