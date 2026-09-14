@@ -1,0 +1,67 @@
+# Install
+
+AgenticOS Workbench runs on macOS and Linux with Node 20+, Claude Code (logged in), and optionally Obsidian and Ollama. **Windows is not supported in v1** (the launcher is POSIX `sh`, scheduling uses launchd/cron).
+
+## Ten-minute path
+
+```
+git clone https://github.com/zzoretich/AgenticOS-Workbench.git
+cd AgenticOS-Workbench
+npm ci --ignore-scripts
+npm run setup            # = node cli/aos.js init
+```
+
+`aos init` asks for a vault directory (default `~/AgenticOS`; it refuses `~/.claude` and any directory holding a `settings.json`) and then, in order:
+
+1. **Preflight** — Node ≥ 20; `claude` on PATH and logged in (`claude auth status`); Obsidian detected (optional); python3 ≥ 3.9 only with `--cost`; Ollama on `127.0.0.1:11434` (informational).
+2. **Seed** — copies `vault-template/` (existing files are kept), writes `brain/config.json` from the shipped defaults, and `.obsidian/daily-notes.json` (folder = the current year, format `YYYY-MM-DD` — Obsidian cannot express the month sub-folder of the default layout, so daily notes created from Obsidian land one level up; notes created by the scripts use the full layout). `aos init` and `aos upgrade` rewrite that file each run from `dailyNote.layout`, and its folder is the year at that moment — run `aos upgrade` after New Year, or set the folder yourself under Obsidian → Settings → Daily notes.
+3. **Vendor the runtime** — `brain/scripts` (without tests or a lockfile) into `<vault>/brain/scripts`, plus `cli/aos.js` and the `aos` launcher; then `npm install --omit=dev` there (two dependencies, pinned by `^` ranges); symlink `~/.local/bin/aos` → `<vault>/brain/scripts/bin/aos`.
+4. **`~/.claude/agenticos.json`** — vault, node path, config dir, provider (`auto`), spend caps, telemetry, cost, persona flags. Honors `CLAUDE_CONFIG_DIR` (and `AOS_CONFIG` for an explicit file path — the same rule every hook and `aos` subcommand uses).
+5. **Plugin** — `claude plugin marketplace add zzoretich/AgenticOS-Workbench` then `claude plugin install agenticos@agenticos-workbench`. With `--from-local <repo-dir>` the marketplace source is your checkout.
+6. **Obsidian bundle** — `main.js`, `manifest.json`, `styles.css` into `<vault>/.obsidian/plugins/agentic-os/` from the checkout's build, else built with `npm run build -w obsidian-plugin`, else downloaded from the matching GitHub release. `--no-obsidian` skips it; `--terminal` also installs the embedded terminal's native module (`aos terminal install` later does the same).
+7. **Chief of Staff interview** — names your agent; `--persona-json <file>` answers it non-interactively (fields `name`, `addressAs`, `voice`, `priorities`, `dutyModel`, `dutyEffort`, `schedule`). Until the persona phase ships, init prints "not installed in this phase".
+8. **First scan** — `scan-vault`, `build-brain-md`, `recall --warm`.
+9. **Checklist** — every file written, the line to add to your `CLAUDE.md`, and how to open the vault.
+
+Then add the printed line to `~/.claude/CLAUDE.md` (the installer never edits it):
+
+```
+@/path/to/AgenticOS/AGENTICOS.md
+```
+
+Open the vault in Obsidian ("Open folder as vault"), enable **Agentic OS** under Community plugins, and start a new `claude` session: the first prompt receives `<brain-context>`, `/wrap` writes memories, and the `agenticos` MCP server answers `recall`.
+
+Flags: `--vault <dir>`, `--provider auto|ollama|claude|none`, `--no-obsidian`, `--terminal`, `--cost`, `--persona-json <file>`, `--from-local <repo-dir>`, `--dry-run` (prints the numbered plan, writes nothing; accepted only by `init`), `--yes` (accept defaults, no prompts). `--flag=value` works too. Any unknown or misspelled flag is a usage error (exit 2), so a typo never starts a real install. Re-running `aos init` on an existing vault keeps your files and your provider setting; only an explicit `--provider` changes it.
+
+## After install
+
+| Command | Does |
+|---|---|
+| `aos doctor` | Node, claude login, `agenticos.json`, vault layout, plugin installed, MCP declared and answering (a real stdio handshake), Obsidian bundle (warn), Ollama (info), python3 (when cost is on). Exit 1 when a check fails. |
+| `aos status` | resolved provider and reason; the resolved `claude` binary and cached login state; today's spend on two lines — hooks against `claude.perDayUsd`, persona duties (`duty:*` ledger rows) against `persona.perDayUsd`; the pipeline ledger |
+| `aos provider <mode>` | force `ollama`, `claude`, `none`, or back to `auto`; clears the cached probe |
+| `aos upgrade` | `claude plugin marketplace update` + `plugin update`, re-vendor the runtime and bundle, add new config keys (your values win), rebuild indexes. Never touches memory, notes, or persona. |
+| `aos uninstall [--keep-vault]` | plugin and marketplace removed (a failed or skipped `claude plugin …` step is reported on stderr with the command to run yourself), the three launchd/cron duty schedules (`com.agenticos.monitor|reflect|sitrep`) removed, `~/.local/bin/aos` and `agenticos.json` removed; the vault is deleted only if you type its path back, and never when it is your home directory or a Claude config directory. The optional Ollama supervisor (`com.agenticos.ollama`, see `extras/ollama/README.md`) is installed by hand and is left alone. |
+| `aos persona on\|off\|rename <name>` | kill switch and rename; plain `aos persona` re-runs the interview |
+| `aos cost enable [--budget <usd>]` | opt-in session costing (python3 ≥ 3.9) |
+| `aos terminal install` | node-pty for the Obsidian terminal tab |
+
+Every runtime script is also reachable as `aos <name>` (`aos scan-vault`, `aos recall "<query>"`, `aos build-brain-md`, …); the same launcher is what the plugin's hooks call as `sh "${CLAUDE_PLUGIN_ROOT}/bin/aos" <name>`.
+
+## Providers
+
+`auto` picks Ollama when it answers, else headless Claude (`claude -p --model haiku`, ≤ `claude.perCallUsd` per call and ≤ `claude.perDayUsd` per day, every call ledgered in `brain/_index/provider-spend.jsonl`), else `none`. Under `none` nothing calls a model in the background: summaries are heuristic, and `/wrap` extracts memories in your own session through the `wrap_session` tool. Install Ollama and pull the three models later and `auto` switches over with no reconfiguration.
+
+**Ollama endpoint.** `ollama.host` / `ollama.port` in `agenticos.json` (or `brain/config.json`) outrank the `OLLAMA_HOST` / `OLLAMA_PORT` environment variables for every provider-routed call and for the `aos doctor` / `aos init` probe; the environment variables apply only when those keys are absent.
+
+**What the Claude provider spends.** Under `claude`, a session end costs two to four Haiku calls (working-memory summary, memory extraction, correction check, scan insights when enabled) plus one call every ~5 turns for the summary — roughly a cent or two per session at the measured ~$0.0034 per call. When the day's hook spend reaches `claude.perDayUsd` (default 0.50) the provider resolves to `none` with reason `daily-cap` until local midnight: summaries fall back to heuristics and the pipeline ledger shows those stages gray (`skipped` / `disabled`), never red. `aos status` shows the running total, the cap, the resolved `claude` binary and the cached login state; `aos provider <mode>` clears that cache.
+
+**In-session commands.** `/ask-brain`, `/standup`, `/reflect-week`, `/consolidate-memory` and `/compress` print an assembled context block by default and let Claude answer in your own session; that step persists nothing model-generated. The one write it may perform is recall's self-heal: a missing `brain/_index/recall-index.json` is rebuilt in pure Node, with no model call.
+
+## Uninstall
+
+`aos uninstall --keep-vault` leaves `~/.claude` as it was and keeps the vault. `aos uninstall` additionally deletes the vault after you type its path (or with `AOS_CONFIRM_DELETE=<vault>` for scripts).
+
+## Rehearsing an install without touching your machine
+
+`sh cli/rehearsal/first-run.sh` does the whole first run in a temporary HOME and config dir with a fake `claude`, then checks recall and `wrap_session` over MCP and uninstalls. CI runs it on Ubuntu and macOS.
