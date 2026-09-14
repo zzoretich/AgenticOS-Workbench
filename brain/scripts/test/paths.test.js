@@ -65,3 +65,42 @@ test('projectSlug encodes a directory the way Claude Code names transcript folde
   const v = vault('slug'); process.env.AOS_VAULT = v;
   assert.equal(fresh().projectSlug('/home/alice/.claude'), '-home-alice--claude');
 });
+
+test('looksLikeVault requires brain/_index — a bare CLAUDE.md is not enough', () => {
+  const v = vault('llv'); process.env.AOS_VAULT = v; // keep module load from throwing while the predicate is exercised directly
+  const { looksLikeVault } = fresh();
+  const checkoutLike = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-md-only-'));
+  fs.writeFileSync(path.join(checkoutLike, 'CLAUDE.md'), '# repo docs, not a vault\n');
+  fs.mkdirSync(path.join(checkoutLike, 'brain')); // brain/ without _index — a checkout carrying a stray CLAUDE.md, not a vault
+  assert.equal(looksLikeVault(checkoutLike), false);
+  const realVault = fs.mkdtempSync(path.join(os.tmpdir(), 'real-vault-'));
+  fs.mkdirSync(path.join(realVault, 'brain', '_index'), { recursive: true });
+  assert.equal(looksLikeVault(realVault), true);
+});
+
+test('listDailyNotes walks the default layout and ignores entries outside it', () => {
+  const v = vault('ldn'); process.env.AOS_VAULT = v;
+  const w = (rel) => { fs.mkdirSync(path.dirname(path.join(v, rel)), { recursive: true }); fs.writeFileSync(path.join(v, rel), '# note\n'); };
+  w('2026/2026-09-September/2026-09-04.md');
+  w('2026/2026-01-January/2026-01-09.md');
+  w('2026/2026-09-September/notes.md');   // filename is not a date
+  w('2026/scratch/2026-09-05.md');        // month directory does not match {yyyy}-{MM}-{MMMM}
+  w('docs/2026-09-06.md');                // outside the layout entirely
+  const notes = fresh().listDailyNotes();
+  assert.deepEqual(notes.map((n) => n.date), ['2026-01-09', '2026-09-04']);
+  assert.equal(notes[1].path, '2026/2026-09-September/2026-09-04.md');
+  assert.equal(notes[1].absPath, path.join(v, '2026', '2026-09-September', '2026-09-04.md'));
+});
+
+test('listDailyNotes derives its depth from a custom dailyNote.layout', () => {
+  const v = vault('ldn2'); process.env.AOS_VAULT = v;
+  fs.writeFileSync(path.join(v, 'brain', 'config.json'), JSON.stringify({ dailyNote: { layout: '{yyyy}/{yyyy}-{MM}-{dd}.md' } }));
+  fs.mkdirSync(path.join(v, '2026', '2026-09-September'), { recursive: true });
+  fs.writeFileSync(path.join(v, '2026', '2026-09-14.md'), '# note\n');
+  fs.writeFileSync(path.join(v, '2026', '2026-09-September', '2026-09-04.md'), '# left over from the default layout\n');
+  const p = fresh();
+  assert.deepEqual(p.listDailyNotes().map((n) => n.date), ['2026-09-14']);
+  assert.equal(p.dailyNoteLayoutFor(v), '{yyyy}/{yyyy}-{MM}-{dd}.md');
+  // An explicit layout wins over the vault's config, and the default layout sees only the nested note.
+  assert.deepEqual(p.listDailyNotes({ vault: v, layout: p.DEFAULT_LAYOUT }).map((n) => n.date), ['2026-09-04']);
+});
