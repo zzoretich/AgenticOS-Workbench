@@ -3,7 +3,8 @@
  * paths.js — the ONLY vault resolver. Resolution order:
  *   1. AOS_VAULT env (BRAIN_VAULT accepted as a legacy alias)
  *   2. "vault" in <claudeConfigDir>/agenticos.json (AOS_CONFIG overrides that file's path)
- *   3. walk up from this file (at most 8 levels) until a dir has brain/_index, or CLAUDE.md + brain/
+ *   3. walk up from this file (at most 8 levels) until a dir has brain/_index (the one marker every
+ *      vault-template vault carries; a CLAUDE.md + brain/ checkout is NOT a vault)
  *   4. throw VaultNotFound — hook scripts catch it (lib/hook-entry.js) and exit 0
  * There is no personal fallback. Depth-independent: works from brain/scripts/* and brain/scripts/sdk/lib/*.
  */
@@ -26,8 +27,7 @@ function readUserConfig() {
 }
 function isDir(p) { try { return fs.statSync(p).isDirectory(); } catch { return false; } }
 function looksLikeVault(dir) {
-  return isDir(path.join(dir, 'brain', '_index')) ||
-    (fs.existsSync(path.join(dir, 'CLAUDE.md')) && isDir(path.join(dir, 'brain')));
+  return isDir(path.join(dir, 'brain', '_index'));
 }
 
 function detectVault() {
@@ -75,13 +75,14 @@ const DEFAULT_LAYOUT = '{yyyy}/{yyyy}-{MM}-{MMMM}/{yyyy}-{MM}-{dd}.md';
 /** Daily-note layout from <vault>/brain/config.json (dailyNote.layout), else the default.
  *  The Obsidian plugin reads the same key from brain/config.json (its src/data/dailyNote.ts
  *  twin is replaced in a later phase) — one owner, no drift. */
-function dailyNoteLayout() {
+function dailyNoteLayoutFor(vault) {
   try {
-    const c = JSON.parse(fs.readFileSync(PATHS.CONFIG_JSON, 'utf8'));
+    const c = JSON.parse(fs.readFileSync(path.join(vault, 'brain', 'config.json'), 'utf8'));
     if (c && c.dailyNote && typeof c.dailyNote.layout === 'string') return c.dailyNote.layout;
   } catch { /* no config → default */ }
   return DEFAULT_LAYOUT;
 }
+function dailyNoteLayout() { return dailyNoteLayoutFor(VAULT); }
 function formatLayout(layout, d) {
   const yyyy = String(d.getFullYear());
   const MM = String(d.getMonth() + 1).padStart(2, '0');
@@ -92,10 +93,57 @@ function dailyNotePath(d = new Date()) {
   return path.join(VAULT, ...formatLayout(dailyNoteLayout(), d).split('/'));
 }
 
+const PLACEHOLDER_RE = /\{yyyy\}|\{MM\}|\{MMMM\}|\{dd\}/g;
+function escapeRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+/** One '/'-separated layout segment → { regex, groups }: capture-group order is the field order. */
+function segmentMatcher(seg) {
+  const groups = [];
+  let pattern = '';
+  let last = 0;
+  PLACEHOLDER_RE.lastIndex = 0;
+  let m;
+  while ((m = PLACEHOLDER_RE.exec(seg)) !== null) {
+    pattern += escapeRe(seg.slice(last, m.index));
+    if (m[0] === '{yyyy}') { pattern += '(\\d{4})'; groups.push('yyyy'); }
+    else if (m[0] === '{MM}') { pattern += '(\\d{2})'; groups.push('MM'); }
+    else if (m[0] === '{dd}') { pattern += '(\\d{2})'; groups.push('dd'); }
+    else { pattern += `(${MONTHS.join('|')})`; groups.push('MMMM'); }
+    last = PLACEHOLDER_RE.lastIndex;
+  }
+  pattern += escapeRe(seg.slice(last));
+  return { regex: new RegExp(`^${pattern}$`), groups };
+}
+/** Every daily note under `vault` for `layout` (spec §5.3: the walk is derived from the configured layout, never a
+ *  hardcoded <year>/<month>/<date>.md). Returns [{ date: 'YYYY-MM-DD', absPath, path }] ascending by date; `path` is
+ *  vault-relative with forward slashes. Files at a directory position, or names that do not match their segment, are skipped. */
+function listDailyNotes({ vault = VAULT, layout } = {}) {
+  const matchers = String(layout || dailyNoteLayoutFor(vault)).split('/').map(segmentMatcher);
+  const out = [];
+  const walk = (dir, depth, fields) => {
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    const last = depth === matchers.length - 1;
+    for (const e of entries) {
+      if (last ? !e.isFile() : !e.isDirectory()) continue;
+      const m = matchers[depth].regex.exec(e.name);
+      if (!m) continue;
+      const next = { ...fields };
+      matchers[depth].groups.forEach((g, i) => { next[g] = m[i + 1]; });
+      const full = path.join(dir, e.name);
+      if (!last) { walk(full, depth + 1, next); continue; }
+      const MM = next.MM || (next.MMMM ? String(MONTHS.indexOf(next.MMMM) + 1).padStart(2, '0') : null);
+      if (!next.yyyy || !MM || !next.dd) continue;
+      out.push({ date: `${next.yyyy}-${MM}-${next.dd}`, absPath: full, path: path.relative(vault, full).replace(/\\/g, '/') });
+    }
+  };
+  walk(vault, 0, {});
+  return out.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+}
+
 /** Claude Code names a transcript folder after the working directory with every non-alphanumeric char → "-". */
 function projectSlug(absDir) { return String(absDir).replace(/[^A-Za-z0-9]/g, '-'); }
 
 module.exports = {
-  VAULT, PATHS, dailyNotePath, dailyNoteLayout, formatLayout, MONTHS, DEFAULT_LAYOUT,
-  projectSlug, detectVault, claudeConfigDir, configFile, VaultNotFound,
+  VAULT, PATHS, dailyNotePath, dailyNoteLayout, dailyNoteLayoutFor, listDailyNotes, formatLayout, MONTHS, DEFAULT_LAYOUT,
+  projectSlug, detectVault, looksLikeVault, claudeConfigDir, configFile, VaultNotFound,
 };
