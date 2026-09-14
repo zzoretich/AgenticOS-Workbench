@@ -49,3 +49,25 @@ test('MCP tools use the plugin-prefixed names Claude Code exposes for a plugin-d
     assert.ok(!/mcp__agenticos__/.test(fs.readFileSync(path.join(DIR, `${name}.md`), 'utf8')), `${name}: unprefixed MCP name`);
   }
 });
+
+test('the four Plan 3 skills exist with frontmatter and are free of owner paths', () => {
+  const SK = path.resolve(__dirname, '..', 'plugin', 'skills');
+  for (const name of ['recall', 'wrap', 'feedback-review', 'cost']) {
+    const text = fs.readFileSync(path.join(SK, name, 'SKILL.md'), 'utf8');
+    const fm = /^---\n([\s\S]*?)\n---\n/.exec(text);
+    assert.ok(fm, `${name}: frontmatter`);
+    assert.match(fm[1], new RegExp(`^name: ${name}$`, 'm'));
+    assert.match(fm[1], /^description: .{40,}/m);
+    assert.ok(!/\/opt\/|\/home\/|\/usr\/local\/bin|~\/\.claude\/brain/.test(text), `${name}: hardcoded path`);
+    assert.ok(!/qwen|token-goblin/i.test(text), `${name}: model or owner tooling name`);
+  }
+  assert.match(fs.readFileSync(path.join(SK, 'wrap', 'SKILL.md'), 'utf8'), /wrap_session/);
+  assert.match(fs.readFileSync(path.join(SK, 'feedback-review', 'SKILL.md'), 'utf8'), /feedback_rules/);
+  assert.match(fs.readFileSync(path.join(SK, 'cost', 'SKILL.md'), 'utf8'), /cost\.enabled/);
+  // MCP tools are named as Claude Code exposes them for a plugin-declared server (contract §0).
+  for (const name of ['recall', 'wrap', 'feedback-review']) {
+    const text = fs.readFileSync(path.join(SK, name, 'SKILL.md'), 'utf8');
+    assert.match(text, /mcp__plugin_agenticos_agenticos__/, `${name}: prefixed MCP tool name`);
+    assert.ok(!/mcp__agenticos__/.test(text), `${name}: unprefixed MCP name`);
+  }
+});
