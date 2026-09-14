@@ -8,7 +8,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { PATHS: ROOT, dailyNotePath } = require('../../lib/paths.js');
+const { PATHS: ROOT, dailyNotePath, listDailyNotes } = require('../../lib/paths.js');
 
 const VAULT = ROOT.VAULT;
 
@@ -102,33 +102,9 @@ function listPatterns() {
   });
 }
 
-// Daily notes live in the user's existing structure: <year>/<year>-MM-Month/YYYY-MM-DD.md
+// Daily notes: every note under the configured dailyNote.layout (lib/paths.js listDailyNotes), newest first.
 function listSessions(limit = 20) {
-  const out = [];
-  let years;
-  try {
-    years = fs.readdirSync(VAULT, { withFileTypes: true })
-      .filter(e => e.isDirectory() && /^\d{4}$/.test(e.name))
-      .map(e => e.name);
-  } catch { years = []; }
-  for (const y of years) {
-    const ydir = path.join(VAULT, y);
-    let months;
-    try { months = fs.readdirSync(ydir, { withFileTypes: true }).filter(e => e.isDirectory()); }
-    catch { continue; }
-    for (const m of months) {
-      const mdir = path.join(ydir, m.name);
-      let files;
-      try { files = fs.readdirSync(mdir).filter(f => /^\d{4}-\d{2}-\d{2}\.md$/.test(f)); }
-      catch { continue; }
-      for (const f of files) {
-        const abs = path.join(mdir, f);
-        out.push({ date: f.replace(/\.md$/, ''), absPath: abs, path: path.relative(VAULT, abs).replace(/\\/g, '/') });
-      }
-    }
-  }
-  out.sort((a, b) => (a.date < b.date ? 1 : -1));
-  return out.slice(0, limit);
+  return listDailyNotes({ vault: VAULT }).reverse().slice(0, limit);
 }
 
 function readSession(date) {
