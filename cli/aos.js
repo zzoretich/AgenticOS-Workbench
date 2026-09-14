@@ -609,6 +609,153 @@ async function init(flags) {
   return 0;
 }
 
+// ── upgrade / uninstall / terminal / persona / cost ───────────────────────────
+async function upgrade(flags) {
+  const cfg = loadConfigOrThrow();
+  const vault = cfg.vault;
+  const bin = claudeBin();
+  const clone = path.join(configDir(), 'plugins', 'marketplaces', MARKETPLACE);
+  if (!flags.fromLocal && bin && isDir(clone)) {
+    run(bin, ['plugin', 'marketplace', 'update', MARKETPLACE], { allowFail: true });
+    run(bin, ['plugin', 'update', PLUGIN_ID], { allowFail: true });
+  }
+  const repo = repoRoot(flags);
+  const version = productVersion(repo);
+  const written = [];
+  const act = async (what, fn) => { out.log(`- ${what}`); await fn(); };
+  const ctx = { flags, repo, vault, written, act, dry: false, yes: true, version };
+  out.log(`upgrading ${vault} from ${repo} (v${version})`);
+  await act('re-vendor brain/scripts (force) and reinstall its dependencies', () => vendorRuntime(ctx, { force: true }));
+  await act(`migrate ${configPath()} keys (version → ${version})`, () => writeJson(configPath(), buildUserConfig(cfg, { vault, version })));
+  await act('add any new default keys to brain/config.json (user values win)', () => {
+    const defaults = readJson(path.join(repo, 'brain', 'scripts', 'config.default.json'), {});
+    const p = path.join(vault, 'brain', 'config.json');
+    writeJson(p, deepMerge(defaults, readJson(p, {}) || {}));
+  });
+  if (flags.obsidian !== false) await obsidianBundle(ctx);
+  await act('rebuild indexes (scan-vault, build-brain-md, recall --warm)', () => {
+    runScript(vault, 'scan-vault', ['--quiet'], { allowFail: true });
+    runScript(vault, 'build-brain-md', [], { allowFail: true });
+    runScript(vault, 'recall', ['--warm'], { allowFail: true });
+  });
+  out.log(`upgraded to v${version}. Memory, notes and persona were not touched.`);
+  return 0;
+}
+
+// Plan 5's duty schedules (contract §6): exactly these three labels. The optional Ollama supervisor
+// com.agenticos.ollama (Plan 2, extras/ollama) shares the prefix and is installed by hand, so it is
+// never matched here — a prefix-wide `com.agenticos.*` sweep would silently remove it.
+const DUTY_PLIST_RE = /^com\.agenticos\.(monitor|reflect|sitrep)\.plist$/;
+const DUTY_CRON_RE = /# com\.agenticos\.(monitor|reflect|sitrep)(\s|$)/;
+function removeSchedules() {
+  const agents = path.join(os.homedir(), 'Library', 'LaunchAgents');
+  for (const f of (isDir(agents) ? fs.readdirSync(agents) : [])) {
+    if (!DUTY_PLIST_RE.test(f)) continue;
+    run('launchctl', ['unload', path.join(agents, f)], { allowFail: true, capture: true });
+    fs.unlinkSync(path.join(agents, f));
+    out.log(`removed ${path.join(agents, f)}`);
+  }
+  if (process.platform === 'linux' && which('crontab')) {
+    const current = run('crontab', ['-l'], { allowFail: true, capture: true }).stdout;
+    const lines = current.split('\n');
+    const kept = lines.filter((l) => !DUTY_CRON_RE.test(l));
+    if (kept.length !== lines.length) {
+      run('crontab', ['-'], { input: kept.join('\n'), allowFail: true, capture: true });
+      out.log(`removed ${lines.length - kept.length} crontab line(s)`);
+    }
+  }
+}
+
+async function uninstall(flags) {
+  const cfg = readJson(configPath());
+  const bin = claudeBin();
+  if (bin) {
+    run(bin, ['plugin', 'uninstall', PLUGIN_ID], { allowFail: true });
+    run(bin, ['plugin', 'marketplace', 'remove', MARKETPLACE], { allowFail: true });
+  }
+  removeSchedules();
+  const link = path.join(os.homedir(), '.local', 'bin', 'aos');
+  try { if (fs.readlinkSync(link).endsWith('/brain/scripts/bin/aos')) { fs.unlinkSync(link); out.log(`removed ${link}`); } } catch { /* absent */ }
+  try { fs.unlinkSync(configPath()); out.log(`removed ${configPath()}`); } catch { /* absent */ }
+  if (!cfg || !cfg.vault) { out.log('no vault recorded; done'); return 0; }
+  if (flags.keepVault) { out.log(`kept vault ${cfg.vault}`); return 0; }
+  const typed = process.env.AOS_CONFIRM_DELETE || await ask(`Type the vault path to DELETE it, anything else keeps it (${cfg.vault}): `, '');
+  if (typed !== cfg.vault) { out.log(`kept vault ${cfg.vault} (delete it yourself if you want it gone)`); return 0; }
+  fs.rmSync(cfg.vault, { recursive: true, force: true });
+  out.log(`deleted ${cfg.vault}`);
+  return 0;
+}
+
+function terminal(sub) {
+  if (sub[0] !== 'install') throw new UsageError('usage: aos terminal install');
+  terminalInstall(loadConfigOrThrow().vault);
+  return 0;
+}
+
+function persona(sub, flags) {
+  const cfg = loadConfigOrThrow();
+  const dir = path.join(cfg.vault, 'persona');
+  const kill = path.join(dir, 'DISABLED');
+  if (sub[0] === 'off') {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(kill, `disabled ${new Date().toISOString()}\n`);
+    out.log('persona off (persona/DISABLED written; the injected block is suppressed)');
+    return 0;
+  }
+  if (sub[0] === 'on') {
+    try { fs.unlinkSync(kill); } catch { /* already on */ }
+    out.log('persona on');
+    return 0;
+  }
+  const script = scriptPath(cfg.vault, 'persona/interview.js');
+  if (!exists(script)) { out.log('persona interview not installed in this phase'); return 1; }
+  const args = [script];
+  if (sub[0] === 'rename') {
+    if (!sub[1]) throw new UsageError('usage: aos persona rename <name>');
+    args.push('rename', sub[1]);
+  } else if (sub[0]) {
+    throw new UsageError('usage: aos persona [rename <name> | on | off]');
+  } else if (flags.personaJson) {
+    args.push('--answers', path.resolve(flags.personaJson));
+  }
+  const r = run(process.execPath, args, { cwd: cfg.vault, env: { AOS_VAULT: cfg.vault, AOS_CONFIG: configPath() }, allowFail: true });
+  return r.status === 0 ? 0 : 1;
+}
+
+async function cost(sub, flags) {
+  const cfg = loadConfigOrThrow();
+  const enabled = !!(cfg.cost && cfg.cost.enabled);
+  if (!sub[0]) { out.log(`cost ${enabled ? 'enabled' : 'disabled'}`); return 0; }
+  if (sub[0] === 'disable') {
+    cfg.cost = { ...(cfg.cost || {}), enabled: false };
+    writeJson(configPath(), cfg);
+    out.log('cost disabled (auto-cost reports "disabled" from the next session end)');
+    return 0;
+  }
+  if (sub[0] !== 'enable') throw new UsageError('usage: aos cost [enable [--budget <usd>] | disable]');
+  let repo = null;
+  try { repo = repoRoot({ fromLocal: flags.fromLocal || process.env.AOS_REPO_HINT }); } catch { repo = null; }
+  const src = repo ? path.join(repo, 'extras', 'cost') : null;
+  if (!src || !exists(path.join(src, 'analyze_transcript.py'))) { out.log('cost module not installed in this phase'); return 1; }
+  if (!python3Ok(python3Version())) throw new CheckFailed('python3 >= 3.9 is required for the cost module');
+  copyTree(src, scriptPath(cfg.vault, 'cost'), { force: true, written: [] });
+  cfg.cost = { ...(cfg.cost || {}), enabled: true };
+  writeJson(configPath(), cfg);
+  let budget = flags.budget !== undefined ? Number(flags.budget) : null;
+  if (budget === null && !flags.yes) {
+    const answer = await ask('Monthly budget in USD (blank to skip): ', '');
+    budget = answer ? Number(answer) : null;
+  }
+  if (budget !== null && !Number.isNaN(budget)) {
+    const p = path.join(cfg.vault, 'brain', 'config.json');
+    const vc = readJson(p, {}) || {};
+    vc.cost = { ...(vc.cost || {}), monthlyBudget: budget };
+    writeJson(p, vc);
+  }
+  out.log(`cost enabled (analyzer at ${scriptPath(cfg.vault, 'cost')}${budget !== null && !Number.isNaN(budget) ? `, monthly budget ${budget}` : ''})`);
+  return 0;
+}
+
 // ── args and main ─────────────────────────────────────────────────────────────
 const VALUE_FLAGS = new Set(['vault', 'provider', 'persona-json', 'from-local', 'budget']);
 const BOOL_FLAGS = new Set(['dry-run', 'yes', 'terminal', 'cost', 'keep-vault']);
@@ -645,6 +792,11 @@ async function main(argv) {
   const { cmd, sub, flags } = parseArgs(argv);
   switch (cmd) {
     case 'init': return init(flags);
+    case 'upgrade': return upgrade(flags);
+    case 'uninstall': return uninstall(flags);
+    case 'terminal': return terminal(sub);
+    case 'persona': return persona(sub, flags);
+    case 'cost': return cost(sub, flags);
     case 'doctor': return doctor();
     case 'status': return status();
     case 'provider': return provider(sub[0]);
@@ -669,6 +821,7 @@ module.exports = {
   doctor, status, provider, main,
   init, repoRoot, productVersion, copyTree, assertVaultOk, dailyNotesJson, buildUserConfig, linkLauncher, vendorRuntime,
   installPlugin, download, obsidianBundle, terminalInstall, personaInterview, checklist,
+  upgrade, uninstall, removeSchedules, terminal, persona, cost,
   PROVIDERS, PLUGIN_ID, MARKETPLACE, REPO_SLUG, OBSIDIAN_PLUGIN_ID, DEFAULT_VAULT, RUNTIME_SCRIPTS, USAGE,
   VALUE_FLAGS, BOOL_FLAGS, NEGATABLE_FLAGS,
   UsageError, CheckFailed, out,

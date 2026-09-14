@@ -265,3 +265,107 @@ test('download rejects on a mid-stream response error, removes the partial file,
   await assert.rejects(download('https://example.invalid/main.js', dest, 0, fakeGet), /boom/);
   assert.ok(!fs.existsSync(dest));
 });
+
+function initialized() {
+  const sb = sandbox();
+  const r = aos(sb, ['init', '--vault', sb.vault, '--no-obsidian', '--provider', 'none', '--yes']);
+  assert.equal(r.status, 0, r.stderr);
+  fs.writeFileSync(sb.env.FAKE_CLAUDE_LOG, '');
+  return sb;
+}
+
+test('doctor passes on an initialized vault when the plugin is installed (MCP probe over stdio)', () => {
+  const sb = initialized();
+  const r = aos(sb, ['doctor'], { FAKE_PLUGIN_PATH: path.join(ROOT, 'plugin') });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /ok\s+MCP server answers\s+serverInfo\.name=agenticos/);
+  assert.match(r.stdout, /warn\s+obsidian plugin/);
+  assert.match(r.stdout, /all checks passed/);
+});
+
+test('upgrade re-vendors the runtime, migrates config, keeps memory', () => {
+  const sb = initialized();
+  const memory = path.join(sb.vault, 'brain', 'memory', 'reference', 'keep-me.md');
+  fs.writeFileSync(memory, '# Keep me\n');
+  const vendored = path.join(sb.vault, 'brain', 'scripts', 'lib', 'paths.js');
+  fs.writeFileSync(vendored, '// stale copy\n');
+  const cfgPath = path.join(sb.cfg, 'agenticos.json');
+  const cfg = readJson(cfgPath);
+  delete cfg.telemetry;
+  cfg.version = '0.0.1';
+  cfg.provider = 'ollama';
+  fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2));
+  const vaultCfg = path.join(sb.vault, 'brain', 'config.json');
+  fs.writeFileSync(vaultCfg, JSON.stringify({ scan: { fileMapBudget: 7 } }));
+
+  const r = aos(sb, ['upgrade', '--no-obsidian', '--from-local', ROOT]);
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  assert.ok(!fs.readFileSync(vendored, 'utf8').includes('stale copy'), 'runtime re-vendored');
+  assert.ok(fs.existsSync(memory), 'memory untouched');
+  const after = readJson(cfgPath);
+  assert.equal(after.version, readJson(path.join(ROOT, 'package.json')).version);
+  assert.equal(after.provider, 'ollama', 'user value kept');
+  assert.deepEqual(after.telemetry, { enabled: true, redact: true, retentionDays: 30 }, 'missing key migrated');
+  const vc = readJson(vaultCfg);
+  assert.equal(vc.scan.fileMapBudget, 7);
+  assert.equal(vc.scan.embedBudget, 40);
+  assert.match(r.stdout, /Memory, notes and persona were not touched/);
+});
+
+test('uninstall --keep-vault removes config, plugin, launcher link, duty schedules; keeps the vault and the Ollama supervisor', () => {
+  const sb = initialized();
+  // Schedules live under $HOME (sandboxed): two of Plan 5's duty labels plus Plan 2's Ollama supervisor label.
+  const agents = path.join(sb.home, 'Library', 'LaunchAgents');
+  fs.mkdirSync(agents, { recursive: true });
+  for (const f of ['com.agenticos.monitor.plist', 'com.agenticos.sitrep.plist', 'com.agenticos.ollama.plist']) fs.writeFileSync(path.join(agents, f), '<plist/>\n');
+  const r = aos(sb, ['uninstall', '--keep-vault', '--yes']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(!fs.existsSync(path.join(sb.cfg, 'agenticos.json')));
+  assert.ok(!fs.existsSync(path.join(sb.home, '.local', 'bin', 'aos')));
+  assert.ok(fs.existsSync(path.join(sb.vault, 'MEMORY.md')));
+  assert.ok(!fs.existsSync(path.join(agents, 'com.agenticos.monitor.plist')), 'duty schedule removed');
+  assert.ok(!fs.existsSync(path.join(agents, 'com.agenticos.sitrep.plist')), 'duty schedule removed');
+  assert.ok(fs.existsSync(path.join(agents, 'com.agenticos.ollama.plist')), 'Ollama supervisor (Plan 2, extras/ollama) is not ours to remove');
+  const log = sb.log('FAKE_CLAUDE_LOG');
+  assert.match(log, /^plugin uninstall agenticos@agenticos-workbench$/m);
+  assert.match(log, /^plugin marketplace remove agenticos-workbench$/m);
+  assert.deepEqual(fs.readdirSync(sb.cfg), []);
+});
+
+test('uninstall deletes the vault only with the typed confirmation', () => {
+  const sb = initialized();
+  const kept = aos(sb, ['uninstall', '--yes']);
+  assert.equal(kept.status, 0, kept.stderr);
+  assert.ok(fs.existsSync(sb.vault), 'no confirmation → kept');
+  fs.writeFileSync(path.join(sb.cfg, 'agenticos.json'), JSON.stringify({ vault: sb.vault, node: process.execPath }));
+  const gone = aos(sb, ['uninstall', '--yes'], { AOS_CONFIRM_DELETE: sb.vault });
+  assert.equal(gone.status, 0, gone.stderr);
+  assert.ok(!fs.existsSync(sb.vault));
+});
+
+test('persona on/off toggle the kill switch; interview and cost report "not installed in this phase"', () => {
+  const sb = initialized();
+  assert.equal(aos(sb, ['persona', 'off']).status, 0);
+  assert.ok(fs.existsSync(path.join(sb.vault, 'persona', 'DISABLED')));
+  assert.equal(aos(sb, ['persona', 'on']).status, 0);
+  assert.ok(!fs.existsSync(path.join(sb.vault, 'persona', 'DISABLED')));
+  const interview = aos(sb, ['persona']);
+  assert.equal(interview.status, 1);
+  assert.match(interview.stdout, /persona interview not installed in this phase/);
+  const rename = aos(sb, ['persona', 'rename', 'Atlas']);
+  assert.equal(rename.status, 1);
+  const cost = aos(sb, ['cost', 'enable'], { AOS_REPO_HINT: ROOT });
+  if (fs.existsSync(path.join(ROOT, 'extras', 'cost', 'analyze_transcript.py'))) {
+    assert.equal(cost.status, 0, cost.stderr);
+  } else {
+    assert.equal(cost.status, 1);
+    assert.match(cost.stdout, /cost module not installed in this phase/);
+  }
+  assert.equal(aos(sb, ['cost', 'disable']).status, 0);
+  assert.equal(readJson(path.join(sb.cfg, 'agenticos.json')).cost.enabled, false);
+  assert.match(aos(sb, ['cost']).stdout, /cost disabled/);
+  assert.equal(aos(sb, ['terminal']).status, 2);
+  const term = aos(sb, ['terminal', 'install']);
+  assert.equal(term.status, 1);
+  assert.match(term.stderr, /no package\.json/);
+});
