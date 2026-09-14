@@ -1,0 +1,7 @@
+{
+  "agenticos": {
+    "type": "stdio",
+    "command": "sh",
+    "args": ["${CLAUDE_PLUGIN_ROOT}/bin/aos", "mcp-server"]
+  }
+}
