@@ -42,8 +42,8 @@ Flags: `--vault <dir>`, `--provider auto|ollama|claude|none`, `--no-obsidian`, `
 | `aos provider <mode>` | force `ollama`, `claude`, `none`, or back to `auto`; clears the cached probe |
 | `aos upgrade` | `claude plugin marketplace update` + `plugin update`, re-vendor the runtime and bundle, add new config keys (your values win), rebuild indexes. Never touches memory, notes, or persona. |
 | `aos uninstall [--keep-vault]` | plugin and marketplace removed (a failed or skipped `claude plugin …` step is reported on stderr with the command to run yourself), the three launchd/cron duty schedules (`com.agenticos.monitor|reflect|sitrep`) removed, `~/.local/bin/aos` and `agenticos.json` removed; the vault is deleted only if you type its path back, and never when it is your home directory or a Claude config directory. The optional Ollama supervisor (`com.agenticos.ollama`, see `extras/ollama/README.md`) is installed by hand and is left alone. |
-| `aos persona on\|off\|rename <name>` | kill switch and rename; plain `aos persona` re-runs the interview |
-| `aos cost enable [--budget <usd>]` | opt-in session costing (python3 ≥ 3.9) |
+| `aos persona on\|off\|rename <name>` | kill switch and rename; plain `aos persona` re-runs the interview once the persona phase ships (until then it prints `persona interview not installed in this phase` and exits 1) |
+| `aos cost enable [--budget <usd>]` | opt-in session costing (python3 ≥ 3.9) once the cost extra ships (until then it prints `cost module not installed in this phase` and exits 1) |
 | `aos terminal install` | node-pty for the Obsidian terminal tab |
 
 Every runtime script is also reachable as `aos <name>` (`aos scan-vault`, `aos recall "<query>"`, `aos build-brain-md`, …); the same launcher is what the plugin's hooks call as `sh "${CLAUDE_PLUGIN_ROOT}/bin/aos" <name>`.
