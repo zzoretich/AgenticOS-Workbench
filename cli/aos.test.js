@@ -113,6 +113,8 @@ test('parseArgs handles value flags, --no-flags, booleans and positionals', () =
   assert.throws(() => parseArgs(['init', '--vault=']), /needs a value/);
   assert.throws(() => parseArgs(['init', '--dry-rnu']), /unknown flag --dry-rnu/);
   assert.throws(() => parseArgs(['init', '--no-cost']), /unknown flag --no-cost/);
+  // A single-dash token is a usage error, not a positional: `aos init -y` must not silently start an interactive install.
+  assert.throws(() => parseArgs(['init', '-y']), /unknown flag -y/);
 });
 
 test('mcpProbe rejects at once on an initialize error and on an early server exit (no timeout wait)', async () => {
@@ -214,9 +216,13 @@ test('init into a temp vault: seed set, vendored runtime, agenticos.json, plugin
 
   // Idempotent: a second init keeps user files and does not duplicate the seed.
   fs.appendFileSync(path.join(v, 'MEMORY.md'), '- [Kept](brain/memory/reference/kept.md) — user line\n');
+  // …including live working memory: only a freshly seeded SESSION.md gets today's date stamped into it.
+  const sessionPath = path.join(v, 'brain', '_index', 'SESSION.md');
+  fs.writeFileSync(sessionPath, fs.readFileSync(sessionPath, 'utf8').replace(/^updated: .*$/m, 'updated: 2000-01-01'));
   const again = aos(sb, ['init', '--vault', v, '--no-obsidian', '--provider', 'none', '--yes']);
   assert.equal(again.status, 0, again.stderr);
   assert.match(fs.readFileSync(path.join(v, 'MEMORY.md'), 'utf8'), /Kept/);
+  assert.match(fs.readFileSync(sessionPath, 'utf8'), /^updated: 2000-01-01$/m, 'a re-run never rewrites working memory');
 
   // A re-run without --provider keeps the mode already set (e.g. by `aos provider ollama`), rather than resetting to auto.
   const cfgPath = path.join(sb.cfg, 'agenticos.json');
@@ -226,6 +232,14 @@ test('init into a temp vault: seed set, vendored runtime, agenticos.json, plugin
   const keepProvider = aos(sb, ['init', '--vault', v, '--no-obsidian', '--yes']);
   assert.equal(keepProvider.status, 0, keepProvider.stderr);
   assert.equal(readJson(cfgPath).provider, 'ollama');
+});
+
+test('init --cost warns and leaves cost disabled while the analyzer is not shipped', () => {
+  const sb = sandbox();
+  const r = aos(sb, ['init', '--vault', sb.vault, '--no-obsidian', '--provider', 'none', '--cost', '--yes']);
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  assert.match(r.stderr, /not shipped in this phase/);
+  assert.equal(readJson(path.join(sb.cfg, 'agenticos.json')).cost.enabled, false);
 });
 
 test('init with --from-local uses the local path as the marketplace source', () => {
@@ -267,6 +281,52 @@ test('download rejects on a mid-stream response error, removes the partial file,
   };
   await assert.rejects(download('https://example.invalid/main.js', dest, 0, fakeGet), /boom/);
   assert.ok(!fs.existsSync(dest));
+  assert.ok(!fs.existsSync(dest + '.part'), 'the partial file is removed too');
+});
+
+test('download leaves an existing destination intact when the request fails before any response', async () => {
+  const { download } = require('./aos.js');
+  const { EventEmitter } = require('events');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-download-keep-'));
+  const dest = path.join(dir, 'main.js');
+  fs.writeFileSync(dest, 'KEEP');
+  // Offline / DNS failure: the request errors before the callback ever runs, so nothing was downloaded and the
+  // bundle already installed at dest must survive (an offline `aos upgrade` must not delete the working plugin).
+  const fakeGet = (url, opts, cb) => {
+    const req = new EventEmitter();
+    req.setTimeout = () => {};
+    req.destroy = () => {};
+    setImmediate(() => req.emit('error', new Error('getaddrinfo ENOTFOUND example.invalid')));
+    return req;
+  };
+  await assert.rejects(download('https://example.invalid/main.js', dest, 0, fakeGet), /ENOTFOUND/);
+  assert.equal(fs.readFileSync(dest, 'utf8'), 'KEEP', 'a failed download never touches the installed file');
+  assert.ok(!fs.existsSync(dest + '.part'));
+});
+
+test('download writes the file only after the stream completes', async () => {
+  const { download } = require('./aos.js');
+  const { PassThrough } = require('stream');
+  const { EventEmitter } = require('events');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-download-ok-'));
+  const dest = path.join(dir, 'main.js');
+  const fakeGet = (url, opts, cb) => {
+    const req = new EventEmitter();
+    req.setTimeout = () => {};
+    req.destroy = () => {};
+    setImmediate(() => {
+      const res = new PassThrough();
+      res.statusCode = 200;
+      res.headers = {};
+      cb(res);
+      res.write('hello');
+      res.end();
+    });
+    return req;
+  };
+  await download('https://example.invalid/main.js', dest, 0, fakeGet);
+  assert.equal(fs.readFileSync(dest, 'utf8'), 'hello');
+  assert.ok(!fs.existsSync(dest + '.part'), 'the staging file is renamed, not left behind');
 });
 
 function initialized() {
@@ -344,6 +404,8 @@ test('uninstall deletes the vault only with the typed confirmation', () => {
   const kept = aos(sb, ['uninstall', '--yes']);
   assert.equal(kept.status, 0, kept.stderr);
   assert.ok(fs.existsSync(sb.vault), 'no confirmation → kept');
+  // --yes is "accept defaults, no prompts", and the default is to keep: it never prompts and never deletes.
+  assert.match(kept.stdout, /--yes never deletes/);
   fs.writeFileSync(path.join(sb.cfg, 'agenticos.json'), JSON.stringify({ vault: sb.vault, node: process.execPath }));
   const gone = aos(sb, ['uninstall', '--yes'], { AOS_CONFIRM_DELETE: sb.vault });
   assert.equal(gone.status, 0, gone.stderr);
@@ -390,4 +452,25 @@ test('uninstall warns when the claude CLI cannot remove the plugin, and refuses 
   assert.equal(refused.status, 1);
   assert.match(refused.stderr, /refusing the home directory/);
   assert.ok(fs.existsSync(path.join(sb.home, '.local')), 'home directory intact');
+});
+
+test('uninstall refuses to delete a directory that contains the Claude config dir, and a directory without vault markers', () => {
+  const sb = initialized();
+  // sb.dir is the parent of the sandbox HOME, the Claude config dir and the vault: deleting it would take the
+  // config dir with it, so the structural guard must refuse even with the automation confirmation set.
+  fs.writeFileSync(path.join(sb.cfg, 'agenticos.json'), JSON.stringify({ vault: sb.dir, node: process.execPath }));
+  const refused = aos(sb, ['uninstall', '--yes'], { AOS_CONFIRM_DELETE: sb.dir });
+  assert.equal(refused.status, 1);
+  assert.match(refused.stderr, /contains the Claude config dir/);
+  assert.ok(fs.existsSync(path.join(sb.vault, 'MEMORY.md')), 'nothing was deleted');
+
+  // A structurally fine directory that is not a vault this installer built is refused too.
+  const plain = path.join(sb.dir, 'not-a-vault');
+  fs.mkdirSync(plain, { recursive: true });
+  fs.writeFileSync(path.join(plain, 'notes.txt'), 'mine\n');
+  fs.writeFileSync(path.join(sb.cfg, 'agenticos.json'), JSON.stringify({ vault: plain, node: process.execPath }));
+  const notAVault = aos(sb, ['uninstall', '--yes'], { AOS_CONFIRM_DELETE: plain });
+  assert.equal(notAVault.status, 1);
+  assert.match(notAVault.stdout, /not an AgenticOS vault/);
+  assert.ok(fs.existsSync(path.join(plain, 'notes.txt')), 'the directory is left alone');
 });
