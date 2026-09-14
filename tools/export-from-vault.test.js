@@ -5,6 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { plan, applyScrubs, assertSafeDest } = require('./export-from-vault.js');
+const { execFileSync, spawnSync } = require('child_process');
 
 const NAME = 'Za' + 'ch';
 
@@ -85,4 +86,29 @@ test('assertSafeDest refuses a destination inside the Claude config dir', () => 
   } finally {
     if (prev === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = prev;
   }
+});
+
+/** A vault whose only allowlisted file carries an unscrubbed term at a path no scrub targets. Separate from fixtureVault()
+ *  because 'plan copies only allowlisted files…' asserts fixtureVault()'s exact copy list. */
+function fixtureVaultWithTerm(term) {
+  const v = fs.mkdtempSync(path.join(os.tmpdir(), 'vault-leak-'));
+  const rel = 'brain/scripts/lib/leaky.js';
+  fs.mkdirSync(path.dirname(path.join(v, rel)), { recursive: true });
+  fs.writeFileSync(path.join(v, rel), `// unscrubbed: ${term}\nmodule.exports = {};\n`);
+  return { source: v, rel };
+}
+
+test('CLI: a privacy-gate term that survives scrubbing makes the export exit 1', () => {
+  // Built by concatenation so this file stays clean for CI's own `npm run gate` step.
+  const TERM = 'Red' + 'acted'; // in tools/privacy-terms.json; no SCRUBS entry in tools/export-scrubs.js touches it
+  const { source, rel } = fixtureVaultWithTerm(TERM);
+  const dest = fs.mkdtempSync(path.join(os.tmpdir(), 'dest-leak-'));
+  execFileSync('git', ['init', '-q'], { cwd: dest }); // runGate() → listFiles() shells `git ls-files`
+  const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'cfg-')); // keep assertSafeDest clear of the real ~/.claude
+  const r = spawnSync(process.execPath, [path.join(__dirname, 'export-from-vault.js'), '--source', source, '--dest', dest],
+    { encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg } });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.match(r.stderr, /privacy-gate: [1-9]\d* violation\(s\)/);
+  assert.ok(r.stdout.includes(`${rel}:1:`) && r.stdout.includes(TERM), r.stdout);
+  assert.ok(fs.existsSync(path.join(dest, rel)), 'the leaking file is copied before the gate runs');
 });
