@@ -105,4 +105,37 @@ test('parseArgs handles value flags, --no-flags, booleans and positionals', () =
   assert.deepEqual(a.sub, ['extra']);
   assert.deepEqual(a.flags, { vault: '/tmp/v', obsidian: false, yes: true, personaJson: 'p.json' });
   assert.throws(() => parseArgs(['init', '--vault']), /needs a value/);
+  const eq = parseArgs(['init', '--vault=/tmp/v', '--provider=none', '--dry-run']);
+  assert.deepEqual(eq.flags, { vault: '/tmp/v', provider: 'none', dryRun: true });
+  assert.throws(() => parseArgs(['init', '--vault=']), /needs a value/);
+  assert.throws(() => parseArgs(['init', '--dry-rnu']), /unknown flag --dry-rnu/);
+  assert.throws(() => parseArgs(['init', '--no-cost']), /unknown flag --no-cost/);
+});
+
+test('mcpProbe rejects at once on an initialize error and on an early server exit (no timeout wait)', async () => {
+  const { mcpProbe } = require('./aos.js');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-mcpprobe-'));
+  const vault = path.join(dir, 'vault');
+  const binDir = path.join(vault, 'brain', 'scripts', 'bin');
+  fs.mkdirSync(binDir, { recursive: true });
+  const scriptPath = path.join(binDir, 'aos');
+  const prevConfig = process.env.AOS_CONFIG;
+  process.env.AOS_CONFIG = path.join(dir, 'no-such-config.json');
+  try {
+    fs.writeFileSync(scriptPath,
+      '#!/bin/sh\nread line\necho \'{"jsonrpc":"2.0","id":1,"error":{"code":-32600,"message":"boom"}}\'\nexit 0\n');
+    fs.chmodSync(scriptPath, 0o755);
+    let t0 = Date.now();
+    await assert.rejects(mcpProbe({ vault, timeoutMs: 5000 }), /initialize: boom/);
+    assert.ok(Date.now() - t0 < 4000, 'initialize error should reject immediately, not wait out the timeout');
+
+    fs.writeFileSync(scriptPath,
+      '#!/bin/sh\nread line\necho \'{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2024-11-05","capabilities":{},"serverInfo":{"name":"agenticos","version":"0"}}}\'\nexit 0\n');
+    fs.chmodSync(scriptPath, 0o755);
+    t0 = Date.now();
+    await assert.rejects(mcpProbe({ vault, tool: 'recall', args: {}, timeoutMs: 5000 }), /exited 0 before answering/);
+    assert.ok(Date.now() - t0 < 4000, 'early exit should reject immediately, not wait out the timeout');
+  } finally {
+    if (prevConfig === undefined) delete process.env.AOS_CONFIG; else process.env.AOS_CONFIG = prevConfig;
+  }
 });

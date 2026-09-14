@@ -165,7 +165,10 @@ function mcpProbe({ vault, tool = null, args = {}, timeoutMs = 20000 }) {
     let stderr = '';
     let serverName = null;
     let timer = null;
+    let settled = false;
     const finish = (err, value) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
       try { child.kill(); } catch { /* already gone */ }
       if (err) reject(err); else resolve(value);
@@ -173,7 +176,10 @@ function mcpProbe({ vault, tool = null, args = {}, timeoutMs = 20000 }) {
     timer = setTimeout(() => finish(new Error(`MCP probe timed out after ${timeoutMs} ms${stderr ? ': ' + stderr.trim().slice(-300) : ''}`)), timeoutMs);
     const send = (msg) => child.stdin.write(JSON.stringify(msg) + '\n');
     child.on('error', (e) => finish(e));
-    child.on('exit', (code) => { if (serverName === null) finish(new Error(`mcp-server exited ${code} before answering${stderr ? ': ' + stderr.trim().slice(-300) : ''}`)); });
+    // A server that answers `initialize` and exits immediately leaves stdin's pipe already broken by the
+    // time notifications/initialized (or tools/call) is written; without this the EPIPE crashes the process.
+    child.stdin.on('error', () => {});
+    child.on('exit', (code) => { finish(new Error(`mcp-server exited ${code} before answering${stderr ? ': ' + stderr.trim().slice(-300) : ''}`)); });
     child.stderr.on('data', (d) => { stderr += d; });
     child.stdout.on('data', (d) => {
       buf += d;
@@ -183,7 +189,9 @@ function mcpProbe({ vault, tool = null, args = {}, timeoutMs = 20000 }) {
         buf = buf.slice(nl + 1);
         const msg = safeParse(line);
         if (!msg) continue;
-        if (msg.id === 1 && msg.result) {
+        if (msg.id === 1) {
+          if (msg.error) return finish(new Error(`initialize: ${msg.error.message}`));
+          if (!msg.result) continue;
           serverName = (msg.result.serverInfo && msg.result.serverInfo.name) || '';
           send({ jsonrpc: '2.0', method: 'notifications/initialized' });
           if (!tool) return finish(null, { serverName, result: null });
@@ -307,20 +315,31 @@ function provider(mode) {
 
 // ── args and main ─────────────────────────────────────────────────────────────
 const VALUE_FLAGS = new Set(['vault', 'provider', 'persona-json', 'from-local', 'budget']);
+const BOOL_FLAGS = new Set(['dry-run', 'yes', 'terminal', 'cost', 'keep-vault']);
+const NEGATABLE_FLAGS = new Set(['obsidian']);
 function camel(s) { return s.replace(/-([a-z])/g, (_, c) => c.toUpperCase()); }
+/** `--flag`, `--no-flag`, `--flag value`, `--flag=value`; unknown flags are a usage error (a typo must never start a real install). */
 function parseArgs(argv) {
   const a = { cmd: argv[0] || '', sub: [], flags: {} };
   for (let i = 1; i < argv.length; i++) {
     const t = argv[i];
     if (!t.startsWith('--')) { a.sub.push(t); continue; }
-    const name = t.slice(2);
-    if (name.startsWith('no-')) { a.flags[camel(name.slice(3))] = false; continue; }
+    const eq = t.indexOf('=');
+    const name = eq === -1 ? t.slice(2) : t.slice(2, eq);
+    const inline = eq === -1 ? undefined : t.slice(eq + 1);
+    if (name.startsWith('no-')) {
+      const base = name.slice(3);
+      if (!NEGATABLE_FLAGS.has(base) || inline !== undefined) throw new UsageError(`unknown flag --${name}`);
+      a.flags[camel(base)] = false;
+      continue;
+    }
     if (VALUE_FLAGS.has(name)) {
-      const v = argv[++i];
-      if (v === undefined) throw new UsageError(`--${name} needs a value`);
+      const v = inline !== undefined ? inline : argv[++i];
+      if (v === undefined || v === '') throw new UsageError(`--${name} needs a value`);
       a.flags[camel(name)] = v;
       continue;
     }
+    if (!BOOL_FLAGS.has(name) || inline !== undefined) throw new UsageError(`unknown flag --${name}`);
     a.flags[camel(name)] = true;
   }
   return a;
@@ -352,5 +371,6 @@ module.exports = {
   runScript, scriptPath, mcpProbe, spendRowsToday, spendToday, isDutyFeature, isHookFeature, loadConfigOrThrow,
   doctor, status, provider, main,
   PROVIDERS, PLUGIN_ID, MARKETPLACE, REPO_SLUG, OBSIDIAN_PLUGIN_ID, DEFAULT_VAULT, RUNTIME_SCRIPTS, USAGE,
+  VALUE_FLAGS, BOOL_FLAGS, NEGATABLE_FLAGS,
   UsageError, CheckFailed, out,
 };
