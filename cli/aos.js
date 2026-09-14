@@ -355,10 +355,14 @@ function copyTree(srcRoot, destRoot, { exclude = null, force = false, rename = {
   return written;
 }
 
+/** Structural guard shared by init and the uninstall delete: a vault is never a directory whose removal would take
+ *  the machine, the home directory or the Claude config dir with it. `uninstall` adds the vault-marker check. */
 function assertVaultOk(vault) {
   if (insideDir(vault, configDir())) throw new CheckFailed(`refusing ${vault}: it is inside the Claude config dir ${configDir()}`);
   if (exists(path.join(vault, 'settings.json'))) throw new CheckFailed(`refusing ${vault}: it contains settings.json (looks like a Claude config dir)`);
   if (path.resolve(vault) === path.resolve(os.homedir())) throw new CheckFailed('refusing the home directory as a vault; pick a subdirectory such as ~/AgenticOS');
+  if (path.parse(path.resolve(vault)).root === path.resolve(vault)) throw new CheckFailed('refusing a filesystem root as a vault');
+  if (insideDir(configDir(), vault)) throw new CheckFailed(`refusing ${vault}: it contains the Claude config dir ${configDir()}`);
 }
 
 /** Obsidian can express only a flat folder + file format; the year folder of the layout is the closest match (documented). */
@@ -438,18 +442,22 @@ function installPlugin(ctx, bin) {
   else if (inst.stdout.trim()) out.log(inst.stdout.trim());
 }
 
-/** GET url → dest (follows ≤5 redirects). `getFn` is injectable so tests can drive stream failures without the network. */
+/** GET url → dest (follows ≤5 redirects). `getFn` is injectable so tests can drive stream failures without the network.
+ *  Data lands in `<dest>.part` and is renamed over `dest` only once the stream has closed cleanly, so a failure
+ *  (offline, DNS, timeout, HTTP error, mid-stream error) removes only the partial file: a bundle already installed
+ *  at `dest` survives every failure path (an offline `aos upgrade` must not delete the working Obsidian plugin). */
 function download(url, dest, hops = 0, getFn = (u, o, cb) => https.get(u, o, cb)) {
   return new Promise((resolve, reject) => {
+    const tmp = `${dest}.part`;
     let file = null;
     let settled = false;
     // Remove whatever reached disk, then reject. The write stream opens asynchronously, so the unlink waits for its
     // 'close' (destroy() during the open still creates the file, then closes it) — an early unlink would let the
-    // open re-create dest afterwards (execution finding 2026-09-14: flaky under parallel test load).
+    // open re-create tmp afterwards (execution finding 2026-09-14: flaky under parallel test load).
     const fail = (e) => {
       if (settled) return;
       settled = true;
-      const done = () => { try { fs.unlinkSync(dest); } catch { /* nothing written */ } reject(e); };
+      const done = () => { try { fs.unlinkSync(tmp); } catch { /* nothing written */ } reject(e); };
       if (!file || file.closed) return done();
       file.once('close', done);
       if (!file.destroyed) file.destroy();
@@ -458,14 +466,22 @@ function download(url, dest, hops = 0, getFn = (u, o, cb) => https.get(u, o, cb)
     const req = getFn(url, { headers: { 'user-agent': 'agenticos-installer' } }, (res) => {
       if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location && hops < 5) {
         res.resume();
+        if (settled) return;
+        // The inner download owns dest and its own .part from here on. Settle first, so a late error on the OUTER
+        // request (every release download is a redirect) cannot run fail() and unlink the inner download's file.
+        settled = true;
         return resolve(download(res.headers.location, dest, hops + 1, getFn));
       }
-      if (res.statusCode !== 200) { res.resume(); return reject(new Error(`HTTP ${res.statusCode} for ${url}`)); }
+      if (res.statusCode !== 200) { res.resume(); return fail(new Error(`HTTP ${res.statusCode} for ${url}`)); }
       fs.mkdirSync(path.dirname(dest), { recursive: true });
-      file = fs.createWriteStream(dest);
+      file = fs.createWriteStream(tmp);
       res.on('error', fail);
       file.on('error', fail);
-      file.on('finish', () => file.close((e) => (e ? fail(e) : succeed())));
+      file.on('finish', () => file.close((e) => {
+        if (e) return fail(e);
+        try { fs.renameSync(tmp, dest); } catch (err) { return fail(err); }
+        succeed();
+      }));
       res.pipe(file);
     });
     req.on('error', fail);
@@ -480,8 +496,9 @@ async function obsidianBundle(ctx) {
     if (!exists(path.join(src, 'main.js')) && isDir(path.join(ctx.repo, 'node_modules'))) {
       run(npmBin(), ['run', 'build', '-w', 'obsidian-plugin'], { cwd: ctx.repo, allowFail: true });
     }
-    fs.mkdirSync(dest, { recursive: true });
+    // dest is created only once a source is known, so a run that installs nothing leaves no empty plugin folder.
     if (exists(path.join(src, 'main.js'))) {
+      fs.mkdirSync(dest, { recursive: true });
       for (const f of BUNDLE_FILES) {
         if (!exists(path.join(src, f))) continue;
         fs.copyFileSync(path.join(src, f), path.join(dest, f));
@@ -491,16 +508,28 @@ async function obsidianBundle(ctx) {
     }
     const version = (readJson(path.join(src, 'manifest.json')) || {}).version;
     if (!version) { out.warn('no Obsidian bundle and no manifest to name a release; run `npm ci && npm run build -w obsidian-plugin` then `aos upgrade`'); return; }
-    for (const f of ['main.js', 'manifest.json', 'styles.css']) {
-      try {
-        await download(`https://github.com/${REPO_SLUG}/releases/download/v${version}/${f}`, path.join(dest, f));
-        ctx.written.push(`.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/${f}`);
-      } catch (e) {
-        out.warn(`could not fetch ${f} for v${version}: ${e.message} — build locally (npm ci && npm run build -w obsidian-plugin) then run aos upgrade`);
-        return;
+    // All three release files are staged in a temp dir first: an upgrade that cannot reach GitHub must leave the
+    // bundle already installed in dest exactly as it was, never a half-replaced (or deleted) plugin.
+    const releaseFiles = ['main.js', 'manifest.json', 'styles.css'];
+    const staging = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-bundle-'));
+    try {
+      for (const f of releaseFiles) {
+        try {
+          await download(`https://github.com/${REPO_SLUG}/releases/download/v${version}/${f}`, path.join(staging, f), 0);
+        } catch (e) {
+          out.warn(`could not fetch ${f} for v${version}: ${e.message} — build locally (npm ci && npm run build -w obsidian-plugin) then run aos upgrade`);
+          return;
+        }
       }
+      fs.mkdirSync(dest, { recursive: true });
+      for (const f of releaseFiles) {
+        fs.copyFileSync(path.join(staging, f), path.join(dest, f));
+        ctx.written.push(`.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/${f}`);
+      }
+      if (exists(path.join(src, 'package.json'))) fs.copyFileSync(path.join(src, 'package.json'), path.join(dest, 'package.json'));
+    } finally {
+      fs.rmSync(staging, { recursive: true, force: true });
     }
-    if (exists(path.join(src, 'package.json'))) fs.copyFileSync(path.join(src, 'package.json'), path.join(dest, 'package.json'));
   });
 }
 
@@ -570,7 +599,12 @@ async function init(flags) {
     out.warn('claude is not logged in; plugin install may fail');
   }
   out.log(`preflight: claude ${bin ? bin : 'absent'} · obsidian ${obsidianDetected() ? 'detected' : 'not detected (optional)'}`);
-  if (flags.cost && !python3Ok(python3Version())) throw new CheckFailed('--cost needs python3 >= 3.9');
+  // `aos cost enable` refuses when the analyzer is not shipped yet; --cost must not flip the flag behind its back,
+  // or doctor demands python3 and every session end ledgers auto-cost with nothing to run.
+  const costShipped = exists(path.join(repo, 'extras', 'cost', 'analyze_transcript.py'));
+  if (flags.cost && !costShipped) out.warn('cost module is not shipped in this phase; leaving cost.enabled=false — run `aos cost enable` after the cost extra lands');
+  const wantCost = !!flags.cost && costShipped;
+  if (wantCost && !python3Ok(python3Version())) throw new CheckFailed('--cost needs python3 >= 3.9');
   const oll = ollamaEndpoint(readJson(configPath()));
   out.log(`preflight: ollama ${oll.host}:${oll.port} ${ollamaProbeSkipped() ? 'not probed (AOS_SKIP_OLLAMA_PROBE=1)' : (await httpProbe(`http://${oll.host}:${oll.port}/api/tags`)) ? 'reachable' : 'not reachable (auto falls back to claude, then none)'}`);
 
@@ -584,8 +618,11 @@ async function init(flags) {
   // 3. seed
   await act(`copy the seed vault into ${vault} (existing files are kept)`, () => {
     copyTree(path.join(repo, 'vault-template'), vault, { rename: { _gitignore: '.gitignore' }, written });
-    const session = path.join(vault, 'brain', '_index', 'SESSION.md');
-    fs.writeFileSync(session, fs.readFileSync(session, 'utf8').replace(/^updated: .*$/m, `updated: ${localDay()}`));
+    // Only the freshly seeded template gets today's date; a re-run must not touch live working memory.
+    if (written.includes('brain/_index/SESSION.md')) {
+      const session = path.join(vault, 'brain', '_index', 'SESSION.md');
+      fs.writeFileSync(session, fs.readFileSync(session, 'utf8').replace(/^updated: .*$/m, `updated: ${localDay()}`));
+    }
     const defaults = readJson(path.join(repo, 'brain', 'scripts', 'config.default.json'), {});
     const cfgJson = path.join(vault, 'brain', 'config.json');
     const current = readJson(cfgJson);
@@ -600,7 +637,7 @@ async function init(flags) {
 
   // 5. agenticos.json
   await act(`write ${configPath()}`, () => {
-    writeJson(configPath(), buildUserConfig(readJson(configPath()), { vault, provider, version, cost: !!flags.cost }));
+    writeJson(configPath(), buildUserConfig(readJson(configPath()), { vault, provider, version, cost: wantCost }));
     written.push(configPath());
   });
 
@@ -702,9 +739,22 @@ async function uninstall(flags) {
   try { fs.unlinkSync(configPath()); out.log(`removed ${configPath()}`); } catch { /* absent */ }
   if (!cfg || !cfg.vault) { out.log('no vault recorded; done'); return 0; }
   if (flags.keepVault) { out.log(`kept vault ${cfg.vault}`); return 0; }
-  const typed = process.env.AOS_CONFIRM_DELETE || await ask(`Type the vault path to DELETE it, anything else keeps it (${cfg.vault}): `, '');
-  if (typed !== cfg.vault) { out.log(`kept vault ${cfg.vault} (delete it yourself if you want it gone)`); return 0; }
-  assertVaultOk(cfg.vault); // structural guard (home dir, Claude config dir, settings.json) even under AOS_CONFIRM_DELETE
+  // --yes means "accept defaults, no prompts", and the default here is to keep the vault: it never prompts and it
+  // never deletes. A scripted teardown that really wants the vault gone sets AOS_CONFIRM_DELETE=<vault>.
+  const typed = process.env.AOS_CONFIRM_DELETE || (flags.yes ? '' : await ask(`Type the vault path to DELETE it, anything else keeps it (${cfg.vault}): `, ''));
+  if (typed !== cfg.vault) {
+    out.log(flags.yes
+      ? `kept vault ${cfg.vault} (--yes never deletes; set AOS_CONFIRM_DELETE=<vault> or run without --yes and type the path)`
+      : `kept vault ${cfg.vault} (delete it yourself if you want it gone)`);
+    return 0;
+  }
+  assertVaultOk(cfg.vault); // structural guard (home dir, filesystem root, Claude config dir, settings.json) even under AOS_CONFIRM_DELETE
+  // …and a confirmed path still has to look like a vault this installer built, so a hand-edited config cannot aim
+  // the recursive remove at an unrelated directory.
+  if (!exists(path.join(cfg.vault, 'AGENTICOS.md')) || !exists(scriptPath(cfg.vault, 'bin/aos'))) {
+    out.log(`${cfg.vault} is not an AgenticOS vault (no AGENTICOS.md + brain/scripts/bin/aos); delete it yourself`);
+    return 1;
+  }
   fs.rmSync(cfg.vault, { recursive: true, force: true });
   out.log(`deleted ${cfg.vault}`);
   return 0;
@@ -790,7 +840,13 @@ function parseArgs(argv) {
   const a = { cmd: argv[0] || '', sub: [], flags: {} };
   for (let i = 1; i < argv.length; i++) {
     const t = argv[i];
-    if (!t.startsWith('--')) { a.sub.push(t); continue; }
+    // A single-dash token is never a flag this CLI understands, and must not become a silent positional
+    // (`aos init -y` would otherwise start an interactive install instead of accepting defaults).
+    if (!t.startsWith('--')) {
+      if (t.startsWith('-') && t !== '-') throw new UsageError(`unknown flag ${t}`);
+      a.sub.push(t);
+      continue;
+    }
     const eq = t.indexOf('=');
     const name = eq === -1 ? t.slice(2) : t.slice(2, eq);
     const inline = eq === -1 ? undefined : t.slice(eq + 1);
@@ -835,7 +891,8 @@ async function main(argv) {
 if (require.main === module) {
   main(process.argv.slice(2)).then((code) => process.exit(code), (e) => {
     if (e instanceof UsageError) { process.stderr.write(`aos: ${e.message}\n${USAGE}\n`); process.exit(2); }
-    process.stderr.write(`aos: ${e.message}\n`);
+    // A non-Error rejection (a thrown string, a rejected promise with no reason) must still name itself.
+    process.stderr.write(`aos: ${e && e.message ? e.message : String(e)}\n`);
     process.exit(1);
   });
 }
