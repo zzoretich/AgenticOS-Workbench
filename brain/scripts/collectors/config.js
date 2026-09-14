@@ -1,10 +1,12 @@
 const path = require('path');
-const { VAULT, safeStat, exists, readJson, readText, countLines, iso } = require('./util');
+const { VAULT, PATHS, safeStat, exists, readJson, readText, countLines, iso } = require('./util');
 
-function collectConfig() {
+function collectConfig(opts = {}) {
+  const vault = opts.vault || VAULT;
+  const configDir = opts.claudeConfigDir || PATHS.CLAUDE_CONFIG_DIR;
   const out = {};
 
-  const settingsPath = path.join(VAULT, 'settings.json');
+  const settingsPath = path.join(configDir, 'settings.json');
   const settings = readJson(settingsPath);
   if (settings) {
     const hooks = settings.hooks || {};
@@ -31,13 +33,13 @@ function collectConfig() {
     out.settings = { path: settingsPath, missing: true };
   }
 
-  const claudeMd = path.join(VAULT, 'CLAUDE.md');
+  const claudeMd = path.join(configDir, 'CLAUDE.md');
   const cs = safeStat(claudeMd);
   out.claudeMd = cs
     ? { size: cs.size, mtime: iso(cs.mtimeMs), lines: countLines(claudeMd) }
     : { missing: true };
 
-  const memoryMd = path.join(VAULT, 'MEMORY.md');
+  const memoryMd = path.join(vault, 'MEMORY.md');
   const mtext = readText(memoryMd);
   if (mtext) {
     const pointers = (mtext.match(/^- \[.+\]\(.+\)/gm) || []).length;
@@ -47,7 +49,7 @@ function collectConfig() {
     out.memoryMd = { missing: true };
   }
 
-  const gsdManifest = path.join(VAULT, 'gsd-file-manifest.json');
+  const gsdManifest = path.join(vault, 'gsd-file-manifest.json');
   const mf = readJson(gsdManifest);
   if (mf) {
     const fileCount = mf.files && typeof mf.files === 'object'
@@ -58,20 +60,20 @@ function collectConfig() {
     out.gsdManifest = { present: exists(gsdManifest) };
   }
 
-  const historyJsonl = path.join(VAULT, 'history.jsonl');
+  const historyJsonl = path.join(configDir, 'history.jsonl');
   const hs = safeStat(historyJsonl);
   out.historyJsonl = hs
     ? { size: hs.size, mtime: iso(hs.mtimeMs), lines: countLines(historyJsonl) }
     : { missing: true };
 
   out.topLevelFiles = {
-    packageJson: exists(path.join(VAULT, 'package.json')),
-    gitignore: exists(path.join(VAULT, '.gitignore')),
-    credentials: exists(path.join(VAULT, '.credentials.json')),
+    packageJson: exists(path.join(vault, 'package.json')),
+    gitignore: exists(path.join(vault, '.gitignore')),
+    credentials: exists(path.join(configDir, '.credentials.json')),
   };
 
   const stray = [];
-  if (exists(path.join(VAULT, 'nul'))) stray.push('nul');
+  if (exists(path.join(vault, 'nul'))) stray.push('nul');
   out.stray = stray;
 
   return out;

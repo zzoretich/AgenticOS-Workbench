@@ -1,5 +1,5 @@
 const path = require('path');
-const { VAULT, safeStat, listDir, exists, iso } = require('./util');
+const { VAULT, PATHS, safeStat, listDir, exists, iso } = require('./util');
 
 function daysSince(ms) {
   return Math.floor((Date.now() - ms) / (1000 * 60 * 60 * 24));
@@ -9,11 +9,13 @@ function hoursSince(ms) {
   return Math.floor((Date.now() - ms) / (1000 * 60 * 60));
 }
 
-function collectRuntime() {
+/** Every directory here is Claude Code's own runtime housekeeping, so it lives under the Claude config dir. */
+function collectRuntime(opts = {}) {
+  const configDir = opts.claudeConfigDir || PATHS.CLAUDE_CONFIG_DIR;
   const out = {};
 
   // backups/ — .claude.json.backup.* files
-  const backupsDir = path.join(VAULT, 'backups');
+  const backupsDir = path.join(configDir, 'backups');
   const backupFiles = listDir(backupsDir)
     .filter(n => n.startsWith('.claude.json.backup.'))
     .map(n => {
@@ -36,7 +38,7 @@ function collectRuntime() {
   };
 
   // shell-snapshots/
-  const shellDir = path.join(VAULT, 'shell-snapshots');
+  const shellDir = path.join(configDir, 'shell-snapshots');
   const shellFiles = listDir(shellDir)
     .map(n => {
       const s = safeStat(path.join(shellDir, n));
@@ -54,7 +56,7 @@ function collectRuntime() {
   };
 
   // cache/
-  const cacheDir = path.join(VAULT, 'cache');
+  const cacheDir = path.join(configDir, 'cache');
   const cacheFiles = listDir(cacheDir)
     .map(n => {
       const s = safeStat(path.join(cacheDir, n));
@@ -67,7 +69,7 @@ function collectRuntime() {
   };
 
   // downloads/
-  const dlDir = path.join(VAULT, 'downloads');
+  const dlDir = path.join(configDir, 'downloads');
   let dlBytes = 0, dlCount = 0;
   for (const n of listDir(dlDir)) {
     const s = safeStat(path.join(dlDir, n));
@@ -80,7 +82,7 @@ function collectRuntime() {
   };
 
   // ide/ — lock files suggest an active IDE connection
-  const ideDir = path.join(VAULT, 'ide');
+  const ideDir = path.join(configDir, 'ide');
   const lockFiles = listDir(ideDir).filter(n => n.endsWith('.lock'));
   out.ide = {
     lockFiles,
@@ -88,7 +90,7 @@ function collectRuntime() {
   };
 
   // sessions/ — runtime session files (PID.json, not the brain/sessions logs)
-  const sessDir = path.join(VAULT, 'sessions');
+  const sessDir = path.join(configDir, 'sessions');
   const sessFiles = listDir(sessDir)
     .map(n => {
       const s = safeStat(path.join(sessDir, n));
