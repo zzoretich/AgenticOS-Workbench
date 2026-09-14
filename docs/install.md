@@ -11,6 +11,8 @@ npm ci --ignore-scripts
 npm run setup            # = node cli/aos.js init
 ```
 
+While developing from a checkout, run `npm run setup -- --from-local .` so the plugin is installed from your clone rather than from GitHub.
+
 `aos init` asks for a vault directory (default `~/AgenticOS`; it refuses `~/.claude` and any directory holding a `settings.json`) and then, in order:
 
 1. **Preflight** — Node ≥ 20; `claude` on PATH and logged in (`claude auth status`); Obsidian detected (optional); python3 ≥ 3.9 only with `--cost`; Ollama on `127.0.0.1:11434` (informational).
@@ -18,7 +20,7 @@ npm run setup            # = node cli/aos.js init
 3. **Vendor the runtime** — `brain/scripts` (without tests or a lockfile) into `<vault>/brain/scripts`, plus `cli/aos.js` and the `aos` launcher; then `npm install --omit=dev` there (two dependencies, pinned by `^` ranges); symlink `~/.local/bin/aos` → `<vault>/brain/scripts/bin/aos`.
 4. **`~/.claude/agenticos.json`** — vault, node path, config dir, provider (`auto`), spend caps, telemetry, cost, persona flags. Honors `CLAUDE_CONFIG_DIR` (and `AOS_CONFIG` for an explicit file path — the same rule every hook and `aos` subcommand uses).
 5. **Plugin** — `claude plugin marketplace add zzoretich/AgenticOS-Workbench` then `claude plugin install agenticos@agenticos-workbench`. With `--from-local <repo-dir>` the marketplace source is your checkout.
-6. **Obsidian bundle** — `main.js`, `manifest.json`, `styles.css` into `<vault>/.obsidian/plugins/agentic-os/` from the checkout's build, else built with `npm run build -w obsidian-plugin`, else downloaded from the matching GitHub release. `--no-obsidian` skips it; `--terminal` also installs the embedded terminal's native module (`aos terminal install` later does the same).
+6. **Obsidian bundle** — `main.js`, `manifest.json`, `styles.css` into `<vault>/.obsidian/plugins/agentic-os/` from the checkout's build, else built with `npm run build -w obsidian-plugin`, else downloaded from the matching GitHub release (no GitHub release exists until the release workflow ships in a later phase, so today that fallback prints a warning; build locally instead). `--no-obsidian` skips it; `--terminal` also installs the embedded terminal's native module (`aos terminal install` later does the same).
 7. **Chief of Staff interview** — names your agent; `--persona-json <file>` answers it non-interactively (fields `name`, `addressAs`, `voice`, `priorities`, `dutyModel`, `dutyEffort`, `schedule`). Until the persona phase ships, init prints "not installed in this phase".
 8. **First scan** — `scan-vault`, `build-brain-md`, `recall --warm`.
 9. **Checklist** — every file written, the line to add to your `CLAUDE.md`, and how to open the vault.
@@ -60,7 +62,7 @@ Every runtime script is also reachable as `aos <name>` (`aos scan-vault`, `aos r
 
 ## Uninstall
 
-`aos uninstall --keep-vault` leaves `~/.claude` as it was and keeps the vault. `aos uninstall` additionally deletes the vault after you type its path (or with `AOS_CONFIRM_DELETE=<vault>` for scripts).
+`aos uninstall --keep-vault` leaves `~/.claude` as it was and keeps the vault. `aos uninstall` additionally deletes the vault after you type its path (or with `AOS_CONFIRM_DELETE=<vault>` for scripts). `--yes` skips the prompt and always keeps the vault; deletion needs the typed path or `AOS_CONFIRM_DELETE=<vault>`.
 
 ## Rehearsing an install without touching your machine
 
