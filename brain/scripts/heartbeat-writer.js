@@ -51,7 +51,7 @@ function orchestratorFor(roster, rec) {
   const hay = `${rec.prompt || ''} ${rec.script || ''}`;
   return roster.find(o => o.re.test(hay)) || null;
 }
-const ROSTER = buildRoster(loadConfig().roster.orchestrators);
+const ROSTER = buildRoster((loadConfig().roster || {}).orchestrators); // `"roster": null` in brain/config.json must not crash the hook at load
 const NICKNAMES = Object.fromEntries(ROSTER.map(o => [o.name, o.nickname]));
 
 function readJsonl(file) {

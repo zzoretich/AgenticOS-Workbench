@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 const { findTranscript, costTranscript } = require('../auto-cost.js');
 
 test('findTranscript locates a transcript in any projects/<slug>/ dir', () => {
@@ -45,4 +46,12 @@ test('costTranscript surfaces a real analyzer failure with its stderr', () => {
       `unexpected status ${r.status}`);
     if (r.status === 'analyzer-failed') assert.ok(r.detail, 'a failure must carry detail');
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('requiring auto-cost.js as a library does not run the hook prologue', () => {
+  // With the prologue at module scope, AOS_HEADLESS=1 made this require() process.exit(0) before the marker printed.
+  const script = `require(${JSON.stringify(path.resolve(__dirname, '..', 'auto-cost.js'))}); process.stdout.write('LOADED_OK');`;
+  const r = spawnSync(process.execPath, ['-e', script], { encoding: 'utf8', env: { ...process.env, AOS_HEADLESS: '1' } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout, 'LOADED_OK');
 });
