@@ -19,6 +19,21 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts
       - run: npm run gate
-      - run: node --test tools/*.test.js
+      - run: node --test tools/*.test.js cli/*.test.js
       - run: npm test -w brain/scripts
       - run: npm test -w obsidian-plugin
+  first-run:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: first-run rehearsal (aos init → scan → MCP recall → wrap_session → doctor → uninstall)
+        run: sh cli/rehearsal/first-run.sh
