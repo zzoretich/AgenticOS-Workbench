@@ -670,8 +670,14 @@ async function uninstall(flags) {
   const cfg = readJson(configPath());
   const bin = claudeBin();
   if (bin) {
-    run(bin, ['plugin', 'uninstall', PLUGIN_ID], { allowFail: true });
-    run(bin, ['plugin', 'marketplace', 'remove', MARKETPLACE], { allowFail: true });
+    // Warn and continue (a teardown must finish), but never report a removal that did not happen.
+    for (const args of [['plugin', 'uninstall', PLUGIN_ID], ['plugin', 'marketplace', 'remove', MARKETPLACE]]) {
+      const r = run(bin, args, { allowFail: true, capture: true });
+      if (r.status !== 0) out.warn(`claude ${args.join(' ')} failed (${(r.stderr || r.stdout).trim() || 'exit ' + r.status}); run it yourself`);
+      else if (r.stdout.trim()) out.log(r.stdout.trim());
+    }
+  } else {
+    out.warn(`claude CLI not found; skipped: claude plugin uninstall ${PLUGIN_ID} && claude plugin marketplace remove ${MARKETPLACE}`);
   }
   removeSchedules();
   const link = path.join(os.homedir(), '.local', 'bin', 'aos');
@@ -681,6 +687,7 @@ async function uninstall(flags) {
   if (flags.keepVault) { out.log(`kept vault ${cfg.vault}`); return 0; }
   const typed = process.env.AOS_CONFIRM_DELETE || await ask(`Type the vault path to DELETE it, anything else keeps it (${cfg.vault}): `, '');
   if (typed !== cfg.vault) { out.log(`kept vault ${cfg.vault} (delete it yourself if you want it gone)`); return 0; }
+  assertVaultOk(cfg.vault); // structural guard (home dir, Claude config dir, settings.json) even under AOS_CONFIRM_DELETE
   fs.rmSync(cfg.vault, { recursive: true, force: true });
   out.log(`deleted ${cfg.vault}`);
   return 0;
@@ -790,6 +797,8 @@ function parseArgs(argv) {
 
 async function main(argv) {
   const { cmd, sub, flags } = parseArgs(argv);
+  // --dry-run is an init-only preview (contract §4.3); on a mutating command it must be a loud error, never a silent no-op.
+  if (flags.dryRun && cmd !== 'init') throw new UsageError('--dry-run is only supported by `aos init`');
   switch (cmd) {
     case 'init': return init(flags);
     case 'upgrade': return upgrade(flags);

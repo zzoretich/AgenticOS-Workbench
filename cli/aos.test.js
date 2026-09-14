@@ -289,6 +289,10 @@ test('upgrade re-vendors the runtime, migrates config, keeps memory', () => {
   fs.writeFileSync(memory, '# Keep me\n');
   const vendored = path.join(sb.vault, 'brain', 'scripts', 'lib', 'paths.js');
   fs.writeFileSync(vendored, '// stale copy\n');
+  const dry = aos(sb, ['upgrade', '--dry-run', '--no-obsidian', '--from-local', ROOT]);
+  assert.equal(dry.status, 2, dry.stderr);
+  assert.match(dry.stderr, /--dry-run is only supported by `aos init`/);
+  assert.ok(fs.readFileSync(vendored, 'utf8').includes('stale copy'), 'a rejected --dry-run runs nothing');
   const cfgPath = path.join(sb.cfg, 'agenticos.json');
   const cfg = readJson(cfgPath);
   delete cfg.telemetry;
@@ -368,4 +372,19 @@ test('persona on/off toggle the kill switch; interview and cost report "not inst
   const term = aos(sb, ['terminal', 'install']);
   assert.equal(term.status, 1);
   assert.match(term.stderr, /no package\.json/);
+});
+
+test('uninstall warns when the claude CLI cannot remove the plugin, and refuses to delete a structurally invalid vault', () => {
+  const sb = initialized();
+  const warned = aos(sb, ['uninstall', '--keep-vault', '--yes'], { AOS_CLAUDE_BIN: '/nonexistent/claude' });
+  assert.equal(warned.status, 0, warned.stderr);
+  assert.match(warned.stderr, /claude plugin uninstall agenticos@agenticos-workbench failed/);
+  assert.match(warned.stderr, /claude plugin marketplace remove agenticos-workbench failed/);
+  assert.ok(fs.existsSync(path.join(sb.vault, 'MEMORY.md')), 'vault kept');
+  // A config that names the home directory must never be deleted, even with the automation confirmation set.
+  fs.writeFileSync(path.join(sb.cfg, 'agenticos.json'), JSON.stringify({ vault: sb.home, node: process.execPath }));
+  const refused = aos(sb, ['uninstall', '--yes'], { AOS_CONFIRM_DELETE: sb.home });
+  assert.equal(refused.status, 1);
+  assert.match(refused.stderr, /refusing the home directory/);
+  assert.ok(fs.existsSync(path.join(sb.home, '.local')), 'home directory intact');
 });
