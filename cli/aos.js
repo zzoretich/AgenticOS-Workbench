@@ -313,6 +313,294 @@ function provider(mode) {
   return 0;
 }
 
+// ── init ──────────────────────────────────────────────────────────────────────
+// Never vendored: installed deps, the test suite, and any lockfile (contract §4.3: the vendored runtime is
+// installed with a plain `npm install --omit=dev`; its two deps are pinned by `^` ranges in package.json).
+const VENDOR_EXCLUDE = /(^|\/)(node_modules|test|package-lock\.json)(\/|$)/;
+const BUNDLE_FILES = ['main.js', 'manifest.json', 'styles.css', 'package.json'];
+
+function isRepoRoot(d) {
+  return !!d && exists(path.join(d, '.claude-plugin', 'marketplace.json')) &&
+    exists(path.join(d, 'brain', 'scripts', 'package.json')) && isDir(path.join(d, 'vault-template'));
+}
+/** The checkout to vendor from: --from-local, this file's parent (repo run), or the marketplace clone. */
+function repoRoot(flags) {
+  const candidates = [flags.fromLocal, path.resolve(__dirname, '..'), path.join(configDir(), 'plugins', 'marketplaces', MARKETPLACE)];
+  for (const c of candidates) if (isRepoRoot(c)) return path.resolve(c);
+  throw new UsageError('cannot locate the AgenticOS-Workbench checkout (needs .claude-plugin/marketplace.json, brain/scripts, vault-template) — pass --from-local <repo-dir>');
+}
+function productVersion(repo) { return (readJson(path.join(repo, 'package.json')) || {}).version || '0.0.0'; }
+
+/** Recursive copy. Existing destination files are kept unless force. `rename` maps a source rel path to a dest rel path. */
+function copyTree(srcRoot, destRoot, { exclude = null, force = false, rename = {}, written = [] } = {}) {
+  const walk = (rel) => {
+    for (const e of fs.readdirSync(path.join(srcRoot, rel), { withFileTypes: true })) {
+      const childRel = rel ? `${rel}/${e.name}` : e.name;
+      if (exclude && exclude.test(childRel)) continue;
+      if (e.isDirectory()) { walk(childRel); continue; }
+      if (!e.isFile()) continue;
+      const destRel = rename[childRel] || childRel;
+      const target = path.join(destRoot, destRel);
+      if (exists(target) && !force) continue;
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.copyFileSync(path.join(srcRoot, childRel), target);
+      written.push(destRel);
+    }
+  };
+  walk('');
+  return written;
+}
+
+function assertVaultOk(vault) {
+  if (insideDir(vault, configDir())) throw new CheckFailed(`refusing ${vault}: it is inside the Claude config dir ${configDir()}`);
+  if (exists(path.join(vault, 'settings.json'))) throw new CheckFailed(`refusing ${vault}: it contains settings.json (looks like a Claude config dir)`);
+  if (path.resolve(vault) === path.resolve(os.homedir())) throw new CheckFailed('refusing the home directory as a vault; pick a subdirectory such as ~/AgenticOS');
+}
+
+/** Obsidian can express only a flat folder + file format; the year folder of the layout is the closest match (documented). */
+function dailyNotesJson(layout) {
+  const first = String(layout).split('/')[0];
+  return { folder: first.replace(/\{yyyy\}/g, String(new Date().getFullYear())), format: 'YYYY-MM-DD' };
+}
+
+function buildUserConfig(existing, { vault, provider, version, cost }) {
+  const base = {
+    version, vault, node: process.execPath, claudeConfigDir: configDir(), provider: 'auto',
+    claude: { model: 'haiku', perCallUsd: 0.05, perDayUsd: 0.5 },
+    ollama: { host: '127.0.0.1', port: 11434 },
+    telemetry: { enabled: true, redact: true, retentionDays: 30 },
+    cost: { enabled: false },
+    persona: { enabled: true },
+  };
+  const merged = deepMerge(base, existing || {});
+  merged.version = version;
+  merged.vault = vault;
+  merged.node = process.execPath;
+  merged.claudeConfigDir = configDir();
+  if (provider) merged.provider = provider;
+  if (cost) merged.cost = { ...merged.cost, enabled: true };
+  const ordered = {};
+  for (const k of Object.keys(base)) ordered[k] = merged[k];
+  for (const k of Object.keys(merged)) if (!(k in ordered)) ordered[k] = merged[k];
+  return ordered;
+}
+
+/** ~/.local/bin/aos → <vault>/brain/scripts/bin/aos, so `aos doctor` works from any shell. */
+function linkLauncher(vault) {
+  const binDir = path.join(os.homedir(), '.local', 'bin');
+  const link = path.join(binDir, 'aos');
+  const target = scriptPath(vault, 'bin/aos');
+  try {
+    fs.mkdirSync(binDir, { recursive: true });
+    let current = null;
+    try { current = fs.readlinkSync(link); } catch { /* absent, or a regular file */ }
+    if (current === target) return link;
+    if (current && current.endsWith('/brain/scripts/bin/aos')) fs.unlinkSync(link);
+    else if (exists(link)) { out.warn(`${link} exists and is not an AgenticOS launcher; leaving it alone`); return null; }
+    fs.symlinkSync(target, link);
+    return link;
+  } catch (e) { out.warn(`could not link ${link}: ${e.message}`); return null; }
+}
+
+function vendorRuntime(ctx, { force = true } = {}) {
+  const { repo, vault, written } = ctx;
+  const dest = scriptPath(vault, '');
+  copyTree(path.join(repo, 'brain', 'scripts'), dest, { exclude: VENDOR_EXCLUDE, force, written: [] });
+  fs.mkdirSync(path.join(dest, 'cli'), { recursive: true });
+  fs.copyFileSync(path.join(repo, 'cli', 'aos.js'), path.join(dest, 'cli', 'aos.js'));
+  fs.mkdirSync(path.join(dest, 'bin'), { recursive: true });
+  fs.copyFileSync(path.join(repo, 'plugin', 'bin', 'aos'), path.join(dest, 'bin', 'aos'));
+  fs.chmodSync(path.join(dest, 'bin', 'aos'), 0o755);
+  written.push('brain/scripts/ (runtime)', 'brain/scripts/cli/aos.js', 'brain/scripts/bin/aos');
+  if (process.env.AOS_SKIP_NPM !== '1') {
+    // Spec §9.2 step 4 / contract §4.3: a plain `npm install --omit=dev` in the vendored dir. No lockfile is
+    // vendored (VENDOR_EXCLUDE drops one even when the checkout has it; the root workspace lockfile describes
+    // the workspaces, not this package alone), so `npm ci` is not an option here and is deliberately not used.
+    // On a re-run (init again, upgrade) npm prunes and refreshes node_modules in place.
+    run(npmBin(), ['install', '--omit=dev', '--no-audit', '--no-fund'], { cwd: dest });
+  }
+  const link = linkLauncher(vault);
+  if (link) written.push(link);
+}
+
+function installPlugin(ctx, bin) {
+  const source = ctx.flags.fromLocal ? path.resolve(ctx.flags.fromLocal) : REPO_SLUG;
+  const already = installedPlugin(bin);
+  if (already) { out.log(`   plugin already installed: ${already.id}`); return; }
+  const add = run(bin, ['plugin', 'marketplace', 'add', source], { allowFail: true, capture: true });
+  if (add.status !== 0 && !/already/i.test(add.stdout + add.stderr)) out.warn(`marketplace add: ${(add.stderr || add.stdout).trim()}`);
+  run(bin, ['plugin', 'install', PLUGIN_ID]);
+}
+
+function download(url, dest, hops = 0) {
+  return new Promise((resolve, reject) => {
+    https.get(url, { headers: { 'user-agent': 'agenticos-installer' } }, (res) => {
+      if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location && hops < 5) {
+        res.resume();
+        return resolve(download(res.headers.location, dest, hops + 1));
+      }
+      if (res.statusCode !== 200) { res.resume(); return reject(new Error(`HTTP ${res.statusCode} for ${url}`)); }
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      const file = fs.createWriteStream(dest);
+      res.pipe(file);
+      file.on('finish', () => file.close(resolve));
+      file.on('error', reject);
+    }).on('error', reject);
+  });
+}
+
+async function obsidianBundle(ctx) {
+  const src = path.join(ctx.repo, 'obsidian-plugin');
+  const dest = path.join(ctx.vault, '.obsidian', 'plugins', OBSIDIAN_PLUGIN_ID);
+  await ctx.act(`install the Obsidian plugin bundle into ${dest}`, async () => {
+    if (!exists(path.join(src, 'main.js')) && isDir(path.join(ctx.repo, 'node_modules'))) {
+      run(npmBin(), ['run', 'build', '-w', 'obsidian-plugin'], { cwd: ctx.repo, allowFail: true });
+    }
+    fs.mkdirSync(dest, { recursive: true });
+    if (exists(path.join(src, 'main.js'))) {
+      for (const f of BUNDLE_FILES) {
+        if (!exists(path.join(src, f))) continue;
+        fs.copyFileSync(path.join(src, f), path.join(dest, f));
+        ctx.written.push(`.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/${f}`);
+      }
+      return;
+    }
+    const version = (readJson(path.join(src, 'manifest.json')) || {}).version;
+    if (!version) { out.warn('no Obsidian bundle and no manifest to name a release; run `npm ci && npm run build -w obsidian-plugin` then `aos upgrade`'); return; }
+    for (const f of ['main.js', 'manifest.json', 'styles.css']) {
+      try {
+        await download(`https://github.com/${REPO_SLUG}/releases/download/v${version}/${f}`, path.join(dest, f));
+        ctx.written.push(`.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/${f}`);
+      } catch (e) {
+        out.warn(`could not fetch ${f} for v${version}: ${e.message} — build locally (npm ci && npm run build -w obsidian-plugin) then run aos upgrade`);
+        return;
+      }
+    }
+    if (exists(path.join(src, 'package.json'))) fs.copyFileSync(path.join(src, 'package.json'), path.join(dest, 'package.json'));
+  });
+}
+
+function terminalInstall(vault) {
+  if (process.platform === 'win32') throw new CheckFailed('Windows is not supported in v1');
+  const dir = path.join(vault, '.obsidian', 'plugins', OBSIDIAN_PLUGIN_ID);
+  if (!exists(path.join(dir, 'package.json'))) throw new CheckFailed(`no package.json in ${dir}; install the Obsidian bundle first (aos upgrade)`);
+  run(npmBin(), ['install', '--omit=dev', '--no-audit', '--no-fund'], { cwd: dir });
+  const prebuilds = path.join(dir, 'node_modules', 'node-pty', 'prebuilds');
+  for (const d of (isDir(prebuilds) ? fs.readdirSync(prebuilds) : [])) {
+    const helper = path.join(prebuilds, d, 'spawn-helper');
+    if (exists(helper)) fs.chmodSync(helper, 0o755);
+  }
+  out.log(`terminal support installed in ${dir}; restart Obsidian to load it`);
+}
+
+function personaInterview(ctx) {
+  const cfg = readJson(configPath()) || {};
+  if (cfg.persona && cfg.persona.enabled === false) { out.log('   persona disabled in config; skipping the interview'); return; }
+  const script = scriptPath(ctx.vault, 'persona/interview.js');
+  if (!exists(script)) { out.log('   persona interview not installed in this phase — run `aos persona` after a later upgrade'); return; }
+  const args = [script];
+  if (ctx.flags.personaJson) args.push('--answers', path.resolve(ctx.flags.personaJson));
+  else if (ctx.yes || !process.stdin.isTTY) { out.log('   no --persona-json and no terminal; skipping the interview (run `aos persona` later)'); return; }
+  run(process.execPath, args, { cwd: ctx.vault, env: { AOS_VAULT: ctx.vault, AOS_CONFIG: configPath() }, allowFail: true });
+}
+
+function checklist(ctx) {
+  const { vault, written, dry } = ctx;
+  out.log('');
+  if (dry) out.log('dry-run complete — nothing was written.');
+  else {
+    out.log('done. Files written:');
+    for (const w of written) out.log(`  ${path.isAbsolute(w) ? w : path.join(vault, w)}`);
+  }
+  out.log('');
+  out.log('Next steps:');
+  out.log(`  1. Add this line to your CLAUDE.md (${path.join(configDir(), 'CLAUDE.md')}); the installer never edits it:`);
+  out.log(`       @${path.join(vault, 'AGENTICOS.md')}`);
+  out.log(`  2. Open the vault in Obsidian: "Open folder as vault" → ${vault}, then enable "Agentic OS" under Settings → Community plugins.`);
+  out.log(`  3. Put ${path.join(os.homedir(), '.local', 'bin')} on your PATH, then run: aos doctor`);
+  out.log('  4. Start a new `claude` session; the first prompt receives <brain-context>. Use /wrap at the end.');
+}
+
+async function init(flags) {
+  const dry = !!flags.dryRun;
+  const yes = !!flags.yes;
+  const repo = repoRoot(flags);
+  const version = productVersion(repo);
+  const provider = flags.provider || 'auto';
+  if (!PROVIDERS.includes(provider)) throw new UsageError(`--provider must be one of ${PROVIDERS.join('|')}`);
+  const written = [];
+  let n = 0;
+  const act = async (what, fn) => { n += 1; out.log(`${dry ? '[dry-run] ' : ''}${n}. ${what}`); if (!dry) await fn(); };
+  const ctx = { flags, repo, dry, yes, written, act, version };
+
+  // 1. preflight
+  if (nodeMajor() < 20) throw new CheckFailed(`Node 20 or newer is required (running v${process.versions.node})`);
+  out.log(`preflight: node v${process.versions.node} · checkout ${repo} (v${version})`);
+  const bin = claudeBin();
+  if (!bin) {
+    if (provider !== 'none') throw new CheckFailed('claude CLI not found — install Claude Code, or pass --provider none to skip the plugin steps');
+    out.warn('claude CLI not found; the plugin will not be installed (re-run init after installing Claude Code)');
+  } else if (!claudeLoggedIn(bin)) {
+    if (provider !== 'none') throw new CheckFailed('claude is not logged in — run `claude auth login` first');
+    out.warn('claude is not logged in; plugin install may fail');
+  }
+  out.log(`preflight: claude ${bin ? bin : 'absent'} · obsidian ${obsidianDetected() ? 'detected' : 'not detected (optional)'}`);
+  if (flags.cost && !python3Ok(python3Version())) throw new CheckFailed('--cost needs python3 >= 3.9');
+  const oll = ollamaEndpoint(readJson(configPath()));
+  out.log(`preflight: ollama ${oll.host}:${oll.port} ${(await httpProbe(`http://${oll.host}:${oll.port}/api/tags`)) ? 'reachable' : 'not reachable (auto falls back to claude, then none)'}`);
+
+  // 2. vault path
+  let vault = flags.vault ? path.resolve(flags.vault) : DEFAULT_VAULT;
+  if (!flags.vault && !yes && !dry) vault = path.resolve(await ask(`Vault directory [${DEFAULT_VAULT}]: `, DEFAULT_VAULT));
+  assertVaultOk(vault);
+  ctx.vault = vault;
+  out.log(`vault: ${vault}`);
+
+  // 3. seed
+  await act(`copy the seed vault into ${vault} (existing files are kept)`, () => {
+    copyTree(path.join(repo, 'vault-template'), vault, { rename: { _gitignore: '.gitignore' }, written });
+    const session = path.join(vault, 'brain', '_index', 'SESSION.md');
+    fs.writeFileSync(session, fs.readFileSync(session, 'utf8').replace(/^updated: .*$/m, `updated: ${localDay()}`));
+    const defaults = readJson(path.join(repo, 'brain', 'scripts', 'config.default.json'), {});
+    const cfgJson = path.join(vault, 'brain', 'config.json');
+    const current = readJson(cfgJson);
+    if (!current || Object.keys(current).length === 0) { writeJson(cfgJson, defaults); written.push('brain/config.json'); }
+    const layout = (((readJson(cfgJson) || {}).dailyNote || {}).layout) || defaults.dailyNote.layout;
+    writeJson(path.join(vault, '.obsidian', 'daily-notes.json'), dailyNotesJson(layout));
+    written.push('.obsidian/daily-notes.json');
+  });
+
+  // 4. vendor runtime
+  await act(`vendor brain/scripts into ${scriptPath(vault, '')} and install its dependencies`, () => vendorRuntime(ctx));
+
+  // 5. agenticos.json
+  await act(`write ${configPath()}`, () => {
+    writeJson(configPath(), buildUserConfig(readJson(configPath()), { vault, provider, version, cost: !!flags.cost }));
+    written.push(configPath());
+  });
+
+  // 6. plugin
+  if (bin) await act(`register the ${MARKETPLACE} marketplace and install ${PLUGIN_ID}`, () => installPlugin(ctx, bin));
+
+  // 7. obsidian bundle (+ optional terminal deps)
+  if (flags.obsidian !== false) await obsidianBundle(ctx);
+  if (flags.terminal) await act('install terminal support (node-pty) in the Obsidian plugin folder', () => terminalInstall(vault));
+
+  // 8. persona
+  await act('run the Chief of Staff interview', () => personaInterview(ctx));
+
+  // 9. first scan
+  await act('first scan, compile BRAIN.md, warm the recall index', () => {
+    runScript(vault, 'scan-vault', ['--quiet'], { allowFail: true });
+    runScript(vault, 'build-brain-md', [], { allowFail: true });
+    runScript(vault, 'recall', ['--warm'], { allowFail: true });
+  });
+
+  // 10. checklist
+  checklist(ctx);
+  return 0;
+}
+
 // ── args and main ─────────────────────────────────────────────────────────────
 const VALUE_FLAGS = new Set(['vault', 'provider', 'persona-json', 'from-local', 'budget']);
 const BOOL_FLAGS = new Set(['dry-run', 'yes', 'terminal', 'cost', 'keep-vault']);
@@ -348,6 +636,7 @@ function parseArgs(argv) {
 async function main(argv) {
   const { cmd, sub, flags } = parseArgs(argv);
   switch (cmd) {
+    case 'init': return init(flags);
     case 'doctor': return doctor();
     case 'status': return status();
     case 'provider': return provider(sub[0]);
@@ -370,6 +659,8 @@ module.exports = {
   run, which, claudeBin, npmBin, claudeLoggedIn, installedPlugin, python3Version, python3Ok, obsidianDetected, httpProbe, ollamaEndpoint, ask,
   runScript, scriptPath, mcpProbe, spendRowsToday, spendToday, isDutyFeature, isHookFeature, loadConfigOrThrow,
   doctor, status, provider, main,
+  init, repoRoot, productVersion, copyTree, assertVaultOk, dailyNotesJson, buildUserConfig, linkLauncher, vendorRuntime,
+  installPlugin, download, obsidianBundle, terminalInstall, personaInterview, checklist,
   PROVIDERS, PLUGIN_ID, MARKETPLACE, REPO_SLUG, OBSIDIAN_PLUGIN_ID, DEFAULT_VAULT, RUNTIME_SCRIPTS, USAGE,
   VALUE_FLAGS, BOOL_FLAGS, NEGATABLE_FLAGS,
   UsageError, CheckFailed, out,
