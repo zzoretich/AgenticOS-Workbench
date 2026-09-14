@@ -1,5 +1,5 @@
 const path = require('path');
-const { VAULT, safeStat, listDir, walkSize, iso } = require('./util');
+const { VAULT, PATHS, safeStat, listDir, walkSize, iso } = require('./util');
 
 // Every top-level folder worth monitoring. Order matters for display.
 const FOLDERS = [
@@ -8,17 +8,25 @@ const FOLDERS = [
   'projects', 'session-env', 'sessions', 'shell-snapshots',
   'skills', 'tasks', 'templates', '.obsidian',
 ];
+// Folders Claude Code itself owns: they live under the Claude config dir, not the vault (identical in the owner's setup).
+const CONFIG_DIR_FOLDERS = new Set([
+  'agents', 'backups', 'cache', 'commands', 'downloads', 'file-history', 'hooks', 'ide', 'plugins',
+  'projects', 'session-env', 'sessions', 'shell-snapshots', 'skills', 'tasks',
+]);
 
 // Directories where we should stat-only to stay fast (and avoid reading JS)
 const STAT_ONLY_DEEP = new Set(['.obsidian']);
 
-function collectFolderAtlas() {
+function collectFolderAtlas(opts = {}) {
+  const vault = opts.vault || VAULT;
+  const configDir = opts.claudeConfigDir || PATHS.CLAUDE_CONFIG_DIR;
   const rows = [];
   for (const name of FOLDERS) {
-    const p = path.join(VAULT, name);
+    const scope = CONFIG_DIR_FOLDERS.has(name) ? 'config' : 'vault';
+    const p = path.join(scope === 'config' ? configDir : vault, name);
     const s = safeStat(p);
     if (!s) {
-      rows.push({ name, present: false });
+      rows.push({ name, scope, present: false });
       continue;
     }
     const entries = listDir(p).length;
@@ -27,6 +35,7 @@ function collectFolderAtlas() {
     });
     rows.push({
       name,
+      scope,
       present: true,
       entries,
       files: sizeInfo.files,
@@ -38,4 +47,4 @@ function collectFolderAtlas() {
   return rows;
 }
 
-module.exports = { collectFolderAtlas, FOLDERS };
+module.exports = { collectFolderAtlas, FOLDERS, CONFIG_DIR_FOLDERS };

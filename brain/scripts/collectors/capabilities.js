@@ -1,6 +1,6 @@
 const path = require('path');
 const os = require('os');
-const { VAULT, safeStat, listDir, exists, readJson, readText } = require('./util');
+const { VAULT, PATHS, safeStat, listDir, exists, readJson, readText } = require('./util');
 
 function classifyGsd(names) {
   let gsd = 0;
@@ -12,11 +12,14 @@ function classifyGsd(names) {
   return { gsd, custom };
 }
 
-function collectCapabilities() {
+/** opts.vault / opts.claudeConfigDir default to the resolved vault and Claude config dir (they differ in a dedicated vault). */
+function collectCapabilities(opts = {}) {
+  const vault = opts.vault || VAULT;
+  const configDir = opts.claudeConfigDir || PATHS.CLAUDE_CONFIG_DIR;
   const out = {};
 
   // agents/*.md
-  const agentsDir = path.join(VAULT, 'agents');
+  const agentsDir = path.join(configDir, 'agents');
   const agentFiles = listDir(agentsDir).filter(n => n.endsWith('.md'));
   const agentBases = agentFiles.map(n => n.replace(/\.md$/, ''));
   const agentsClass = classifyGsd(agentBases);
@@ -28,7 +31,7 @@ function collectCapabilities() {
   };
 
   // commands/*.md
-  const commandsDir = path.join(VAULT, 'commands');
+  const commandsDir = path.join(configDir, 'commands');
   const commandFiles = listDir(commandsDir).filter(n => n.endsWith('.md'));
   out.commands = {
     count: commandFiles.length,
@@ -36,7 +39,7 @@ function collectCapabilities() {
   };
 
   // skills/*/ — each should contain SKILL.md
-  const skillsDir = path.join(VAULT, 'skills');
+  const skillsDir = path.join(configDir, 'skills');
   const skillDirs = listDir(skillsDir).filter(n => safeStat(path.join(skillsDir, n))?.isDirectory());
   const missingSkillMd = [];
   for (const d of skillDirs) {
@@ -52,9 +55,9 @@ function collectCapabilities() {
   };
 
   // hooks/*.{js,sh}
-  const hooksDir = path.join(VAULT, 'hooks');
+  const hooksDir = path.join(configDir, 'hooks');
   const hookFiles = listDir(hooksDir).filter(n => /\.(js|sh|ps1)$/.test(n));
-  const settings = readJson(path.join(VAULT, 'settings.json')) || {};
+  const settings = readJson(path.join(configDir, 'settings.json')) || {};
   const referencedScripts = new Set();
   const HOME = process.env.HOME || os.homedir() || '';
   // Expand env-var home references so paths like "$HOME/.claude/hooks/x.sh"
@@ -85,7 +88,7 @@ function collectCapabilities() {
   const allUnwired = hookFiles.filter(n => !wired.includes(n));
   // Split unwired into (a) acknowledged-intentional (suppressed via config) and
   // (b) genuinely unexpected orphans that should fire a warning.
-  const scannerCfg = readJson(path.join(VAULT, 'brain/_index/scanner-config.json')) || {};
+  const scannerCfg = readJson(path.join(vault, 'brain/_index/scanner-config.json')) || {};
   const allowedOrphanSet = new Set(scannerCfg.allowedOrphanHooks || []);
   const acknowledgedOrphans = allUnwired.filter(n => allowedOrphanSet.has(n));
   const orphans = allUnwired.filter(n => !allowedOrphanSet.has(n));
@@ -103,7 +106,7 @@ function collectCapabilities() {
   };
 
   // brain/scripts/*
-  const bScriptsDir = path.join(VAULT, 'brain/scripts');
+  const bScriptsDir = path.join(vault, 'brain/scripts');
   const bScripts = listDir(bScriptsDir).filter(n => /\.(js|sh|ps1)$/.test(n));
   const bWired = bScripts.filter(n => {
     const full = path.join(bScriptsDir, n).replace(/\\/g, '/');
@@ -119,7 +122,7 @@ function collectCapabilities() {
   };
 
   // plugins/ top-level
-  const pluginsDir = path.join(VAULT, 'plugins');
+  const pluginsDir = path.join(configDir, 'plugins');
   out.pluginsTopLevel = {
     present: exists(pluginsDir),
     count: listDir(pluginsDir).length,

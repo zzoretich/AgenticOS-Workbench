@@ -11,7 +11,7 @@
  *   3. Non-empty dirs are removed ONLY when every file is known-transient runtime
  *      residue (per transientResiduePatterns) — e.g. "sessionstart-hook-8.sh"
  *      env-export snippets. Any unrecognized file makes the dir skipped, untouched.
- *   4. Skips any UUID that has a matching <uuid>.jsonl anywhere under projects/.
+ *   4. Skips any UUID that has a matching <uuid>.jsonl anywhere under <claudeConfigDir>/projects/.
  *   5. Skips any UUID whose dir is younger than orphanUuidMinAgeMinutes.
  *
  * Gated by scanner-config.json: `autoSweepOrphans: true`.
@@ -26,7 +26,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { VAULT, safeStat, listDir, readJson } = require('./collectors/util');
+const { VAULT, PATHS, safeStat, listDir, readJson } = require('./collectors/util');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const WIN_CWD_RE = /^[A-Z]--/;
@@ -91,8 +91,13 @@ function sweepTree(rootDir, jsonlUuids, minAgeMs, skipped, transient) {
   return { swept, transientSwept };
 }
 
-function sweepOrphans() {
-  const cfg = readJson(path.join(VAULT, 'brain/_index/scanner-config.json')) || {};
+/** opts.vault holds scanner-config.json; opts.claudeConfigDir holds projects/, session-env/ and file-history/ (Claude Code's
+ *  own trees). Both default to the resolved paths. The projects/ allow-list and the sweep targets MUST share a base:
+ *  an allow-list read from the wrong directory would be empty and a live session's side-folders would look orphaned. */
+function sweepOrphans(opts = {}) {
+  const vault = opts.vault || VAULT;
+  const configDir = opts.claudeConfigDir || PATHS.CLAUDE_CONFIG_DIR;
+  const cfg = readJson(path.join(vault, 'brain/_index/scanner-config.json')) || {};
   const result = {
     enabled: false,
     swept: { sessionEnv: [], fileHistory: [] },
@@ -109,7 +114,7 @@ function sweepOrphans() {
   };
 
   const minAgeMs = (cfg.orphanUuidMinAgeMinutes ?? 60) * 60 * 1000;
-  const projectsDir = path.join(VAULT, 'projects');
+  const projectsDir = path.join(configDir, 'projects');
 
   // Build set of UUIDs that have a JSONL under any runtime-cwd project.
   const jsonlUuids = new Set();
@@ -123,7 +128,7 @@ function sweepOrphans() {
   }
 
   for (const { key, dir } of SWEEP_TARGETS) {
-    const r = sweepTree(path.join(VAULT, dir), jsonlUuids, minAgeMs, result.skipped, transient);
+    const r = sweepTree(path.join(configDir, dir), jsonlUuids, minAgeMs, result.skipped, transient);
     result.swept[key] = r.swept;
     result.transientSwept[key] = r.transientSwept;
   }
