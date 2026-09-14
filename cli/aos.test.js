@@ -207,13 +207,22 @@ test('init into a temp vault: seed set, vendored runtime, agenticos.json, plugin
   assert.ok(fs.existsSync(path.join(v, 'brain', '_index', 'recall-index.json')), 'recall --warm ran');
   assert.match(fs.readFileSync(path.join(v, 'brain', '_index', 'BRAIN.md'), 'utf8'), /^## Who$/m);
   assert.match(r.stdout, new RegExp(`@${v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/AGENTICOS\\.md`));
-  assert.match(r.stdout, /persona interview not installed in this phase|interview/);
+  assert.match(r.stdout, /persona interview not installed in this phase|skipping the interview/);
 
   // Idempotent: a second init keeps user files and does not duplicate the seed.
   fs.appendFileSync(path.join(v, 'MEMORY.md'), '- [Kept](brain/memory/reference/kept.md) — user line\n');
   const again = aos(sb, ['init', '--vault', v, '--no-obsidian', '--provider', 'none', '--yes']);
   assert.equal(again.status, 0, again.stderr);
   assert.match(fs.readFileSync(path.join(v, 'MEMORY.md'), 'utf8'), /Kept/);
+
+  // A re-run without --provider keeps the mode already set (e.g. by `aos provider ollama`), rather than resetting to auto.
+  const cfgPath = path.join(sb.cfg, 'agenticos.json');
+  const setOllama = readJson(cfgPath);
+  setOllama.provider = 'ollama';
+  fs.writeFileSync(cfgPath, JSON.stringify(setOllama, null, 2) + '\n');
+  const keepProvider = aos(sb, ['init', '--vault', v, '--no-obsidian', '--yes']);
+  assert.equal(keepProvider.status, 0, keepProvider.stderr);
+  assert.equal(readJson(cfgPath).provider, 'ollama');
 });
 
 test('init with --from-local uses the local path as the marketplace source', () => {
@@ -221,4 +230,38 @@ test('init with --from-local uses the local path as the marketplace source', () 
   const r = aos(sb, ['init', '--vault', sb.vault, '--no-obsidian', '--provider', 'none', '--yes', '--from-local', ROOT]);
   assert.equal(r.status, 0, r.stderr);
   assert.match(sb.log('FAKE_CLAUDE_LOG'), new RegExp(`^plugin marketplace add ${ROOT.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'm'));
+});
+
+test('init keeps going and prints the checklist when the plugin install fails', () => {
+  const sb = sandbox();
+  const r = aos(sb, ['init', '--vault', sb.vault, '--no-obsidian', '--provider', 'none', '--yes'], { FAKE_CLAUDE_FAIL_INSTALL: '1' });
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  assert.match(r.stderr, /plugin install failed/);
+  const v = sb.vault;
+  assert.match(r.stdout, new RegExp(`@${v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/AGENTICOS\\.md`));
+  assert.ok(fs.existsSync(path.join(v, 'brain', '_index', 'recall-index.json')), 'recall --warm ran');
+});
+
+test('download rejects on a mid-stream response error, removes the partial file, and does not crash', async () => {
+  const { download } = require('./aos.js');
+  const { PassThrough } = require('stream');
+  const { EventEmitter } = require('events');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-download-'));
+  const dest = path.join(dir, 'main.js');
+  const fakeGet = (url, opts, cb) => {
+    const req = new EventEmitter();
+    req.setTimeout = () => {};
+    req.destroy = () => {};
+    setImmediate(() => {
+      const res = new PassThrough();
+      res.statusCode = 200;
+      res.headers = {};
+      cb(res);
+      res.write('partial');
+      setImmediate(() => res.emit('error', new Error('boom')));
+    });
+    return req;
+  };
+  await assert.rejects(download('https://example.invalid/main.js', dest, 0, fakeGet), /boom/);
+  assert.ok(!fs.existsSync(dest));
 });
