@@ -1,0 +1,90 @@
+#!/bin/sh
+# aos — AgenticOS launcher. Usage: aos <name> [args…]
+#
+# Reads <configDir>/agenticos.json (written by `aos init`; no jq), resolves node,
+# then execs <vault>/brain/scripts/<script> with AOS_VAULT and AOS_CONFIG exported.
+# Exit codes: 0 when the workbench is not initialized or node is missing (a hook
+# must never fail a Claude Code session) · 64 unknown name · else the script's own.
+# Debug: AOS_DEBUG=1 prints the reason for a silent exit on stderr.
+# Test seam: AOS_NODE_CANDIDATES="<path>:<path>…" replaces the built-in node probe list
+# (step 3 of the resolution order below); unset in normal use.
+# Windows is unsupported in v1 (this is POSIX sh; hooks run it as `sh …/bin/aos`).
+set -u
+
+CONFIG="${AOS_CONFIG:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/agenticos.json}"
+if [ ! -f "$CONFIG" ]; then
+  [ "${AOS_DEBUG:-}" = "1" ] && echo "aos: no config at $CONFIG (run: aos init)" >&2
+  exit 0
+fi
+
+# json_str <key> — value of the first top-level `"key": "string"` line (agenticos.json is pretty-printed, one key per line).
+json_str() {
+  sed -n "s/^[[:space:]]*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" "$CONFIG" | head -n 1
+}
+
+VAULT=$(json_str vault)
+if [ -z "$VAULT" ] || [ ! -d "$VAULT/brain/scripts" ]; then
+  [ "${AOS_DEBUG:-}" = "1" ] && echo "aos: vault '$VAULT' from $CONFIG has no brain/scripts (run: aos doctor)" >&2
+  exit 0
+fi
+
+NODE=$(json_str node)
+if [ -z "$NODE" ] || [ ! -x "$NODE" ]; then
+  NODE=$(command -v node 2>/dev/null || true)
+fi
+if [ -z "$NODE" ]; then
+  if [ -n "${AOS_NODE_CANDIDATES:-}" ]; then
+    # Test seam: a colon-separated list replaces the probe list below (pure sh, no subshell, no `set --`).
+    rest="$AOS_NODE_CANDIDATES:"
+    while [ -n "$rest" ]; do
+      candidate="${rest%%:*}"; rest="${rest#*:}"
+      if [ -n "$candidate" ] && [ -x "$candidate" ]; then NODE="$candidate"; break; fi
+    done
+  else
+    for candidate in /opt/homebrew/bin/node /usr/local/bin/node /usr/bin/node \
+        "$HOME"/.nvm/versions/node/*/bin/node "$HOME/.volta/bin/node" "$HOME/.local/share/fnm/aliases/default/bin/node"; do
+      if [ -x "$candidate" ]; then NODE="$candidate"; break; fi
+    done
+  fi
+fi
+if [ -z "$NODE" ]; then
+  echo "aos: node not found — set \"node\" in $CONFIG or put node on PATH" >&2
+  exit 0
+fi
+
+export AOS_VAULT="$VAULT"
+export AOS_CONFIG="$CONFIG"
+
+NAME="${1:-}"
+[ $# -gt 0 ] && shift
+case "$NAME" in
+  inject-context) SCRIPT=inject-context.js ;;
+  update-session) SCRIPT=update-session.js ;;
+  telemetry-hook) SCRIPT=telemetry-hook.js ;;
+  heartbeat-writer) SCRIPT=heartbeat-writer.js ;;
+  auto-cost) SCRIPT=auto-cost.js ;;
+  auto-wrap) SCRIPT=auto-wrap.js ;;
+  scan-vault) SCRIPT=scan-vault.js ;;
+  build-brain-md) SCRIPT=build-brain-md.js ;;
+  wrap-session) SCRIPT=wrap-session.js ;;
+  mcp-server) SCRIPT=sdk/mcp-server.js ;;
+  ask) SCRIPT=sdk/ask.js ;;
+  standup) SCRIPT=sdk/standup.js ;;
+  reflect-week) SCRIPT=sdk/reflect-week.js ;;
+  consolidate-memory) SCRIPT=sdk/consolidate-memory.js ;;
+  compress) SCRIPT=sdk/compress.js ;;
+  map-workspace) SCRIPT=map-workspace.js ;;
+  regen-insight) SCRIPT=regen-workspace-insight.js ;;
+  cost-budget) SCRIPT=cost-budget.js ;;
+  recall) SCRIPT=sdk/recall-cli.js ;;
+  feedback-apply) SCRIPT=feedback-apply.js ;;
+  sitrep-state) SCRIPT=persona/sitrep-state.js ;;
+  record-spend) SCRIPT=persona/record-spend.js ;;
+  interview) SCRIPT=persona/interview.js ;;
+  run-duty) exec sh "$VAULT/brain/scripts/persona/run-duty.sh" "$@" ;;
+  doctor|status|upgrade|uninstall|persona|cost|terminal|provider) SCRIPT=cli/aos.js; set -- "$NAME" "$@" ;;
+  "") echo "usage: aos <name> [args...]" >&2; exit 64 ;;
+  *) echo "aos: unknown script $NAME" >&2; exit 64 ;;
+esac
+
+exec "$NODE" "$VAULT/brain/scripts/$SCRIPT" "$@"
