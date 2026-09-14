@@ -15,7 +15,7 @@
 const fs = require('fs');
 const path = require('path');
 const { parseFrontmatter, walkMarkdown } = require('./brain.js');
-const { VAULT: DEFAULT_VAULT } = require('../../lib/paths.js');
+const { VAULT: DEFAULT_VAULT, listDailyNotes } = require('../../lib/paths.js');
 
 const K1 = 1.2;
 const B = 0.75;
@@ -47,18 +47,11 @@ function extractWikiLinks(body) {
 function collectCorpus(vault) {
   const files = [];
   const { loadConfig } = require('../../lib/config.js');
-  for (const root of loadConfig().recallRoots) files.push(...walkMarkdown(path.join(vault, root)));
-  let years = [];
-  try {
-    years = fs.readdirSync(vault, { withFileTypes: true })
-      .filter(e => e.isDirectory() && /^\d{4}$/.test(e.name))
-      .map(e => e.name);
-  } catch { /* unreadable vault -> empty corpus */ }
-  for (const y of years) {
-    for (const f of walkMarkdown(path.join(vault, y))) {
-      if (/\d{4}-\d{2}-\d{2}\.md$/.test(f)) files.push(f);
-    }
-  }
+  // `recallRoots: null` in brain/config.json overrides the default array outright (deepMerge copies primitives over);
+  // treat it as "no extra roots" instead of throwing.
+  for (const root of (loadConfig().recallRoots || [])) files.push(...walkMarkdown(path.join(vault, root)));
+  // Daily notes come from the configured layout only (spec §5.3) — a note left over from an earlier layout is not indexed.
+  for (const note of listDailyNotes({ vault })) files.push(note.absPath);
   return files;
 }
 
