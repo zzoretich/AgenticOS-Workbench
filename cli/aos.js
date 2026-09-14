@@ -437,7 +437,20 @@ function installPlugin(ctx, bin) {
 /** GET url → dest (follows ≤5 redirects). `getFn` is injectable so tests can drive stream failures without the network. */
 function download(url, dest, hops = 0, getFn = (u, o, cb) => https.get(u, o, cb)) {
   return new Promise((resolve, reject) => {
-    const fail = (e) => { try { fs.unlinkSync(dest); } catch { /* nothing written */ } reject(e); };
+    let file = null;
+    let settled = false;
+    // Remove whatever reached disk, then reject. The write stream opens asynchronously, so the unlink waits for its
+    // 'close' (destroy() during the open still creates the file, then closes it) — an early unlink would let the
+    // open re-create dest afterwards (execution finding 2026-09-14: flaky under parallel test load).
+    const fail = (e) => {
+      if (settled) return;
+      settled = true;
+      const done = () => { try { fs.unlinkSync(dest); } catch { /* nothing written */ } reject(e); };
+      if (!file || file.closed) return done();
+      file.once('close', done);
+      if (!file.destroyed) file.destroy();
+    };
+    const succeed = () => { if (settled) return; settled = true; resolve(); };
     const req = getFn(url, { headers: { 'user-agent': 'agenticos-installer' } }, (res) => {
       if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location && hops < 5) {
         res.resume();
@@ -445,10 +458,10 @@ function download(url, dest, hops = 0, getFn = (u, o, cb) => https.get(u, o, cb)
       }
       if (res.statusCode !== 200) { res.resume(); return reject(new Error(`HTTP ${res.statusCode} for ${url}`)); }
       fs.mkdirSync(path.dirname(dest), { recursive: true });
-      const file = fs.createWriteStream(dest);
+      file = fs.createWriteStream(dest);
       res.on('error', fail);
       file.on('error', fail);
-      file.on('finish', () => file.close((e) => (e ? fail(e) : resolve())));
+      file.on('finish', () => file.close((e) => (e ? fail(e) : succeed())));
       res.pipe(file);
     });
     req.on('error', fail);
