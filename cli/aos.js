@@ -220,6 +220,11 @@ async function doctor() {
   const cfg = readJson(configPath());
   add('agenticos.json', !!(cfg && cfg.vault && cfg.node), cfg ? configPath() : `${configPath()} missing — run aos init`);
   const vault = cfg && cfg.vault;
+  // AOS_VAULT/BRAIN_VAULT outrank agenticos.json for every hook and the MCP server (brain/scripts/lib/paths.js), and
+  // detectVault() silently falls through when the directory is missing — say so here rather than let hooks target
+  // a different vault than the one the env var names.
+  const vaultEnv = process.env.AOS_VAULT || process.env.BRAIN_VAULT;
+  if (vaultEnv) add('AOS_VAULT env', isDir(vaultEnv), isDir(vaultEnv) ? vaultEnv : `${vaultEnv} does not exist — hooks fall through to agenticos.json / directory walk`, 'warn');
   if (vault) {
     const need = ['brain/_index', 'brain/memory', 'brain/scripts/package.json', 'brain/scripts/node_modules/@modelcontextprotocol/sdk',
       'brain/scripts/bin/aos', 'brain/scripts/cli/aos.js', 'MEMORY.md', 'AGENTICOS.md'];
@@ -511,7 +516,13 @@ async function obsidianBundle(ctx) {
     // All three release files are staged in a temp dir first: an upgrade that cannot reach GitHub must leave the
     // bundle already installed in dest exactly as it was, never a half-replaced (or deleted) plugin.
     const releaseFiles = ['main.js', 'manifest.json', 'styles.css'];
-    const staging = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-bundle-'));
+    let staging;
+    try {
+      staging = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-bundle-'));
+    } catch (e) {
+      out.warn(`could not create a staging dir to fetch v${version}: ${e.message} — build locally (npm ci && npm run build -w obsidian-plugin) then run aos upgrade`);
+      return;
+    }
     try {
       for (const f of releaseFiles) {
         try {
@@ -752,8 +763,7 @@ async function uninstall(flags) {
   // …and a confirmed path still has to look like a vault this installer built, so a hand-edited config cannot aim
   // the recursive remove at an unrelated directory.
   if (!exists(path.join(cfg.vault, 'AGENTICOS.md')) || !exists(scriptPath(cfg.vault, 'bin/aos'))) {
-    out.log(`${cfg.vault} is not an AgenticOS vault (no AGENTICOS.md + brain/scripts/bin/aos); delete it yourself`);
-    return 1;
+    throw new CheckFailed(`${cfg.vault} is not an AgenticOS vault (no AGENTICOS.md + brain/scripts/bin/aos); delete it yourself`);
   }
   fs.rmSync(cfg.vault, { recursive: true, force: true });
   out.log(`deleted ${cfg.vault}`);

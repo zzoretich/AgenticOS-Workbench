@@ -329,6 +329,105 @@ test('download writes the file only after the stream completes', async () => {
   assert.ok(!fs.existsSync(dest + '.part'), 'the staging file is renamed, not left behind');
 });
 
+test('download follows a redirect to completion, writing only to the final destination', async () => {
+  const { download } = require('./aos.js');
+  const { PassThrough } = require('stream');
+  const { EventEmitter } = require('events');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-download-redirect-'));
+  const dest = path.join(dir, 'main.js');
+  let calls = 0;
+  const fakeGet = (url, opts, cb) => {
+    const req = new EventEmitter();
+    req.setTimeout = () => {};
+    req.destroy = () => {};
+    calls += 1;
+    const thisCall = calls;
+    setImmediate(() => {
+      const res = new PassThrough();
+      if (thisCall === 1) {
+        res.statusCode = 302;
+        res.headers = { location: 'https://example.invalid/final/main.js' };
+        cb(res);
+        res.end();
+      } else {
+        res.statusCode = 200;
+        res.headers = {};
+        cb(res);
+        res.write('redirected');
+        res.end();
+      }
+    });
+    return req;
+  };
+  await download('https://example.invalid/main.js', dest, 0, fakeGet);
+  assert.equal(calls, 2, 'the redirect was followed exactly once');
+  assert.equal(fs.readFileSync(dest, 'utf8'), 'redirected');
+  assert.ok(!fs.existsSync(dest + '.part'));
+});
+
+test('download resolves even when the outer redirected request errors late', async () => {
+  const { download } = require('./aos.js');
+  const { PassThrough } = require('stream');
+  const { EventEmitter } = require('events');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-download-redirect-late-error-'));
+  const dest = path.join(dir, 'main.js');
+  let calls = 0;
+  let outerReq;
+  const fakeGet = (url, opts, cb) => {
+    const req = new EventEmitter();
+    req.setTimeout = () => {};
+    req.destroy = () => {};
+    calls += 1;
+    if (calls === 1) {
+      outerReq = req;
+      setImmediate(() => {
+        const res = new PassThrough();
+        res.statusCode = 302;
+        res.headers = { location: 'https://example.invalid/final/main.js' };
+        cb(res);
+        res.end();
+        // The OUTER request errors after the redirect has been handed to the inner download — this must not unlink
+        // the inner download's in-flight file or reject the outer promise.
+        setImmediate(() => outerReq.emit('error', new Error('outer socket reset')));
+      });
+    } else {
+      setImmediate(() => {
+        const res = new PassThrough();
+        res.statusCode = 200;
+        res.headers = {};
+        cb(res);
+        res.write('redirected');
+        res.end();
+      });
+    }
+    return req;
+  };
+  await download('https://example.invalid/main.js', dest, 0, fakeGet);
+  assert.equal(fs.readFileSync(dest, 'utf8'), 'redirected', 'the inner download completed despite the outer error');
+  assert.ok(!fs.existsSync(dest + '.part'));
+});
+
+test('obsidianBundle warns and leaves the vault alone when no staging dir can be created', async () => {
+  const { obsidianBundle, out } = require('./aos.js');
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-fake-repo-'));
+  fs.mkdirSync(path.join(repo, 'obsidian-plugin'), { recursive: true });
+  fs.writeFileSync(path.join(repo, 'obsidian-plugin', 'manifest.json'), JSON.stringify({ id: 'agentic-os', version: '9.9.9' }));
+  const vault = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-bundle-vault-'));
+  const warns = [];
+  const prevWarn = out.warn;
+  const prevTmp = process.env.TMPDIR;
+  out.warn = (m) => warns.push(m);
+  process.env.TMPDIR = path.join(vault, 'no-such-tmp'); // os.tmpdir() reads TMPDIR on every call
+  try {
+    await obsidianBundle({ repo, vault, written: [], act: async (_what, fn) => fn() });
+  } finally {
+    out.warn = prevWarn;
+    if (prevTmp === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = prevTmp;
+  }
+  assert.ok(warns.some((m) => /could not create a staging dir/.test(m)), warns.join('\n'));
+  assert.ok(!fs.existsSync(path.join(vault, '.obsidian', 'plugins')), 'nothing was written into the vault');
+});
+
 function initialized() {
   const sb = sandbox();
   const r = aos(sb, ['init', '--vault', sb.vault, '--no-obsidian', '--provider', 'none', '--yes']);
@@ -343,6 +442,15 @@ test('doctor passes on an initialized vault when the plugin is installed (MCP pr
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.match(r.stdout, /ok\s+MCP server answers\s+serverInfo\.name=agenticos/);
   assert.match(r.stdout, /warn\s+obsidian plugin/);
+  assert.match(r.stdout, /all checks passed/);
+});
+
+test('doctor warns when AOS_VAULT points at a directory that does not exist', () => {
+  const sb = initialized();
+  const bad = path.join(sb.dir, 'nope');
+  const r = aos(sb, ['doctor'], { AOS_VAULT: bad, FAKE_PLUGIN_PATH: path.join(ROOT, 'plugin') });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /warn\s+AOS_VAULT env\s+.*does not exist/);
   assert.match(r.stdout, /all checks passed/);
 });
 
@@ -471,6 +579,6 @@ test('uninstall refuses to delete a directory that contains the Claude config di
   fs.writeFileSync(path.join(sb.cfg, 'agenticos.json'), JSON.stringify({ vault: plain, node: process.execPath }));
   const notAVault = aos(sb, ['uninstall', '--yes'], { AOS_CONFIRM_DELETE: plain });
   assert.equal(notAVault.status, 1);
-  assert.match(notAVault.stdout, /not an AgenticOS vault/);
+  assert.match(notAVault.stderr, /not an AgenticOS vault/);
   assert.ok(fs.existsSync(path.join(plain, 'notes.txt')), 'the directory is left alone');
 });

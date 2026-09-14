@@ -15,7 +15,7 @@ While developing from a checkout, run `npm run setup -- --from-local .` so the p
 
 `aos init` asks for a vault directory (default `~/AgenticOS`; it refuses `~/.claude` and any directory holding a `settings.json`) and then, in order:
 
-1. **Preflight** — Node ≥ 20; `claude` on PATH and logged in (`claude auth status`); Obsidian detected (optional); python3 ≥ 3.9 only with `--cost`; Ollama on `127.0.0.1:11434` (informational).
+1. **Preflight** — Node ≥ 20; `claude` on PATH and logged in (`claude auth status`); Obsidian detected (optional); python3 ≥ 3.9 only with `--cost` once the cost extra ships (today `--cost` just warns and leaves cost disabled — no python3 check runs); Ollama on `127.0.0.1:11434` (informational).
 2. **Seed** — copies `vault-template/` (existing files are kept), writes `brain/config.json` from the shipped defaults, and `.obsidian/daily-notes.json` (folder = the current year, format `YYYY-MM-DD` — Obsidian cannot express the month sub-folder of the default layout, so daily notes created from Obsidian land one level up; notes created by the scripts use the full layout). `aos init` and `aos upgrade` rewrite that file each run from `dailyNote.layout`, and its folder is the year at that moment — run `aos upgrade` after New Year, or set the folder yourself under Obsidian → Settings → Daily notes.
 3. **Vendor the runtime** — `brain/scripts` (without tests or a lockfile) into `<vault>/brain/scripts`, plus `cli/aos.js` and the `aos` launcher; then `npm install --omit=dev` there (two dependencies, pinned by `^` ranges); symlink `~/.local/bin/aos` → `<vault>/brain/scripts/bin/aos`.
 4. **`~/.claude/agenticos.json`** — vault, node path, config dir, provider (`auto`), spend caps, telemetry, cost, persona flags. Honors `CLAUDE_CONFIG_DIR` (and `AOS_CONFIG` for an explicit file path — the same rule every hook and `aos` subcommand uses).
@@ -33,13 +33,13 @@ Then add the printed line to `~/.claude/CLAUDE.md` (the installer never edits it
 
 Open the vault in Obsidian ("Open folder as vault"), enable **Agentic OS** under Community plugins, and start a new `claude` session: the first prompt receives `<brain-context>`, `/wrap` writes memories, and the `agenticos` MCP server answers `recall`.
 
-Flags: `--vault <dir>`, `--provider auto|ollama|claude|none`, `--no-obsidian`, `--terminal`, `--cost`, `--persona-json <file>`, `--from-local <repo-dir>`, `--dry-run` (prints the numbered plan, writes nothing; accepted only by `init`), `--yes` (accept defaults, no prompts). `--flag=value` works too. Any unknown or misspelled flag is a usage error (exit 2), so a typo never starts a real install. Re-running `aos init` on an existing vault keeps your files and your provider setting; only an explicit `--provider` changes it.
+Flags: `--vault <dir>`, `--provider auto|ollama|claude|none`, `--no-obsidian`, `--terminal`, `--cost` (warns today — no analyzer shipped yet), `--persona-json <file>`, `--from-local <repo-dir>`, `--dry-run` (prints the numbered plan, writes nothing; accepted only by `init`), `--yes` (accept defaults, no prompts). `--flag=value` works too. Any unknown or misspelled flag is a usage error (exit 2), so a typo never starts a real install. Re-running `aos init` on an existing vault keeps your files and your provider setting; only an explicit `--provider` changes it.
 
 ## After install
 
 | Command | Does |
 |---|---|
-| `aos doctor` | Node, claude login, `agenticos.json`, vault layout, plugin installed, MCP declared and answering (a real stdio handshake), Obsidian bundle (warn), Ollama (info), python3 (when cost is on). Exit 1 when a check fails. |
+| `aos doctor` | Node, claude login, `agenticos.json`, `AOS_VAULT`/`BRAIN_VAULT` when set (warn if the directory is missing), vault layout, plugin installed, MCP declared and answering (a real stdio handshake), Obsidian bundle (warn), Ollama (info), python3 (when cost is on). Exit 1 when a check fails. |
 | `aos status` | resolved provider and reason; the resolved `claude` binary and cached login state; today's spend on two lines — hooks against `claude.perDayUsd`, persona duties (`duty:*` ledger rows) against `persona.perDayUsd`; the pipeline ledger |
 | `aos provider <mode>` | force `ollama`, `claude`, `none`, or back to `auto`; clears the cached probe |
 | `aos upgrade` | `claude plugin marketplace update` + `plugin update`, re-vendor the runtime and bundle, add new config keys (your values win), rebuild indexes. Never touches memory, notes, or persona. |
