@@ -1,0 +1,3 @@
+# Projects
+
+## Manual index
