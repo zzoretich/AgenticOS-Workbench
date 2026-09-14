@@ -43,3 +43,15 @@ test('agenticos.json overrides vault config', () => {
   process.env.AOS_CONFIG = file;
   assert.equal(fresh().loadConfig().provider, 'none');
 });
+
+test('mutating the returned config does not leak into DEFAULTS or a later loadConfig()', () => {
+  const { loadConfig, DEFAULTS } = fresh();
+  const cfg = loadConfig();
+  cfg.scan.fileMapBudget = 999;
+  cfg.roster.orchestrators.Injected = { nickname: 'X' };
+  cfg.recallRoots.push('mutated');
+  assert.equal(DEFAULTS.scan.fileMapBudget, 40);
+  assert.deepEqual(DEFAULTS.roster.orchestrators, {});
+  assert.equal(DEFAULTS.recallRoots.length, 3);
+  assert.deepEqual(loadConfig(), DEFAULTS);
+});
