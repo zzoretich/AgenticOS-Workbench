@@ -29,6 +29,8 @@ function sandbox() {
     FAKE_NPM_NODE_MODULES: path.join(ROOT, 'node_modules'),
     // No test may contact Ollama: doctor/init probe an endpoint nothing listens on (config.ollama > env > default).
     OLLAMA_PORT: '1',
+    // …and once init has written agenticos.json (config outranks env) the probe is skipped outright.
+    AOS_SKIP_OLLAMA_PROBE: '1',
   };
   delete env.AOS_VAULT; delete env.BRAIN_VAULT; delete env.AOS_CONFIG; delete env.CLAUDE_PROJECT_DIR;
   return { dir, home, cfg, vault: path.join(dir, 'vault'), env, log: (f) => { try { return fs.readFileSync(env[f], 'utf8'); } catch { return ''; } } };
@@ -53,6 +55,7 @@ test('doctor without agenticos.json fails that check and exits 1', () => {
   assert.match(r.stdout, /FAIL\s+agenticos\.json/);
   assert.match(r.stdout, /ok\s+node >= 20/);
   assert.match(r.stdout, /ok\s+claude login/);
+  assert.match(r.stdout, /info\s+ollama reachable\s+127\.0\.0\.1:1 not probed \(AOS_SKIP_OLLAMA_PROBE=1\)/);
 });
 
 test('status and provider need a config; provider validates its argument', () => {
