@@ -139,3 +139,86 @@ test('mcpProbe rejects at once on an initialize error and on an early server exi
     if (prevConfig === undefined) delete process.env.AOS_CONFIG; else process.env.AOS_CONFIG = prevConfig;
   }
 });
+
+test('init --dry-run prints the numbered plan and writes nothing', () => {
+  const sb = sandbox();
+  const r = aos(sb, ['init', '--vault', sb.vault, '--no-obsidian', '--provider', 'none', '--dry-run', '--yes']);
+  assert.equal(r.status, 0, r.stderr);
+  const lines = r.stdout.split('\n').filter((l) => l.startsWith('[dry-run] '));
+  assert.deepEqual(lines.map((l) => l.replace(/^\[dry-run\] (\d+)\. (\S+).*/, '$1 $2')),
+    ['1 copy', '2 vendor', '3 write', '4 register', '5 run', '6 first']);
+  assert.ok(!fs.existsSync(sb.vault));
+  assert.ok(!fs.existsSync(path.join(sb.cfg, 'agenticos.json')));
+  assert.equal(sb.log('FAKE_NPM_LOG'), '');
+});
+
+test('init refuses the config dir, a dir with settings.json, and the home dir', () => {
+  const sb = sandbox();
+  for (const bad of [sb.cfg, path.join(sb.cfg, 'vault'), sb.home]) {
+    const r = aos(sb, ['init', '--vault', bad, '--no-obsidian', '--provider', 'none', '--yes']);
+    assert.equal(r.status, 1, bad);
+    assert.match(r.stderr, /refusing/);
+  }
+  const withSettings = path.join(sb.dir, 'other');
+  fs.mkdirSync(withSettings, { recursive: true });
+  fs.writeFileSync(path.join(withSettings, 'settings.json'), '{}');
+  assert.match(aos(sb, ['init', '--vault', withSettings, '--no-obsidian', '--provider', 'none', '--yes']).stderr, /settings\.json/);
+});
+
+test('init into a temp vault: seed set, vendored runtime, agenticos.json, plugin calls, launcher link', () => {
+  const sb = sandbox();
+  const r = aos(sb, ['init', '--vault', sb.vault, '--no-obsidian', '--provider', 'none', '--yes']);
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  const v = sb.vault;
+  for (const rel of ['MEMORY.md', 'AGENTICOS.md', '.gitignore', 'brain/config.json', 'brain/_index/SESSION.md', 'brain/_index/BRAIN.md',
+    'brain/_index/MOC-reference.md', 'brain/_index/MOC-projects.md', 'brain/_index/MOC-patterns.md', 'brain/_index/scanner-config.json',
+    'brain/memory/user/profile.md', 'brain/memory/feedback/README.md', 'brain/memory/projects/README.md', 'brain/memory/reference/README.md',
+    'brain/patterns/README.md', 'templates/daily-note.md', 'templates/meeting-note.md', 'templates/decision-record.md', 'templates/project-note.md',
+    '.obsidian/app.json', '.obsidian/community-plugins.json', '.obsidian/daily-notes.json',
+    'brain/scripts/package.json', 'brain/scripts/config.default.json', 'brain/scripts/lib/paths.js', 'brain/scripts/sdk/mcp-server.js',
+    'brain/scripts/cli/aos.js', 'brain/scripts/bin/aos', 'brain/scripts/node_modules']) {
+    assert.ok(fs.existsSync(path.join(v, rel)), `missing ${rel}`);
+  }
+  assert.ok(!fs.existsSync(path.join(v, '_gitignore')));
+  assert.ok(!fs.existsSync(path.join(v, 'brain', 'scripts', 'test')), 'tests are not vendored');
+  assert.ok(!fs.existsSync(path.join(v, 'brain', 'scripts', 'package-lock.json')), 'no lockfile is vendored (contract §4.3)');
+  assert.ok(fs.statSync(path.join(v, 'brain', 'scripts', 'bin', 'aos')).mode & 0o100, 'launcher is executable');
+  assert.match(fs.readFileSync(path.join(v, 'brain', '_index', 'SESSION.md'), 'utf8'), new RegExp(`^updated: ${new Date().getFullYear()}-`, 'm'));
+  assert.equal(readJson(path.join(v, 'brain', 'config.json')).dailyNote.layout, '{yyyy}/{yyyy}-{MM}-{MMMM}/{yyyy}-{MM}-{dd}.md');
+  assert.deepEqual(readJson(path.join(v, '.obsidian', 'daily-notes.json')), { folder: String(new Date().getFullYear()), format: 'YYYY-MM-DD' });
+
+  const cfg = readJson(path.join(sb.cfg, 'agenticos.json'));
+  assert.deepEqual(Object.keys(cfg), ['version', 'vault', 'node', 'claudeConfigDir', 'provider', 'claude', 'ollama', 'telemetry', 'cost', 'persona']);
+  assert.equal(cfg.vault, v);
+  assert.equal(cfg.node, process.execPath);
+  assert.equal(cfg.claudeConfigDir, sb.cfg);
+  assert.equal(cfg.provider, 'none');
+  assert.deepEqual(cfg.claude, { model: 'haiku', perCallUsd: 0.05, perDayUsd: 0.5 });
+  assert.deepEqual(cfg.cost, { enabled: false });
+  assert.deepEqual(cfg.persona, { enabled: true });
+
+  // Contract §4.3: exactly one `npm install --omit=dev` in the vendored runtime; no lockfile step, no `npm ci`.
+  const npmLog = sb.log('FAKE_NPM_LOG');
+  assert.deepEqual(npmLog.trim().split('\n'), ['install --omit=dev --no-audit --no-fund'], 'one npm install, no ci/lockfile step');
+  const claudeLog = sb.log('FAKE_CLAUDE_LOG');
+  assert.match(claudeLog, /^plugin marketplace add zzoretich\/AgenticOS-Workbench$/m);
+  assert.match(claudeLog, /^plugin install agenticos@agenticos-workbench$/m);
+  assert.equal(fs.readlinkSync(path.join(sb.home, '.local', 'bin', 'aos')), path.join(v, 'brain', 'scripts', 'bin', 'aos'));
+  assert.ok(fs.existsSync(path.join(v, 'brain', '_index', 'recall-index.json')), 'recall --warm ran');
+  assert.match(fs.readFileSync(path.join(v, 'brain', '_index', 'BRAIN.md'), 'utf8'), /^## Who$/m);
+  assert.match(r.stdout, new RegExp(`@${v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/AGENTICOS\\.md`));
+  assert.match(r.stdout, /persona interview not installed in this phase|interview/);
+
+  // Idempotent: a second init keeps user files and does not duplicate the seed.
+  fs.appendFileSync(path.join(v, 'MEMORY.md'), '- [Kept](brain/memory/reference/kept.md) — user line\n');
+  const again = aos(sb, ['init', '--vault', v, '--no-obsidian', '--provider', 'none', '--yes']);
+  assert.equal(again.status, 0, again.stderr);
+  assert.match(fs.readFileSync(path.join(v, 'MEMORY.md'), 'utf8'), /Kept/);
+});
+
+test('init with --from-local uses the local path as the marketplace source', () => {
+  const sb = sandbox();
+  const r = aos(sb, ['init', '--vault', sb.vault, '--no-obsidian', '--provider', 'none', '--yes', '--from-local', ROOT]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(sb.log('FAKE_CLAUDE_LOG'), new RegExp(`^plugin marketplace add ${ROOT.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'm'));
+});
