@@ -1,0 +1,14 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "agenticos-workbench",
+  "description": "AgenticOS Workbench: a second brain for Claude Code with persistent memory, recall, session capture, and an Obsidian HUD.",
+  "owner": { "name": "AgenticOS Workbench contributors" },
+  "plugins": [
+    {
+      "name": "agenticos",
+      "source": "./plugin",
+      "description": "Brain context injection, session capture, telemetry, slash commands, skills, and the agenticos MCP server for an AgenticOS vault.",
+      "category": "productivity"
+    }
+  ]
+}
