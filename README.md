@@ -11,6 +11,6 @@ Install: `git clone … && npm ci --ignore-scripts && npm run setup` — see [do
 - `npm run export -- --source <vault> --diff` previews an export from a vault.
 - Node 20 or newer. `npm ci --ignore-scripts` is enough for tests; `npm install` additionally builds the terminal's native module for the Obsidian plugin.
 - `brain/scripts/test/live/` needs a running Ollama and is excluded from `npm test`.
-- Layout: `brain/scripts` (runtime), `obsidian-plugin` (HUD), `tools` (export + privacy gate). The Claude Code plugin shim, installer, and vault template arrive in the next phases.
+- Layout: `brain/scripts` (runtime), `obsidian-plugin` (HUD), `tools` (export + privacy gate).
 - `npm test` also runs `cli/` (launcher, installer, manifests, template). `sh cli/rehearsal/first-run.sh` rehearses a complete install in a temp HOME (what CI's `first-run` job runs).
 - Layout additions: `plugin/` (Claude Code plugin: manifests, `bin/aos`, commands, skills), `cli/` (installer), `vault-template/` (seed vault).
