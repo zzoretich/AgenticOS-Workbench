@@ -1,0 +1,40 @@
+# AgenticOS — memory conventions for Claude Code
+
+> Referenced from your CLAUDE.md as `@<vault>/AGENTICOS.md` (the installer prints the exact line). This vault is both an Obsidian vault and Claude Code's second brain. Paths below are relative to the vault root; `aos <name>` is the launcher installed by `aos init` (fallback: `sh "${CLAUDE_PLUGIN_ROOT}/bin/aos" <name>`).
+
+## Memory System (3-file rule)
+
+| File / path | Role | Shape |
+|---|---|---|
+| `MEMORY.md` (vault root) | **Index** — flat pointer list, one line per memory file | no frontmatter |
+| `brain/memory/<type>/` | **Canonical content** — `user/`, `feedback/`, `projects/`, `reference/` | frontmatter + body |
+| `brain/_index/BRAIN.md` | **Session bootstrap** — auto-injected on the first turn (≤850 tokens), compiled by `aos build-brain-md` | curated pointers |
+
+Working memory: `brain/_index/SESSION.md` (≤400 tokens; reset by `/wrap`). Patterns: `brain/patterns/`. Reflections: `brain/reflections/`. Daily notes: `dailyNote.layout` in `brain/config.json` (default `<year>/<year>-<month>-<Month>/<date>.md`). Dashboard caches: `brain/_index/` — written only by scripts.
+
+How it runs (automatic, via the `agenticos` Claude Code plugin):
+- **First prompt** — the `UserPromptSubmit` hook injects `BRAIN.md` + `SESSION.md` as `<brain-context>` (plus a `<persona>` block when `persona/IDENTITY.md` exists and `persona/DISABLED` does not). The `agenticos` MCP server exposes `recall`, `memory_search`, `memory_read`, `memory_list`, `pattern_list`, `session_list`, `session_recall`, `feedback_rules`, `snapshot_read`, `brief_read`, and the one write tool `wrap_session`.
+- **During** — a `Stop` hook writes the last-active marker and, every ~5 turns, a working-memory summary into `BRAIN.md` `## Last Session` (model-written when a provider is available, heuristic otherwise).
+- **Session end** — telemetry finalizes under `brain/_index/agent-runs/`; `auto-wrap` extracts memories when a provider is available (otherwise `SESSION.md` shows "not wrapped — run /wrap"); `scan-vault` refreshes the dashboard caches and the recall index.
+
+## Capture vocabulary
+
+- `/remember <text>` — add to `SESSION.md`; tag `#promote` to make it permanent at wrap
+- `/feedback` · `/pattern` · `/project` — write a memory of that type
+- `/wrap` — promote `#promote` items, extract this session's memories in-session (`wrap_session`), summarize into today's daily note, reset `SESSION.md`
+- `/brain` — show current state · `/scan` — refresh the dashboard
+- `/ask-brain <q>` · `/standup` · `/reflect-week` · `/consolidate-memory` · `/compress <file>` — a script assembles the context, you answer or write it in-session (pass `--local` to let the local provider do it)
+- `/cost` — session costing (only after `aos cost enable`)
+- `/aos doctor|status|provider|persona` — maintenance
+
+## Conventions
+
+- New memory → file in `brain/memory/<type>/` → one line in `MEMORY.md` → (only if session-relevant) a pointer in `BRAIN.md`. **Never duplicate** across the three.
+- `MEMORY.md` bullets are `- [Title](brain/memory/<type>/<slug>.md) — description` under the H2 for that type; the H2 names are fixed.
+- `[[wiki-links]]` in Obsidian-facing files (daily notes, memory, MOCs); markdown `[text](path)` in Claude-facing files (this file, `MEMORY.md`, skills).
+- `brain/_index/` is written only by scripts. In `BRAIN.md` the `## Last Session` block is the one hand-editable part; everything else is compiled from memory frontmatter (`pin: true`, `status/active`).
+- After any correction from the user: capture it with `/feedback` (include **Why** and **How to apply**). Rules surface through the `feedback_rules` tool; auto-drafted rules wait in `brain/memory/feedback/_drafts/` for the `feedback-review` skill.
+
+## Providers
+
+`provider` in `agenticos.json` (`aos provider <mode>`): `auto` (default) picks `ollama` when `127.0.0.1:11434` answers, else `claude` (headless `claude -p --model haiku`, capped per call and per day, ledgered in `brain/_index/provider-spend.jsonl`), else `none`. Under `none`, background summaries are heuristic, session-end extraction is skipped, and `/wrap` does the extraction in-session. The Obsidian plugin never calls a model. `aos status` shows the resolved provider, today's spend (hook calls against `claude.perDayUsd`, persona duties against `persona.perDayUsd`), and the pipeline ledger.

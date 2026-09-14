@@ -1,0 +1,16 @@
+# AgenticOS vault — caches and per-machine state are not tracked; memory, notes and persona content are.
+brain/_index/*
+# (covers the caches and per-machine state under brain/_index: snapshot, pipelines, recall/embed indexes, agent-runs, provider-spend.jsonl, provider-state.json)
+!brain/_index/scanner-config.json
+!brain/_index/MOC-*.md
+brain/scripts/node_modules/
+persona/journal/
+persona/STATE.md
+persona/answers.json
+persona/autoapply.json
+persona/DISABLED
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
+.obsidian/plugins/*/data.json
+.obsidian/plugins/*/node_modules/
+.DS_Store

@@ -1,0 +1,9 @@
+{
+  "extraProjectRoots": [],
+  "autoSweepOrphans": false,
+  "orphanUuidMinAgeMinutes": 60,
+  "sweepTransientResidue": false,
+  "transientResiduePatterns": [],
+  "allowedOrphanHooks": [],
+  "fileMapBudgetPerScan": 40
+}
