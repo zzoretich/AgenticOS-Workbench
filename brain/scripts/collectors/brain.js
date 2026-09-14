@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { VAULT, safeStat, listDir, exists, readText, iso } = require('./util');
+const { listDailyNotes } = require('../lib/paths.js');
 
 function walkMarkdown(dir, out = []) {
   const s = safeStat(dir);
@@ -19,24 +20,9 @@ function daysSince(ms) {
   return Math.floor((Date.now() - ms) / (1000 * 60 * 60 * 24));
 }
 
-// Daily notes live in the user's existing structure: <year>/<month>/YYYY-MM-DD.md
-function collectDailyNotes(vault) {
-  const out = [];
-  for (const y of listDir(vault)) {
-    if (!/^\d{4}$/.test(y)) continue;
-    const ydir = path.join(vault, y);
-    const ys = safeStat(ydir);
-    if (!ys || !ys.isDirectory()) continue;
-    for (const mo of listDir(ydir)) {
-      const mdir = path.join(ydir, mo);
-      const ms = safeStat(mdir);
-      if (!ms || !ms.isDirectory()) continue;
-      for (const f of listDir(mdir)) {
-        if (/^\d{4}-\d{2}-\d{2}\.md$/.test(f)) out.push(f);
-      }
-    }
-  }
-  return out.sort();
+// Daily-note dates ('YYYY-MM-DD', ascending) under the configured dailyNote.layout (lib/paths.js listDailyNotes).
+function collectDailyNoteDates(vault) {
+  return listDailyNotes({ vault }).map((n) => n.date);
 }
 
 function collectBrain() {
@@ -44,7 +30,6 @@ function collectBrain() {
   const memoryDir = path.join(brainDir, 'memory');
   const patternsDir = path.join(brainDir, 'patterns');
   const reflectionsDir = path.join(brainDir, 'reflections');
-  const sessionsDir = path.join(brainDir, 'sessions');
   const indexDir = path.join(brainDir, '_index');
   const templatesDir = path.join(VAULT, 'templates');
 
@@ -96,14 +81,14 @@ function collectBrain() {
     }
   }
 
-  // Sessions: daily notes in <year>/<month>/YYYY-MM-DD.md (not the legacy brain/sessions/)
-  const sessionFiles = collectDailyNotes(VAULT);
+  // "Sessions" are daily notes (dates under the configured layout; the legacy brain/sessions/ is gone).
+  const dailyDates = collectDailyNoteDates(VAULT);
   const d = new Date();
   const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  const todayPresent = sessionFiles.includes(`${today}.md`);
+  const todayPresent = dailyDates.includes(today);
   let streak = 0;
-  if (sessionFiles.length > 0) {
-    const dates = new Set(sessionFiles.map(n => n.replace('.md', '')));
+  if (dailyDates.length > 0) {
+    const dates = new Set(dailyDates);
     const probe = new Date();
     if (!todayPresent) probe.setDate(probe.getDate() - 1); // start from yesterday if today is missing
     while (true) {
@@ -147,15 +132,15 @@ function collectBrain() {
       memoryTotal: memoryFiles.length,
       patterns: patternFiles.length,
       reflections: reflections.length,
-      sessions: sessionFiles.length,
+      sessions: dailyDates.length,
       templates: templates.length,
     },
     sessions: {
       today: `${today}.md`,
       todayPresent,
       streak,
-      latestDate: sessionFiles.length ? sessionFiles[sessionFiles.length - 1].replace('.md', '') : null,
-      oldestDate: sessionFiles.length ? sessionFiles[0].replace('.md', '') : null,
+      latestDate: dailyDates.length ? dailyDates[dailyDates.length - 1] : null,
+      oldestDate: dailyDates.length ? dailyDates[0] : null,
     },
     indexFiles,
     templates,
