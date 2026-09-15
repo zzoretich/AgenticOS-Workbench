@@ -1642,7 +1642,7 @@
   border-radius: 2px;
   flex-shrink: 0;
 }
-.aos-disk-name { flex: 1; }
+.aos-disk-name { flex: 0 1 auto; }
 .aos-disk-bytes { margin-left: auto; }
 
 /* ── Workspaces tab ─────────────────────────────────────────────── */
@@ -1771,6 +1771,8 @@
 .aos-term-error-actions { display: flex; gap: 6px; margin-top: 4px; }
 
 /* Task 12: folder-atlas scope tag in the DISK legend (config = Claude config dir, vault = the vault).
-   margin-right: auto keeps the tag next to the folder name: .aos-disk-name is flex: 1, so without
-   it the tag is pushed across the row and renders flush against the byte figure. */
+   .aos-disk-name is flex: 0 1 auto (it must not grow: flex-grow would swallow the free space before
+   any auto margin is resolved), so this tag's margin-right: auto and .aos-disk-bytes' margin-left: auto
+   share the free space — the tag stays beside the folder name and the byte figure stays flush right,
+   on tagged and untagged rows alike. */
 .aos-disk-scope { font-size: 0.75em; margin-left: 0.4em; margin-right: auto; letter-spacing: 0.04em; text-transform: uppercase; }
