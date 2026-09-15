@@ -45,6 +45,21 @@ function loadRepos() {
   return { threshold: cfg.stall_threshold_days || 4, repos: Array.isArray(cfg.repos) ? cfg.repos : [] };
 }
 
+/** brain/_index/.sitrep-state.json is written by `update`. A store that is corrupt — truncated mid-write by a
+ *  PERSONA_TIMEOUT kill, say — warns once on stderr and reads as a first run, so the sitrep duty degrades to
+ *  "no change to report" instead of crashing at step 1. The twin of loadRepos() above (ruling A48). */
+function loadStore() {
+  if (!fs.existsSync(STORE_FILE)) return { first_run: true, prev: {} };
+  try {
+    const prev = JSON.parse(fs.readFileSync(STORE_FILE, 'utf8'));
+    if (typeof prev !== 'object' || prev === null || Array.isArray(prev)) throw new Error('not a JSON object');
+    return { first_run: false, prev };
+  } catch (e) {
+    console.error(`[sitrep-state] ${STORE_FILE} unreadable: ${e.message} — treating this as a first run`);
+    return { first_run: true, prev: {} };
+  }
+}
+
 function collectRepos(repos) {
   return repos.map(({ name, path: p }) => {
     if (!fs.existsSync(path.join(p, '.git'))) return { name, path: p, missing: true };
@@ -127,12 +142,11 @@ function main() {
     return;
   }
   if (mode !== 'diff') { console.error('usage: persona/sitrep-state.js diff|update'); process.exit(1); }
-  const first_run = !fs.existsSync(STORE_FILE);
-  const prev = first_run ? {} : JSON.parse(fs.readFileSync(STORE_FILE, 'utf8'));
+  const { first_run, prev } = loadStore();
   const { changed, changes } = diffAlert(prev, state.alert);
   console.log(JSON.stringify(
     { first_run, changed: first_run ? false : changed, changes, state }, null, 2));
 }
 
 if (require.main === module) main();
-module.exports = { parseFlags, listProposals, detectPlanning, diffAlert, collectRepos, collect };
+module.exports = { parseFlags, listProposals, detectPlanning, diffAlert, collectRepos, collect, loadStore };

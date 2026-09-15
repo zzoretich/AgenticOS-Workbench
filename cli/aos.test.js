@@ -659,3 +659,29 @@ test('uninstall refuses to delete a directory that contains the Claude config di
   assert.match(notAVault.stderr, /not an AgenticOS vault/);
   assert.ok(fs.existsSync(path.join(plain, 'notes.txt')), 'the directory is left alone');
 });
+
+// final review F7 (= safety-6), applied to cli/aos.js's own handling of the same file: `init` used to
+// replace a corrupt brain/config.json with the defaults, and `upgrade` used to merge the defaults over
+// `{}` — both silently discarding everything the user had configured. Both now refuse.
+test('init and upgrade refuse an unparseable brain/config.json instead of replacing it', () => {
+  const corrupt = '{ "dailyNote": { "layout": "custom"\n';
+
+  const fresh = sandbox();
+  fs.mkdirSync(path.join(fresh.vault, 'brain'), { recursive: true });
+  const freshCfg = path.join(fresh.vault, 'brain', 'config.json');
+  fs.writeFileSync(freshCfg, corrupt);
+  const r = aos(fresh, ['init', '--vault', fresh.vault, '--no-obsidian', '--provider', 'none', '--yes']);
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stderr, /refusing to touch unparseable .*config\.json/);
+  assert.equal(fs.readFileSync(freshCfg, 'utf8'), corrupt, 'the corrupt file is byte-identical');
+  assert.ok(!fs.existsSync(path.join(fresh.vault, 'MEMORY.md')), 'the refusal precedes the seed copy');
+  assert.ok(!fs.existsSync(path.join(fresh.cfg, 'agenticos.json')), 'nothing past the seed step ran');
+
+  const sb = initialized();
+  const cfgFile = path.join(sb.vault, 'brain', 'config.json');
+  fs.writeFileSync(cfgFile, corrupt);
+  const up = aos(sb, ['upgrade']);
+  assert.equal(up.status, 1, up.stdout);
+  assert.match(up.stderr, /refusing to touch unparseable .*config\.json/);
+  assert.equal(fs.readFileSync(cfgFile, 'utf8'), corrupt, 'upgrade never merges defaults over a file it could not read');
+});
