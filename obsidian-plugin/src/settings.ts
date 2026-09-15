@@ -1,31 +1,13 @@
-import { App, PluginSettingTab, Setting } from "obsidian";
+import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type AgenticOSPlugin from "../main";
+import { DEFAULT_SETTINGS } from "./settingsDefaults";
+import type { AgenticOSSettings } from "./settingsDefaults";
+import { resolveNodeBinary, resetProbeForTests } from "./data/nodeResolver";
+import { readProviderState, readAgenticosJson } from "./data/aosConfig";
+import { setSpawnContext } from "./data/commandRegistry";
 
-export interface AgenticOSSettings {
-  statusBarEnabled: boolean;
-  autoOpenSidebarOnStart: boolean;
-  liveTailPollMs: number;
-  // Terminal
-  terminalEmbedded: boolean;
-  terminalEmbedHeight: number;
-  terminalShell: string;
-  terminalCwd: string;
-  terminalFontSize: number;
-  terminalScrollback: number;
-}
-
-export const DEFAULT_SETTINGS: AgenticOSSettings = {
-  statusBarEnabled: true,
-  autoOpenSidebarOnStart: false,
-  liveTailPollMs: 300,
-  // Terminal — shell + cwd auto-resolve at plugin load if blank
-  terminalEmbedded: true,
-  terminalEmbedHeight: 280,
-  terminalShell: "",
-  terminalCwd: "",
-  terminalFontSize: 13,
-  terminalScrollback: 5000,
-};
+export { DEFAULT_SETTINGS };
+export type { AgenticOSSettings };
 
 export class AgenticOSSettingTab extends PluginSettingTab {
   plugin: AgenticOSPlugin;
@@ -74,6 +56,85 @@ export class AgenticOSSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
             this.plugin.rebindLiveSources();
           }
+        })
+      );
+
+    new Setting(containerEl).setName("AgenticOS").setHeading();
+
+    new Setting(containerEl)
+      .setName("Vault root")
+      .setDesc("Absolute path of the AgenticOS vault the plugin reads (brain/_index, brain/config.json) and spawns scripts in. Leave blank to use this Obsidian vault. Consumed by Plugin.vaultRoot() on every read/spawn — takes effect immediately.")
+      .addText((t) =>
+        t.setPlaceholder("(this vault)").setValue(this.plugin.settings.vaultRoot).onChange(async (v) => {
+          this.plugin.settings.vaultRoot = v.trim();
+          await this.plugin.saveSettings();
+          // commandRegistry captured the context once in onload(); refresh it or ⌘K and the
+          // command deck keep spawning in the old vault until Obsidian is reloaded.
+          setSpawnContext({ node: this.plugin.nodeBin(), vaultRoot: this.plugin.vaultRoot() });
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Claude config dir")
+      .setDesc("Where Claude Code keeps projects/ transcripts and agents/. Leave blank to use agenticos.json, then $CLAUDE_CONFIG_DIR, then ~/.claude. Consumed by Plugin.claudeConfigDir() (Pulse backfill count).")
+      .addText((t) =>
+        t.setPlaceholder(readAgenticosJson()?.claudeConfigDir ?? "~/.claude").setValue(this.plugin.settings.claudeConfigDir).onChange(async (v) => {
+          this.plugin.settings.claudeConfigDir = v.trim();
+          await this.plugin.saveSettings();
+        })
+      );
+
+    const nodeSetting = new Setting(containerEl)
+      .setName("Node binary")
+      .setDesc("Absolute path to node for spawning brain scripts. Leave blank to auto-resolve (agenticos.json, common install locations, then one login-shell probe whose result is saved here). Consumed by Plugin.nodeBin() on every spawn.");
+    nodeSetting.addText((t) =>
+      t.setPlaceholder("auto").setValue(this.plugin.settings.nodePath).onChange(async (v) => {
+        this.plugin.settings.nodePath = v.trim();
+        await this.plugin.saveSettings();
+        setSpawnContext({ node: this.plugin.nodeBin(), vaultRoot: this.plugin.vaultRoot() });
+      })
+    );
+    nodeSetting.addButton((b) =>
+      b.setButtonText("Probe").setTooltip("Re-run the resolver now and save what it finds").onClick(async () => {
+        resetProbeForTests();
+        const before = this.plugin.settings.nodePath;
+        this.plugin.settings.nodePath = "";
+        const found = resolveNodeBinary(this.plugin.settings);
+        if (found === "node") this.plugin.settings.nodePath = before;
+        else this.plugin.settings.nodePath = found;
+        await this.plugin.saveSettings();
+        setSpawnContext({ node: this.plugin.nodeBin(), vaultRoot: this.plugin.vaultRoot() });
+        new Notice(found === "node" ? "node not found — set the path manually" : `node: ${found}`);
+        this.display();
+      })
+    );
+
+    const state = readProviderState(this.plugin.vaultRoot());
+    new Setting(containerEl)
+      .setName("Provider")
+      .setDesc(state
+        ? `${state.name} (${state.reason}) — checked ${state.checkedAt}. Change it with \`aos provider <auto|ollama|claude|none>\`; the scripts write brain/_index/provider-state.json.`
+        : "No provider state yet — run any Claude Code session (hooks write brain/_index/provider-state.json) or `aos provider`.")
+      .addExtraButton((b) => b.setIcon("refresh-cw").setTooltip("Re-read provider state").onClick(() => this.display()));
+
+    new Setting(containerEl)
+      .setName("Cost module enabled")
+      .setDesc("Show the COST row, cost Fix Queue cards, the re-anchor modal and the COST DETAIL drawer section. Also needs cost.monthlyBudget in brain/config.json (set by `aos cost enable`). Until you change it here it follows cost.enabled from agenticos.json (`aos cost enable` / `aos cost disable`); once saved, this toggle wins. Consumed by PulseTab/SystemDrawer on their next render.")
+      .addToggle((t) =>
+        t.setValue(this.plugin.settings.costEnabled).onChange(async (v) => {
+          this.plugin.settings.costEnabled = v;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Telemetry enabled")
+      .setDesc("When off, the plugin neither sweeps crashed runs on load nor creates brain/_index/agent-runs/live/. Until you change it here it follows telemetry.enabled from agenticos.json / brain/config.json (the same key telemetry-hook.js honors); once saved, this toggle wins. Consumed by Plugin.onload() (orphan sweep) and Plugin.rebindLiveSources() (rebuilt immediately).")
+      .addToggle((t) =>
+        t.setValue(this.plugin.settings.telemetryEnabled).onChange(async (v) => {
+          this.plugin.settings.telemetryEnabled = v;
+          await this.plugin.saveSettings();
+          this.plugin.rebindLiveSources();
         })
       );
 

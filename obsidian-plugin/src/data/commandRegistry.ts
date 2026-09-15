@@ -29,6 +29,11 @@ export function resolveExe(name: string): string {
   return name; // last resort — let spawn try the system PATH
 }
 
+// Spawn context set by main.ts at load (resolved node binary + vault root). executeCommand
+// keeps its (app, cmd) signature because ⌘K and the command deck call it without plugin access.
+let spawnCtx: { node: string; vaultRoot: string } | null = null;
+export function setSpawnContext(ctx: { node: string; vaultRoot: string }): void { spawnCtx = ctx; }
+
 export type CommandKind = "clipboard" | "openFile" | "exec" | "capture" | "openView";
 
 export interface SlashCommand {
@@ -90,11 +95,11 @@ export async function executeCommand(app: App, cmd: SlashCommand): Promise<void>
       try {
         const adapter = app.vault.adapter as unknown as { getBasePath?: () => string };
         const base = adapter.getBasePath ? adapter.getBasePath() : process.cwd();
-        const root = base;
+        const root = spawnCtx?.vaultRoot ?? base;
         const args = (cmd.args || []).map((a) =>
           a.startsWith("/") || a.startsWith("-") || a.startsWith("--") ? a : path.join(root, a)
         );
-        const exe = resolveExe(cmd.cmd);
+        const exe = cmd.cmd === "node" && spawnCtx ? spawnCtx.node : resolveExe(cmd.cmd);
         new Notice(`▶ ${cmd.name}`);
         const child = spawn(exe, args, {
           cwd: root,
