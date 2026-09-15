@@ -3,6 +3,7 @@ import type { TAbstractFile } from "obsidian";
 import type AgenticOSPlugin from "../../main";
 import type { WorkbenchView } from "./WorkbenchView";
 import { buildGraph, Graph, GraphNode, NodeKind } from "../data/graph";
+import { dailyNoteLayout } from "../data/aosConfig";
 import { tick, settle } from "../data/forceSim";
 import { listMemories, parseMemoryMeta, filterMemories, MemoryMeta, MEMORY_ROOT } from "../data/memories";
 import { setPendingMemory, VIEW_TYPE_MEMORY_INSPECTOR } from "./MemoryInspectorView";
@@ -86,7 +87,7 @@ export class MemoryTab {
   async refresh(): Promise<void> {
     this.memories = await listMemories(this.plugin.app);
     if (this.mode === "graph") {
-      this.graph = await buildGraph(this.plugin.app);
+      this.graph = await buildGraph(this.plugin.app, dailyNoteLayout(this.plugin.vaultRoot()));
       settle(this.graph, 180);
     }
     this.render();
