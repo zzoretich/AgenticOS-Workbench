@@ -1,13 +1,16 @@
 #!/usr/bin/env node
+'use strict';
 /**
- * Arsenal scanner — inventories the skills, agents, and commands under a Claude config dir as JSON.
- * Used to bootstrap PLAYBOOK.md (build-playbook.js) and to detect playbook
- * drift during the weekly reflection duty.
+ * scan-arsenal.js — inventories the skills, agents, and commands under a Claude Code
+ * config dir (skills/<name>/SKILL.md, agents/*.md, commands/*.md) as JSON.
+ * Used to bootstrap <vault>/persona/PLAYBOOK.md (build-playbook.js) and to detect
+ * playbook drift during the weekly reflect duty.
+ *
+ *   node persona/scan-arsenal.js [--root <configDir>]     (default: PATHS.CLAUDE_CONFIG_DIR)
  */
 const fs = require('fs');
 const path = require('path');
 
-const DEFAULT_ROOT = process.env.CLAUDE_CONFIG_DIR || require('path').join(require('os').homedir(), '.claude');
 const EXCLUDE_FILES = new Set(['INDEX.md', 'README.md']);
 const DESC_MAX = 200;
 
@@ -55,7 +58,8 @@ function clip(s) {
   return (s || '').slice(0, DESC_MAX);
 }
 
-function scanArsenal(root = DEFAULT_ROOT) {
+function scanArsenal(root) {
+  if (!root) throw new Error('scanArsenal(root): root (the Claude config dir) is required');
   const out = [];
 
   const skillsDir = path.join(root, 'skills');
@@ -99,7 +103,7 @@ function scanArsenal(root = DEFAULT_ROOT) {
 
 if (require.main === module) {
   const rootIdx = process.argv.indexOf('--root');
-  const root = rootIdx !== -1 ? process.argv[rootIdx + 1] : DEFAULT_ROOT;
+  const root = rootIdx !== -1 ? process.argv[rootIdx + 1] : require('../lib/paths.js').PATHS.CLAUDE_CONFIG_DIR;
   process.stdout.write(JSON.stringify(scanArsenal(root), null, 2) + '\n');
 }
 
