@@ -81,10 +81,14 @@ function recordSpend(row) {
 function dutySpendToday() {
   try { return dutySpendFrom(fs.readFileSync(ledgerPath(), 'utf8')); } catch { return 0; }   // no ledger yet
 }
+/** Null-ish numeric guard: an explicit finite, non-negative number (including 0) is honoured; anything
+ *  else (missing, NaN, negative, non-number) falls back to the default. Final review F6/spec-8: the old
+ *  `Number(v) || d` turned an explicit 0 into the default, silently handing "$0/day" users $6/day. */
+function n(v, d) { return typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : d; }
 function caps() {
   let persona = {};
   try { persona = require('../lib/config.js').loadConfig().persona || {}; } catch { /* contract defaults below */ }
-  return { perDayUsd: Number(persona.perDayUsd) || 6, perDutyUsd: Number(persona.perDutyUsd) || 2 };
+  return { perDayUsd: n(persona.perDayUsd, 6), perDutyUsd: n(persona.perDutyUsd, 2) };
 }
 
 function main(argv) {
@@ -92,6 +96,7 @@ function main(argv) {
   if (argv.includes('--check')) {
     const { perDayUsd, perDutyUsd } = caps();
     const r = { ...check({ spendToday: dutySpendToday, perDayUsd }), perDutyUsd };
+    r.allowed = r.allowed && perDutyUsd > 0;   // a $0 per-duty budget refuses to start (F6): undefined --max-budget-usd 0 semantics otherwise
     process.stdout.write(JSON.stringify(r) + '\n');
     return r.allowed ? 0 : 3;
   }

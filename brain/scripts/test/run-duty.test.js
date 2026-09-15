@@ -55,13 +55,16 @@ test('dry-run prints the invocation (binary, model, effort, tools, budget, json 
   assert.match(r.stdout, /^--strict-mcp-config$/m);          // execution amendment 2026-09-15 (A25)
   assert.match(r.stdout, /^--no-session-persistence$/m);     // execution amendment 2026-09-15 (A25)
   assert.ok(!r.stdout.includes('bypassPermissions'));
-  assert.ok(!r.stdout.includes('Bash(git:*)'), 'git is scoped to status/log/diff/add/commit — never push');   // execution amendment 2026-09-15 (A26)
+  assert.ok(!r.stdout.includes('Bash(git:*)'), 'git is scoped to status/log/diff — never push');   // execution amendment 2026-09-15 (A26)
+  assert.ok(!r.stdout.includes('Bash(git add') && !r.stdout.includes('Bash(git commit'), 'a duty never commits — docs/chief-of-staff.md');   // final review F3/safety-5
   assert.ok(!fs.existsSync(s.logDir), 'dry-run writes no logs');
   // execution amendment 2026-09-15 (A24): without PERSONA_CLAUDE_BIN the runner takes agenticos.json's claude.bin
   // (contract §2 addendum) before the PATH lookup; the first printed line is the resolved binary.
   const cfg = path.join(s.vault, 'agenticos.json');
   fs.writeFileSync(cfg, JSON.stringify({ vault: s.vault, claude: { model: 'haiku', bin: s.env.PERSONA_CLAUDE_BIN } }, null, 2));
-  const viaCfg = { ...s.env, AOS_CONFIG: cfg }; delete viaCfg.PERSONA_CLAUDE_BIN;
+  // final review F8/spec-7 ([ledger:147] ii): PATH/HOME are pinned so that if the PERSONA_CLAUDE_BIN guard
+  // ever regressed, this sub-run could not resolve the developer's real `claude` and make a live billed call.
+  const viaCfg = { ...s.env, AOS_CONFIG: cfg, PATH: '/usr/bin:/bin', HOME: s.vault }; delete viaCfg.PERSONA_CLAUDE_BIN;
   assert.equal(run(['testduty', '--dry-run'], viaCfg).stdout.split('\n')[0], s.env.PERSONA_CLAUDE_BIN, 'claude.bin from agenticos.json is honored before the PATH lookup');
 });
 
@@ -179,7 +182,8 @@ test('watchdog kills the claude process itself on PERSONA_TIMEOUT; a non-executa
   fs.rmSync(pidFile, { force: true });
   const notExec = path.join(s.vault, 'not-executable-claude');
   fs.writeFileSync(notExec, '#!/bin/sh\necho should never run\n', { mode: 0o644 });
-  const bad = run(['monitor'], { ...s.env, PERSONA_CLAUDE_BIN: notExec });
+  // Same hardening as viaCfg above — NOT PATH: '' (that fails `sh` itself with ENOENT and reddens the assertions below).
+  const bad = run(['monitor'], { ...s.env, PERSONA_CLAUDE_BIN: notExec, PATH: '/usr/bin:/bin', HOME: s.vault });
   assert.equal(bad.status, 1);
   assert.match(bad.stderr, /not executable/);
   assert.ok(!fs.existsSync(pidFile), 'a misconfigured PERSONA_CLAUDE_BIN must never launch anything');
