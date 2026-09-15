@@ -117,8 +117,10 @@ function templateVars(answers, { vault, node, logDir, now = new Date() }) {
  * Renders and writes IDENTITY.md and duties/*.md from templatesDir — the persona's "always
  * regenerated" files. Shared by writePersona (a fresh interview or a prefilled re-run) and
  * renameAgent (A53): a rename re-renders these exactly like a prefilled re-run would, so the
- * new name lands correctly with no leftover text from the old one.
- * @returns {string[]} the rel paths written, relative to persona/.
+ * new name lands correctly with no leftover text from the old one. A file is reported (and
+ * written) only when the rendered bytes differ from what is already on disk, or the file did
+ * not exist (A55) — a same-answers re-render, including a same-name rename, reports no changes.
+ * @returns {string[]} the rel paths actually written, relative to persona/.
  */
 function renderRegenerated(persona, templatesDir, vars) {
   const tmpl = (rel) => fs.readFileSync(path.join(templatesDir, rel), 'utf8');
@@ -127,8 +129,12 @@ function renderRegenerated(persona, templatesDir, vars) {
   const written = [];
   for (const rel of Object.keys(files)) {
     const file = path.join(persona, rel);
+    const body = renderTemplate(tmpl(files[rel]), vars);
+    let before = null;
+    try { before = fs.readFileSync(file, 'utf8'); } catch { /* did not exist */ }
+    if (before === body) continue;
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, renderTemplate(tmpl(files[rel]), vars));
+    fs.writeFileSync(file, body);
     written.push(rel);
   }
   return written;
@@ -180,8 +186,14 @@ function currentName(vault) {
  * over); PLAYBOOK.md only has its own H1 rewritten — it is the persona's hand-curated file, nothing
  * else in it is touched; STATE.md gets the word-boundary replace, but only on lines that are not
  * a heading.
+ * A55: `node` defaults to `process.execPath` so the re-render keeps an absolute interpreter path
+ * in the duty files instead of degrading {{NODE}} to the bare `'node'` fallback (the duties run
+ * headless from launchd with a minimal PATH — that is the whole reason `--node` exists).
+ * `answers.json` is written LAST, after every re-render: if a template lookup or a file write
+ * throws partway through, `answers.json` still names the OLD agent, so a retry re-reads the
+ * correct `old` name instead of losing track of what to rename from.
  */
-function renameAgent({ vault, newName }) {
+function renameAgent({ vault, newName, node = process.execPath }) {
   const old = currentName(vault);
   if (!old) throw new Error('no persona to rename (run the interview first)');
   const answers = normalizeAnswers({ ...(readAnswers(vault) || {}), name: newName });
@@ -189,11 +201,9 @@ function renameAgent({ vault, newName }) {
   const escapedOld = old.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const changed = [];
 
-  fs.writeFileSync(path.join(persona, 'answers.json'), JSON.stringify(answers, null, 2) + '\n');
-
   const templatesDir = defaultTemplatesDir();
   if (!templatesDir) throw new Error(`renameAgent: no persona templates found (looked in ${TEMPLATE_DIRS.join(', ')})`);
-  changed.push(...renderRegenerated(persona, templatesDir, templateVars(answers, { vault })));
+  changed.push(...renderRegenerated(persona, templatesDir, templateVars(answers, { vault, node })));
 
   const playbook = path.join(persona, 'PLAYBOOK.md');
   if (fs.existsSync(playbook)) {
@@ -210,6 +220,8 @@ function renameAgent({ vault, newName }) {
     const after = before.split('\n').map(line => (line.startsWith('#') ? line : line.replace(re, answers.name))).join('\n');
     if (after !== before) { fs.writeFileSync(state, after); changed.push('STATE.md'); }
   }
+
+  fs.writeFileSync(path.join(persona, 'answers.json'), JSON.stringify(answers, null, 2) + '\n');
 
   return { from: old, to: answers.name, changed, answers };
 }
@@ -265,7 +277,8 @@ async function main(argv) {
   const pos = positionals(argv);
   if (pos[0] === 'rename') {
     if (!pos[1]) { console.error('usage: interview.js [--vault <dir>] rename <name>'); return 2; }
-    const r = renameAgent({ vault, newName: pos[1] });   // throws 'no persona to rename' → exit 1 below
+    const nodeArg = arg('--node'); // A55: forwarded so a rename keeps an absolute interpreter path; the process's own default suffices otherwise.
+    const r = renameAgent({ vault, newName: pos[1], ...(nodeArg ? { node: nodeArg } : {}) });   // throws 'no persona to rename' → exit 1 below
     console.log(JSON.stringify(r));
     return 0;
   }
