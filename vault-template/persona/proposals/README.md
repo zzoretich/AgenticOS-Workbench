@@ -20,6 +20,6 @@ Body sections, in order: **What** (the exact change, as a diff or full replaceme
     | <claim the fix depends on> | VERIFIED | <how checked, with path/date> |
     | <claim taken on faith> | ASSUMED | <why it is believed> |
 
-Approval flow: the user says "approve <slug>" or "reject <slug>" in any session, or answers the batch review run by the `persona-flag-closer` skill. On approval the agent applies the change exactly as written, re-runs `recheck` expecting a NONZERO exit (finding gone), commits with `persona: apply approved proposal <slug>`, and deletes the proposal file. If recheck still exits 0 after applying, it stops and reports — no commit. On rejection it deletes the file and records the reasoning as a feedback memory so the idea is not proposed again.
+Approval flow: the user says "approve <slug>" or "reject <slug>" in any session, or answers the batch review run by the `persona-flag-closer` skill. On approval the agent applies the change exactly as written, re-runs `recheck` expecting a NONZERO exit (finding gone), commits with `persona: apply approved proposal <slug>` — naming the changed paths and this proposal file, never a pathspec-less commit — and deletes the proposal file. If recheck still exits 0 after applying, it stops and reports — no commit. On rejection it deletes the file and records the reasoning as a feedback memory so the idea is not proposed again.
 
 Guarded territory (proposal required): IDENTITY.md, duties/*.md, brain/scripts/persona/*, the duty schedules, and anything outside `persona/`.

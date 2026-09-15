@@ -4,12 +4,26 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+
+// A private vault for this file, set into BRAIN_VAULT BEFORE the module require below, so paths.js
+// resolves THIS vault instead of whatever the developer's environment names — final review F1/tests-1:
+// the prior version resolved the ambient AOS_VAULT/BRAIN_VAULT (via require('../lib/paths.js').VAULT)
+// and registered its persona/ tree for deletion, so a real vault's persona/ got wiped by a green test.
+const VAULT = fs.mkdtempSync(path.join(os.tmpdir(), 'sitrep-vault-'));
+fs.mkdirSync(path.join(VAULT, 'brain', '_index'), { recursive: true });
+process.env.BRAIN_VAULT = VAULT;
+delete process.env.AOS_VAULT;
+
 const { parseFlags, listProposals, detectPlanning, diffAlert, collect } = require('../persona/sitrep-state.js');
 
-let tmpDirs = [];
+const TMP_ROOT = os.tmpdir();
+let tmpDirs = [VAULT];   // the vault ROOT only — never a subtree of a directory this file did not create
 
 after(() => {
   for (const dir of tmpDirs) {
+    const resolved = path.resolve(dir);
+    // Refuse to delete anything outside os.tmpdir(): the guard that should have existed before C1.
+    if (resolved !== TMP_ROOT && !resolved.startsWith(TMP_ROOT + path.sep)) continue;
     try {
       fs.rmSync(dir, { recursive: true, force: true });
     } catch {}
@@ -77,10 +91,9 @@ test('diffAlert reports adds/removes per key; identical state is unchanged', () 
 });
 
 test('collect tolerates a vault with no persona/repos.json and reads flags from STATE.md', () => {
-  // setup.js gave this process a temp vault; persona/ does not exist in it yet. Resolve the vault the way the
-  // module under test does (paths.js:34 prefers AOS_VAULT over BRAIN_VAULT) — execution amendment 2026-09-15 (A21).
-  const { VAULT: vault } = require('../lib/paths.js');
-  tmpDirs.push(path.join(vault, 'persona'));
+  // This file's own private vault (set into BRAIN_VAULT above, before the module require) is what
+  // sitrep-state.js resolves via paths.js — never the ambient AOS_VAULT/BRAIN_VAULT (final review F1).
+  const vault = VAULT;
   fs.mkdirSync(path.join(vault, 'persona', 'proposals'), { recursive: true });
   fs.writeFileSync(path.join(vault, 'persona', 'STATE.md'), '# Persona State\n## Flags\n- [ ] one open flag\n## Priorities\n');
   const state = collect(Date.parse('2026-09-04T12:00:00Z'));
@@ -89,6 +102,7 @@ test('collect tolerates a vault with no persona/repos.json and reads flags from 
   assert.deepEqual(state.alert.stalled, []);
   assert.deepEqual(state.alert.flags, ['one open flag']);
   assert.deepEqual(state.alert.proposals, []);
+  assert.deepEqual(state.alert.drafts, []);   // [ledger:121]: alert.drafts was previously unasserted
   assert.equal(state.threshold_days, 4);
 
   // A corrupt repos.json warns once on stderr and is treated as empty (controller ruling A48).

@@ -61,9 +61,10 @@ MODEL="${PERSONA_MODEL:-$(json_value model)}"; MODEL="${MODEL:-haiku}"   # json_
 EFFORT="${PERSONA_EFFORT:-medium}"
 MAX_USD="${PERSONA_MAX_USD:-}"     # empty → persona.perDutyUsd from --check below → 2
 # Scoped allowlist (not bypassPermissions): node is pinned to the two persona scripts; git is limited to
-# status/log/diff/add/commit, so a duty can never push (execution amendment 2026-09-15, A26). Write/Edit are
-# unscoped — guarded files rely on the proposal protocol plus git history, not on the permission layer.
-PERSONA_TOOLS="${PERSONA_TOOLS:-Read,Write,Edit,Glob,Grep,Bash(git status:*),Bash(git log:*),Bash(git diff:*),Bash(git add:*),Bash(git commit:*),Bash(date:*),Bash(ls:*),Bash(grep:*),Bash(wc:*),Bash(tail:*),Bash(head:*),Bash($NODE $VAULT/brain/scripts/persona/sitrep-state.js:*),Bash($NODE $VAULT/brain/scripts/persona/scan-arsenal.js:*),Bash(node $VAULT/brain/scripts/persona/sitrep-state.js:*),Bash(node $VAULT/brain/scripts/persona/scan-arsenal.js:*)}"
+# status/log/diff, so a duty can neither commit nor push (final review F3/safety-5, departs from A26 — git
+# add/commit were dropped: docs/chief-of-staff.md promises a duty never commits, and nothing needed the verbs).
+# Write/Edit are unscoped — guarded files rely on the proposal protocol plus git history, not on the permission layer.
+PERSONA_TOOLS="${PERSONA_TOOLS:-Read,Write,Edit,Glob,Grep,Bash(git status:*),Bash(git log:*),Bash(git diff:*),Bash(date:*),Bash(ls:*),Bash(grep:*),Bash(wc:*),Bash(tail:*),Bash(head:*),Bash($NODE $VAULT/brain/scripts/persona/sitrep-state.js:*),Bash($NODE $VAULT/brain/scripts/persona/scan-arsenal.js:*),Bash(node $VAULT/brain/scripts/persona/sitrep-state.js:*),Bash(node $VAULT/brain/scripts/persona/scan-arsenal.js:*)}"
 # claude binary: PERSONA_CLAUDE_BIN → claude.bin recorded in agenticos.json by `aos init` (contract §2 addendum;
 # "bin" occurs exactly once there, under "claude") → PATH → ~/.local/bin/claude. execution amendment 2026-09-15 (A24)
 # A SET PERSONA_CLAUDE_BIN that is not executable is a misconfiguration, not a cue to fall through to the

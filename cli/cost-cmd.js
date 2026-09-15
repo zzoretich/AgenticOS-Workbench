@@ -52,8 +52,15 @@ function askBudget(question) {
 
 function loadAgenticos(configDir) {
   const file = agenticosPath(configDir);
-  const cfg = readJson(file);
-  if (!cfg) throw new Error(`no agenticos.json at ${file} (run \`aos init\` first)`);
+  let cfg;
+  try {
+    cfg = JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch (e) {
+    // Split by cause (final review F7/safety-6): a corrupt file is not "missing" — readJson used to
+    // conflate ENOENT and SyntaxError, so a parse error was misreported as "run `aos init` first".
+    if (e.code === 'ENOENT') throw new Error(`no agenticos.json at ${file} (run \`aos init\` first)`);
+    throw new Error(`agenticos.json at ${file} does not parse: ${e.message}`);
+  }
   return { file, cfg };
 }
 
@@ -67,6 +74,17 @@ async function enable({ configDir = claudeConfigDir(), vault, budget, yes, io = 
     monthly = parseBudget(budget);
     if (monthly == null) throw new Error(`--budget must be a positive number of USD (got "${budget}")`);
   }
+  // Read the vault config ONCE, up front, before any copy or write (final review F7/safety-6): the old
+  // `readJson(vaultCfgFile) || {}` at write time silently replaced a corrupt brain/config.json with just
+  // {"cost":{…}}, dropping the user's other keys with no warning. ENOENT → {} (no config yet, fine);
+  // any other parse error refuses the whole enable, with nothing copied and nothing flipped.
+  const vaultCfgFile = path.join(vault, 'brain', 'config.json');
+  let vaultCfg = {};
+  try {
+    vaultCfg = JSON.parse(fs.readFileSync(vaultCfgFile, 'utf8'));
+  } catch (e) {
+    if (e.code !== 'ENOENT') throw new Error(`refusing to touch unparseable ${vaultCfgFile}: ${e.message}`);
+  }
   const py = pythonVersion(exec);
   if (!py.ok) throw new Error(`${py.reason}; the cost module needs python3 ${MIN_PY.join('.')}+`);
   const src = extrasDir || extrasDirFor(configDir, hint);
@@ -79,11 +97,9 @@ async function enable({ configDir = claudeConfigDir(), vault, budget, yes, io = 
   cfg.cost = { ...(cfg.cost || {}), enabled: true };
   writeJson(file, cfg);
   if (monthly == null && budget == null && !yes) monthly = parseBudget(await ask('Monthly budget in USD (blank = none): '));
-  const vaultCfgFile = path.join(vault, 'brain', 'config.json');
   // execution amendment 2026-09-15 (A38): write cost.monthlyBudget only when a budget was supplied or answered — a re-run
   // without one (--yes, non-TTY, `aos init --cost --yes`) keeps whatever the vault config already holds.
   if (monthly != null) {
-    const vaultCfg = readJson(vaultCfgFile) || {};
     vaultCfg.cost = { ...(vaultCfg.cost || {}), monthlyBudget: monthly };
     writeJson(vaultCfgFile, vaultCfg);
   }
