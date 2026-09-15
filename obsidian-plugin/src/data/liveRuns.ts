@@ -6,7 +6,7 @@
 // emitted onto plugin.bus with the same { type, data } shape SSEClient uses,
 // so the old Mission Control view's handleSSE() (and any other subscriber) is source-agnostic.
 
-import { Events } from "obsidian";
+import type { Events } from "obsidian";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -29,6 +29,8 @@ export interface LiveRunsOptions {
   pollMs?: number;
   /** Tag every emitted event with this source label so a subscriber can dedupe across SSE + local. */
   source?: string;
+  /** Create agent-runs/live/ and runs.jsonl on start. false when telemetry is disabled: poll only what exists. */
+  createDirs?: boolean;
 }
 
 export class LiveRunsWatcher {
@@ -47,6 +49,7 @@ export class LiveRunsWatcher {
       bus: options.bus,
       pollMs: options.pollMs ?? 300,
       source: options.source ?? "local",
+      createDirs: options.createDirs ?? true,
     };
     const runsDir = path.join(this.opts.vault, "brain/_index/agent-runs");
     this.liveDir = path.join(runsDir, "live");
@@ -54,9 +57,11 @@ export class LiveRunsWatcher {
   }
 
   start(): void {
-    try { fs.mkdirSync(this.liveDir, { recursive: true }); } catch { /* best-effort */ }
-    if (!fs.existsSync(this.summaryLog)) {
-      try { fs.writeFileSync(this.summaryLog, ""); } catch { /* best-effort */ }
+    if (this.opts.createDirs) {
+      try { fs.mkdirSync(this.liveDir, { recursive: true }); } catch { /* best-effort */ }
+      if (!fs.existsSync(this.summaryLog)) {
+        try { fs.writeFileSync(this.summaryLog, ""); } catch { /* best-effort */ }
+      }
     }
     this.summaryCursor = this.safeStat(this.summaryLog).size;
     // Prime liveHeaders so the first poll has correct cursor offsets for files
