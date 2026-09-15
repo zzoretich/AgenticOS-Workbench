@@ -80,6 +80,7 @@ test('collect tolerates a vault with no persona/repos.json and reads flags from 
   // setup.js gave this process a temp vault; persona/ does not exist in it yet. Resolve the vault the way the
   // module under test does (paths.js:34 prefers AOS_VAULT over BRAIN_VAULT) — execution amendment 2026-09-15 (A21).
   const { VAULT: vault } = require('../lib/paths.js');
+  tmpDirs.push(path.join(vault, 'persona'));
   fs.mkdirSync(path.join(vault, 'persona', 'proposals'), { recursive: true });
   fs.writeFileSync(path.join(vault, 'persona', 'STATE.md'), '# Persona State\n## Flags\n- [ ] one open flag\n## Priorities\n');
   const state = collect(Date.parse('2026-09-04T12:00:00Z'));
@@ -89,4 +90,27 @@ test('collect tolerates a vault with no persona/repos.json and reads flags from 
   assert.deepEqual(state.alert.flags, ['one open flag']);
   assert.deepEqual(state.alert.proposals, []);
   assert.equal(state.threshold_days, 4);
+
+  // A corrupt repos.json warns once on stderr and is treated as empty (controller ruling A48).
+  const reposFile = path.join(vault, 'persona', 'repos.json');
+  fs.writeFileSync(reposFile, '{not json');
+  const errs = [];
+  const orig = console.error;
+  console.error = (...a) => errs.push(a.join(' '));
+  try {
+    const corrupt = collect(Date.parse('2026-09-04T12:00:00Z'));
+    assert.deepEqual(corrupt.repos, []);
+    assert.deepEqual(corrupt.alert.stalled, []);
+    assert.equal(errs.length, 1);
+    assert.match(errs[0], /repos\.json unreadable/);
+
+    // A parseable-but-non-object value (e.g. `null`) is treated as empty, silently — no further warning.
+    fs.writeFileSync(reposFile, 'null');
+    const nullCfg = collect(Date.parse('2026-09-04T12:00:00Z'));
+    assert.deepEqual(nullCfg.repos, []);
+    assert.equal(errs.length, 1);
+  } finally {
+    console.error = orig;
+    fs.rmSync(reposFile, { force: true });
+  }
 });

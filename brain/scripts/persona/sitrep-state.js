@@ -31,10 +31,17 @@ function git(repoPath, args) {
   } catch { return null; }
 }
 
-/** persona/repos.json is optional: { stall_threshold_days?: number, repos?: [{ name, path }] }. */
+/** persona/repos.json is optional: { stall_threshold_days?: number, repos?: [{ name, path }] }.
+ *  A corrupt or unreadable file warns once on stderr and is treated as empty. */
 function loadRepos() {
   let cfg = {};
-  try { cfg = JSON.parse(fs.readFileSync(REPOS_FILE, 'utf8')); } catch { /* no repos.json → nothing to watch */ }
+  try {
+    cfg = JSON.parse(fs.readFileSync(REPOS_FILE, 'utf8'));
+  } catch (e) {
+    if (e.code !== 'ENOENT') console.error(`[sitrep-state] persona/repos.json unreadable: ${e.message} — watching no repos`);
+    cfg = {};
+  }
+  if (typeof cfg !== 'object' || cfg === null || Array.isArray(cfg)) cfg = {};
   return { threshold: cfg.stall_threshold_days || 4, repos: Array.isArray(cfg.repos) ? cfg.repos : [] };
 }
 
