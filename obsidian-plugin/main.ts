@@ -105,7 +105,7 @@ export default class AgenticOSPlugin extends Plugin {
       hotkeys: [{ modifiers: ["Mod", "Shift"], key: "m" }],
       callback: () => { new CaptureModal(this.app).open(); },
     });
-    this.addCommand({ id: "open-omnisearch", name: "Omnisearch (⌘K)", hotkeys: [{ modifiers: ["Mod"], key: "k" }],
+    this.addCommand({ id: "open-omnisearch", name: "Omnisearch",
       callback: () => { void this.openOmni(); } });
 
     this.addSettingTab(new AgenticOSSettingTab(this.app, this));
@@ -374,9 +374,7 @@ export default class AgenticOSPlugin extends Plugin {
 
   private startRunsTail(): void {
     try {
-      const adapter = this.app.vault.adapter as unknown as { getBasePath?: () => string };
-      if (typeof adapter.getBasePath !== "function") return;
-      const base = adapter.getBasePath();
+      const base = this.vaultRoot();
       const abs = path.join(base, RUNS_PATH);
       if (!fs.existsSync(abs)) return;
       this.runsBytesSeen = fs.statSync(abs).size;
@@ -386,8 +384,9 @@ export default class AgenticOSPlugin extends Plugin {
           if (size > this.runsBytesSeen) {
             this.runsBytesSeen = size;
             void this.refreshStatusBar();
-            const file = this.app.vault.getAbstractFileByPath(RUNS_PATH);
-            if (file) this.app.vault.trigger("modify", file);
+            // Internal fan-out: fs.watch sees the append before Obsidian's indexer does.
+            // Subscribers (SidebarHUD, RunsTab) listen for this instead of a synthetic vault event.
+            this.bus.trigger("runs-appended");
           }
         } catch { /* ignore */ }
       });

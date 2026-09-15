@@ -91,5 +91,5 @@ export function formatRelative(iso: string): string {
 
 export function formatClockTime(iso: string): string {
   const d = new Date(iso);
-  return d.toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  return d.toLocaleTimeString(undefined, { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }

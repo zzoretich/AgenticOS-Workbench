@@ -1,7 +1,5 @@
-// donut.ts — SVG ring chart, ported from dashboards/dashboard.js. Used by the
-// Disk panel in Mission Control. Returns inline SVG markup (string) so the
-// caller can drop it into innerHTML — keeps render() pure-DOM mutation cheap.
-
+// donut.ts — SVG ring chart for the SYSTEM drawer's DISK panel. donutArcs() is pure
+// (testable); donutElement() builds real SVG nodes with createElementNS — no markup strings are ever assigned.
 import { TOKENS } from "../ui/tokens";
 
 export const DONUT_COLORS = [
@@ -14,16 +12,19 @@ export const DONUT_COLORS = [
   TOKENS.chart7, // slate (for "other")
 ];
 
-interface Segment { name: string; bytes: number; }
+const SVG_NS = "http://www.w3.org/2000/svg";
 
-export function donutSvg(segments: Segment[], total: number, size = 140): string {
-  if (!total || segments.length === 0) return "";
+export interface Segment { name: string; bytes: number; }
+export interface DonutArc { d: string; fill: string; opacity: string; }
+
+export function donutArcs(segments: Segment[], total: number, size = 140): DonutArc[] {
+  if (!total || segments.length === 0) return [];
   const cx = size / 2, cy = size / 2;
   const radius = size * 0.38;
   const thickness = size * 0.16;
   const inner = radius - thickness;
   let start = -Math.PI / 2; // 12 o'clock
-  const arcs: string[] = [];
+  const arcs: DonutArc[] = [];
   for (let i = 0; i < segments.length; i++) {
     const seg = segments[i];
     if (seg.bytes <= 0) continue;
@@ -38,11 +39,27 @@ export function donutSvg(segments: Segment[], total: number, size = 140): string
     const syi = cy + Math.sin(end) * inner;
     const exi = cx + Math.cos(start) * inner;
     const eyi = cy + Math.sin(start) * inner;
-    const color = DONUT_COLORS[i % DONUT_COLORS.length];
-    arcs.push(
-      `<path d="M${sx.toFixed(2)},${sy.toFixed(2)} A${radius},${radius} 0 ${largeArc} 1 ${ex.toFixed(2)},${ey.toFixed(2)} L${sxi.toFixed(2)},${syi.toFixed(2)} A${inner},${inner} 0 ${largeArc} 0 ${exi.toFixed(2)},${eyi.toFixed(2)} Z" fill="${color}" opacity="0.85"/>`
-    );
+    arcs.push({
+      d: `M${sx.toFixed(2)},${sy.toFixed(2)} A${radius},${radius} 0 ${largeArc} 1 ${ex.toFixed(2)},${ey.toFixed(2)} L${sxi.toFixed(2)},${syi.toFixed(2)} A${inner},${inner} 0 ${largeArc} 0 ${exi.toFixed(2)},${eyi.toFixed(2)} Z`,
+      fill: DONUT_COLORS[i % DONUT_COLORS.length],
+      opacity: "0.85",
+    });
     start = end;
   }
-  return `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg">${arcs.join("")}</svg>`;
+  return arcs;
+}
+
+export function donutElement(segments: Segment[], total: number, size = 140): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", `0 0 ${size} ${size}`);
+  svg.setAttribute("width", String(size));
+  svg.setAttribute("height", String(size));
+  for (const a of donutArcs(segments, total, size)) {
+    const p = document.createElementNS(SVG_NS, "path");
+    p.setAttribute("d", a.d);
+    p.setAttribute("fill", a.fill);
+    p.setAttribute("opacity", a.opacity);
+    svg.appendChild(p);
+  }
+  return svg;
 }
