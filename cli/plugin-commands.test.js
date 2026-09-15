@@ -50,9 +50,9 @@ test('MCP tools use the plugin-prefixed names Claude Code exposes for a plugin-d
   }
 });
 
-test('the four Plan 3 skills exist with frontmatter and are free of owner paths', () => {
+test('the six plugin skills exist with frontmatter and are free of owner paths', () => {   // execution amendment 2026-09-15 (A32)
   const SK = path.resolve(__dirname, '..', 'plugin', 'skills');
-  for (const name of ['recall', 'wrap', 'feedback-review', 'cost']) {
+  for (const name of ['recall', 'wrap', 'feedback-review', 'cost', 'persona-flag-closer', 'persona-sitrep']) {
     const text = fs.readFileSync(path.join(SK, name, 'SKILL.md'), 'utf8');
     const fm = /^---\n([\s\S]*?)\n---\n/.exec(text);
     assert.ok(fm, `${name}: frontmatter`);

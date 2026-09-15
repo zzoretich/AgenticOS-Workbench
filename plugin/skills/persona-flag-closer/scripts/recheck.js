@@ -8,13 +8,13 @@
 // --record persists consecutive-confirmation counters (monitor duty ONLY —
 // interactive reviews must not inflate the auto-apply trust ladder).
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { execSync } = require('child_process');
+const { defaultRoot } = require('./collect.js');
 
 function runRecipe(cmd, cwd) {
   try {
-    execSync(cmd, { cwd, timeout: 15000, stdio: ['ignore', 'pipe', 'pipe'], shell: '/bin/bash' });
+    execSync(cmd, { cwd, timeout: 15000, stdio: ['ignore', 'pipe', 'pipe'], shell: '/bin/sh' });
     return 'STILL-VALID';
   } catch (e) {
     if (e.status === 126 || e.status === 127) return 'RECIPE-ERROR';
@@ -72,7 +72,8 @@ if (require.main === module) {
   const args = process.argv.slice(2);
   const input = args.find(a => !a.startsWith('--'));
   const rootIx = args.indexOf('--root');
-  const root = rootIx >= 0 ? args[rootIx + 1] : path.join(os.homedir(), '.claude');
+  const root = rootIx >= 0 ? args[rootIx + 1] : defaultRoot();
+  if (!root) { console.error('recheck: no vault — pass --root <vault> or run `aos init`'); process.exit(2); }
   const review = JSON.parse(fs.readFileSync(input, 'utf8'));
   console.log(JSON.stringify(recheck(review, root, { record: args.includes('--record') }), null, 2));
 }
