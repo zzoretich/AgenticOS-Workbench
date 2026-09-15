@@ -1,6 +1,5 @@
 import { TAbstractFile } from "obsidian";
 import * as fs from "fs";
-import * as os from "os";
 import * as path from "path";
 import type AgenticOSPlugin from "../../main";
 import type { WorkbenchView } from "./WorkbenchView";
@@ -19,8 +18,8 @@ import { COMMAND_REGISTRY, executeCommand } from "../data/commandRegistry";
 import { renderSystemDrawer } from "./SystemDrawer";
 
 /** True when <claude-config-dir>/projects/<any slug>/<sid>.jsonl exists — mirrors auto-cost.js findTranscript(). */
-function transcriptExists(sid: string): boolean {
-  const root = path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude"), "projects");
+function transcriptExists(sid: string, configDir: string): boolean {
+  const root = path.join(configDir, "projects");
   let dirs: string[] = [];
   try { dirs = fs.readdirSync(root); } catch { return false; }
   return dirs.some((d) => fs.existsSync(path.join(root, d, `${sid}.jsonl`)));
@@ -101,6 +100,7 @@ export class PulseTab {
    */
   private countBackfillable(runs: AgentRun[]): number {
     try {
+      const configDir = this.plugin.claudeConfigDir();
       const seen = new Set<string>();
       let count = 0;
       for (const r of runs) {
@@ -108,7 +108,7 @@ export class PulseTab {
         const sid = (r as AgentRun & { session_id?: string }).session_id || (r.id || "").replace(/^sess-/, "");
         if (!sid || seen.has(sid)) continue;
         seen.add(sid);
-        if (transcriptExists(sid)) count++;
+        if (transcriptExists(sid, configDir)) count++;
       }
       return count;
     } catch (e) {
