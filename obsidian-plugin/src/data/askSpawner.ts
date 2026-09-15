@@ -22,6 +22,7 @@ export interface AskResult {
   elapsedMs: number;
   exitCode: number | null;
   error?: string;
+  usd?: number;             // claude provider only: total_cost_usd of the headless call
 }
 
 export interface AskHandle {
@@ -139,7 +140,13 @@ export function runAsk(opts: RunAskOptions): AskHandle {
         stderr: stderrBuf,
         elapsedMs: Date.now() - start,
         exitCode: code,
-        error: killed ? "cancelled (timeout)" : code !== 0 ? `exit ${code}` : undefined,
+        // Surface the script's own last stderr line (e.g. "recall index missing", "ollama
+        // unreachable") instead of the bare exit code; fall back to "exit N" only when silent.
+        // Stack frames are skipped: ask.js's `[ask] fatal: ${err.stack}` path ends in `at …`
+        // lines, and the frame is never the message the user needs.
+        error: killed ? "cancelled (timeout)"
+          : code !== 0 ? (stderrBuf.trim().split("\n").map((l) => l.trim()).filter((l) => l && !/^at\s/.test(l)).pop() || `exit ${code}`).slice(0, 400)
+          : undefined,
       });
     });
   });

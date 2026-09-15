@@ -2,6 +2,8 @@ import { MarkdownRenderer, Component, EventRef } from "obsidian";
 import type AgenticOSPlugin from "../../main";
 import type { WorkbenchView } from "./WorkbenchView";
 import { runAsk, isAskBusy, AskHandle, AskResult } from "../data/askSpawner";
+import { runClaudeAsk } from "../data/claudeAsk";
+import { readProviderState, readVaultConfig } from "../data/aosConfig";
 
 // PORT of the old Assistant view's module-level constants (~7-8) — verbatim.
 const CHAT_LOG_PATH = "brain/_index/agentic-os-chat.jsonl";
@@ -14,6 +16,7 @@ interface ChatEntry {
   text: string;
   elapsedMs?: number;
   error?: string;
+  usd?: number;
 }
 
 interface TimelineRow {
@@ -119,6 +122,11 @@ export class ChatTab {
     this.host = null;
   }
 
+  /** Provider the scripts last resolved (brain/_index/provider-state.json); missing state = none. */
+  private providerName(): "ollama" | "claude" | "none" {
+    return readProviderState(this.plugin.vaultRoot())?.name ?? "none";
+  }
+
   // PORT of the old Assistant view's loadHistory (~74). Adaptation: this.app → this.plugin.app.
   private async loadHistory(): Promise<void> {
     try {
@@ -172,6 +180,14 @@ export class ChatTab {
     host.empty();
     host.addClass("aos-assistant");
 
+    const provider = this.providerName();
+    if (provider === "none") {
+      const hint = host.createDiv({ cls: "aos-asst-nohint aos-dim" });
+      hint.createSpan({ cls: "aos-title", text: "[ ASSISTANT ]" });
+      hint.createDiv({ text: "no provider — run `aos provider` (Ollama reachable or Claude Code logged in), then reopen the Workbench." });
+      return;
+    }
+
     const header = host.createDiv({ cls: "aos-asst-head" });
     header.createSpan({ cls: "aos-title", text: "[ ASSISTANT ]" });
     const status = header.createSpan({ cls: "aos-pill" });
@@ -179,7 +195,7 @@ export class ChatTab {
     const up = this.plugin.hb.getStatus().up;
     status.addClass(up ? "aos-pill-cyan" : "aos-pill-dim");
     status.textContent = up ? "live tail" : "idle";
-    header.createSpan({ cls: "aos-dim aos-asst-mode", text: " · local SDK spawn" });
+    header.createSpan({ cls: "aos-dim aos-asst-mode", text: provider === "claude" ? " · headless claude (haiku, capped)" : " · local ask.js" });
 
     // history log
     const log = host.createDiv({ cls: "aos-asst-log" });
@@ -252,7 +268,8 @@ export class ChatTab {
     if (e.role === "assistant") {
       if (e.error) body.createDiv({ cls: "aos-text-rose", text: e.error });
       else if (this.mdHost) void MarkdownRenderer.renderMarkdown(e.text, body, CHAT_LOG_PATH, this.mdHost);
-      if (e.elapsedMs) turn.createDiv({ cls: "aos-asst-meta aos-dim", text: `${(e.elapsedMs / 1000).toFixed(1)}s` });
+      const meta = [e.elapsedMs ? `${(e.elapsedMs / 1000).toFixed(1)}s` : "", typeof e.usd === "number" ? `$${e.usd.toFixed(4)}` : ""].filter(Boolean).join(" · ");
+      if (meta) turn.createDiv({ cls: "aos-asst-meta aos-dim", text: meta });
     } else {
       body.textContent = e.text;
     }
@@ -330,7 +347,12 @@ export class ChatTab {
     this.busy = true;
     await this.appendHistory({ ts: Date.now(), role: "user", text: q });
 
-    const handle = runAsk({ vault: this.plugin.vaultRoot(), node: this.plugin.nodeBin(), question: q });
+    const vaultRoot = this.plugin.vaultRoot();
+    const node = this.plugin.nodeBin();
+    const cfg = readVaultConfig(vaultRoot, this.plugin.claudeConfigDir());
+    const handle = this.providerName() === "claude"
+      ? runClaudeAsk({ vault: vaultRoot, node, question: q, claudeBin: this.plugin.claudeBin(), model: cfg.claude.model, maxBudgetUsd: cfg.claude.perCallUsd })
+      : runAsk({ vault: vaultRoot, node, question: q });
 
     this.liveTurn = {
       runId: null,
@@ -479,7 +501,7 @@ export class ChatTab {
 
     const entry: ChatEntry =
       result.ok && result.answer
-        ? { ts: Date.now(), role: "assistant", text: result.answer, elapsedMs: result.elapsedMs }
+        ? { ts: Date.now(), role: "assistant", text: result.answer, elapsedMs: result.elapsedMs, usd: result.usd }
         : { ts: Date.now(), role: "assistant", text: "", error: result.error || result.stderr?.slice(0, 400) || "no answer" };
     await this.appendHistory(entry);
 
