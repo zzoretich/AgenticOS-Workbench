@@ -1,0 +1,130 @@
+// aosConfig.ts — the plugin-side readers for the three config surfaces the brain
+// scripts use. Pure (fs/os/path only) so node:test can load it.
+//   <configDir>/agenticos.json              written by `aos init`      (contract §2)
+//   <vault>/brain/config.json               user-editable product config (contract §1 Config)
+//   <vault>/brain/_index/provider-state.json written by sdk/lib/provider.js (contract §3)
+// VAULT_CONFIG_DEFAULTS is a verbatim copy of brain/scripts/config.default.json as it stands
+// after Plan 2 Task 3 (contract §1 shape + scan.fileMapBudgetUnderClaude); the merge order
+// (defaults ← vault config ← agenticos.json) matches lib/config.js loadConfig().
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
+
+export type ProviderName = "ollama" | "claude" | "none";
+export type ProviderMode = ProviderName | "auto";
+
+export interface AgenticosJson {
+  version?: string;
+  vault?: string;
+  node?: string;
+  claudeConfigDir?: string;
+  provider?: ProviderMode;
+  // bin: the absolute `claude` path aos init/upgrade resolved (contract §2, Task 0); absent in configs written before Plan 4.
+  claude?: { model?: string; perCallUsd?: number; perDayUsd?: number; bin?: string };
+  ollama?: { host?: string; port?: number };
+  telemetry?: { enabled?: boolean; redact?: boolean; retentionDays?: number };
+  cost?: { enabled?: boolean; monthlyBudget?: number | null };
+  persona?: { enabled?: boolean };
+}
+
+export interface OrchestratorEntry { nickname?: string; trigger?: string; match?: string }
+
+export interface VaultConfig {
+  dailyNote: { layout: string };
+  recallRoots: string[];
+  quickLinks: string[];
+  roster: { orchestrators: Record<string, OrchestratorEntry> };
+  scan: { fileMapBudget: number; embedBudget: number; fileMapBudgetUnderClaude: number; insightsUnderClaude: boolean; autoSweepOrphans: boolean };
+  provider: ProviderMode;
+  claude: { model: string; perCallUsd: number; perDayUsd: number };
+  ollama: { host: string; port: number };
+  telemetry: { enabled: boolean; redact: boolean; retentionDays: number };
+  cost: { enabled: boolean; monthlyBudget: number | null };
+  persona: { enabled: boolean; perDutyUsd: number; perDayUsd: number };
+}
+
+export interface ProviderState {
+  checkedAt: string;
+  name: ProviderName;
+  reason: string;
+  ollama?: { reachable: boolean; checkedAt: string };
+  // bin is `null` in the file whenever provider.js probed and found no CLI (contract §3), so the
+  // type must admit null as well as absence; every reader guards with a truthiness check.
+  claude?: { loggedIn: boolean; checkedAt: string; bin?: string | null };
+}
+
+export const VAULT_CONFIG_DEFAULTS: VaultConfig = {
+  dailyNote: { layout: "{yyyy}/{yyyy}-{MM}-{MMMM}/{yyyy}-{MM}-{dd}.md" },
+  recallRoots: ["brain/memory", "brain/patterns", "persona/journal"],
+  quickLinks: [
+    "- Memory index: `MEMORY.md` (root) · Working memory: [[SESSION]]",
+    "- Projects: `brain/memory/projects/` · Reference: `brain/memory/reference/` · Patterns: `brain/patterns/`",
+    "- Daily logs: `<year>/<year>-<month>/<date>.md`",
+  ],
+  roster: { orchestrators: {} },
+  scan: { fileMapBudget: 40, embedBudget: 40, fileMapBudgetUnderClaude: 0, insightsUnderClaude: false, autoSweepOrphans: false },
+  provider: "auto",
+  claude: { model: "haiku", perCallUsd: 0.05, perDayUsd: 0.5 },
+  ollama: { host: "127.0.0.1", port: 11434 },
+  telemetry: { enabled: true, redact: true, retentionDays: 30 },
+  cost: { enabled: false, monthlyBudget: null },
+  persona: { enabled: true, perDutyUsd: 2.0, perDayUsd: 6.0 },
+};
+
+export const PROVIDER_STATE_PATH = "brain/_index/provider-state.json";
+export const VAULT_CONFIG_PATH = "brain/config.json";
+
+export function claudeConfigDir(): string {
+  return path.resolve(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude"));
+}
+
+/**
+ * Where agenticos.json lives. `configDir` is Plugin.claudeConfigDir() (Task 3) — the setting,
+ * then agenticos.json's own claudeConfigDir, then the env chain — so a plugin read never
+ * disagrees with the folder the settings tab names. Omitted, this is the env chain alone.
+ * $AOS_CONFIG still outranks both: it names the file directly (the CLI/test knob).
+ */
+export function agenticosJsonPath(configDir?: string): string {
+  return path.resolve(process.env.AOS_CONFIG || path.join(configDir || claudeConfigDir(), "agenticos.json"));
+}
+
+function readJson<T>(p: string): T | null {
+  try { return JSON.parse(fs.readFileSync(p, "utf8")) as T; } catch { return null; }
+}
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return v !== null && typeof v === "object" && !Array.isArray(v);
+}
+
+export function deepMerge<T extends object>(base: T, over: unknown): T {
+  const out: Record<string, unknown> = { ...(base as Record<string, unknown>) };
+  if (!isPlainObject(over)) return out as T;
+  for (const [k, v] of Object.entries(over)) {
+    const cur = out[k];
+    out[k] = isPlainObject(v) && isPlainObject(cur) ? deepMerge(cur, v) : v;
+  }
+  return out as T;
+}
+
+export function readAgenticosJson(configDir?: string): AgenticosJson | null {
+  const j = readJson<unknown>(agenticosJsonPath(configDir));
+  return isPlainObject(j) ? (j as AgenticosJson) : null;
+}
+
+export function readVaultConfig(vaultRoot: string, configDir?: string): VaultConfig {
+  const vaultCfg = readJson<unknown>(path.join(vaultRoot, VAULT_CONFIG_PATH)) ?? {};
+  const userCfg = readAgenticosJson(configDir) ?? {};
+  // structuredClone so an untouched nested subtree (e.g. VAULT_CONFIG_DEFAULTS.roster) is never
+  // handed out by reference — contract §1 requires the same of the scripts' loadConfig().
+  return structuredClone(deepMerge(deepMerge(VAULT_CONFIG_DEFAULTS, vaultCfg), userCfg));
+}
+
+export function dailyNoteLayout(vaultRoot: string): string {
+  return readVaultConfig(vaultRoot).dailyNote.layout;
+}
+
+export function readProviderState(vaultRoot: string): ProviderState | null {
+  const s = readJson<unknown>(path.join(vaultRoot, PROVIDER_STATE_PATH));
+  if (!isPlainObject(s) || typeof s.name !== "string") return null;
+  return s as unknown as ProviderState;
+}
