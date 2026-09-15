@@ -136,3 +136,51 @@ test('hook spend alone never blocks a duty', () => {
   assert.equal(r.status, 0, r.stderr);
   assert.match(fs.readFileSync(s.journal, 'utf8'), /- status: OK/);
 });
+
+// A49/A50: the watchdog must kill the claude process itself (not a wrapper shell around it), and a SET
+// PERSONA_CLAUDE_BIN that is not executable must fail loudly instead of falling through to the PATH lookup.
+test('watchdog kills the claude process itself on PERSONA_TIMEOUT; a non-executable PERSONA_CLAUDE_BIN is refused', () => {
+  const s = sandbox();
+  fs.writeFileSync(path.join(s.vault, 'persona', 'duties', 'monitor.md'), 'ascii fixture duty\n');
+  const pidFile = path.join(s.vault, 'claude.pid');
+  const sleeper = path.join(s.vault, 'fake-claude-sleep');
+  fs.writeFileSync(sleeper, [
+    '#!/bin/sh',
+    `echo $$ > "${pidFile}"`,
+    'exec sleep 30',
+    '',
+  ].join('\n'), { mode: 0o755 });
+
+  const isAlive = (p) => { try { process.kill(p, 0); return true; } catch (e) { return e.code !== 'ESRCH'; } };
+
+  const start = Date.now();
+  const r = run(['monitor'], { ...s.env, PERSONA_CLAUDE_BIN: sleeper, PERSONA_TIMEOUT: '1' });
+  const elapsed = Date.now() - start;
+  assert.ok(elapsed < 10000, `runner should return within a few seconds of the 1s timeout, took ${elapsed}ms`);
+
+  let pid = null;
+  try {
+    assert.ok(fs.existsSync(pidFile), 'the fake claude should have started and recorded its own pid');
+    pid = Number(fs.readFileSync(pidFile, 'utf8').trim());
+    let alive = isAlive(pid);
+    const deadline = Date.now() + 2000;
+    while (alive && Date.now() < deadline) alive = isAlive(pid);
+    assert.ok(!alive, `claude process ${pid} should be reaped by the watchdog, not orphaned`);
+
+    // No journal entry was written before the timeout killed it: the runner's own duty-contract check
+    // treats that as a failure, same as the plain watchdog test above.
+    assert.equal(r.status, 1, r.stderr);
+    assert.match(fs.readFileSync(s.journal, 'utf8'), /- status: FAILED/);
+    assert.match(fs.readFileSync(path.join(s.logDir, 'duty-monitor.log'), 'utf8'), /FAILED \(contract unmet\)/);
+  } finally {
+    if (pid && isAlive(pid)) { try { process.kill(pid, 'SIGKILL'); } catch { /* already gone */ } }
+  }
+
+  fs.rmSync(pidFile, { force: true });
+  const notExec = path.join(s.vault, 'not-executable-claude');
+  fs.writeFileSync(notExec, '#!/bin/sh\necho should never run\n', { mode: 0o644 });
+  const bad = run(['monitor'], { ...s.env, PERSONA_CLAUDE_BIN: notExec });
+  assert.equal(bad.status, 1);
+  assert.match(bad.stderr, /not executable/);
+  assert.ok(!fs.existsSync(pidFile), 'a misconfigured PERSONA_CLAUDE_BIN must never launch anything');
+});
