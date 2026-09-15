@@ -219,7 +219,7 @@ test('init into a temp vault: seed set, vendored runtime, agenticos.json, plugin
   assert.match(r.stdout, new RegExp(`@${v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/AGENTICOS\\.md`));
   // final review Minor 13 (tests-7): the Plan-3-era "not installed in this phase" alternative is dead —
   // cli/persona-cmd.js:53's SKIP_MSG is the only branch reachable here (--yes, stdin a pipe, no
-  // --persona-json, and agenticos.json says persona.enabled true so aos.js:600 is not taken).
+  // --persona-json, and agenticos.json says persona.enabled true so aos.js:613 is not taken).
   assert.match(r.stdout + r.stderr, /skipping the interview \(run `aos persona` later\)/);
 
   // Idempotent: a second init keeps user files and does not duplicate the seed.
