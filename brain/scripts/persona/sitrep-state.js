@@ -5,8 +5,8 @@
  * persona-sitrep duty (duty #3). Zero LLM tokens; pure Node + git.
  *
  * Modes:
- *   node sitrep-state.js diff    → print {first_run, changed, changes, state}; read-only
- *   node sitrep-state.js update  → persist current alert-state to brain/_index/.sitrep-state.json
+ *   node persona/sitrep-state.js diff    → print {first_run, changed, changes, state}; read-only
+ *   node persona/sitrep-state.js update  → persist current alert-state to brain/_index/.sitrep-state.json
  *
  * The push decision compares ONLY alert-relevant state (stalled planning phases, open
  * persona flags, pending proposals, pending feedback-rule drafts) — never dirty counts
@@ -16,7 +16,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
-const { VAULT, PATHS } = require('./lib/paths.js');
+const { VAULT, PATHS } = require('../lib/paths.js');
 
 const REPOS_FILE = path.join(VAULT, 'persona', 'repos.json');
 const STORE_FILE = path.join(PATHS.INDEX, '.sitrep-state.json');
@@ -31,9 +31,11 @@ function git(repoPath, args) {
   } catch { return null; }
 }
 
+/** persona/repos.json is optional: { stall_threshold_days?: number, repos?: [{ name, path }] }. */
 function loadRepos() {
-  const cfg = JSON.parse(fs.readFileSync(REPOS_FILE, 'utf8'));
-  return { threshold: cfg.stall_threshold_days || 4, repos: cfg.repos || [] };
+  let cfg = {};
+  try { cfg = JSON.parse(fs.readFileSync(REPOS_FILE, 'utf8')); } catch { /* no repos.json → nothing to watch */ }
+  return { threshold: cfg.stall_threshold_days || 4, repos: Array.isArray(cfg.repos) ? cfg.repos : [] };
 }
 
 function collectRepos(repos) {
@@ -117,7 +119,7 @@ function main() {
     console.log(JSON.stringify({ updated: true, store: STORE_FILE }));
     return;
   }
-  if (mode !== 'diff') { console.error('usage: sitrep-state.js diff|update'); process.exit(1); }
+  if (mode !== 'diff') { console.error('usage: persona/sitrep-state.js diff|update'); process.exit(1); }
   const first_run = !fs.existsSync(STORE_FILE);
   const prev = first_run ? {} : JSON.parse(fs.readFileSync(STORE_FILE, 'utf8'));
   const { changed, changes } = diffAlert(prev, state.alert);

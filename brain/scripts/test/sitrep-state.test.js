@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { parseFlags, listProposals, detectPlanning, diffAlert } = require('../sitrep-state.js');
+const { parseFlags, listProposals, detectPlanning, diffAlert, collect } = require('../persona/sitrep-state.js');
 
 let tmpDirs = [];
 
@@ -74,4 +74,19 @@ test('diffAlert reports adds/removes per key; identical state is unchanged', () 
   assert.deepEqual(out.changes.flags_removed, ['f1']);
   assert.deepEqual(out.changes.proposals_added, ['p.md']);
   assert.equal(diffAlert(cur, cur).changed, false);
+});
+
+test('collect tolerates a vault with no persona/repos.json and reads flags from STATE.md', () => {
+  // setup.js gave this process a temp vault; persona/ does not exist in it yet. Resolve the vault the way the
+  // module under test does (paths.js:34 prefers AOS_VAULT over BRAIN_VAULT) — execution amendment 2026-09-15 (A21).
+  const { VAULT: vault } = require('../lib/paths.js');
+  fs.mkdirSync(path.join(vault, 'persona', 'proposals'), { recursive: true });
+  fs.writeFileSync(path.join(vault, 'persona', 'STATE.md'), '# Persona State\n## Flags\n- [ ] one open flag\n## Priorities\n');
+  const state = collect(Date.parse('2026-09-04T12:00:00Z'));
+  assert.deepEqual(state.repos, []);
+  assert.deepEqual(state.planning, []);
+  assert.deepEqual(state.alert.stalled, []);
+  assert.deepEqual(state.alert.flags, ['one open flag']);
+  assert.deepEqual(state.alert.proposals, []);
+  assert.equal(state.threshold_days, 4);
 });
