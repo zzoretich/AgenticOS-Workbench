@@ -1,7 +1,7 @@
 // Rules → one-click repairs. Pure: inputs in, FixAction[] out.
 // PulseTab executes: spawn → plugin.runBrainScript(script, args);
 // anchor-modal → AnchorModal; open-file → workspace.openLinkText.
-import { PipelineStatus } from "./pipelines";
+import { PipelineStatus, PIPELINES_MANIFEST } from "./pipelines";
 
 export interface FixAction {
   id: string;
@@ -25,18 +25,12 @@ export interface FixQueueInputs {
   mapPending?: { workspace: string; pending: number }[];  // per-workspace unmapped counts
 }
 
-const SAFE_RERUN: Record<string, { script: string; args: string[] }> = {
-  "scan-vault": { script: "brain/scripts/scan-vault.js", args: ["--quiet"] },
-  "heartbeat-writer": { script: "brain/scripts/heartbeat-writer.js", args: [] },
-  "auto-cost-backfill": { script: "brain/scripts/auto-cost.js", args: ["--backfill"] },
-};
-
 export function buildFixQueue(i: FixQueueInputs): FixAction[] {
   const out: FixAction[] = [];
 
   for (const s of i.statuses) {
-    if (s.health === "ok" || s.health === "never") continue;
-    const rerun = SAFE_RERUN[s.name];
+    if (s.health === "ok" || s.health === "neutral") continue;
+    const rerun = PIPELINES_MANIFEST[s.name]?.safeRerun ?? null;
     if ((s.health === "stale" || s.health === "failed" || s.health === "died") && rerun) {
       out.push({
         id: s.name === "scan-vault" ? "run-scan" : `rerun-${s.name}`,

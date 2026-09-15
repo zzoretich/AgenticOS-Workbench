@@ -1271,7 +1271,7 @@
 .aos-pulse-chip.is-stale .aos-pulse-dot { background: var(--aos-amber); }
 .aos-pulse-chip.is-failed, .aos-pulse-chip.is-died { color: var(--aos-rose); border-color: var(--aos-rose); }
 .aos-pulse-chip.is-failed .aos-pulse-dot, .aos-pulse-chip.is-died .aos-pulse-dot { background: var(--aos-rose); box-shadow: 0 0 5px #ff5e7e88; }
-.aos-pulse-chip.is-never { color: var(--aos-dim); }
+.aos-pulse-chip.is-neutral { color: var(--aos-dim); }
 .aos-pulse-briefing { display: flex; gap: 10px; padding: 8px 10px; margin-bottom: 10px; border-left: 2px solid var(--aos-cyan); }
 .aos-pulse-delta { font-family: var(--aos-mono); font-size: 11px; margin-bottom: 12px; }
 .aos-pulse-rows { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
