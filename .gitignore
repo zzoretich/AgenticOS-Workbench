@@ -3,3 +3,4 @@ node_modules/
 *.map
 obsidian-plugin/main.js
 obsidian-plugin/data.json
+extras/cost/data/
