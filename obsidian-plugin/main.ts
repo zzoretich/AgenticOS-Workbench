@@ -19,6 +19,7 @@ import { COMMAND_REGISTRY, executeCommand, setSpawnContext } from "./src/data/co
 import { resolveNodeBinary } from "./src/data/nodeResolver";
 import { readAgenticosJson, readVaultConfig, readProviderState, claudeConfigDir as defaultClaudeConfigDir } from "./src/data/aosConfig";
 import { resolveClaudeBin } from "./src/data/claudeAsk";
+import { installTerminalSupport, rebuildPty, electronVersion, NO_PACKAGE_JSON } from "./src/data/terminalInstall";
 import { seedToggleDefaults } from "./src/settingsDefaults";
 import { loadAllMaps } from "./src/data/workspaceMaps";
 import { listMemories } from "./src/data/memories";
@@ -67,7 +68,7 @@ export default class AgenticOSPlugin extends Plugin {
     const defaultShell = this.settings.terminalShell || process.env.SHELL || (process.platform === "win32" ? "cmd.exe" : "/bin/zsh");
     const defaultCwd = this.settings.terminalCwd || vaultPath;
     // tell the terminal session loader where to find node_modules/node-pty
-    const pluginPath = require("path").join(vaultPath, ".obsidian", "plugins", "agentic-os");
+    const pluginPath = this.pluginDir();
     setTerminalPluginDir(pluginPath);
     this.terminalPool = new TerminalPool({ shell: defaultShell, cwd: defaultCwd });
 
@@ -229,6 +230,41 @@ export default class AgenticOSPlugin extends Plugin {
   claudeBin(): string {
     const configDir = this.claudeConfigDir();
     return resolveClaudeBin(this.vaultRoot(), { readAgenticosJson: () => readAgenticosJson(configDir) });
+  }
+
+  /** Absolute plugin folder (where node_modules/node-pty must live); Obsidian supplies manifest.dir. */
+  pluginDir(): string {
+    const adapter = this.app.vault.adapter as unknown as { getBasePath?: () => string };
+    const base = adapter.getBasePath ? adapter.getBasePath() : process.cwd();
+    return path.join(base, this.manifest.dir ?? path.join(".obsidian", "plugins", this.manifest.id));
+  }
+
+  /** "Install terminal support": npm install --omit=dev in the plugin dir + chmod of node-pty's prebuilt spawn-helper. */
+  async installTerminalSupport(): Promise<void> {
+    const dir = this.pluginDir();
+    // A release-asset / BRAT install has only main.js, manifest.json and styles.css; `npm
+    // install` there would exit 0 having done nothing. `aos init` / `aos upgrade` also write
+    // package.json, which is the precondition cli/aos.js:550 checks (Ruling A13).
+    if (!fs.existsSync(path.join(dir, "package.json"))) {
+      new Notice(`Terminal support needs the aos bundle: ${NO_PACKAGE_JSON}`, 10000);
+      return;
+    }
+    new Notice("Installing terminal support (npm install --omit=dev)…");
+    const r = await installTerminalSupport({ pluginDir: dir, nodeBin: this.nodeBin() });
+    console.log("[agentic-os] terminal install:", r.output.slice(-2000));
+    new Notice(r.ok
+      ? `Terminal support installed (${r.chmodded.length} spawn-helper(s) made executable). Reload Obsidian to enable the Term tab.`
+      : `Terminal install failed (exit ${r.code}): ${r.output.trim().split("\n").pop() ?? ""} — see the console`, 8000);
+  }
+
+  /** "Rebuild for this Electron": npx @electron/rebuild -v <process.versions.electron> … */
+  async rebuildTerminalSupport(): Promise<void> {
+    const electron = electronVersion();
+    if (!electron) { new Notice("Electron version unavailable — run `npx @electron/rebuild -v <version> -m . -w node-pty` in the plugin folder"); return; }
+    new Notice(`Rebuilding node-pty for Electron ${electron}…`);
+    const r = await rebuildPty({ pluginDir: this.pluginDir(), nodeBin: this.nodeBin(), electron });
+    console.log("[agentic-os] rebuild-pty:", r.output.slice(-2000));
+    new Notice(r.ok ? "node-pty rebuilt. Reload Obsidian to enable the Term tab." : `Rebuild failed (exit ${r.code}) — see the console`, 8000);
   }
 
   // ── activate any view by type ────────────────────────────────────────
