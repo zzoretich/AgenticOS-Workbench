@@ -17,6 +17,7 @@ function isDirectory(p: string): boolean {
 
 export class AgenticOSSettingTab extends PluginSettingTab {
   plugin: AgenticOSPlugin;
+  private commitVaultRoot: (() => Promise<void>) | null = null;
 
   constructor(app: App, plugin: AgenticOSPlugin) {
     super(app, plugin);
@@ -73,9 +74,11 @@ export class AgenticOSSettingTab extends PluginSettingTab {
       .addText((t) => {
         // Plan 4 Ruling F12: no onChange. Obsidian binds onChange to the input event, so saving there
         // committed every keystroke — stacking Notices, saving abandoned typo prefixes, and re-validating
-        // an unchanged value. The field commits ONCE, on blur, through the pure decideVaultRoot().
+        // an unchanged value. The field commits ONCE, on blur, through the pure decideVaultRoot(). The
+        // same commit also runs from hide(), because Chromium fires no blur on detachment (Escape closes
+        // the modal with the field still focused).
         t.setPlaceholder("(this vault)").setValue(this.plugin.settings.vaultRoot);
-        t.inputEl.addEventListener("blur", async () => {
+        this.commitVaultRoot = async () => {
           const adapter = this.app.vault.adapter as unknown as { getBasePath?: () => string };
           const d = decideVaultRoot({
             typed: t.getValue(),
@@ -92,7 +95,8 @@ export class AgenticOSSettingTab extends PluginSettingTab {
           // commandRegistry captured the context once in onload(); refresh it or ⌘K and the
           // command deck keep spawning in the old vault until Obsidian is reloaded.
           setSpawnContext({ node: this.plugin.nodeBin(), vaultRoot: this.plugin.vaultRoot() });
-        });
+        };
+        t.inputEl.addEventListener("blur", () => { void this.commitVaultRoot?.(); });
       });
 
     new Setting(containerEl)
@@ -217,5 +221,11 @@ export class AgenticOSSettingTab extends PluginSettingTab {
         })
       );
 
+  }
+
+  hide(): void {
+    void this.commitVaultRoot?.();
+    this.commitVaultRoot = null;
+    super.hide();
   }
 }
