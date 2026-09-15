@@ -66,8 +66,15 @@ MAX_USD="${PERSONA_MAX_USD:-}"     # empty → persona.perDutyUsd from --check b
 PERSONA_TOOLS="${PERSONA_TOOLS:-Read,Write,Edit,Glob,Grep,Bash(git status:*),Bash(git log:*),Bash(git diff:*),Bash(git add:*),Bash(git commit:*),Bash(date:*),Bash(ls:*),Bash(grep:*),Bash(wc:*),Bash(tail:*),Bash(head:*),Bash($NODE $VAULT/brain/scripts/persona/sitrep-state.js:*),Bash($NODE $VAULT/brain/scripts/persona/scan-arsenal.js:*),Bash(node $VAULT/brain/scripts/persona/sitrep-state.js:*),Bash(node $VAULT/brain/scripts/persona/scan-arsenal.js:*)}"
 # claude binary: PERSONA_CLAUDE_BIN → claude.bin recorded in agenticos.json by `aos init` (contract §2 addendum;
 # "bin" occurs exactly once there, under "claude") → PATH → ~/.local/bin/claude. execution amendment 2026-09-15 (A24)
-CLAUDE_BIN="${PERSONA_CLAUDE_BIN:-$(json_value bin)}"
-[ -x "$CLAUDE_BIN" ] || CLAUDE_BIN="$(command -v claude 2>/dev/null || echo "$HOME/.local/bin/claude")"
+# A SET PERSONA_CLAUDE_BIN that is not executable is a misconfiguration, not a cue to fall through to the
+# PATH lookup — fail loudly instead of silently launching whatever `claude` happens to resolve to. (A50)
+if [ -n "${PERSONA_CLAUDE_BIN:-}" ]; then
+  CLAUDE_BIN="$PERSONA_CLAUDE_BIN"
+  [ -x "$CLAUDE_BIN" ] || { echo "run-duty: PERSONA_CLAUDE_BIN is not executable: $CLAUDE_BIN" >&2; exit 1; }
+else
+  CLAUDE_BIN="$(json_value bin)"
+  [ -x "$CLAUDE_BIN" ] || CLAUDE_BIN="$(command -v claude 2>/dev/null || echo "$HOME/.local/bin/claude")"
+fi
 RECORD="$SCRIPT_DIR/record-spend.js"     # sibling: repo checkout in tests, <vault>/brain/scripts/persona/ when installed
 TODAY="$(date +%Y-%m-%d)"
 JOURNAL="$PERSONA/journal/$TODAY.md"
@@ -107,6 +114,10 @@ if [ -n "$NODE" ] && [ -x "$NODE" ] && [ -f "$RECORD" ]; then
       echo "- did: nothing — today's duty spend is at persona.perDayUsd $CAPS"
     } >> "$JOURNAL"
     exit 0
+  elif [ "$RC" -ne 0 ]; then
+    # Neither allowed (0) nor capped (3) — the check itself failed. Proceed uncapped rather than block
+    # every duty on a broken --check; --max-budget-usd still bounds what this one run can spend. (A50)
+    echo "[$(date)] duty=$DUTY cap check failed (exit $RC) — proceeding uncapped; --max-budget-usd still bounds this run" >> "$LOG"
   fi
   [ -n "$MAX_USD" ] || MAX_USD="$(printf '%s' "$CAPS" | sed -n 's/.*"perDutyUsd":\([0-9][0-9.]*\).*/\1/p')"
 fi
@@ -116,15 +127,18 @@ echo "[$(date)] duty=$DUTY model=$MODEL effort=$EFFORT budget=$MAX_USD start" >>
 BEFORE_COUNT=$(grep -c "duty: $DUTY" "$JOURNAL" 2>/dev/null || true); BEFORE_COUNT=${BEFORE_COUNT:-0}
 OUT="$(mktemp "${TMPDIR:-/tmp}/duty-$DUTY.XXXXXX")"
 
-( cd "$VAULT" && AOS_HEADLESS=1 "$CLAUDE_BIN" -p "$PROMPT" --model "$MODEL" --effort "$EFFORT" \
+( cd "$VAULT" && AOS_HEADLESS=1 exec "$CLAUDE_BIN" -p "$PROMPT" --model "$MODEL" --effort "$EFFORT" \
     --allowedTools "$PERSONA_TOOLS" --max-budget-usd "$MAX_USD" --output-format json \
     --strict-mcp-config --no-session-persistence \
     --append-system-prompt "$SYSTEM" > "$OUT" 2>> "$ERR" ) &
 CLAUDE_PID=$!
-# Watchdog: the killer owns and reaps its own sleep. A plain `( sleep N; kill … ) &` leaves the sleep
-# orphaned when the killer is killed, and that sleep holds the inherited stdout/stderr open — spawnSync
-# in run-duty.test.js then blocks for the full PERSONA_TIMEOUT, and under launchd/cron every duty
-# leaves a 30-minute sleep behind. With the trap, `kill "$KILLER_PID"` ends the sleep too.
+# `exec` replaces the backgrounded subshell with $CLAUDE_BIN itself, so $! above is the claude process,
+# not a wrapper shell around it — without exec, killing $! only kills the subshell and claude is
+# reparented to init, orphaned and still spending (A49). Watchdog: the killer owns and reaps its own
+# sleep. A plain `( sleep N; kill … ) &` leaves the sleep orphaned when the killer is killed, and that
+# sleep holds the inherited stdout/stderr open — spawnSync in run-duty.test.js then blocks for the full
+# PERSONA_TIMEOUT, and under launchd/cron every duty leaves a 30-minute sleep behind. With the trap,
+# `kill "$KILLER_PID"` ends the sleep too.
 ( sleep "${PERSONA_TIMEOUT:-1800}" & S=$!; trap 'kill "$S" 2>/dev/null; exit 0' TERM; wait "$S"; kill "$CLAUDE_PID" 2>/dev/null ) &
 KILLER_PID=$!
 wait "$CLAUDE_PID"; STATUS=$?
