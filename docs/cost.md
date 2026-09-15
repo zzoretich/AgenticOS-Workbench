@@ -1,0 +1,54 @@
+# Cost module
+
+Opt-in. Costs every Claude Code session from its transcript and shows month-to-date spend in the
+Pulse COST row and the COST DETAIL drawer section of the HUD. Needs python3 3.9+ (stdlib only);
+nothing leaves your machine — the session-end hook runs the analyzer with `--no-api`.
+
+## Enable / disable
+
+```
+aos cost enable [--budget <usd>] [--yes]   # checks python3, installs the analyzer into <vault>/brain/scripts/cost/,
+                                           # sets cost.enabled=true, stores cost.monthlyBudget (optional)
+aos cost disable                           # cost.enabled=false; the auto-cost stage reports "disabled"
+```
+
+Re-running `aos cost enable` without `--budget` keeps a budget you set earlier; `--budget` with
+anything but a positive number is rejected. `cost.enabled` lives in `agenticos.json`;
+`cost.monthlyBudget` lives in `<vault>/brain/config.json`.
+
+## What you get
+
+- At SessionEnd, `auto-cost.js` finds the session transcript under `<configDir>/projects/*/`,
+  runs the analyzer, and patches `cost_usd` into `brain/_index/agent-runs/runs.jsonl`. Snapshots
+  land in `brain/_index/cost/snapshots/` (gitignored).
+- `node brain/scripts/auto-cost.js --backfill` costs every past session that still has a transcript.
+- The Pulse COST row and the cost Fix Queue cards render only when cost is enabled and
+  `cost.monthlyBudget` is set (a null budget hides them).
+
+## Budget and calibration
+
+Transcript-derived costs exclude the platform's hidden system-prompt baseline, so they are a
+consistent underestimate of the billed figure. `node brain/scripts/cost-budget.js` shows the
+anchored month-to-date; `--anchor <usd>` records the real billed number you read from your
+account page (the prompt placeholder is `0.00`), and every anchor recalibrates the scaling
+factor from the interval since the previous one. `--budget <usd>` overrides the monthly budget
+for the anchored ledger; the default comes from `cost.monthlyBudget`.
+
+## Pricing
+
+`brain/scripts/cost/pricing.json` lists USD per million tokens with a `rates_as_of` date.
+Verify the rates before trusting dollar figures; unknown model ids fall back to
+`default_model` and are flagged in the report.
+
+## Privacy
+
+Transcripts are read locally. The analyzer has one optional `count_tokens` API call (to split
+co-loaded skills more precisely); it happens only when you run `analyze_transcript.py` by hand
+without `--no-api` while `ANTHROPIC_API_KEY` is set and the `anthropic` package is installed. The
+session-end hook always passes `--no-api`, so it never makes that call. Reports and snapshots stay
+in the vault.
+
+## Tests
+
+`cd extras/cost && python3 -m unittest` runs the analyzer's own tests; CI runs the same lane on
+every push and pull request, on Ubuntu and macOS.
