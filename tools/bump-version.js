@@ -1,0 +1,95 @@
+#!/usr/bin/env node
+'use strict';
+/**
+ * bump-version.js — keep every version surface in lockstep with ONE product version:
+ *   package.json                    .version          (repo version — the source of truth;
+ *                                                      cli/plugin-manifests.test.js pins plugin.json to it)
+ *   obsidian-plugin/manifest.json   .version
+ *   obsidian-plugin/package.json    .version
+ *   obsidian-plugin/versions.json   adds "<version>": "<manifest.minAppVersion>"
+ *   plugin/.claude-plugin/plugin.json          .version          (Claude Code plugin)
+ *   .claude-plugin/marketplace.json            .plugins[name=agenticos].version
+ * Usage: node tools/bump-version.js <x.y.z> [--check]
+ *   --check: exit 1 if any surface differs from <x.y.z> (release.yml runs this against the tag).
+ * Exit: 0 ok · 1 mismatch (--check) · 2 usage
+ */
+const fs = require('fs');
+const path = require('path');
+
+const SEMVER = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/;
+const FILES = [
+  'package.json',
+  'obsidian-plugin/manifest.json',
+  'obsidian-plugin/package.json',
+  'obsidian-plugin/versions.json',
+  'plugin/.claude-plugin/plugin.json',
+  '.claude-plugin/marketplace.json',
+];
+
+function readJson(p) { return JSON.parse(fs.readFileSync(p, 'utf8')); }
+function writeJson(p, obj) { fs.writeFileSync(p, JSON.stringify(obj, null, 2) + '\n'); }
+
+function versionOf(rel, obj) {
+  if (rel.endsWith('versions.json')) return Object.keys(obj).pop();
+  if (rel.endsWith('marketplace.json')) return (obj.plugins || []).find((p) => p.name === 'agenticos')?.version;
+  return obj.version;
+}
+
+function apply(rel, obj, version, minAppVersion) {
+  // delete-then-set, so the bumped version is ALWAYS the last key. versionOf() reads
+  // Object.keys(obj).pop(), so a plain assignment to an existing key (0.1.0 is already the
+  // third of twelve rows in the real file) would leave versionOf reporting 1.2.0 and the very
+  // next `--check` — and release.yml's tag gate — would fail. Newest-last is the invariant.
+  if (rel.endsWith('versions.json')) { delete obj[version]; obj[version] = minAppVersion; return obj; }
+  if (rel.endsWith('marketplace.json')) {
+    const entry = (obj.plugins || []).find((p) => p.name === 'agenticos');
+    if (entry) entry.version = version;
+    return obj;
+  }
+  obj.version = version;
+  return obj;
+}
+
+function bumpFiles(root, version) {
+  if (!SEMVER.test(version)) throw new Error(`not a semver version: ${version}`);
+  const manifestPath = path.join(root, 'obsidian-plugin/manifest.json');
+  const minAppVersion = fs.existsSync(manifestPath) ? readJson(manifestPath).minAppVersion || '1.4.0' : '1.4.0';
+  const out = { updated: [], skipped: [] };
+  for (const rel of FILES) {
+    const abs = path.join(root, rel);
+    if (!fs.existsSync(abs)) { out.skipped.push(rel); continue; }
+    writeJson(abs, apply(rel, readJson(abs), version, minAppVersion));
+    out.updated.push(rel);
+  }
+  return out;
+}
+
+function checkFiles(root, version) {
+  const bad = [];
+  for (const rel of FILES) {
+    const abs = path.join(root, rel);
+    if (!fs.existsSync(abs)) continue;
+    const have = versionOf(rel, readJson(abs));
+    if (have !== version) bad.push(`${rel}: ${have ?? '(none)'} != ${version}`);
+  }
+  return bad;
+}
+
+function main(argv) {
+  const args = argv.slice(2);
+  const version = args.find((a) => !a.startsWith('--'));
+  if (!version || !SEMVER.test(version)) { console.error('usage: node tools/bump-version.js <x.y.z> [--check]'); process.exit(2); }
+  const root = path.resolve(__dirname, '..');
+  if (args.includes('--check')) {
+    const bad = checkFiles(root, version);
+    for (const b of bad) console.error(`version mismatch: ${b}`);
+    console.log(bad.length ? `bump-version: ${bad.length} mismatch(es) — run: npm run version:bump -- ${version}` : `bump-version: all surfaces at ${version}`);
+    process.exit(bad.length ? 1 : 0);
+  }
+  const out = bumpFiles(root, version);
+  for (const f of out.updated) console.log(`bumped ${f}`);
+  for (const f of out.skipped) console.log(`skipped ${f} (missing)`);
+}
+
+if (require.main === module) main(process.argv);
+module.exports = { bumpFiles, checkFiles, FILES };
