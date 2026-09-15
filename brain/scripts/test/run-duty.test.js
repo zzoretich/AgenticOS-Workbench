@@ -88,6 +88,30 @@ test('unknown duty exits 1 with a message; kill switch exits 0 without an invoca
   assert.ok(!off.stdout.includes('--model'));
 });
 
+// final review Minor 7 (safety-9 = spec-12): the PERSONA_CLAUDE_BIN guard sits BELOW the kill switch and
+// the unknown-duty check, so a stale non-executable override cannot turn either of those two exits into a
+// misconfiguration failure. A disabled persona must exit 0 no matter what the override points at.
+test('the kill switch and the unknown-duty check both outrank a stale non-executable PERSONA_CLAUDE_BIN', () => {
+  const s = sandbox();
+  const stale = path.join(s.vault, 'stale-claude');
+  fs.writeFileSync(stale, '#!/bin/sh\necho should never run\n', { mode: 0o644 });
+  // Same PATH/HOME hardening as the sub-runs above (final review F8): if the guard regressed to a
+  // fall-through, this sub-run still could not resolve a developer's real `claude`.
+  const env = { ...s.env, PERSONA_CLAUDE_BIN: stale, PATH: '/usr/bin:/bin', HOME: s.vault };
+
+  const unknown = run(['no-such-duty', '--dry-run'], env);
+  assert.equal(unknown.status, 1);
+  assert.match(unknown.stderr, /unknown duty 'no-such-duty'/);
+  assert.ok(!unknown.stderr.includes('not executable'), 'the unknown-duty check runs before the binary guard');
+
+  fs.writeFileSync(path.join(s.vault, 'persona', 'DISABLED'), 'x');
+  const off = run(['testduty', '--dry-run'], env);
+  assert.equal(off.status, 0, off.stderr);
+  assert.match(off.stdout, /DISABLED/);
+  assert.ok(!off.stderr.includes('not executable'), 'a disabled persona exits 0 whatever the override points at');
+  assert.ok(!off.stdout.includes('--model'), 'nothing is invoked');
+});
+
 test('watchdog: a duty that never journals is recorded FAILED, flagged in STATE.md, and its spend is ledgered', () => {
   const s = sandbox();
   const r1 = run(['testduty'], s.env);

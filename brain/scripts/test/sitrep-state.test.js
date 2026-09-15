@@ -14,7 +14,7 @@ fs.mkdirSync(path.join(VAULT, 'brain', '_index'), { recursive: true });
 process.env.BRAIN_VAULT = VAULT;
 delete process.env.AOS_VAULT;
 
-const { parseFlags, listProposals, detectPlanning, diffAlert, collect } = require('../persona/sitrep-state.js');
+const { parseFlags, listProposals, detectPlanning, diffAlert, collect, loadStore } = require('../persona/sitrep-state.js');
 
 const TMP_ROOT = os.tmpdir();
 let tmpDirs = [VAULT];   // the vault ROOT only — never a subtree of a directory this file did not create
@@ -126,5 +126,35 @@ test('collect tolerates a vault with no persona/repos.json and reads flags from 
   } finally {
     console.error = orig;
     fs.rmSync(reposFile, { force: true });
+  }
+});
+
+// final review Minor 8 (spec-10), the twin of controller ruling A48: `diff` used to JSON.parse the store
+// unguarded, so a .sitrep-state.json truncated by a PERSONA_TIMEOUT kill crashed the sitrep duty's step 1.
+test('a corrupt .sitrep-state.json warns once on stderr and reads as a first run, never a crash', () => {
+  const store = path.join(VAULT, 'brain', '_index', '.sitrep-state.json');
+  const errs = [];
+  const orig = console.error;
+  console.error = (...a) => errs.push(a.join(' '));
+  try {
+    fs.rmSync(store, { force: true });
+    assert.deepEqual(loadStore(), { first_run: true, prev: {} }, 'absent store: silent first run');
+    assert.equal(errs.length, 0);
+
+    fs.writeFileSync(store, '{"stalled":["a"],"flags":[],"proposals":[]}');
+    assert.deepEqual(loadStore(), { first_run: false, prev: { stalled: ['a'], flags: [], proposals: [] } });
+    assert.equal(errs.length, 0);
+
+    fs.writeFileSync(store, '{"stalled":["a"],"fl');   // truncated mid-write by a watchdog kill
+    assert.deepEqual(loadStore(), { first_run: true, prev: {} }, 'corrupt store: defaults, not a throw');
+    assert.equal(errs.length, 1);
+    assert.match(errs[0], /\.sitrep-state\.json unreadable/);
+
+    fs.writeFileSync(store, 'null');                   // parses, but is not an object
+    assert.deepEqual(loadStore(), { first_run: true, prev: {} });
+    assert.equal(errs.length, 2);
+  } finally {
+    console.error = orig;
+    fs.rmSync(store, { force: true });
   }
 });
