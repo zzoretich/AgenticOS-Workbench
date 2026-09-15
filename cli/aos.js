@@ -650,7 +650,13 @@ async function init(flags) {
   out.log(`preflight: claude ${bin ? bin : 'absent'} · obsidian ${obsidianDetected() ? 'detected' : 'not detected (optional)'}`);
   // execution amendment 2026-09-15 (A37): the analyzer ships from Plan 5 Task 1 on. --cost has one preflight (python3) and installs
   // the module through cost-cmd.js right after agenticos.json is written (step 5b) — no shipped/not-shipped branch any more.
-  if (flags.cost && !python3Ok(python3Version())) throw new CheckFailed('--cost needs python3 >= 3.9');
+  if (flags.cost) {
+    if (!python3Ok(python3Version())) throw new CheckFailed('--cost needs python3 >= 3.9');
+    // execution amendment 2026-09-15 (A63): the sources check A37 dropped, restored here where nothing has been written yet — a
+    // marketplace clone published without extras/ or a --from-local checkout that predates the analyzer fails in the preflight, not at step 5b.
+    const costSrc = require('./cost-cmd.js').extrasDirFor(configDir(), flags.fromLocal || process.env.AOS_REPO_HINT);
+    if (!exists(path.join(costSrc, 'analyze_transcript.py'))) throw new CheckFailed(`--cost: cost module sources not found at ${costSrc} (pass --from-local <repo-dir> carrying extras/cost, or run without --cost and \`aos cost enable\` later)`);
+  }
   const oll = ollamaEndpoint(readJson(configPath()));
   out.log(`preflight: ollama ${oll.host}:${oll.port} ${ollamaProbeSkipped() ? 'not probed (AOS_SKIP_OLLAMA_PROBE=1)' : (await httpProbe(`http://${oll.host}:${oll.port}/api/tags`)) ? 'reachable' : 'not reachable (auto falls back to claude, then none)'}`);
 
