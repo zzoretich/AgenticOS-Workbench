@@ -185,6 +185,7 @@ test('init into a temp vault: seed set, vendored runtime, agenticos.json, plugin
     assert.ok(fs.existsSync(path.join(v, rel)), `missing ${rel}`);
   }
   assert.ok(!fs.existsSync(path.join(v, '_gitignore')));
+  assert.ok(!fs.existsSync(path.join(v, 'persona', 'identity.template.md')), 'vault-template/persona/ is not seeded raw (A8)');
   assert.ok(!fs.existsSync(path.join(v, 'brain', 'scripts', 'test')), 'tests are not vendored');
   assert.ok(!fs.existsSync(path.join(v, 'brain', 'scripts', 'package-lock.json')), 'no lockfile is vendored (contract §4.3)');
   assert.ok(fs.statSync(path.join(v, 'brain', 'scripts', 'bin', 'aos')).mode & 0o100, 'launcher is executable');
@@ -590,17 +591,22 @@ test('uninstall deletes the vault only with the typed confirmation', () => {
   assert.ok(!fs.existsSync(sb.vault));
 });
 
-test('persona on/off toggle the kill switch; interview and cost report "not installed in this phase"', () => {
+test('persona on/off toggle the kill switch; persona and cost subcommands are wired', () => {
   const sb = initialized();
   assert.equal(aos(sb, ['persona', 'off']).status, 0);
   assert.ok(fs.existsSync(path.join(sb.vault, 'persona', 'DISABLED')));
   assert.equal(aos(sb, ['persona', 'on']).status, 0);
   assert.ok(!fs.existsSync(path.join(sb.vault, 'persona', 'DISABLED')));
-  const interview = aos(sb, ['persona']);
+  const interview = aos(sb, ['persona']);                       // stdin is a pipe: no terminal, no --persona-json, no answers.json
   assert.equal(interview.status, 1);
-  assert.ok(!/not installed in this phase/.test(interview.stdout), 'interview.js ships from Plan 5 Task 5; Task 8 wires the non-interactive skip message');
-  const rename = aos(sb, ['persona', 'rename', 'Atlas']);
+  assert.match(interview.stdout + interview.stderr, /no --persona-json and no terminal/);
+  const rename = aos(sb, ['persona', 'rename', 'Atlas']);        // nothing to rename yet
   assert.equal(rename.status, 1);
+  assert.match(rename.stderr, /no persona to rename/);
+  const seeded = aos(sb, ['persona', '--persona-json', path.join(ROOT, 'cli', 'fixtures', 'persona.json')]);
+  assert.equal(seeded.status, 0, seeded.stderr);
+  assert.match(fs.readFileSync(path.join(sb.vault, 'persona', 'IDENTITY.md'), 'utf8'), /^# Atlas$/m);
+  assert.ok(!fs.existsSync(path.join(sb.home, 'Library', 'LaunchAgents')), 'fixture says schedule: false');
   const cost = aos(sb, ['cost', 'enable'], { AOS_REPO_HINT: ROOT });
   if (fs.existsSync(path.join(ROOT, 'extras', 'cost', 'analyze_transcript.py'))) {
     assert.equal(cost.status, 0, cost.stderr);

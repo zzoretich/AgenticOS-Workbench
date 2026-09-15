@@ -1,5 +1,6 @@
 [
   { "path": "tools/privacy-terms.json", "term": "*" },
   { "path": "tools/privacy-exceptions.json", "term": "*" },
-  { "path": "tools/export-scrubs.js", "term": "*" }
+  { "path": "tools/export-scrubs.js", "term": "*" },
+  { "path": "cli/aos.js", "term": "Proton" }
 ]
