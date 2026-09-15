@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.agenticos.reflect</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>{{VAULT}}/brain/scripts/persona/run-duty.sh</string>
+    <string>reflect</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>AOS_CONFIG</key><string>{{AOS_CONFIG}}</string>
+    <key>AOS_VAULT</key><string>{{VAULT}}</string>
+    <key>AOS_NODE</key><string>{{NODE}}</string>
+    <key>PERSONA_NAME</key><string>{{AGENT_NAME}}</string>
+    <key>PERSONA_MODEL</key><string>{{MODEL}}</string>
+    <key>PERSONA_EFFORT</key><string>{{EFFORT}}</string>
+    <key>PERSONA_LOG_DIR</key><string>{{LOG_DIR}}</string>
+    <key>HOME</key><string>{{HOME}}</string>
+    <key>PATH</key><string>{{HOME}}/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>18</integer><key>Minute</key><integer>0</integer></dict>
+  </array>
+  <key>StandardOutPath</key><string>{{LOG_DIR}}/launchd-reflect.log</string>
+  <key>StandardErrorPath</key><string>{{LOG_DIR}}/launchd-reflect-error.log</string>
+  <key>RunAtLoad</key><false/>
+</dict>
+</plist>
