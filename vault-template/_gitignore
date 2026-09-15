@@ -9,6 +9,8 @@ persona/STATE.md
 persona/answers.json
 persona/autoapply.json
 persona/DISABLED
+persona/flag-closer/
+brain/scripts/cost/data/
 .obsidian/workspace.json
 .obsidian/workspace-mobile.json
 .obsidian/plugins/*/data.json
