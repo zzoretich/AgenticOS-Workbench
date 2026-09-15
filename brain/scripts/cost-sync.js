@@ -1,19 +1,19 @@
 #!/usr/bin/env node
 /**
- * cost-sync.js — patch runs.jsonl with cost derived by the Token Goblin.
+ * cost-sync.js — patch runs.jsonl with cost derived by the cost analyzer.
  *
  * Native Claude Code hooks never emit cost, so runs.jsonl carries cost_usd:null.
- * The token-goblin parser (analyze_transcript.py) writes a snapshot JSON with the
- * exact transcript-derived total. This script joins that back to runs.jsonl by
+ * The analyzer (brain/scripts/cost/analyze_transcript.py) writes a snapshot JSON with
+ * the exact transcript-derived total. This script joins that back to runs.jsonl by
  * session UUID (the snapshot's `transcript` filename === the run's session_id)
- * and patches cost_usd, so Mission Control's Cost panel populates.
+ * and patches cost_usd, so the HUD's Cost panel populates.
  *
  * Usage:
  *   node cost-sync.js                       # patch from the newest snapshot
  *   node cost-sync.js --report <path.json>  # patch from a specific report/snapshot
  *   node cost-sync.js --backfill            # patch from ALL snapshots (newest per uuid)
  *
- * cost_usd is tagged cost_source:"token-goblin" — it excludes Anthropic's hidden
+ * cost_usd is tagged cost_source:"token-analyzer" — it excludes the platform's hidden
  * platform/system-prompt baseline, so it is a slight, consistent underestimate.
  * Best-effort: never throws.
  */
@@ -24,7 +24,7 @@ const brain = require('./sdk/lib/brain.js');
 
 const VAULT = brain.PATHS.VAULT;
 const RUNS = path.join(VAULT, 'brain/_index/agent-runs/runs.jsonl');
-const SNAP_DIR = path.join(VAULT, 'skills/token-goblin/data/snapshots');
+const SNAP_DIR = path.join(VAULT, 'brain/_index/cost/snapshots');
 
 const args = process.argv.slice(2);
 const reportFlag = args.includes('--report') ? args[args.indexOf('--report') + 1] : null;
@@ -72,7 +72,7 @@ function matches(rec, uuid) {
 function main() {
   const byUuid = gatherReports();
   const uuids = Object.keys(byUuid);
-  if (uuids.length === 0) { process.stdout.write('[cost-sync] no token-goblin snapshots with cost found\n'); return; }
+  if (uuids.length === 0) { process.stdout.write('[cost-sync] no analyzer snapshots with cost found\n'); return; }
 
   let lines;
   try { lines = fs.readFileSync(RUNS, 'utf8').split('\n'); } catch { process.stderr.write('[cost-sync] runs.jsonl unreadable\n'); return; }
@@ -84,9 +84,9 @@ function main() {
     for (const uuid of uuids) {
       if (!matches(rec, uuid)) continue;
       const { cost_usd, tokens } = byUuid[uuid];
-      if (rec.cost_usd === cost_usd && rec.cost_source === 'token-goblin') return line; // unchanged
+      if (rec.cost_usd === cost_usd && rec.cost_source === 'token-analyzer') return line; // unchanged
       rec.cost_usd = cost_usd;
-      rec.cost_source = 'token-goblin';
+      rec.cost_source = 'token-analyzer';
       if (tokens != null) rec.tokens = tokens;
       rec.cost_synced_at = new Date().toISOString();
       patched++;

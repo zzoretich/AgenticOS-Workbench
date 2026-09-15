@@ -30,3 +30,19 @@ test('legacy rows without prevTs still pool when delta is positive', () => {
 test('all-poison ledger returns null (calibration left unchanged by caller)', () => {
   assert.equal(pooledCalibration([POISON_NEG]), null);
 });
+
+const fs = require('fs');
+const path = require('path');
+const { defaultBudget, readConfig, deriveState } = require('../cost-budget.js');
+
+test('defaultBudget and readConfig take the monthly budget from cost.monthlyBudget', () => {
+  const vault = process.env.BRAIN_VAULT || process.env.AOS_VAULT;
+  fs.writeFileSync(path.join(vault, 'brain', 'config.json'), JSON.stringify({ cost: { enabled: true, monthlyBudget: 150 } }));
+  assert.equal(defaultBudget(), 150);
+  const c = readConfig();
+  assert.equal(c.budget, 150);
+  assert.equal(deriveState(c).budget, 150);
+  fs.writeFileSync(path.join(vault, 'brain', 'config.json'), JSON.stringify({ cost: { enabled: true, monthlyBudget: null } }));
+  assert.equal(defaultBudget(), 0);
+  assert.equal(deriveState({ month: '', anchorUsd: 0, anchorAt: '', calibration: 1 }).budget, 0);
+});

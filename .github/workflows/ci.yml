@@ -31,6 +31,7 @@ jobs:
       - run: node --test tools/*.test.js cli/*.test.js
       - run: npm test -w brain/scripts
       - run: npm test -w obsidian-plugin
+      - run: cd extras/cost && python3 -m unittest -v
   first-run:
     strategy:
       fail-fast: false
