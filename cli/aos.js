@@ -240,7 +240,9 @@ async function doctor() {
   if (vaultEnv) add('AOS_VAULT env', isDir(vaultEnv), isDir(vaultEnv) ? vaultEnv : `${vaultEnv} does not exist — hooks fall through to agenticos.json / directory walk`, 'warn');
   if (vault) {
     const need = ['brain/_index', 'brain/memory', 'brain/scripts/package.json', 'brain/scripts/node_modules/@modelcontextprotocol/sdk',
-      'brain/scripts/bin/aos', 'brain/scripts/cli/aos.js', 'MEMORY.md', 'AGENTICOS.md'];
+      'brain/scripts/bin/aos', 'brain/scripts/cli/aos.js', 'brain/scripts/cli/persona-cmd.js', 'brain/scripts/cli/schedule.js',
+      'brain/scripts/persona/interview.js', 'brain/scripts/persona/templates/identity.template.md', 'brain/scripts/extras/schedule/cron.tmpl',
+      'MEMORY.md', 'AGENTICOS.md'];
     const missing = need.filter((r) => !exists(path.join(vault, r)));
     add('vault layout', missing.length === 0, missing.length ? `${vault} missing: ${missing.join(', ')}` : vault);
     add('node in config', exists(cfg.node), cfg.node);
@@ -447,12 +449,17 @@ function vendorRuntime(ctx, { force = true } = {}) {
   const { repo, vault, written } = ctx;
   const dest = scriptPath(vault, '');
   copyTree(path.join(repo, 'brain', 'scripts'), dest, { exclude: VENDOR_EXCLUDE, force, written: [] });
-  fs.mkdirSync(path.join(dest, 'cli'), { recursive: true });
-  fs.copyFileSync(path.join(repo, 'cli', 'aos.js'), path.join(dest, 'cli', 'aos.js'));
+  // cli/*.js (persona-cmd, schedule, cost-cmd, …) minus tests, fixtures and the CI rehearsal;
+  // the persona templates next to interview.js; the schedule and cost sources under extras/.
+  copyTree(path.join(repo, 'cli'), path.join(dest, 'cli'), { exclude: /(^|\/)(fixtures|rehearsal)(\/|$)|\.test\.js$/, force, written: [] });
+  copyTree(path.join(repo, 'vault-template', 'persona'), path.join(dest, 'persona', 'templates'), { force, written: [] });
+  for (const x of ['schedule', 'cost']) {
+    if (isDir(path.join(repo, 'extras', x))) copyTree(path.join(repo, 'extras', x), path.join(dest, 'extras', x), { exclude: /(^|\/)test_[^/]*\.py$/, force, written: [] });
+  }
   fs.mkdirSync(path.join(dest, 'bin'), { recursive: true });
   fs.copyFileSync(path.join(repo, 'plugin', 'bin', 'aos'), path.join(dest, 'bin', 'aos'));
   fs.chmodSync(path.join(dest, 'bin', 'aos'), 0o755);
-  written.push('brain/scripts/ (runtime)', 'brain/scripts/cli/aos.js', 'brain/scripts/bin/aos');
+  written.push('brain/scripts/ (runtime)', 'brain/scripts/cli/', 'brain/scripts/persona/templates/', 'brain/scripts/extras/', 'brain/scripts/bin/aos');
   if (process.env.AOS_SKIP_NPM !== '1') {
     // Spec §9.2 step 4 / contract §4.3: a plain `npm install --omit=dev` in the vendored dir. No lockfile is
     // vendored (VENDOR_EXCLUDE drops one even when the checkout has it; the root workspace lockfile describes
@@ -585,15 +592,16 @@ function terminalInstall(vault) {
   out.log(`terminal support installed in ${dir}; restart Obsidian to load it`);
 }
 
+/** Init step 8 (spec §10). Delegates to cli/persona-cmd.js; `act` already skipped us under --dry-run. */
 function personaInterview(ctx) {
   const cfg = readJson(configPath()) || {};
   if (cfg.persona && cfg.persona.enabled === false) { out.log('   persona disabled in config; skipping the interview'); return; }
-  const script = scriptPath(ctx.vault, 'persona/interview.js');
-  if (!exists(script)) { out.log('   persona interview not installed in this phase — run `aos persona` after a later upgrade'); return; }
-  const args = [script];
-  if (ctx.flags.personaJson) args.push('--answers', path.resolve(ctx.flags.personaJson));
-  else if (ctx.yes || !process.stdin.isTTY) { out.log('   no --persona-json and no terminal; skipping the interview (run `aos persona` later)'); return; }
-  run(process.execPath, args, { cwd: ctx.vault, env: { AOS_VAULT: ctx.vault, AOS_CONFIG: configPath() }, allowFail: true });
+  return require('./persona-cmd.js').runInterview({
+    configDir: configDir(), vault: ctx.vault, node: process.execPath,
+    answersFile: ctx.flags.personaJson ? path.resolve(ctx.flags.personaJson) : undefined,
+    // dryRun is unreachable from init (act() skips this body under --dry-run — Open issue 6); kept so the function stays callable directly.
+    yes: ctx.yes, dryRun: ctx.dry, exampleName: 'Proton', io: console,
+  }).catch((e) => out.warn(`persona interview failed: ${e.message}; run \`aos persona\` later`));   // execution amendment 2026-09-15 (A11): Plan 3's allowFail — init stays exit 0
 }
 
 function checklist(ctx) {
@@ -656,7 +664,9 @@ async function init(flags) {
 
   // 3. seed
   await act(`copy the seed vault into ${vault} (existing files are kept)`, () => {
-    copyTree(path.join(repo, 'vault-template'), vault, { rename: { _gitignore: '.gitignore' }, written });
+    // execution amendment 2026-09-15 (A8): vault-template/persona/ holds the raw {{…}} templates (Task 5); the interview renders
+    // them into <vault>/persona/ itself (step 8), so the seed copy must not land identity.template.md / STATE.template.md there.
+    copyTree(path.join(repo, 'vault-template'), vault, { exclude: /(^|\/)persona(\/|$)/, rename: { _gitignore: '.gitignore' }, written });
     // Only the freshly seeded template gets today's date; a re-run must not touch live working memory.
     if (written.includes('brain/_index/SESSION.md')) {
       const session = path.join(vault, 'brain', '_index', 'SESSION.md');
@@ -742,28 +752,12 @@ async function upgrade(flags) {
   return 0;
 }
 
-// Plan 5's duty schedules (contract §6): exactly these three labels. The optional Ollama supervisor
-// com.agenticos.ollama (Plan 2, extras/ollama) shares the prefix and is installed by hand, so it is
-// never matched here — a prefix-wide `com.agenticos.*` sweep would silently remove it.
-const DUTY_PLIST_RE = /^com\.agenticos\.(monitor|reflect|sitrep)\.plist$/;
-const DUTY_CRON_RE = /# com\.agenticos\.(monitor|reflect|sitrep)(\s|$)/;
+/** The three duty schedules (com.agenticos.monitor|reflect|sitrep plists; crontab lines tagged "# com.agenticos.<duty>") —
+ *  one implementation, cli/schedule.js. com.agenticos.ollama (Plan 2, extras/ollama) is never matched there either. */
 function removeSchedules() {
-  const agents = path.join(os.homedir(), 'Library', 'LaunchAgents');
-  for (const f of (isDir(agents) ? fs.readdirSync(agents) : [])) {
-    if (!DUTY_PLIST_RE.test(f)) continue;
-    run('launchctl', ['unload', path.join(agents, f)], { allowFail: true, capture: true });
-    fs.unlinkSync(path.join(agents, f));
-    out.log(`removed ${path.join(agents, f)}`);
-  }
-  if (process.platform === 'linux' && which('crontab')) {
-    const current = run('crontab', ['-l'], { allowFail: true, capture: true }).stdout;
-    const lines = current.split('\n');
-    const kept = lines.filter((l) => !DUTY_CRON_RE.test(l));
-    if (kept.length !== lines.length) {
-      run('crontab', ['-'], { input: kept.join('\n'), allowFail: true, capture: true });
-      out.log(`removed ${lines.length - kept.length} crontab line(s)`);
-    }
-  }
+  const { removed } = require('./schedule.js').removeSchedules({});
+  for (const r of removed) out.log(`removed ${r}`);
+  return removed;
 }
 
 async function uninstall(flags) {
@@ -812,33 +806,11 @@ function terminal(sub) {
 }
 
 function persona(sub, flags) {
-  const cfg = loadConfigOrThrow();
-  const dir = path.join(cfg.vault, 'persona');
-  const kill = path.join(dir, 'DISABLED');
-  if (sub[0] === 'off') {
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(kill, `disabled ${new Date().toISOString()}\n`);
-    out.log('persona off (persona/DISABLED written; the injected block is suppressed)');
-    return 0;
-  }
-  if (sub[0] === 'on') {
-    try { fs.unlinkSync(kill); } catch { /* already on */ }
-    out.log('persona on');
-    return 0;
-  }
-  const script = scriptPath(cfg.vault, 'persona/interview.js');
-  if (!exists(script)) { out.log('persona interview not installed in this phase'); return 1; }
-  const args = [script];
-  if (sub[0] === 'rename') {
-    if (!sub[1]) throw new UsageError('usage: aos persona rename <name>');
-    args.push('rename', sub[1]);
-  } else if (sub[0]) {
-    throw new UsageError('usage: aos persona [rename <name> | on | off]');
-  } else if (flags.personaJson) {
-    args.push('--answers', path.resolve(flags.personaJson));
-  }
-  const r = run(process.execPath, args, { cwd: cfg.vault, env: { AOS_VAULT: cfg.vault, AOS_CONFIG: configPath() }, allowFail: true });
-  return r.status === 0 ? 0 : 1;
+  return require('./persona-cmd.js').run(sub, {
+    yes: !!flags.yes,
+    answersFile: flags.personaJson ? path.resolve(flags.personaJson) : undefined,
+    exampleName: 'Proton', io: console,
+  });
 }
 
 async function cost(sub, flags) {
