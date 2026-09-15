@@ -35,6 +35,8 @@ test("defaults mirror config.default.json", () => {
   assert.equal(VAULT_CONFIG_DEFAULTS.persona.enabled, true);
   assert.equal(VAULT_CONFIG_DEFAULTS.persona.perDutyUsd, 2);
   assert.equal(VAULT_CONFIG_DEFAULTS.persona.perDayUsd, 6); // contract §1: persona caps ship in config.default.json
+  const upstream = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../../../brain/scripts/config.default.json"), "utf8"));
+  assert.deepEqual(VAULT_CONFIG_DEFAULTS, upstream);
 });
 
 test("readAgenticosJson is null when the file is missing and parses it when present", () => {

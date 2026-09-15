@@ -5,6 +5,8 @@ import type { AgenticOSSettings } from "./settingsDefaults";
 import { resolveNodeBinary, resetProbeForTests } from "./data/nodeResolver";
 import { readProviderState, readAgenticosJson } from "./data/aosConfig";
 import { setSpawnContext } from "./data/commandRegistry";
+import * as fs from "fs";
+import * as path from "path";
 
 export { DEFAULT_SETTINGS };
 export type { AgenticOSSettings };
@@ -63,10 +65,29 @@ export class AgenticOSSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Vault root")
-      .setDesc("Absolute path of the AgenticOS vault the plugin reads (brain/_index, brain/config.json) and spawns scripts in. Leave blank to use this Obsidian vault. Consumed by Plugin.vaultRoot() on every read/spawn — takes effect immediately.")
+      .setDesc("Absolute path used for spawns, the live-runs watcher and orphan sweep, brain/config.json, provider-state.json and persona/IDENTITY.md. Pulse/Runs/Memory/Spaces and the status bar always render this Obsidian vault, regardless of this setting. Leave blank to use this vault. Consumed by Plugin.vaultRoot() on every read/spawn — takes effect immediately.")
       .addText((t) =>
         t.setPlaceholder("(this vault)").setValue(this.plugin.settings.vaultRoot).onChange(async (v) => {
-          this.plugin.settings.vaultRoot = v.trim();
+          const trimmed = v.trim();
+          const prev = this.plugin.settings.vaultRoot;
+          if (trimmed) {
+            let isDir = false;
+            try { isDir = fs.statSync(trimmed).isDirectory(); } catch { isDir = false; }
+            if (!isDir) {
+              new Notice(`Vault root: ${trimmed} is not a directory — keeping ${prev || "(this vault)"}`);
+              t.setValue(prev);
+              return;
+            }
+            const adapter = this.app.vault.adapter as unknown as { getBasePath?: () => string };
+            const basePath = adapter.getBasePath ? adapter.getBasePath() : process.cwd();
+            if (path.resolve(trimmed) !== path.resolve(basePath)) {
+              new Notice(
+                "Pulse/Runs/Memory/Spaces render this Obsidian vault; the Vault root governs spawns, the live-runs watcher, brain/config.json and provider-state.json.",
+                10000
+              );
+            }
+          }
+          this.plugin.settings.vaultRoot = trimmed;
           await this.plugin.saveSettings();
           // commandRegistry captured the context once in onload(); refresh it or ⌘K and the
           // command deck keep spawning in the old vault until Obsidian is reloaded.

@@ -49,7 +49,7 @@ export interface RunAskOptions {
   timeoutMs?: number;
 }
 
-export function runAsk(opts: RunAskOptions): AskHandle {
+export function runAsk(opts: RunAskOptions, deps: { spawn?: typeof spawn } = {}): AskHandle {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const start = Date.now();
   let stdoutBuf = "";
@@ -77,6 +77,7 @@ export function runAsk(opts: RunAskOptions): AskHandle {
   inflight++;
   let child: ChildProcess;
   let killed = false;
+  let cancelled = false;
   let killTimer: ReturnType<typeof setTimeout> | null = null;
 
   const result = new Promise<AskResult>((resolve) => {
@@ -84,7 +85,7 @@ export function runAsk(opts: RunAskOptions): AskHandle {
       // --local is mandatory: Plan 2 made ask.js default to --context (prints the
       // <<<AOS_CONTEXT feature=ask>>> block for a Claude Code session and exits without
       // answering). The Chat tab wants the answer, so it always asks for the provider path.
-      child = spawn(opts.node ?? "node", ["brain/scripts/sdk/ask.js", "--local", opts.question], {
+      child = (deps.spawn ?? spawn)(opts.node ?? "node", ["brain/scripts/sdk/ask.js", "--local", opts.question], {
         cwd: opts.vault,
         windowsHide: true,
       });
@@ -149,7 +150,8 @@ export function runAsk(opts: RunAskOptions): AskHandle {
         // unreachable") instead of the bare exit code; fall back to "exit N" only when silent.
         // Stack frames are skipped: ask.js's `[ask] fatal: ${err.stack}` path ends in `at …`
         // lines, and the frame is never the message the user needs.
-        error: killed ? "cancelled (timeout)"
+        error: cancelled ? "cancelled"
+          : killed ? "cancelled (timeout)"
           : code !== 0 ? (lastStderrLine(stderrBuf) || `exit ${code}`).slice(0, 400)
           : undefined,
       });
@@ -162,6 +164,7 @@ export function runAsk(opts: RunAskOptions): AskHandle {
     cancel: () => {
       if (!child || killed) return;
       killed = true;
+      cancelled = true;
       try { child.kill("SIGKILL"); } catch { /* ignore */ }
     },
   };

@@ -14,6 +14,10 @@ Run before tagging a release, on a vault created by `aos init` (not the develope
 - [ ] Settings → Agentic OS shows the AgenticOS section: Vault root blank, Claude config dir placeholder from `agenticos.json`, Node binary blank; **Probe** fills a path and shows a notice.
 - [ ] Provider row reflects `provider-state.json` (name + reason); the refresh icon re-reads it.
 
+## Settings
+
+- [ ] Vault root set to a path that is not a directory (e.g. a file, or a path that does not exist) shows a Notice ("Vault root: … is not a directory — keeping …") and the field keeps its previous value; nothing is saved.
+
 ## Pulse
 
 - [ ] LEDs: every manifest pipeline appears (incl. `EMBED`, which reads `EMBED off` under `claude`/`none`); never-ran and `disabled` stages are gray (`is-neutral`) with the reason in the tooltip; nothing red on a fresh vault.
@@ -40,7 +44,7 @@ Run before tagging a release, on a vault created by `aos init` (not the develope
 Precondition for both action rows: the plugin folder must be an `aos init` / `aos upgrade` bundle, i.e. `<vault>/.obsidian/plugins/agentic-os/package.json` exists. The three release assets copied by hand above do **not** include it.
 
 - [ ] Fresh install: Term tab shows "Terminal unavailable" with **Install terminal support** and **Rebuild for this Electron** buttons.
-- [ ] With only the three copied assets (no `package.json`), **Install terminal support** refuses with the notice "no package.json here — install the bundle with `aos upgrade` first" and spawns nothing.
+- [ ] With only the three copied assets (no `package.json`), both **Install terminal support** and **Rebuild for this Electron** refuse with the notice "Terminal support needs the aos bundle: no package.json here — install the bundle with `aos upgrade` first" and spawn nothing.
 - [ ] After `aos upgrade`: Install → notice with the spawn-helper count → reload → a shell opens (macOS); Linux with build tools compiles and opens. Windows is not supported in v1.
 - [ ] Rebuild runs `npx --yes @electron/rebuild -v <process.versions.electron> -m <plugin dir> -w node-pty` (the version is visible in the console log line `[agentic-os] rebuild-pty:`).
 

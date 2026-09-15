@@ -30,6 +30,14 @@ test("default (createDirs:true) creates the live dir and an empty summary log", 
   assert.equal(fs.readFileSync(path.join(v, "brain", "_index", "agent-runs", "runs.jsonl"), "utf8"), "");
 });
 
+test("a vault root that does not exist is never created, even with createDirs:true", () => {
+  const v = path.join(os.tmpdir(), "aos-live-missing-" + process.pid);
+  const w = new LiveRunsWatcher({ vault: v, bus, pollMs: 5000, createDirs: true });
+  w.start();
+  w.stop();
+  assert.equal(fs.existsSync(v), false);
+});
+
 test("a watcher with createDirs:false still replays in-flight runs that already exist", () => {
   const v = vault();
   const live = path.join(v, "brain", "_index", "agent-runs", "live");

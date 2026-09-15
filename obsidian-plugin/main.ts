@@ -267,12 +267,19 @@ export default class AgenticOSPlugin extends Plugin {
   /** "Rebuild for this Electron": npx @electron/rebuild -v <process.versions.electron> … */
   async rebuildTerminalSupport(): Promise<void> {
     if (this.terminalWorkBusy) { new Notice("Terminal support: an install or rebuild is already running — wait for it to finish"); return; }
+    const dir = this.pluginDir();
+    // Same precondition as installTerminalSupport(): a release-asset / BRAT install has only
+    // main.js, manifest.json and styles.css, so @electron/rebuild would have nothing to rebuild.
+    if (!hasBundle(dir)) {
+      new Notice(`Terminal support needs the aos bundle: ${NO_PACKAGE_JSON}`, 10000);
+      return;
+    }
     const electron = electronVersion();
     if (!electron) { new Notice("Electron version unavailable — run `npx @electron/rebuild -v <version> -m . -w node-pty` in the plugin folder"); return; }
     this.terminalWorkBusy = true;
     try {
       new Notice(`Rebuilding node-pty for Electron ${electron}…`);
-      const r = await rebuildPty({ pluginDir: this.pluginDir(), nodeBin: this.nodeBin(), electron });
+      const r = await rebuildPty({ pluginDir: dir, nodeBin: this.nodeBin(), electron });
       console.log("[agentic-os] rebuild-pty:", r.output.slice(-2000));
       new Notice(r.ok ? "node-pty rebuilt. Reload Obsidian to enable the Term tab." : `Rebuild failed (exit ${r.code}) — see the console`, 8000);
     } finally {
