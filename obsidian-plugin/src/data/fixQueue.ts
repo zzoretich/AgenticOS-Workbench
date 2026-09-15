@@ -23,10 +23,12 @@ export interface FixQueueInputs {
   healthErrors: number;         // snapshot health error count
   staleArtifacts: number;       // snapshot health issues with area === "artifacts"
   mapPending?: { workspace: string; pending: number }[];  // per-workspace unmapped counts
+  costEnabled?: boolean;        // default true; false → no anchor / backfill cards (cost module off or no budget)
 }
 
 export function buildFixQueue(i: FixQueueInputs): FixAction[] {
   const out: FixAction[] = [];
+  const costOn = i.costEnabled !== false;
 
   for (const s of i.statuses) {
     if (s.health === "ok" || s.health === "neutral") continue;
@@ -50,7 +52,7 @@ export function buildFixQueue(i: FixQueueInputs): FixAction[] {
 
   // Requires an anchored month: you cannot RE-anchor what was never anchored — the
   // never-anchored case is anchor-first's job below, exclusively.
-  if (i.costMonth !== null && (i.costMonth !== i.currentMonth || (typeof i.calibration === "number" && i.calibration <= 0))) {
+  if (costOn && i.costMonth !== null && (i.costMonth !== i.currentMonth || (typeof i.calibration === "number" && i.calibration <= 0))) {
     const calBad = typeof i.calibration === "number" && i.calibration <= 0;
     out.push({
       id: "re-anchor-cost",
@@ -62,7 +64,7 @@ export function buildFixQueue(i: FixQueueInputs): FixAction[] {
     });
   }
 
-  if (i.costMonth === null) {
+  if (costOn && i.costMonth === null) {
     // Never anchored: cost-budget.json has no month. calibration is NOT part of this
     // condition — cost.ts defaults it to a number even with no anchor, so requiring
     // calibration === null would make this rule unreachable from PulseTab's feed.
@@ -74,7 +76,7 @@ export function buildFixQueue(i: FixQueueInputs): FixAction[] {
     });
   }
 
-  if (i.uncostedRuns > 0) {
+  if (costOn && i.uncostedRuns > 0) {
     out.push({
       id: "cost-backfill", title: `${i.uncostedRuns} session(s) missing cost`,
       detail: "Run auto-cost backfill to cost sessions the SessionEnd hook missed",

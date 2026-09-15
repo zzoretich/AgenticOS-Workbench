@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
-  VAULT_CONFIG_DEFAULTS, readAgenticosJson, readVaultConfig, dailyNoteLayout, readProviderState, deepMerge,
+  VAULT_CONFIG_DEFAULTS, readAgenticosJson, readVaultConfig, dailyNoteLayout, readProviderState, deepMerge, personaName,
 } from "./aosConfig";
 
 let vault: string;
@@ -97,4 +97,14 @@ test("readProviderState is null when absent or malformed, parsed when present", 
 test("deepMerge replaces arrays and merges nested objects", () => {
   const out = deepMerge({ a: { b: 1, c: 2 }, list: [1, 2] }, { a: { c: 3 }, list: [9] });
   assert.deepEqual(out, { a: { b: 1, c: 3 }, list: [9] });
+});
+
+test("personaName is the first H1 of persona/IDENTITY.md, null when the file or H1 is absent", () => {
+  assert.equal(personaName(vault), null);
+  fs.mkdirSync(path.join(vault, "persona"), { recursive: true });
+  fs.writeFileSync(path.join(vault, "persona", "IDENTITY.md"), "---\ntype: persona-identity\n---\n\nno heading yet\n");
+  assert.equal(personaName(vault), null);
+  fs.writeFileSync(path.join(vault, "persona", "IDENTITY.md"),
+    "---\ntype: persona-identity\n---\n\n# Atlas\n\nAtlas is the chief of staff for this vault.\n\n## Voice\n\n# Not this one\n");
+  assert.equal(personaName(vault), "Atlas");
 });

@@ -13,6 +13,7 @@ import { computeDelta, SnapshotDelta } from "../data/delta";
 import { buildMonthlyBudget, formatUSD, BudgetConfig } from "../data/cost";
 import { loadRunsForMonth, AgentRun } from "../data/runs";
 import { AnchorModal } from "../ui/AnchorModal";
+import { personaName, readVaultConfig } from "../data/aosConfig";
 import { TerminalPanel } from "../ui/TerminalPanel";
 import { COMMAND_REGISTRY, executeCommand } from "../data/commandRegistry";
 import { renderSystemDrawer } from "./SystemDrawer";
@@ -39,6 +40,7 @@ export class PulseTab {
   private trailRows: { entry: TrailEntry; pendingReview: boolean }[] = [];
   private costLine = "";
   private costWarn = false;
+  private costActive = false;
   private listenersRegistered = false;
 
   constructor(private plugin: AgenticOSPlugin, private view: WorkbenchView) {}
@@ -135,7 +137,9 @@ export class PulseTab {
 
     const monthRuns = await loadRunsForMonth(app);
     const budgetConfig = await this.loadBudgetConfig();
-    const budget = buildMonthlyBudget(monthRuns, budgetConfig);
+    const monthlyBudget = readVaultConfig(this.plugin.vaultRoot(), this.plugin.claudeConfigDir()).cost.monthlyBudget;
+    this.costActive = this.plugin.settings.costEnabled && typeof monthlyBudget === "number";
+    const budget = buildMonthlyBudget(monthRuns, budgetConfig, new Date(), monthlyBudget);
     const now2 = new Date();
     const currentMonth = `${now2.getFullYear()}-${String(now2.getMonth() + 1).padStart(2, "0")}`;
     this.costLine = monthRuns.length === 0 && !budget.anchored
@@ -163,6 +167,7 @@ export class PulseTab {
       healthErrors,
       staleArtifacts,
       mapPending,
+      costEnabled: this.costActive,
     });
     this.render();
   }
@@ -198,7 +203,8 @@ export class PulseTab {
       // this reuses the already-styled .aos-briefing-critical/alert/info modifiers.
       const level = brief.priority <= 1 ? "critical" : brief.priority === 2 ? "alert" : "info";
       const w = host.createDiv({ cls: `aos-pulse-briefing aos-briefing-${level}` });
-      w.createSpan({ text: "BRIEFING", cls: "aos-briefing-label" });
+      // spec §10: the Briefing section carries the persona's chosen name (persona/IDENTITY.md H1).
+      w.createSpan({ text: (personaName(this.plugin.vaultRoot()) ?? "BRIEFING").toUpperCase(), cls: "aos-briefing-label" });
       w.createSpan({ text: brief.text, cls: "aos-briefing-text" });
     }
 
@@ -216,9 +222,11 @@ export class PulseTab {
 
     // ── cost + health rows ──
     const rows = host.createDiv({ cls: "aos-pulse-rows" });
-    const cost = rows.createDiv({ cls: "aos-pulse-row" });
-    cost.createSpan({ text: "COST", cls: "aos-pulse-rowlabel" });
-    cost.createSpan({ text: this.costLine, cls: this.costWarn ? "aos-text-amber" : undefined });
+    if (this.costActive) {
+      const cost = rows.createDiv({ cls: "aos-pulse-row" });
+      cost.createSpan({ text: "COST", cls: "aos-pulse-rowlabel" });
+      cost.createSpan({ text: this.costLine, cls: this.costWarn ? "aos-text-amber" : undefined });
+    }
     const issues = this.snapshot?.health?.issues ?? [];
     const errs = issues.filter((i) => i.severity === "error").length;
     const warns = issues.filter((i) => i.severity === "warn").length;
@@ -379,7 +387,7 @@ export class PulseTab {
   execute(a: FixAction): void {
     if (a.kind === "spawn" && a.script) {
       this.plugin.runBrainScript(a.script, a.args ?? [], () => this.schedule());
-    } else if (a.kind === "anchor-modal") {
+    } else if (a.kind === "anchor-modal" && this.costActive) {
       new AnchorModal(this.plugin.app, (usd) => {
         this.plugin.runBrainScript("brain/scripts/cost-budget.js", ["--anchor", String(usd)], () => this.schedule());
       }).open();

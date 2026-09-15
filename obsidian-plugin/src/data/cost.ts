@@ -1,4 +1,4 @@
-import { AgentRun } from "./runs";
+import type { AgentRun } from "./runs";
 
 export interface CostByDay {
   date: string;
@@ -58,10 +58,6 @@ export function buildCostBreakdown(runs: AgentRun[], days = 14): CostBreakdown {
     topScripts,
   };
 }
-
-/** Monthly Claude spend budget in USD. Single source of truth.
- *  TODO: surface as a configurable plugin setting. */
-export const MONTHLY_BUDGET = 2000;
 
 /**
  * Anchored budget config (brain/_index/cost-budget.json). The panel does NOT sum
@@ -144,11 +140,13 @@ export function buildMonthlyBudget(
   rawMonthRuns: AgentRun[],
   config?: Partial<BudgetConfig>,
   ref: Date = new Date(),
+  /** cost.monthlyBudget from <vault>/brain/config.json (aosConfig.readVaultConfig); null → no ceiling. */
+  monthlyBudget: number | null = null,
 ): MonthlyBudget {
   // Collapse duplicate session records so cost isn't counted twice.
   const monthRuns = dedupeRuns(rawMonthRuns);
 
-  const budget = config?.budget ?? MONTHLY_BUDGET;
+  const budget = config?.budget ?? monthlyBudget ?? 0;
   const anchorUsd = config?.anchorUsd ?? 0;
   const anchorAt = config?.anchorAt ?? "";
   const calibration = typeof config?.calibration === "number" ? config.calibration : 1;
@@ -216,7 +214,7 @@ export function buildMonthlyBudget(
     .slice(0, 5);
 
   return {
-    monthLabel: ref.toLocaleString("en-US", { month: "long", year: "numeric" }),
+    monthLabel: ref.toLocaleString(undefined, { month: "long", year: "numeric" }),
     monthToDate,
     budget,
     budgetRemaining: budget - monthToDate,
