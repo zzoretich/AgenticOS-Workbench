@@ -4,12 +4,18 @@
   "version": "0.1.0",
   "description": "AgenticOS Workbench: a second brain for Claude Code with an Obsidian HUD",
   "license": "MIT",
-  "engines": { "node": ">=20" },
-  "workspaces": ["brain/scripts", "obsidian-plugin"],
+  "engines": {
+    "node": ">=20"
+  },
+  "workspaces": [
+    "brain/scripts",
+    "obsidian-plugin"
+  ],
   "scripts": {
     "test": "node --test tools/*.test.js cli/*.test.js && npm test --workspaces --if-present",
     "gate": "node tools/privacy-gate.js",
     "export": "node tools/export-from-vault.js",
-    "setup": "node cli/aos.js init"
+    "setup": "node cli/aos.js init",
+    "version:bump": "node tools/bump-version.js"
   }
 }
