@@ -4,8 +4,8 @@ import { loadInventory, InventoryData, InventoryAgent, InventorySkill } from "..
 import { loadSnapshot, Snapshot, SnapshotCapabilities } from "../data/snapshot";
 import { loadRunsForMonth, AgentRun, formatRelative } from "../data/runs";
 import { buildMonthlyBudget, formatUSD, BudgetConfig } from "../data/cost";
-import { sparklineSvg, deltaArrow } from "../data/sparkline";
-import { donutSvg, DONUT_COLORS } from "../data/donut";
+import { sparklineElement, deltaArrow } from "../data/sparkline";
+import { donutElement, DONUT_COLORS } from "../data/donut";
 import { readVaultConfig } from "../data/aosConfig";
 
 // Sections: INVENTORY (counts + full lists: agents, skills, commands, hooks — ported from
@@ -203,7 +203,7 @@ function vaultRelative(app: App, p: string): string {
 // ── DISK ─────────────────────────────────────────────────────────────────
 
 // PORT of the old Mission Control view's renderDisk (~715-747) — same top-6-plus-"other" bucketing math
-// and donut+legend markup, reusing donutSvg (donut.ts) exactly as Mission Control does; the
+// and donut+legend markup, reusing donut.ts — donutElement() now, same arc geometry as Mission Control's donutSvg; the
 // chart helper itself is not touched or rewritten.
 function renderDiskSection(panelHost: HTMLElement, snapshot: Snapshot | null): void {
   const panel = makeSectionPanel(panelHost, "DISK  ── vault footprint");
@@ -225,7 +225,7 @@ function renderDiskSection(panelHost: HTMLElement, snapshot: Snapshot | null): v
     : top.map((f) => ({ name: f.name, bytes: f.bytes || 0 }));
 
   const chart = body.createDiv({ cls: "aos-disk-chart" });
-  chart.innerHTML = donutSvg(segs, total, 140);
+  chart.appendChild(donutElement(segs, total, 140));
 
   const legend = body.createDiv({ cls: "aos-disk-legend" });
   segs.forEach((seg, i) => {
@@ -246,8 +246,8 @@ function renderDiskSection(panelHost: HTMLElement, snapshot: Snapshot | null): v
 // the budget-state bar and footnote are inseparable parts of the same panel, and dropping
 // them would silently lose the "are we over/on-pace/near budget" signal, which is the most
 // actionable part of the panel. Reuses buildMonthlyBudget/formatUSD (cost.ts) and
-// sparklineSvg/deltaArrow (sparkline.ts) exactly as Mission Control does — neither is
-// rewritten.
+// sparklineElement/deltaArrow (sparkline.ts) — same geometry as Mission Control's sparklineSvg —
+// neither is rewritten.
 function renderCostDetailSection(
   panelHost: HTMLElement,
   monthRuns: AgentRun[],
@@ -296,7 +296,7 @@ function renderCostDetailSection(
   const row = spark.createDiv({ cls: "aos-trend" });
   row.createSpan({ cls: "aos-trend-label", text: `${monthShort} daily` });
   const sparkWrap = row.createSpan({ cls: "aos-trend-spark" });
-  sparkWrap.innerHTML = sparklineSvg(series, { width: 120, height: 20 });
+  sparkWrap.appendChild(sparklineElement(series, { width: 120, height: 20 }));
   row.createSpan({ cls: "aos-trend-delta", text: deltaArrow(series.map((c) => Math.round(c * 100))) });
 
   if (b.topScripts.length > 0) {

@@ -40,6 +40,7 @@ export class RunsTab {
           if (f.path === RUNS_PATH) this.schedule();
         })
       );
+      this.view.registerEvent(this.plugin.bus.on("runs-appended", () => this.schedule()));
       // PORT of the old Staff Roster view's onOpen heartbeat.json watcher (~26-30) — restored per
       // fix-round ruling: the brief's literal "one listener on vault modify of
       // RUNS_PATH" mount() spec left the agents sub-view without live refresh on a

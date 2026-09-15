@@ -49,6 +49,7 @@ export class SidebarHUDView extends ItemView {
         }
       })
     );
+    this.registerEvent(this.plugin.bus.on("runs-appended", () => this.scheduleRefresh()));
   }
 
   private scheduleRefresh(): void {
@@ -68,7 +69,7 @@ export class SidebarHUDView extends ItemView {
 
   private tickClock(): void {
     const el = this.containerEl.querySelector(".aos-sb-clock");
-    if (el) el.textContent = new Date().toLocaleTimeString("en-US", { hour12: false });
+    if (el) el.textContent = new Date().toLocaleTimeString(undefined, { hour12: false });
   }
 
   private render(): void {
@@ -78,7 +79,7 @@ export class SidebarHUDView extends ItemView {
 
     const head = root.createDiv({ cls: "aos-sb-head" });
     head.createDiv({ cls: "aos-sb-title", text: "[ AGENTIC OS ]" });
-    head.createDiv({ cls: "aos-sb-clock aos-text-cyan", text: new Date().toLocaleTimeString("en-US", { hour12: false }) });
+    head.createDiv({ cls: "aos-sb-clock aos-text-cyan", text: new Date().toLocaleTimeString(undefined, { hour12: false }) });
 
     // pipeline LEDs — first HUD section; same chip markup as PulseTab's strip
     // (aos-pulse-chip is-<health> + dot + label), just stacked vertically here.

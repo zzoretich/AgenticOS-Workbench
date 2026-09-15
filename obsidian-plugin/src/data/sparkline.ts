@@ -24,20 +24,19 @@ export function deltaArrow(values: number[]): string {
   return "·";
 }
 
-// ── SVG sparkline (Phase 7) ──────────────────────────────────────────────
-// Returns an SVG markup string with line + area + tail dot. Used by the
-// Mission Control Trends panel when a richer rendering than Unicode blocks
-// is preferred.
+// ── SVG sparkline ────────────────────────────────────────────────────────
+// sparklineGeometry() is pure (testable); sparklineElement() builds the SVG with
+// createElementNS — no markup strings are ever assigned to the DOM.
+
+const SVG_NS = "http://www.w3.org/2000/svg";
 
 interface SparkOpts { width?: number; height?: number; color?: string; }
+export interface SparkGeometry { w: number; h: number; line: string; area: string; tail: { x: number; y: number }; }
 
-export function sparklineSvg(values: number[], opts: SparkOpts = {}): string {
+export function sparklineGeometry(values: number[], opts: SparkOpts = {}): SparkGeometry | null {
   const w = opts.width ?? 160;
   const h = opts.height ?? 24;
-  const color = opts.color ?? "var(--aos-cyan)";
-  if (values.length === 0) {
-    return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"></svg>`;
-  }
+  if (values.length === 0) return null;
   const min = Math.min(...values);
   const max = Math.max(...values);
   const range = max - min || 1;
@@ -49,10 +48,26 @@ export function sparklineSvg(values: number[], opts: SparkOpts = {}): string {
   });
   const line = "M " + pts.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" L ");
   const area = line + ` L ${pts[pts.length - 1].x.toFixed(1)},${h} L ${pts[0].x.toFixed(1)},${h} Z`;
-  const tail = pts[pts.length - 1];
-  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-    ${values.length > 1 ? `<path d="${area}" fill="${color}" opacity="0.18"/>` : ""}
-    <path d="${line}" fill="none" stroke="${color}" stroke-width="1.2"/>
-    <circle cx="${tail.x.toFixed(1)}" cy="${tail.y.toFixed(1)}" r="2.2" fill="${color}"/>
-  </svg>`;
+  return { w, h, line, area, tail: pts[pts.length - 1] };
+}
+
+export function sparklineElement(values: number[], opts: SparkOpts = {}): SVGSVGElement {
+  const color = opts.color ?? "var(--aos-cyan)";
+  const g = sparklineGeometry(values, opts);
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", `0 0 ${g?.w ?? opts.width ?? 160} ${g?.h ?? opts.height ?? 24}`);
+  svg.setAttribute("preserveAspectRatio", "none");
+  if (!g) return svg;
+  if (values.length > 1) {
+    const area = document.createElementNS(SVG_NS, "path");
+    area.setAttribute("d", g.area); area.setAttribute("fill", color); area.setAttribute("opacity", "0.18");
+    svg.appendChild(area);
+  }
+  const line = document.createElementNS(SVG_NS, "path");
+  line.setAttribute("d", g.line); line.setAttribute("fill", "none"); line.setAttribute("stroke", color); line.setAttribute("stroke-width", "1.2");
+  svg.appendChild(line);
+  const dot = document.createElementNS(SVG_NS, "circle");
+  dot.setAttribute("cx", g.tail.x.toFixed(1)); dot.setAttribute("cy", g.tail.y.toFixed(1)); dot.setAttribute("r", "2.2"); dot.setAttribute("fill", color);
+  svg.appendChild(dot);
+  return svg;
 }
