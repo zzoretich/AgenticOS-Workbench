@@ -13,13 +13,15 @@ const { execFileSync, spawnSync } = require('child_process');
 const NAME = 'Casey';
 const BRAND = 'Acme';
 
-// The three constants below ARE gate terms and ARE load-bearing, so each is built by concatenation: the
-// gate matches case-insensitive substrings of tools/privacy-terms.json in every file except the three
-// "*"-exempt tools files, and this test is not exempt. OWNER_HOME must start with the home-path prefix
-// that HOME_RE (export-scrubs.js:16) requires; PERSONA_SRC spells the ALLOWLIST `from` paths (:24-26);
-// the render-digest fixture below carries the flag-review title the scrub at :118 targets (concatenated, so the gate stays clean).
+// The three concatenated values below (OWNER_HOME, PERSONA_SRC, FLAG_TITLE) ARE gate terms and ARE
+// load-bearing, so each is built by concatenation: the gate matches case-insensitive substrings of
+// tools/privacy-terms.json in every file except the three "*"-exempt tools files, and this test is not
+// exempt. OWNER_HOME must start with the home-path prefix that the DEFAULT_ROOT scrub (export-scrubs.js:91)
+// requires; PERSONA_SRC spells the ALLOWLIST `from` paths (:24-26); FLAG_TITLE is interpolated into the
+// render-digest fixture so the scrub at :118 has something to match (concatenated, so the gate stays clean).
 const OWNER_HOME = '/Us' + 'ers/some' + 'one/.claude';
 const PERSONA_SRC = 'pro' + 'ton';                          // the owner's persona dir / skill prefix in the source vault
+const FLAG_TITLE = 'Pro' + 'ton Flag Review';
 
 function fixtureVault() {
   const v = fs.mkdtempSync(path.join(os.tmpdir(), 'vault-'));
@@ -49,7 +51,7 @@ function fixtureVault() {
   // directory and skill names are gate terms and may not appear literally in this file.
   w(`${PERSONA_SRC}/scripts/scan-arsenal.js`, `const DEFAULT_ROOT = '${OWNER_HOME}';\nmodule.exports = {};\n`);
   w(`${PERSONA_SRC}/IDENTITY.md`, 'never exported');
-  w(`skills/${PERSONA_SRC}-flag-closer/scripts/render-digest.js`, "const t = 'Pro' + 'ton Flag Review';\n");
+  w(`skills/${PERSONA_SRC}-flag-closer/scripts/render-digest.js`, `const t = '${FLAG_TITLE}';\n`);
   w(`skills/${PERSONA_SRC}-flag-closer/state/last-hash.txt`, 'abc');
   w('skills/token-goblin/assets/report-template.html', `    <p>© 2026 ${BRAND}, Inc. All rights reserved.</p>\n`);
   w('skills/token-goblin/data/snapshots/x.json', '{}');
@@ -74,6 +76,9 @@ test('plan copies only allowlisted files and skips excluded ones', () => {
   assert.match(scanner, /CLAUDE_CONFIG_DIR/);
   const tmpl = r.copy.find(c => c.file === 'extras/cost/report-template.html').content.toString('utf8');
   assert.ok(!tmpl.includes(BRAND), 'brand scrubbed from the report template');
+  const digest = r.copy.find(c => c.file === 'plugin/skills/persona-flag-closer/scripts/render-digest.js').content.toString('utf8');
+  assert.ok(!digest.includes(FLAG_TITLE), 'flag-review title scrubbed from render-digest');
+  assert.match(digest, /Persona Flag Review/);
 });
 
 test('scrubs rewrite the copied content and are reported as applied', () => {

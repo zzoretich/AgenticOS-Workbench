@@ -610,9 +610,12 @@ test('persona on/off toggle the kill switch; persona and cost subcommands are wi
   const seeded = aos(sb, ['persona', '--persona-json', path.join(ROOT, 'cli', 'fixtures', 'persona.json')]);
   assert.equal(seeded.status, 0, seeded.stderr);
   assert.match(fs.readFileSync(path.join(sb.vault, 'persona', 'IDENTITY.md'), 'utf8'), /^# Atlas$/m);
-  // final review Minor 19 (tests-13): ~/Library/LaunchAgents only exists on darwin, so the old check was
-  // vacuously true on Linux. cli/persona-cmd.js:84 prints "persona: scheduled <labels>" on every platform.
-  assert.ok(!/scheduled com\.agenticos/.test(seeded.stdout + seeded.stderr), 'fixture says schedule: false — nothing installed on any platform');
+  // final review Minor 19 (tests-13) / tests-1: ~/Library/LaunchAgents only exists on darwin, so the old
+  // check was vacuously true on Linux. cli/persona-cmd.js:84 is the only place that prints the
+  // "persona: scheduled " prefix, and that prefix is platform-independent — but the labels it prints
+  // differ: com.agenticos.<duty> on darwin, # com.agenticos.<duty> on linux (cli/schedule.js:22/:130).
+  assert.ok(!/^persona: scheduled /m.test(seeded.stdout + seeded.stderr), 'fixture says schedule: false — no launchd plists, no crontab lines, on any platform');
+  assert.ok(!fs.existsSync(path.join(sb.home, 'Library', 'LaunchAgents')), 'no plists on darwin');
   // final review Minor 13 (tests-7): the analyzer has shipped in extras/cost since Plan 5 Task 1 (ruling A2),
   // so the "not installed in this phase" branch is dead — assert the one outcome that can happen.
   const cost = aos(sb, ['cost', 'enable'], { AOS_REPO_HINT: ROOT });
