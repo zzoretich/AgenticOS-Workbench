@@ -598,7 +598,7 @@ test('persona on/off toggle the kill switch; interview and cost report "not inst
   assert.ok(!fs.existsSync(path.join(sb.vault, 'persona', 'DISABLED')));
   const interview = aos(sb, ['persona']);
   assert.equal(interview.status, 1);
-  assert.match(interview.stdout, /persona interview not installed in this phase/);
+  assert.ok(!/not installed in this phase/.test(interview.stdout), 'interview.js ships from Plan 5 Task 5; Task 8 wires the non-interactive skip message');
   const rename = aos(sb, ['persona', 'rename', 'Atlas']);
   assert.equal(rename.status, 1);
   const cost = aos(sb, ['cost', 'enable'], { AOS_REPO_HINT: ROOT });
