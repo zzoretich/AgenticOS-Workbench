@@ -63,10 +63,11 @@ Runner: `sh <vault>/brain/scripts/persona/run-duty.sh <duty> [--dry-run]`. It ru
 `--output-format json`. The cost of every run is appended to `brain/_index/provider-spend.jsonl`
 as `feature: "duty:<name>"`. A duty is skipped for the rest of the day — journal entry
 `- status: SKIPPED daily-cap`, exit 0 — once today's `duty:*` rows add up to
-`persona.perDayUsd` (default 6.0). Both caps live in `<vault>/brain/config.json`:
+`persona.perDayUsd` (default 6.0). Both caps live in `<vault>/brain/config.json` (the `enabled` switch
+does not — `agenticos.json` is merged last and `aos init` writes it there; see above):
 
 ```json
-{ "persona": { "enabled": true, "perDutyUsd": 2.0, "perDayUsd": 6.0 } }
+{ "persona": { "perDutyUsd": 2.0, "perDayUsd": 6.0 } }
 ```
 
 Raise `perDayUsd` if you schedule more duties or a bigger `perDutyUsd`; with the defaults three

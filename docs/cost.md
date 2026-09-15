@@ -51,4 +51,4 @@ in the vault.
 ## Tests
 
 `cd extras/cost && python3 -m unittest` runs the analyzer's own tests; CI runs the same lane on
-every push and pull request, on Ubuntu and macOS.
+every push to `main` and every pull request, on Ubuntu and macOS.
