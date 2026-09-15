@@ -1,7 +1,7 @@
 import { App, Notice, TFile } from "obsidian";
 import type AgenticOSPlugin from "../../main";
 import { loadInventory, InventoryData, InventoryAgent, InventorySkill } from "../data/inventory";
-import { loadSnapshot, Snapshot, SnapshotCapabilities } from "../data/snapshot";
+import { loadSnapshot, Snapshot, SnapshotCapabilities, FolderAtlasEntry } from "../data/snapshot";
 import { loadRunsForMonth, AgentRun, formatRelative } from "../data/runs";
 import { buildMonthlyBudget, formatUSD, BudgetConfig } from "../data/cost";
 import { sparklineElement, deltaArrow } from "../data/sparkline";
@@ -220,9 +220,11 @@ function renderDiskSection(panelHost: HTMLElement, snapshot: Snapshot | null): v
   const present = atlas.filter((f) => f.present && f.bytes).sort((a, b) => (b.bytes || 0) - (a.bytes || 0));
   const top = present.slice(0, BIG);
   const restBytes = present.slice(BIG).reduce((a, f) => a + (f.bytes || 0), 0);
+  // `toSeg`, not `seg`: the legend loop below already binds `seg` as its forEach parameter.
+  const toSeg = (f: FolderAtlasEntry) => ({ name: f.name, bytes: f.bytes || 0, scope: f.scope, approx: f.approx === true });
   const segs = restBytes > 0
-    ? [...top.map((f) => ({ name: f.name, bytes: f.bytes || 0 })), { name: "other", bytes: restBytes }]
-    : top.map((f) => ({ name: f.name, bytes: f.bytes || 0 }));
+    ? [...top.map(toSeg), { name: "other", bytes: restBytes, scope: undefined, approx: false }]
+    : top.map(toSeg);
 
   const chart = body.createDiv({ cls: "aos-disk-chart" });
   chart.appendChild(donutElement(segs, total, 140));
@@ -234,7 +236,8 @@ function renderDiskSection(panelHost: HTMLElement, snapshot: Snapshot | null): v
     const swatch = row.createSpan({ cls: "aos-disk-swatch" });
     swatch.setAttribute("style", `background:${color}`);
     row.createSpan({ cls: "aos-disk-name", text: seg.name });
-    row.createSpan({ cls: "aos-disk-bytes aos-dim", text: humanSize(seg.bytes) });
+    if (seg.scope) row.createSpan({ cls: "aos-disk-scope aos-dim", text: seg.scope, attr: { title: seg.scope === "config" ? "under the Claude config dir" : "under the vault" } });
+    row.createSpan({ cls: "aos-disk-bytes aos-dim", text: `${seg.approx ? "~" : ""}${humanSize(seg.bytes)}`, attr: seg.approx ? { title: "stat-walked two levels deep; deeper files are not counted" } : undefined });
   });
 }
 

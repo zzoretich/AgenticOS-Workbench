@@ -16,6 +16,7 @@ import { AnchorModal } from "../ui/AnchorModal";
 import { personaName, readVaultConfig } from "../data/aosConfig";
 import { TerminalPanel } from "../ui/TerminalPanel";
 import { COMMAND_REGISTRY, executeCommand } from "../data/commandRegistry";
+import { sweepLine } from "../data/maintenance";
 import { renderSystemDrawer } from "./SystemDrawer";
 
 /** True when <claude-config-dir>/projects/<any slug>/<sid>.jsonl exists — mirrors auto-cost.js findTranscript(). */
@@ -236,6 +237,14 @@ export class PulseTab {
       text: errs || warns ? `${errs} err · ${warns} warn` : "all clear",
       cls: errs ? "aos-text-rose" : warns ? "aos-text-amber" : "aos-text-green",
     });
+
+    // Task 12: the scripts' orphan sweep (off by default) reports here only when it did something or failed closed.
+    const sweep = sweepLine(this.snapshot?.maintenance);
+    if (sweep) {
+      const maint = rows.createDiv({ cls: "aos-pulse-row" });
+      maint.createSpan({ text: "MAINTENANCE", cls: "aos-pulse-rowlabel" });
+      maint.createSpan({ text: sweep.text, cls: sweep.tone === "amber" ? "aos-text-amber" : "aos-dim" });
+    }
 
     const sys = rows.createDiv({ cls: "aos-pulse-row" });
     const sysLink = sys.createEl("a", { cls: "aos-pulse-rowlabel aos-link", text: "SYSTEM ▸", href: "#" });

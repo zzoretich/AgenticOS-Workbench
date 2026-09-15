@@ -43,7 +43,7 @@ export async function computeDelta(app: App, snap: Snapshot): Promise<SnapshotDe
       commands: snap.capabilities.commands.count,
       skills: snap.capabilities.skills.count,
       memories: snap.config.memoryMd?.pointers ?? 0,
-      sessions: snap.brain.sessions?.count ?? 0,
+      sessions: snap.brain.counts?.sessions ?? 0,
       errors: (snap.health.issues || []).filter(i => i.severity === "error").length,
       warns: (snap.health.issues || []).filter(i => i.severity === "warn").length,
     };

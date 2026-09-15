@@ -113,7 +113,7 @@ export class SidebarHUDView extends ItemView {
     this.makeTrendRow(trends, "agents", s.capabilities.agents.count, seriesFromHistory(this.history, "agents"));
     this.makeTrendRow(trends, "memories", s.config.memoryMd?.pointers ?? 0, seriesFromHistory(this.history, "memories"));
     this.makeTrendRow(trends, "skills", s.capabilities.skills.count, seriesFromHistory(this.history, "skills"));
-    this.makeTrendRow(trends, "sessions", s.brain.sessions?.count ?? 0, seriesFromHistory(this.history, "sessions"));
+    this.makeTrendRow(trends, "sessions", s.brain.counts?.sessions ?? 0, seriesFromHistory(this.history, "sessions"));
 
     // last-scan / health
     const meta = root.createDiv({ cls: "aos-sb-meta" });
