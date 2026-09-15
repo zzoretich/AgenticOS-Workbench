@@ -10,7 +10,9 @@ export interface PipelineEntry {
   startedAt: string;
   endedAt: string | null;
   durationMs: number | null;
-  status: "running" | "ok" | "error";
+  status: "running" | "ok" | "skipped" | "disabled" | "error";
+  provider?: string | null;   // which provider ran the stage (contract §3)
+  reason?: string | null;     // why it was skipped/disabled
   error: string | null;
   wrote: string[];
   counts: Record<string, number>;
@@ -19,7 +21,8 @@ export interface PipelineEntry {
 export interface PipelineState { lastRun: PipelineEntry | null; history: PipelineEntry[]; }
 export interface PipelinesFile { version: number; pipelines: Record<string, PipelineState>; }
 
-export type PipelineHealth = "ok" | "stale" | "failed" | "died" | "never";
+// "neutral" = nothing to judge: never ran, or the stage is disabled by config (renders gray).
+export type PipelineHealth = "ok" | "stale" | "failed" | "died" | "neutral";
 export interface PipelineStatus {
   name: string;
   health: PipelineHealth;
@@ -31,38 +34,32 @@ export interface PipelineStatus {
 // staleAfterMs: null disables age-based staleness entirely (on-demand pipelines).
 export interface ClassifyCfg { staleAfterMs: number | null; diedAfterMs: number; }
 
-// Freshness windows per pipeline (how old an ok run may be before "stale").
-// `null` means "never stale by age" — reserved for on-demand pipelines, where
-// elapsed time carries no signal at all: nothing schedules them, so a quiet
-// stretch means "no work to do", not "something is wrong".
-const STALE_WINDOWS: Record<string, number | null> = {
-  "scan-vault": 45 * 60_000,          // scan runs every 15 min while Obsidian is open
-  "heartbeat-writer": 45 * 60_000,
-  "session-summary": 24 * 60 * 60_000, // only runs when sessions run
-  "auto-cost": 24 * 60 * 60_000,
-  "auto-cost-backfill": 7 * 24 * 60 * 60_000,
-  // file-map only runs when someone invokes brain/scripts/map-workspace.js, and
-  // it has nothing to do while scan-vault reports 0 pending files. An age window
-  // therefore flagged it permanently with no action that could ever clear it.
-  // Genuine backlog surfaces instead as the Fix Queue's "N file(s) unmapped"
-  // rows (fixQueue's mapPending), which is driven by real pending counts — and a
-  // crashed or wedged run still classifies failed/died below.
-  "file-map": null,
-  "auto-wrap": 24 * 60 * 60_000,       // SessionEnd-driven — only runs when sessions run (P4)
-  "build-brain-md": 45 * 60_000,       // scan-time compiler, same cadence as scan-vault (P4)
+export interface PipelineManifestEntry {
+  short: string;                                       // chip prefix, e.g. "SCAN"
+  staleMs: number | null;                              // null = never stale by age (on-demand stage)
+  safeRerun: { script: string; args: string[] } | null; // one-click rerun the Fix Queue may offer
+}
+
+// The one place the plugin knows a pipeline's name, chip label, freshness window and safe
+// rerun. Expected set = these keys ∪ whatever else the ledger contains. file-map and
+// embed-vault are on-demand / provider-gated: elapsed time carries no signal, so their
+// windows are null. file-map backlog surfaces through the Fix Queue's mapPending rows;
+// embed-vault is ledgered `disabled` (reason no-embed) under the claude/none providers,
+// which renders neutral. Its rerun is scan-vault.js, not embed-vault.js: the incremental
+// embed is safe under ollama either way, but only scan-vault writes the `embed-vault`
+// ledger row (scan-vault.js:449 withReport), so only scan-vault can clear the card.
+export const PIPELINES_MANIFEST: Record<string, PipelineManifestEntry> = {
+  "scan-vault":         { short: "SCAN",     staleMs: 45 * 60_000,           safeRerun: { script: "brain/scripts/scan-vault.js", args: ["--quiet"] } },
+  "session-summary":    { short: "WRAP",     staleMs: 24 * 60 * 60_000,      safeRerun: null },
+  "auto-cost":          { short: "COST",     staleMs: 24 * 60 * 60_000,      safeRerun: null },
+  "auto-cost-backfill": { short: "BACKFILL", staleMs: 7 * 24 * 60 * 60_000,  safeRerun: { script: "brain/scripts/auto-cost.js", args: ["--backfill"] } },
+  "heartbeat-writer":   { short: "STAFF",    staleMs: 45 * 60_000,           safeRerun: { script: "brain/scripts/heartbeat-writer.js", args: [] } },
+  "file-map":           { short: "MAP",      staleMs: null,                  safeRerun: null },
+  "auto-wrap":          { short: "AWRAP",    staleMs: 24 * 60 * 60_000,      safeRerun: null },
+  "build-brain-md":     { short: "BRAIN",    staleMs: 45 * 60_000,           safeRerun: null },
+  "embed-vault":        { short: "EMBED",    staleMs: null,                  safeRerun: { script: "brain/scripts/scan-vault.js", args: ["--quiet"] } },
 };
 const DIED_AFTER_MS = 10 * 60_000;
-
-export const EXPECTED_PIPELINES = [
-  "scan-vault", "session-summary", "auto-cost", "heartbeat-writer", "file-map",
-  "auto-wrap", "build-brain-md",
-];
-
-const SHORT: Record<string, string> = {
-  "scan-vault": "SCAN", "session-summary": "WRAP", "auto-cost": "COST",
-  "auto-cost-backfill": "BACKFILL", "heartbeat-writer": "STAFF", "file-map": "MAP",
-  "auto-wrap": "AWRAP", "build-brain-md": "BRAIN",
-};
 
 function ago(ms: number): string {
   if (ms < 90_000) return `${Math.max(1, Math.round(ms / 1000))}s`;
@@ -74,20 +71,33 @@ function ago(ms: number): string {
 export function classifyPipeline(
   name: string, state: PipelineState | undefined, nowMs: number, cfg?: Partial<ClassifyCfg>
 ): PipelineStatus {
-  const short = SHORT[name] ?? name.toUpperCase();
+  const m = PIPELINES_MANIFEST[name];
+  const short = m?.short ?? name.toUpperCase();
   const last = state?.lastRun ?? null;
-  if (!last) return { name, health: "never", label: `${short} —`, detail: `${name}: no recorded runs yet` };
+  if (!last) return { name, health: "neutral", label: `${short} —`, detail: `${name}: no recorded runs yet` };
 
   // Explicit undefined checks, not ??: a configured `null` window means "never
   // stale by age" and must not fall through to the default.
   const staleAfter: number | null =
     cfg?.staleAfterMs !== undefined ? cfg.staleAfterMs
-      : name in STALE_WINDOWS ? STALE_WINDOWS[name]
+      : m ? m.staleMs
         : 60 * 60_000;
   const diedAfter = cfg?.diedAfterMs ?? DIED_AFTER_MS;
   const startMs = Date.parse(last.startedAt);
   const age = nowMs - startMs;
 
+  // contract §5 / spec §12: `disabled` (turned off by config) and `skipped` (the stage ran and
+  // decided there was nothing to do — daily cap, no signal, nothing to write) both mean "nothing
+  // to judge". Both render gray with the reason on hover, and neither ever goes stale by age,
+  // so the Fix Queue offers no card for either.
+  if (last.status === "disabled" || last.status === "skipped") {
+    const why = [last.reason ? ` — ${last.reason}` : "", last.provider ? ` (provider ${last.provider})` : ""].join("");
+    return {
+      name, health: "neutral", entry: last,
+      label: `${short} ${last.status === "disabled" ? "off" : "skipped"}`,
+      detail: `${name}: ${last.status}${why}`,
+    };
+  }
   if (last.status === "running") {
     if (age > diedAfter) {
       return { name, health: "died", entry: last,
@@ -106,12 +116,13 @@ export function classifyPipeline(
       label: `${short} stale ${ago(age)}`,
       detail: `${name}: last ok run ${ago(age)} ago — past its ${Math.round(staleAfter / 60_000)}m freshness window` };
   }
+  // Only `ok` reaches here: running, error, disabled and skipped all returned above.
   return { name, health: "ok", entry: last, label: `${short} ok ${ago(age)}`, detail: `${name}: ok, ${ago(age)} ago` };
 }
 
 export function pipelineStatuses(file: PipelinesFile | null, nowMs: number): PipelineStatus[] {
-  const known = new Set(EXPECTED_PIPELINES);
-  const names = [...EXPECTED_PIPELINES];
+  const names = Object.keys(PIPELINES_MANIFEST);
+  const known = new Set(names);
   for (const n of Object.keys(file?.pipelines ?? {})) if (!known.has(n)) names.push(n);
   return names.map((n) => classifyPipeline(n, file?.pipelines?.[n], nowMs));
 }
