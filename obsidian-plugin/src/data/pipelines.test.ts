@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { classifyPipeline, pipelineStatuses, PipelinesFile, PipelineState } from "./pipelines";
+import { classifyPipeline, pipelineStatuses, PIPELINES_MANIFEST, PipelinesFile, PipelineState } from "./pipelines";
 
 const NOW = Date.parse("2026-08-05T16:00:00Z");
 const mk = (over: object): PipelineState => ({
@@ -39,15 +39,16 @@ test("running run within diedAfterMs stays ok (in-flight)", () => {
   assert.match(s.label, /running/i);
 });
 
-test("missing pipeline classifies never", () => {
+test("missing pipeline classifies neutral (never ran)", () => {
   const s = classifyPipeline("session-summary", undefined, NOW);
-  assert.equal(s.health, "never");
+  assert.equal(s.health, "neutral");
+  assert.match(s.detail, /no recorded runs yet/);
 });
 
-test("pipelineStatuses covers every EXPECTED pipeline even on a null file", () => {
+test("pipelineStatuses covers every manifest pipeline even on a null file", () => {
   const all = pipelineStatuses(null, NOW);
-  assert.ok(all.length >= 4);
-  assert.ok(all.every((s) => s.health === "never"));
+  assert.deepEqual(all.map((s) => s.name), Object.keys(PIPELINES_MANIFEST));
+  assert.ok(all.every((s) => s.health === "neutral"));
   const file: PipelinesFile = { version: 1, pipelines: { "scan-vault": mk({}) } };
   const withOne = pipelineStatuses(file, NOW);
   assert.equal(withOne.find((s) => s.name === "scan-vault")?.health, "ok");
@@ -55,7 +56,7 @@ test("pipelineStatuses covers every EXPECTED pipeline even on a null file", () =
 
 test("file-map is an expected pipeline", () => {
   const all = pipelineStatuses(null, NOW);
-  assert.ok(all.some((s) => s.name === "file-map" && s.health === "never"));
+  assert.ok(all.some((s) => s.name === "file-map" && s.health === "neutral"));
 });
 
 // Regression: file-map is on-demand (brain/scripts/map-workspace.js) and has
@@ -85,6 +86,53 @@ test("an explicit null staleAfterMs disables age-based staleness", () => {
 
 test("auto-wrap and build-brain-md are expected pipelines that classify never on a null file", () => {
   const all = pipelineStatuses(null, NOW);
-  assert.ok(all.some((s) => s.name === "auto-wrap" && s.health === "never"));
-  assert.ok(all.some((s) => s.name === "build-brain-md" && s.health === "never"));
+  assert.ok(all.some((s) => s.name === "auto-wrap" && s.health === "neutral"));
+  assert.ok(all.some((s) => s.name === "build-brain-md" && s.health === "neutral"));
+});
+
+test("a disabled stage renders neutral with its reason and provider on hover, never red", () => {
+  const s = classifyPipeline("auto-cost", mk({ status: "disabled", reason: "cost disabled", provider: "none" }), NOW);
+  assert.equal(s.health, "neutral");
+  assert.match(s.label, /COST off/);
+  assert.match(s.detail, /cost disabled/);
+  assert.match(s.detail, /provider none/);
+});
+
+test("a skipped stage is neutral with its reason, like disabled, and never goes stale (contract §5)", () => {
+  const fresh = classifyPipeline("session-summary", mk({ status: "skipped", reason: "nothing to write" }), NOW);
+  assert.equal(fresh.health, "neutral");
+  assert.match(fresh.label, /WRAP skipped/);
+  assert.match(fresh.detail, /nothing to write/);
+  const old = classifyPipeline("session-summary",
+    mk({ status: "skipped", startedAt: "2026-08-03T10:00:00Z", endedAt: "2026-08-03T10:00:01Z" }), NOW);
+  assert.equal(old.health, "neutral", "a skip carries no verdict, so its age carries none either");
+});
+
+test("embed-vault is a manifest stage: EMBED chip, disabled under claude/none renders neutral", () => {
+  const file: PipelinesFile = { version: 1, pipelines: { "embed-vault": mk({ status: "disabled", reason: "no-embed", provider: "claude" }) } };
+  const s = pipelineStatuses(file, NOW).find((x) => x.name === "embed-vault");
+  assert.equal(s?.health, "neutral");
+  assert.match(s!.label, /^EMBED off/);
+  assert.match(s!.detail, /no-embed/);
+});
+
+test("ledger keys outside the manifest are appended with an upper-cased short name", () => {
+  const file: PipelinesFile = { version: 1, pipelines: { "feedback-apply": mk({}) } };
+  const all = pipelineStatuses(file, NOW);
+  const extra = all.find((s) => s.name === "feedback-apply");
+  assert.equal(extra?.health, "ok");
+  assert.match(extra!.label, /^FEEDBACK-APPLY/);
+  assert.equal(all.length, Object.keys(PIPELINES_MANIFEST).length + 1);
+});
+
+test("the manifest carries every safe rerun the Fix Queue needs", () => {
+  assert.deepEqual(PIPELINES_MANIFEST["scan-vault"].safeRerun, { script: "brain/scripts/scan-vault.js", args: ["--quiet"] });
+  assert.deepEqual(PIPELINES_MANIFEST["auto-cost-backfill"].safeRerun, { script: "brain/scripts/auto-cost.js", args: ["--backfill"] });
+  assert.equal(PIPELINES_MANIFEST["file-map"].staleMs, null);
+  assert.equal(PIPELINES_MANIFEST["session-summary"].safeRerun, null);
+  assert.equal(PIPELINES_MANIFEST["embed-vault"].short, "EMBED");
+  assert.equal(PIPELINES_MANIFEST["embed-vault"].staleMs, null);
+  // scan-vault.js is the only writer of the embed-vault ledger key (scan-vault.js:449
+  // withReport('embed-vault')), so it is also the only rerun that can clear the card.
+  assert.deepEqual(PIPELINES_MANIFEST["embed-vault"].safeRerun, { script: "brain/scripts/scan-vault.js", args: ["--quiet"] });
 });

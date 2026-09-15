@@ -5,7 +5,7 @@ import { PipelineStatus } from "./pipelines";
 
 const ok = (name: string): PipelineStatus =>
   ({ name, health: "ok", label: `${name} ok`, detail: "" });
-const bad = (name: string, health: "failed" | "died" | "stale" | "never", detail = "boom"): PipelineStatus =>
+const bad = (name: string, health: "failed" | "died" | "stale" | "neutral", detail = "boom"): PipelineStatus =>
   ({ name, health, label: `${name} ${health}`, detail });
 
 const BASE: FixQueueInputs = {
@@ -111,4 +111,9 @@ test("pending map entries yield per-workspace map-now spawns", () => {
 
 test("absent mapPending input produces no map cards (backward compatible)", () => {
   assert.ok(!buildFixQueue(BASE).some((x) => x.id.startsWith("map-")));
+});
+
+test("neutral (never ran / disabled) pipelines produce no card", () => {
+  const q = buildFixQueue({ ...BASE, statuses: [bad("auto-wrap", "neutral", "auto-wrap: disabled — no-provider"), ...BASE.statuses] });
+  assert.ok(!q.some((x) => x.id.includes("auto-wrap")));
 });
