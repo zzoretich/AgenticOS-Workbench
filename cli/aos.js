@@ -60,6 +60,7 @@ function readJson(p, fallback = null) { try { return JSON.parse(fs.readFileSync(
 function writeJson(p, obj) { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, JSON.stringify(obj, null, 2) + '\n'); }
 function exists(p) { return fs.existsSync(p); }
 function isDir(p) { try { return fs.statSync(p).isDirectory(); } catch { return false; } }
+function isExecutable(p) { try { fs.accessSync(p, fs.constants.X_OK); return fs.statSync(p).isFile(); } catch { return false; } }
 function insideDir(child, parent) {
   const rel = path.relative(path.resolve(parent), path.resolve(child));
   return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
@@ -102,8 +103,18 @@ function which(name) {
   const p = (r.stdout || '').trim();
   return r.status === 0 && p ? p : null;
 }
-function claudeBin() {
+/** `cfg.claude.bin` — the path `aos init` recorded (contract §2) — while it is still an executable file, else null. */
+function recordedClaudeBin(cfg) {
+  const b = cfg && cfg.claude && typeof cfg.claude.bin === 'string' ? cfg.claude.bin : null;
+  return b && isExecutable(b) ? b : null;
+}
+/** The `claude` CLI: AOS_CLAUDE_BIN (test/CI knob) → the recorded path → PATH → ~/.local/bin/claude → null.
+ *  Callers that hold agenticos.json pass it; a recorded path that is gone falls through (doctor warns) and
+ *  `aos upgrade` re-records whatever the chain finds. */
+function claudeBin(cfg) {
   if (process.env.AOS_CLAUDE_BIN) return process.env.AOS_CLAUDE_BIN;
+  const recorded = recordedClaudeBin(cfg);
+  if (recorded) return recorded;
   const local = path.join(os.homedir(), '.local', 'bin', 'claude');
   return which('claude') || (exists(local) ? local : null);
 }
@@ -214,10 +225,12 @@ async function doctor() {
   const checks = [];
   const add = (name, ok, detail, level = 'fail') => checks.push({ name, ok, detail, level });
   add('node >= 20', nodeMajor() >= 20, `v${process.versions.node}`);
-  const bin = claudeBin();
+  const cfg = readJson(configPath());
+  const bin = claudeBin(cfg);
   add('claude CLI', !!bin, bin || 'not found on PATH or in ~/.local/bin');
   if (bin) add('claude login', claudeLoggedIn(bin), 'claude auth status --json');
-  const cfg = readJson(configPath());
+  const recorded = cfg && cfg.claude && cfg.claude.bin;
+  if (recorded && !isExecutable(recorded)) add('claude.bin', false, `${recorded} is not an executable file — run aos upgrade to re-resolve it`, 'warn');
   add('agenticos.json', !!(cfg && cfg.vault && cfg.node), cfg ? configPath() : `${configPath()} missing — run aos init`);
   const vault = cfg && cfg.vault;
   // AOS_VAULT/BRAIN_VAULT outrank agenticos.json for every hook and the MCP server (brain/scripts/lib/paths.js), and
@@ -296,7 +309,7 @@ function status() {
   out.log(`vault      ${cfg.vault}`);
   out.log(`provider   mode=${cfg.provider || 'auto'} resolved=${state ? `${state.name} (${state.reason}, ${state.checkedAt})` : 'never resolved'}`);
   const claudeState = (state && state.claude) || {};
-  out.log(`claude     bin=${claudeState.bin || claudeBin() || 'not found'} login=${typeof claudeState.loggedIn === 'boolean' ? claudeState.loggedIn : 'unprobed'}`);
+  out.log(`claude     bin=${claudeState.bin || claudeBin(cfg) || 'not found'} login=${typeof claudeState.loggedIn === 'boolean' ? claudeState.loggedIn : 'unprobed'}`);
   out.log(`spend      today (hooks) $${sumUsd(spend, isHookFeature).toFixed(4)} / cap $${hookCap}`);
   out.log(`spend      today (duties) $${sumUsd(spend, isDutyFeature).toFixed(4)} / cap $${dutyCap}`);
   // Ledger shape (lib/pipeline-report.js): { version: 1, pipelines: { <name>: { lastRun: {…} | null, history: [] } } }.
@@ -376,7 +389,7 @@ function dailyNotesJson(layout) {
   return { folder: first.replace(/\{yyyy\}/g, String(new Date().getFullYear())), format: 'YYYY-MM-DD' };
 }
 
-function buildUserConfig(existing, { vault, provider, version, cost }) {
+function buildUserConfig(existing, { vault, provider, version, cost, bin }) {
   const base = {
     version, vault, node: process.execPath, claudeConfigDir: configDir(), provider: 'auto',
     claude: { model: 'haiku', perCallUsd: 0.05, perDayUsd: 0.5 },
@@ -392,10 +405,25 @@ function buildUserConfig(existing, { vault, provider, version, cost }) {
   merged.claudeConfigDir = configDir();
   if (provider) merged.provider = provider;
   if (cost) merged.cost = { ...merged.cost, enabled: true };
+  // Contract §2: record the resolved `claude` CLI; absent when none was found, so every reader falls back to its probe.
+  if (bin !== undefined) {
+    const caps = { ...(merged.claude || {}) };
+    delete caps.bin;
+    merged.claude = bin ? { ...caps, bin } : caps;
+  }
   const ordered = {};
   for (const k of Object.keys(base)) ordered[k] = merged[k];
   for (const k of Object.keys(merged)) if (!(k in ordered)) ordered[k] = merged[k];
   return ordered;
+}
+
+/** After agenticos.json is (re)written: when claude.bin changed, drop the cached provider probe (the same cache
+ *  `aos provider` clears) so hooks and the MCP server pick the new path up now, not after the 24 h TTL. */
+function noteClaudeBinChange(vault, before, after) {
+  if ((before || null) === (after || null)) return;
+  let cleared = false;
+  try { fs.unlinkSync(path.join(vault, 'brain', '_index', 'provider-state.json')); cleared = true; } catch { /* no cache yet */ }
+  out.log(`claude.bin now ${after || 'unset'} (was ${before || 'unset'})${cleared ? '; cached provider probe cleared' : ''}`);
 }
 
 /** ~/.local/bin/aos → <vault>/brain/scripts/bin/aos, so `aos doctor` works from any shell. */
@@ -601,7 +629,7 @@ async function init(flags) {
   // 1. preflight
   if (nodeMajor() < 20) throw new CheckFailed(`Node 20 or newer is required (running v${process.versions.node})`);
   out.log(`preflight: node v${process.versions.node} · checkout ${repo} (v${version})`);
-  const bin = claudeBin();
+  const bin = claudeBin(readJson(configPath()));
   if (!bin) {
     if (provider !== 'none') throw new CheckFailed('claude CLI not found — install Claude Code, or pass --provider none to skip the plugin steps');
     out.warn('claude CLI not found; the plugin will not be installed (re-run init after installing Claude Code)');
@@ -648,8 +676,11 @@ async function init(flags) {
 
   // 5. agenticos.json
   await act(`write ${configPath()}`, () => {
-    writeJson(configPath(), buildUserConfig(readJson(configPath()), { vault, provider, version, cost: wantCost }));
+    const existing = readJson(configPath());
+    const next = buildUserConfig(existing, { vault, provider, version, cost: wantCost, bin });
+    writeJson(configPath(), next);
     written.push(configPath());
+    noteClaudeBinChange(vault, existing && existing.claude && existing.claude.bin, next.claude.bin);
   });
 
   // 6. plugin
@@ -678,7 +709,7 @@ async function init(flags) {
 async function upgrade(flags) {
   const cfg = loadConfigOrThrow();
   const vault = cfg.vault;
-  const bin = claudeBin();
+  const bin = claudeBin(cfg);
   const clone = path.join(configDir(), 'plugins', 'marketplaces', MARKETPLACE);
   if (!flags.fromLocal && bin && isDir(clone)) {
     run(bin, ['plugin', 'marketplace', 'update', MARKETPLACE], { allowFail: true });
@@ -691,7 +722,11 @@ async function upgrade(flags) {
   const ctx = { flags, repo, vault, written, act, dry: false, yes: true, version };
   out.log(`upgrading ${vault} from ${repo} (v${version})`);
   await act('re-vendor brain/scripts (force) and reinstall its dependencies', () => vendorRuntime(ctx, { force: true }));
-  await act(`migrate ${configPath()} keys (version → ${version})`, () => writeJson(configPath(), buildUserConfig(cfg, { vault, version })));
+  await act(`migrate ${configPath()} keys (version → ${version})`, () => {
+    const next = buildUserConfig(cfg, { vault, version, bin });
+    writeJson(configPath(), next);
+    noteClaudeBinChange(vault, cfg.claude && cfg.claude.bin, next.claude.bin);
+  });
   await act('add any new default keys to brain/config.json (user values win)', () => {
     const defaults = readJson(path.join(repo, 'brain', 'scripts', 'config.default.json'), {});
     const p = path.join(vault, 'brain', 'config.json');
@@ -733,7 +768,7 @@ function removeSchedules() {
 
 async function uninstall(flags) {
   const cfg = readJson(configPath());
-  const bin = claudeBin();
+  const bin = claudeBin(cfg);
   if (bin) {
     // Warn and continue (a teardown must finish), but never report a removal that did not happen.
     for (const args of [['plugin', 'uninstall', PLUGIN_ID], ['plugin', 'marketplace', 'remove', MARKETPLACE]]) {
