@@ -117,3 +117,12 @@ test("neutral (never ran / disabled) pipelines produce no card", () => {
   const q = buildFixQueue({ ...BASE, statuses: [bad("auto-wrap", "neutral", "auto-wrap: disabled — no-provider"), ...BASE.statuses] });
   assert.ok(!q.some((x) => x.id.includes("auto-wrap")));
 });
+
+test("costEnabled=false suppresses every cost card but leaves the rest", () => {
+  const q = buildFixQueue({ ...BASE, costEnabled: false, costMonth: null, uncostedRuns: 4, healthErrors: 1 });
+  assert.ok(!q.some((x) => x.kind === "anchor-modal"));
+  assert.ok(!q.some((x) => x.id === "cost-backfill"));
+  assert.ok(q.some((x) => x.id === "open-health"));
+  const stale = buildFixQueue({ ...BASE, costEnabled: false, costMonth: "2026-06" });
+  assert.ok(!stale.some((x) => x.id === "re-anchor-cost"));
+});

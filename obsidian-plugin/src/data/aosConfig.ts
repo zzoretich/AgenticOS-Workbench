@@ -128,3 +128,17 @@ export function readProviderState(vaultRoot: string): ProviderState | null {
   if (!isPlainObject(s) || typeof s.name !== "string") return null;
   return s as unknown as ProviderState;
 }
+
+export const PERSONA_IDENTITY_PATH = "persona/IDENTITY.md";
+
+/**
+ * The agent's chosen name (contract §6): the first Markdown H1 of <vault>/persona/IDENTITY.md,
+ * which `aos init` renders from identity.template.md with {{AGENT_NAME}}. null when the persona
+ * layer is absent or the file has no H1 — callers fall back to a neutral label.
+ */
+export function personaName(vaultRoot: string): string | null {
+  let text: string;
+  try { text = fs.readFileSync(path.join(vaultRoot, PERSONA_IDENTITY_PATH), "utf8"); } catch { return null; }
+  const m = /^#[ \t]+(.+?)[ \t]*$/m.exec(text);
+  return m ? m[1] : null;
+}
