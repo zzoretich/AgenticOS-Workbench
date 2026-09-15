@@ -11,7 +11,7 @@ import { spawn as nodeSpawn, ChildProcess, SpawnOptions } from "child_process";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import type { AskHandle, AskResult } from "./askSpawner";
+import { lastStderrLine, type AskHandle, type AskResult } from "./askSpawner";
 import { readAgenticosJson, readProviderState, AgenticosJson, ProviderState } from "./aosConfig";
 
 export interface ClaudeAskOptions {
@@ -95,11 +95,6 @@ function collect(child: ChildProcess, timeoutMs: number): Promise<Collected> {
   });
 }
 
-/** Last non-empty stderr line that is not a stack frame (a crash ending in `    at …` would otherwise surface the frame). */
-function lastLine(s: string): string {
-  return s.trim().split("\n").map((l) => l.trim()).filter((l) => l && !/^at\s/.test(l)).pop() || "";
-}
-
 export interface ClaudeBinDeps {
   readAgenticosJson: () => AgenticosJson | null;
   readProviderState: (v: string) => ProviderState | null;
@@ -162,7 +157,7 @@ export function runClaudeAsk(opts: ClaudeAskOptions, deps: ClaudeAskDeps = DEFAU
     current = child;
     const r = await collect(child, opts.timeoutMs ?? 120_000);
     const elapsedMs = Date.now() - start;
-    if (r.killed) return fail(cancelled ? "cancelled" : "cancelled (timeout)", { stderr: r.stderr, exitCode: r.code, elapsedMs });
+    if (r.killed || cancelled) return fail(cancelled ? "cancelled" : "cancelled (timeout)", { stderr: r.stderr, exitCode: r.code, elapsedMs });
 
     const parsed = parseClaudeJson(r.stdout);
 
@@ -182,7 +177,7 @@ export function runClaudeAsk(opts: ClaudeAskOptions, deps: ClaudeAskDeps = DEFAU
 
     if (r.code !== 0 || !parsed || parsed.isError) {
       if (parsed && parsed.usd > 0) ledger();
-      const msg = lastLine(r.stderr) || lastLine(parsed?.text ?? "") || lastLine(r.stdout) || `exit ${r.code}`;
+      const msg = lastStderrLine(r.stderr) || lastStderrLine(parsed?.text ?? "") || lastStderrLine(r.stdout) || `exit ${r.code}`;
       return { ok: false, runId: null, answer: parsed?.text ?? "", stderr: r.stderr, elapsedMs, exitCode: r.code, error: msg.slice(0, 400) };
     }
 

@@ -36,6 +36,11 @@ export interface AskHandle {
 
 export function isAskBusy(): boolean { return inflight >= MAX_CONCURRENT; }
 
+/** Last non-empty stderr line that is not a stack frame (`at …`), or "" — the message a user needs, never an inner frame. */
+export function lastStderrLine(s: string): string {
+  return s.trim().split("\n").map((l) => l.trim()).filter((l) => l && !/^at\s/.test(l)).pop() || "";
+}
+
 export interface RunAskOptions {
   vault: string;
   question: string;
@@ -145,7 +150,7 @@ export function runAsk(opts: RunAskOptions): AskHandle {
         // Stack frames are skipped: ask.js's `[ask] fatal: ${err.stack}` path ends in `at …`
         // lines, and the frame is never the message the user needs.
         error: killed ? "cancelled (timeout)"
-          : code !== 0 ? (stderrBuf.trim().split("\n").map((l) => l.trim()).filter((l) => l && !/^at\s/.test(l)).pop() || `exit ${code}`).slice(0, 400)
+          : code !== 0 ? (lastStderrLine(stderrBuf) || `exit ${code}`).slice(0, 400)
           : undefined,
       });
     });
