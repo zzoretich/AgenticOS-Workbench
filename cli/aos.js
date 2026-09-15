@@ -58,6 +58,19 @@ function configDir() { return path.resolve(process.env.CLAUDE_CONFIG_DIR || path
 function configPath() { return path.resolve(process.env.AOS_CONFIG || path.join(configDir(), 'agenticos.json')); }
 function readJson(p, fallback = null) { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return fallback; } }
 function writeJson(p, obj) { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, JSON.stringify(obj, null, 2) + '\n'); }
+/** readJson's strict sibling for files the USER owns: a file that exists but does not parse is refused rather
+ *  than replaced, because overwriting it discards their settings with no warning (final review F7 — the shape
+ *  cli/cost-cmd.js:81-87 already uses for this same brain/config.json). Missing is fine → fallback. */
+function readJsonStrict(p, fallback = null) {
+  let raw;
+  try { raw = fs.readFileSync(p, 'utf8'); } catch (e) {
+    if (e.code === 'ENOENT') return fallback;
+    throw new Error(`refusing to touch unreadable ${p}: ${e.message}`);
+  }
+  try { return JSON.parse(raw); } catch (e) {
+    throw new Error(`refusing to touch unparseable ${p}: ${e.message}`);
+  }
+}
 function exists(p) { return fs.existsSync(p); }
 function isDir(p) { try { return fs.statSync(p).isDirectory(); } catch { return false; } }
 function isExecutable(p) { try { fs.accessSync(p, fs.constants.X_OK); return fs.statSync(p).isFile(); } catch { return false; } }
@@ -669,6 +682,12 @@ async function init(flags) {
 
   // 3. seed
   await act(`copy the seed vault into ${vault} (existing files are kept)`, () => {
+    const defaults = readJson(path.join(repo, 'brain', 'scripts', 'config.default.json'), {});
+    const cfgJson = path.join(vault, 'brain', 'config.json');
+    // final review F7: parse the user's brain/config.json BEFORE anything is written. readJson() conflated
+    // ENOENT with a parse error, so a corrupt config took the "empty" branch and was replaced by the
+    // defaults; refusing up front leaves the vault exactly as it was.
+    let current = readJsonStrict(cfgJson);
     // execution amendment 2026-09-15 (A8): vault-template/persona/ holds the raw {{…}} templates (Task 5); the interview renders
     // them into <vault>/persona/ itself (step 8), so the seed copy must not land identity.template.md / STATE.template.md there.
     copyTree(path.join(repo, 'vault-template'), vault, { exclude: /(^|\/)persona(\/|$)/, rename: { _gitignore: '.gitignore' }, written });
@@ -677,11 +696,8 @@ async function init(flags) {
       const session = path.join(vault, 'brain', '_index', 'SESSION.md');
       fs.writeFileSync(session, fs.readFileSync(session, 'utf8').replace(/^updated: .*$/m, `updated: ${localDay()}`));
     }
-    const defaults = readJson(path.join(repo, 'brain', 'scripts', 'config.default.json'), {});
-    const cfgJson = path.join(vault, 'brain', 'config.json');
-    const current = readJson(cfgJson);
-    if (!current || Object.keys(current).length === 0) { writeJson(cfgJson, defaults); written.push('brain/config.json'); }
-    const layout = (((readJson(cfgJson) || {}).dailyNote || {}).layout) || defaults.dailyNote.layout;
+    if (!current || Object.keys(current).length === 0) { writeJson(cfgJson, defaults); written.push('brain/config.json'); current = defaults; }
+    const layout = (((current || {}).dailyNote || {}).layout) || defaults.dailyNote.layout;
     writeJson(path.join(vault, '.obsidian', 'daily-notes.json'), dailyNotesJson(layout));
     written.push('.obsidian/daily-notes.json');
   });
@@ -751,7 +767,9 @@ async function upgrade(flags) {
   await act('add any new default keys to brain/config.json (user values win)', () => {
     const defaults = readJson(path.join(repo, 'brain', 'scripts', 'config.default.json'), {});
     const p = path.join(vault, 'brain', 'config.json');
-    writeJson(p, deepMerge(defaults, readJson(p, {}) || {}));
+    // final review F7: missing is fine (fresh vault → {}), but merging the defaults over a file we could
+    // not parse would drop every key the user has set. Refuse and stop the upgrade instead.
+    writeJson(p, deepMerge(defaults, readJsonStrict(p, {}) || {}));
   });
   if (flags.obsidian !== false) await obsidianBundle(ctx);
   await act('rebuild indexes (scan-vault, build-brain-md, recall --warm)', () => {
@@ -896,7 +914,7 @@ if (require.main === module) {
 }
 
 module.exports = {
-  parseArgs, deepMerge, configDir, configPath, readJson, writeJson, exists, isDir, insideDir, localDay,
+  parseArgs, deepMerge, configDir, configPath, readJson, readJsonStrict, writeJson, exists, isDir, insideDir, localDay,
   run, which, claudeBin, npmBin, claudeLoggedIn, installedPlugin, python3Version, python3Ok, obsidianDetected, httpProbe, ollamaEndpoint, ollamaProbeSkipped, ask,
   runScript, scriptPath, mcpProbe, spendRowsToday, spendToday, isDutyFeature, isHookFeature, loadConfigOrThrow,
   doctor, status, provider, main,

@@ -65,17 +65,6 @@ MAX_USD="${PERSONA_MAX_USD:-}"     # empty → persona.perDutyUsd from --check b
 # add/commit were dropped: docs/chief-of-staff.md promises a duty never commits, and nothing needed the verbs).
 # Write/Edit are unscoped — guarded files rely on the proposal protocol plus git history, not on the permission layer.
 PERSONA_TOOLS="${PERSONA_TOOLS:-Read,Write,Edit,Glob,Grep,Bash(git status:*),Bash(git log:*),Bash(git diff:*),Bash(date:*),Bash(ls:*),Bash(grep:*),Bash(wc:*),Bash(tail:*),Bash(head:*),Bash($NODE $VAULT/brain/scripts/persona/sitrep-state.js:*),Bash($NODE $VAULT/brain/scripts/persona/scan-arsenal.js:*),Bash(node $VAULT/brain/scripts/persona/sitrep-state.js:*),Bash(node $VAULT/brain/scripts/persona/scan-arsenal.js:*)}"
-# claude binary: PERSONA_CLAUDE_BIN → claude.bin recorded in agenticos.json by `aos init` (contract §2 addendum;
-# "bin" occurs exactly once there, under "claude") → PATH → ~/.local/bin/claude. execution amendment 2026-09-15 (A24)
-# A SET PERSONA_CLAUDE_BIN that is not executable is a misconfiguration, not a cue to fall through to the
-# PATH lookup — fail loudly instead of silently launching whatever `claude` happens to resolve to. (A50)
-if [ -n "${PERSONA_CLAUDE_BIN:-}" ]; then
-  CLAUDE_BIN="$PERSONA_CLAUDE_BIN"
-  [ -x "$CLAUDE_BIN" ] || { echo "run-duty: PERSONA_CLAUDE_BIN is not executable: $CLAUDE_BIN" >&2; exit 1; }
-else
-  CLAUDE_BIN="$(json_value bin)"
-  [ -x "$CLAUDE_BIN" ] || CLAUDE_BIN="$(command -v claude 2>/dev/null || echo "$HOME/.local/bin/claude")"
-fi
 RECORD="$SCRIPT_DIR/record-spend.js"     # sibling: repo checkout in tests, <vault>/brain/scripts/persona/ when installed
 TODAY="$(date +%Y-%m-%d)"
 JOURNAL="$PERSONA/journal/$TODAY.md"
@@ -85,6 +74,20 @@ if [ -f "$PERSONA/DISABLED" ]; then
   exit 0
 fi
 [ -f "$DUTY_FILE" ] || { echo "unknown duty '$DUTY' (no $DUTY_FILE)" >&2; exit 1; }
+
+# claude binary: PERSONA_CLAUDE_BIN → claude.bin recorded in agenticos.json by `aos init` (contract §2 addendum;
+# "bin" occurs exactly once there, under "claude") → PATH → ~/.local/bin/claude. execution amendment 2026-09-15 (A24)
+# A SET PERSONA_CLAUDE_BIN that is not executable is a misconfiguration, not a cue to fall through to the
+# PATH lookup — fail loudly instead of silently launching whatever `claude` happens to resolve to. (A50)
+# Deliberately BELOW the kill switch and the unknown-duty check (final review safety-9 = spec-12): a disabled
+# persona must exit 0 and an unknown duty must exit 1 with its own message, whatever a stale override names.
+if [ -n "${PERSONA_CLAUDE_BIN:-}" ]; then
+  CLAUDE_BIN="$PERSONA_CLAUDE_BIN"
+  [ -x "$CLAUDE_BIN" ] || { echo "run-duty: PERSONA_CLAUDE_BIN is not executable: $CLAUDE_BIN" >&2; exit 1; }
+else
+  CLAUDE_BIN="$(json_value bin)"
+  [ -x "$CLAUDE_BIN" ] || CLAUDE_BIN="$(command -v claude 2>/dev/null || echo "$HOME/.local/bin/claude")"
+fi
 
 # Hooks do not run under AOS_HEADLESS=1, so the persona is injected here instead.
 SYSTEM="$( { cat "$PERSONA/IDENTITY.md" 2>/dev/null; echo; echo '---'; cat "$PERSONA/STATE.md" 2>/dev/null; } )"
