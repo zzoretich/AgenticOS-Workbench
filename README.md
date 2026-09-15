@@ -1,8 +1,6 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/Claude%20Code-second%20brain-1f1f1f?style=for-the-badge" alt="Claude Code second brain" />
+  <img src="docs/assets/banner.svg" width="960" alt="AgenticOS Workbench — a second brain for Claude Code" />
 </p>
-
-<h1 align="center">AgenticOS Workbench</h1>
 
 <p align="center">
   <strong>A second brain for Claude Code, and an Obsidian HUD that renders it.</strong><br />
@@ -11,40 +9,43 @@
 
 <p align="center">
   <a href="https://github.com/zzoretich/AgenticOS-Workbench/actions/workflows/ci.yml"><img src="https://github.com/zzoretich/AgenticOS-Workbench/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
-  <img src="https://img.shields.io/badge/node-%E2%89%A5%2020-3c873a" alt="Node 20 or newer" />
-  <img src="https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Linux-4c8bf5" alt="macOS and Linux" />
-  <img src="https://img.shields.io/badge/models-Claude%20Code%20alone%20%C2%B7%20Ollama%20optional-8a63d2" alt="Works with Claude Code alone; Ollama optional" />
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT" /></a>
+  <img src="https://img.shields.io/badge/node-%E2%89%A5%2020-3fb950?style=flat-square" alt="Node 20 or newer" />
+  <img src="https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Linux-58a6ff?style=flat-square" alt="macOS and Linux" />
+  <img src="https://img.shields.io/badge/models-Claude%20Code%20alone%20%C2%B7%20Ollama%20optional-bc8cff?style=flat-square" alt="Works with Claude Code alone; Ollama optional" />
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-e6edf3?style=flat-square" alt="MIT" /></a>
 </p>
 
 <p align="center">
-  <a href="#-quick-start">Quick start</a> ·
-  <a href="#-prerequisites">Prerequisites</a> ·
-  <a href="#-installation">Installation</a> ·
-  <a href="#-your-first-session">First session</a> ·
-  <a href="#-everyday-commands">Commands</a> ·
-  <a href="#-how-it-works">How it works</a> ·
-  <a href="#-docs">Docs</a>
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#prerequisites">Prerequisites</a> ·
+  <a href="#installation">Installation</a> ·
+  <a href="#screenshots">Screenshots</a> ·
+  <a href="#your-first-session">First session</a> ·
+  <a href="#everyday-commands">Commands</a> ·
+  <a href="#how-it-works">How it works</a> ·
+  <a href="#docs">Docs</a>
 </p>
 
----
+<p align="center"><img src="docs/assets/divider.svg" width="960" alt="" /></p>
 
 Claude Code forgets everything between sessions. AgenticOS Workbench gives it a vault it can read from on every prompt and write back to at the end of every session, then puts an Obsidian dashboard on top so you can see what it remembers, what ran, and what it cost.
 
 It works with **Claude Code alone**. If a local **Ollama** is running, background work switches to it automatically. Nothing about you ships in this repository, and background work only ever goes through your local Ollama or your own Claude Code login, never a third-party service.
 
-## ✨ What you get
+<a name="what-you-get"></a>
+## <img src="docs/assets/icon-brain.svg" width="36" align="top" alt="" /> What you get
 
 | | |
 |---|---|
-| 🧠 **Memory that persists** | Facts, feedback rules, projects and references live in your vault as plain Markdown. Every new session opens with a compiled `<brain-context>` block; `/wrap` writes what the session learned. |
-| 🔎 **Recall** | Hybrid search over memories, patterns and daily notes, exposed to Claude Code as the `agenticos` MCP server (`recall`, `memory_search`, `session_recall`, `feedback_rules`, …). |
-| 🗓️ **Session capture** | Daily notes, working-memory summaries, telemetry with redaction on by default, and a pipeline ledger that shows what ran and when. |
-| 🎩 **A Chief of Staff** | A named agent you interview once. Its identity rides along on every prompt; three scheduled duties (monitor, reflect, sitrep) keep the vault tidy and file proposals for anything that needs your sign-off. Kill switch included. |
-| 🖥️ **The Agentic OS HUD** | An Obsidian plugin: a Pulse row of pipeline LEDs, live agent runs, a memory graph, a fix queue, an optional chat tab and an optional embedded terminal. |
-| 💸 **Cost, opt-in** | A python analyzer that costs every session from its transcript, with a monthly budget in the HUD. Off unless you turn it on. |
+| <img src="docs/assets/icon-brain.svg" width="48" alt="" /> | **Memory that persists.** Facts, feedback rules, projects and references live in your vault as plain Markdown. Every new session opens with a compiled `<brain-context>` block; `/wrap` writes what the session learned. |
+| <img src="docs/assets/icon-recall.svg" width="48" alt="" /> | **Recall.** Hybrid search over memories, patterns and daily notes, exposed to Claude Code as the `agenticos` MCP server (`recall`, `memory_search`, `session_recall`, `feedback_rules`, …). |
+| <img src="docs/assets/icon-session.svg" width="48" alt="" /> | **Session capture.** Daily notes, working-memory summaries, telemetry with redaction on by default, and a pipeline ledger that shows what ran and when. |
+| <img src="docs/assets/icon-staff.svg" width="48" alt="" /> | **A Chief of Staff.** A named agent you interview once. Its identity rides along on every prompt; three scheduled duties (monitor, reflect, sitrep) keep the vault tidy and file proposals for anything that needs your sign-off. Kill switch included. |
+| <img src="docs/assets/icon-hud.svg" width="48" alt="" /> | **The Agentic OS HUD.** An Obsidian plugin: a Pulse row of pipeline LEDs, live agent runs, a memory graph, a fix queue, an optional chat tab and an optional embedded terminal. |
+| <img src="docs/assets/icon-cost.svg" width="48" alt="" /> | **Cost, opt-in.** A python analyzer that costs every session from its transcript, with a monthly budget in the HUD. Off unless you turn it on. |
 
-## ⚡ Quick start
+<a name="quick-start"></a>
+## <img src="docs/assets/icon-quickstart.svg" width="36" align="top" alt="" /> Quick start
 
 ```sh
 git clone https://github.com/zzoretich/AgenticOS-Workbench.git
@@ -53,9 +54,10 @@ npm ci --ignore-scripts
 npm run setup                          # interactive installer (= node cli/aos.js init)
 ```
 
-Then add the one line the installer prints to `~/.claude/CLAUDE.md`, open the new vault in Obsidian, and start a `claude` session. The whole path takes under ten minutes; the details are in [Installation](#-installation).
+Then add the one line the installer prints to `~/.claude/CLAUDE.md`, open the new vault in Obsidian, and start a `claude` session. The whole path takes under ten minutes; the details are in [Installation](#installation).
 
-## ✅ Prerequisites
+<a name="prerequisites"></a>
+## <img src="docs/assets/icon-prereq.svg" width="36" align="top" alt="" /> Prerequisites
 
 | | Required? | What the installer checks |
 |---|---|---|
@@ -69,7 +71,10 @@ Then add the one line the installer prints to `~/.claude/CLAUDE.md`, open the ne
 
 The installer refuses to use `~/.claude` as the vault, and refuses any directory that already holds a `settings.json`. The default vault is `~/AgenticOS`.
 
-## 📦 Installation
+<p align="center"><img src="docs/assets/divider.svg" width="960" alt="" /></p>
+
+<a name="installation"></a>
+## <img src="docs/assets/icon-install.svg" width="36" align="top" alt="" /> Installation
 
 ### 1. Clone and install dependencies
 
@@ -120,13 +125,57 @@ The installer never edits your `CLAUDE.md`. Add the line it printed — it looks
 
 In Obsidian: **File → Open vault → Open folder as vault**, pick your vault, enable community plugins when asked, and turn on **Agentic OS**. The HUD opens with a Pulse row that stays gray or green; amber `stale` LEDs simply mean a stage has not run for a while.
 
-## 🚀 Your first session
+<p align="center"><img src="docs/assets/divider.svg" width="960" alt="" /></p>
+
+<a name="screenshots"></a>
+## <img src="docs/assets/icon-screens.svg" width="36" align="top" alt="" /> Screenshots
+
+The HUD on a demo vault: a user called Casey, an agent called Atlas, two workspaces, a handful of memories, and a local Ollama as the provider.
+
+<p align="center">
+  <img src="docs/assets/screens/pulse.png" width="960" alt="Pulse: eight pipeline LEDs, the command deck, the agent's latest flag, cost and health, the fix queue, and the memories promoted this week" />
+  <br /><sub><b>Pulse.</b> Eight pipeline LEDs, the command deck, Atlas's latest flag, month-to-date cost, the fix queue, and what got promoted to memory this week.</sub>
+</p>
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/assets/screens/spaces.png" width="100%" alt="Spaces: the vault's workspaces with status, objectives, key documents and a generated insight" />
+      <br /><sub><b>Spaces.</b> Every workspace in the vault with its status, objectives, key documents and a generated insight.</sub>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/assets/screens/memory.png" width="100%" alt="Memory: every memory by type and date, with review badges" />
+      <br /><sub><b>Memory.</b> Every memory by type and date, searchable, with review badges for what the wrap wrote on its own.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/assets/screens/runs.png" width="100%" alt="Runs: every Claude Code session with duration, cost and age" />
+      <br /><sub><b>Runs.</b> Every Claude Code session, with duration, cost and age; click one for its tool timeline.</sub>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/assets/screens/chat.png" width="100%" alt="Chat: ask the brain a question and get an answer from your own notes" />
+      <br /><sub><b>Chat.</b> Ask the brain a question; it answers from your own notes through whichever provider is live.</sub>
+    </td>
+  </tr>
+</table>
+
+<p align="center">
+  <img src="docs/assets/screens/graph.png" width="960" alt="The knowledge graph: memories, patterns, sessions and agents as a force graph" />
+  <br /><sub><b>Cortex.</b> Memories, patterns, sessions and agents as a force graph.</sub>
+</p>
+
+<p align="center"><img src="docs/assets/divider.svg" width="960" alt="" /></p>
+
+<a name="your-first-session"></a>
+## <img src="docs/assets/icon-first.svg" width="36" align="top" alt="" /> Your first session
 
 Run `claude` in any directory and ask it *what do you know about me?* The first prompt arrives with `<brain-context>` (and your agent's `<persona>`). When you are done, `/wrap` extracts memories into `<vault>/brain/memory/` and adds a line to `MEMORY.md`. In a later session, *use the agenticos recall tool to search for …* answers from your own notes.
 
 Say `sitrep` for a one-action briefing on where your work stands, and `review persona flags` to walk through anything your agent has flagged or proposed.
 
-## 🧰 Everyday commands
+<a name="everyday-commands"></a>
+## <img src="docs/assets/icon-commands.svg" width="36" align="top" alt="" /> Everyday commands
 
 **On the command line**
 
@@ -157,7 +206,12 @@ Every runtime script is also reachable as `aos <name>` — `aos scan-vault`, `ao
 
 Skills answer to plain phrases: *sitrep* (or `/agenticos:persona-sitrep`), *review persona flags* (`/agenticos:persona-flag-closer`), plus `recall`, `wrap`, `feedback-review` and `cost`.
 
-## 🔍 How it works
+<p align="center"><img src="docs/assets/divider.svg" width="960" alt="" /></p>
+
+<a name="how-it-works"></a>
+## <img src="docs/assets/icon-how.svg" width="36" align="top" alt="" /> How it works
+
+<p align="center"><img src="docs/assets/pulse.svg" width="960" alt="The Pulse row: SCAN WRAP COST BACKFILL STAFF MAP AWRAP BRAIN" /></p>
 
 ```mermaid
 flowchart LR
@@ -174,13 +228,15 @@ flowchart LR
 - **Providers.** `auto` picks Ollama when it answers, otherwise headless Claude (`claude -p --model haiku`, capped per call and per day, every call ledgered), otherwise `none`. Under `none` nothing calls a model in the background; summaries are heuristic and `/wrap` extracts memories inside your own session through the `wrap_session` tool. Install Ollama later and `auto` switches over on its own.
 - **The HUD** reads the same files: the pipeline ledger, live agent runs, the memory graph, provider state, spend, and your agent's identity and flags.
 
-## 🔒 Privacy
+<a name="privacy"></a>
+## <img src="docs/assets/icon-privacy.svg" width="36" align="top" alt="" /> Privacy
 
 - Your vault stays on your machine. Background calls go to your local Ollama or to your own Claude login; the cost analyzer runs with `--no-api`.
 - Telemetry redaction is on by default.
 - This repository ships machinery, not content: the Chief of Staff's identity, state and playbook are generated for you at install. A privacy gate (`npm run gate`) runs in CI against a fixed term list so nothing personal can land here.
 
-## 🗂️ Repository layout
+<a name="repository-layout"></a>
+## <img src="docs/assets/icon-layout.svg" width="36" align="top" alt="" /> Repository layout
 
 ```
 brain/scripts      the runtime that gets vendored into your vault (hooks, collectors, recall, MCP server, persona)
@@ -189,11 +245,12 @@ plugin             the Claude Code plugin: hooks.json, .mcp.json, bin/aos, 14 co
 obsidian-plugin    the Agentic OS HUD (TypeScript, esbuild)
 vault-template     the seed vault (AGENTICOS.md, MEMORY.md, brain/, persona templates)
 extras             schedule templates (launchd, cron), the cost analyzer, optional Ollama helpers
-tools              export-from-vault and the privacy gate
+tools              export-from-vault, the privacy gate, and the pixel-art generator behind docs/assets
 docs               install, chief of staff, cost, the Obsidian smoke checklist, the release acceptance runbook
 ```
 
-## 🛠️ Development
+<a name="development"></a>
+## <img src="docs/assets/icon-dev.svg" width="36" align="top" alt="" /> Development
 
 ```sh
 npm test                 # every suite: tools + cli, brain/scripts, obsidian-plugin
@@ -201,11 +258,13 @@ npm run gate             # the privacy gate — fails on any forbidden term
 cd extras/cost && python3 -m unittest      # the cost analyzer's tests
 sh cli/rehearsal/first-run.sh              # a complete install in a temp HOME with a fake claude (what CI runs)
 npm run build -w obsidian-plugin           # rebuild the HUD bundle
+node tools/pixel-assets.js                 # regenerate the 8-bit assets under docs/assets
 ```
 
 `brain/scripts/test/live/` needs a running Ollama and is excluded from `npm test`. The Obsidian plugin's manual checklist is `docs/plugin-smoke.md`; the per-release acceptance runbook is `docs/acceptance.md`.
 
-## 🧹 Uninstall
+<a name="uninstall"></a>
+## <img src="docs/assets/icon-uninstall.svg" width="36" align="top" alt="" /> Uninstall
 
 ```sh
 aos uninstall --keep-vault     # remove the plugin, schedules, symlink and agenticos.json; keep the vault
@@ -214,7 +273,8 @@ aos uninstall                  # additionally delete the vault, after you type i
 
 `~/.claude` is left exactly as it was. The vault is never deleted when it is your home directory or a Claude config directory.
 
-## 📚 Docs
+<a name="docs"></a>
+## <img src="docs/assets/icon-docs.svg" width="36" align="top" alt="" /> Docs
 
 | | |
 |---|---|
@@ -225,6 +285,11 @@ aos uninstall                  # additionally delete the vault, after you type i
 | [docs/acceptance.md](docs/acceptance.md) | The release acceptance runbook, run on a fresh macOS account. |
 | [extras/ollama/README.md](extras/ollama/README.md) | Running Ollama as a supervised service, pulling the default models. |
 
-## 📄 License
+<p align="center"><img src="docs/assets/divider.svg" width="960" alt="" /></p>
+
+<a name="license"></a>
+## <img src="docs/assets/icon-license.svg" width="36" align="top" alt="" /> License
 
 [MIT](LICENSE) — AgenticOS Workbench contributors.
+
+<p align="center"><img src="docs/assets/made-with.svg" width="220" alt="Made with Claude Code" /></p>
