@@ -321,7 +321,7 @@ export class ChatTab {
     const list = this.liveTurn?.el?.timeline;
     if (!list) return;
     const el = list.createDiv({ cls: `aos-asst-timeline-row ${row.cls || ""}${row.isError ? " aos-text-rose" : ""}` });
-    el.createSpan({ cls: "aos-asst-timeline-time aos-dim", text: new Date(row.ts).toLocaleTimeString("en-US", { hour12: false, minute: "2-digit", second: "2-digit" }) });
+    el.createSpan({ cls: "aos-asst-timeline-time aos-dim", text: new Date(row.ts).toLocaleTimeString(undefined, { hour12: false, minute: "2-digit", second: "2-digit" }) });
     el.createSpan({ cls: "aos-asst-timeline-msg", text: row.msg });
   }
 

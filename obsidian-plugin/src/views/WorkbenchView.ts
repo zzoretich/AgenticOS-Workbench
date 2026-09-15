@@ -66,7 +66,7 @@ export class WorkbenchView extends ItemView {
     brand.createSpan({ text: "AGENTIC OS", cls: "aos-text-cyan" });
     brand.createSpan({ text: " WORKBENCH", cls: "aos-dim" });
     this.registerDomListenerClock(top.createSpan({ cls: "aos-wb-clock" }));
-    const omniBtn = top.createEl("button", { cls: "aos-wb-omnibtn", text: "⌘K", attr: { "aria-label": "Omnisearch" } });
+    const omniBtn = top.createEl("button", { cls: "aos-wb-omnibtn", text: "⌕", attr: { "aria-label": "Omnisearch" } });
     omniBtn.addEventListener("click", () => { void this.plugin.openOmni(); });
 
     // body: rail | content | drawer
@@ -86,7 +86,7 @@ export class WorkbenchView extends ItemView {
   }
 
   private registerDomListenerClock(el: HTMLElement): void {
-    const tick = () => { el.textContent = new Date().toLocaleTimeString("en-US", { hour12: false }); };
+    const tick = () => { el.textContent = new Date().toLocaleTimeString(undefined, { hour12: false }); };
     tick();
     this.clockTimer = window.setInterval(tick, 1000);
   }
