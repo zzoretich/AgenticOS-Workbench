@@ -48,7 +48,10 @@ export function chmodSpawnHelpers(pluginDir: string, d: Pick<InstallDeps, "readd
   for (const dir of dirs) {
     const helper = path.join(prebuilds, dir, "spawn-helper");
     if (!d.existsSync(helper)) continue;
-    try { d.chmodSync(helper, 0o755); out.push(helper); } catch { /* read-only checkout; the error panel will say so */ }
+    // On failure (e.g. a read-only checkout) the helper is skipped — absent from the
+    // returned list — and a warning is logged; nothing else surfaces the reason.
+    try { d.chmodSync(helper, 0o755); out.push(helper); }
+    catch (e) { console.warn("[agentic-os] chmod failed:", helper, e instanceof Error ? e.message : String(e)); }
   }
   return out;
 }
@@ -78,13 +81,18 @@ function runTool(o: { exe: string; pluginDir: string; nodeBin: string; args: str
 /** The message shown (as a Notice, and logged) when the plugin folder is not an `aos` bundle. */
 export const NO_PACKAGE_JSON = "no package.json here — install the bundle with `aos upgrade` first";
 
+/** An `aos init` / `aos upgrade` bundle carries package.json; a release-asset or BRAT install does not. */
+export function hasBundle(pluginDir: string, existsSync: (p: string) => boolean = fs.existsSync): boolean {
+  return existsSync(path.join(pluginDir, "package.json"));
+}
+
 export async function installTerminalSupport(
   o: { pluginDir: string; nodeBin: string; timeoutMs?: number },
   d: InstallDeps = DEFAULT_DEPS,
 ): Promise<InstallResult> {
   // Without package.json, `npm install` exits 0 having installed nothing and the caller would
   // report success on an unchanged folder (cli/aos.js:550 refuses the same way).
-  if (!d.existsSync(path.join(o.pluginDir, "package.json"))) {
+  if (!hasBundle(o.pluginDir, d.existsSync)) {
     return { ok: false, code: null, output: NO_PACKAGE_JSON, chmodded: [] };
   }
   const r = await runTool({ exe: npmSiblingOf(o.nodeBin), pluginDir: o.pluginDir, nodeBin: o.nodeBin, args: ["install", "--omit=dev", "--no-audit", "--no-fund"], timeoutMs: o.timeoutMs ?? 10 * 60_000 }, d);

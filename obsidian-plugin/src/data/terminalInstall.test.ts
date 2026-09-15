@@ -16,7 +16,7 @@ const PREBUILDS = `${PLUGIN}/node_modules/node-pty/prebuilds`;
 
 // `pkg` is whether <pluginDir>/package.json exists: true in an `aos init`/`aos upgrade`
 // bundle, false in a release-asset or BRAT install (three files only).
-function deps(children: ChildProcess[], tree: Record<string, string[]>, pkg = true) {
+function deps(children: ChildProcess[], tree: Record<string, string[]>, pkg = true, failChmodFor: string[] = []) {
   const calls: Array<{ file: string; args: string[]; cwd: string; path: string }> = [];
   const chmods: Array<[string, number]> = [];
   const d: InstallDeps = {
@@ -25,7 +25,10 @@ function deps(children: ChildProcess[], tree: Record<string, string[]>, pkg = tr
     existsSync: (p) => p === `${PLUGIN}/package.json`
       ? pkg
       : Object.values(tree).flat().length > 0 && /spawn-helper$/.test(p) && Object.keys(tree).some((k) => p.startsWith(k)),
-    chmodSync: (p, mode) => { chmods.push([p, mode]); },
+    chmodSync: (p, mode) => {
+      if (failChmodFor.some((bad) => p.includes(bad))) throw new Error("EACCES");
+      chmods.push([p, mode]);
+    },
   };
   return { d, calls, chmods };
 }
@@ -40,6 +43,21 @@ test("chmodSpawnHelpers makes every prebuilt spawn-helper executable", () => {
 test("chmodSpawnHelpers is a no-op when there are no prebuilds (Linux source build)", () => {
   const { d } = deps([], {});
   assert.deepEqual(chmodSpawnHelpers(PLUGIN, d), []);
+});
+
+test("chmodSpawnHelpers logs a warning and skips a helper whose chmod fails, without throwing", () => {
+  const { d, chmods } = deps([], { [PREBUILDS]: ["darwin-arm64", "darwin-x64"] }, true, ["darwin-arm64"]);
+  const warnings: unknown[][] = [];
+  const originalWarn = console.warn;
+  console.warn = (...args: unknown[]) => { warnings.push(args); };
+  try {
+    const done = chmodSpawnHelpers(PLUGIN, d);
+    assert.deepEqual(done, [`${PREBUILDS}/darwin-x64/spawn-helper`]);
+    assert.equal(chmods.length, 1);
+    assert.equal(warnings.length, 1);
+  } finally {
+    console.warn = originalWarn;
+  }
 });
 
 test("installTerminalSupport runs npm (node's sibling) in the plugin dir with node on PATH, then chmods", async () => {
