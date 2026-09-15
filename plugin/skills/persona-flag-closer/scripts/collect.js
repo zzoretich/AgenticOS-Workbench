@@ -7,8 +7,14 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 
-const DEFAULT_ROOT = path.join(os.homedir(), '.claude');
-const DEFAULT_LOG_DIR = process.env.PFC_LOG_DIR || path.join(os.homedir(), 'Library/Logs');
+/** The vault: --root, else AOS_VAULT, else "vault" in <configDir>/agenticos.json (AOS_CONFIG overrides the path). */
+function defaultRoot() {
+  if (process.env.AOS_VAULT) return process.env.AOS_VAULT;
+  const cfg = process.env.AOS_CONFIG || path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'agenticos.json');
+  try { return JSON.parse(fs.readFileSync(cfg, 'utf8')).vault || null; } catch { return null; }
+}
+/** run-duty.sh writes duty-<name>-error.log here. */
+function defaultLogDir(root) { return process.env.PERSONA_LOG_DIR || path.join(root, 'persona', 'journal', 'logs'); }
 
 function stripAnsi(s) { return s.replace(/\x1b\[[0-9;]*m/g, ''); }
 
@@ -107,7 +113,7 @@ function collect(root, opts = {}) {
   const stateDir = opts.stateDir || path.join(root, 'persona/flag-closer');
   const proposals = collectProposals(root);
   const flags = collectFlags(root);
-  const logFindings = collectLogFindings(opts.logDir || DEFAULT_LOG_DIR, stateDir, !!opts.updateState);
+  const logFindings = collectLogFindings(opts.logDir || defaultLogDir(root), stateDir, !!opts.updateState);
   const hash = pendingHash(proposals, flags);
   const hashPath = path.join(stateDir, 'last-hash.txt');
   let prev = null;
@@ -123,7 +129,8 @@ function collect(root, opts = {}) {
 if (require.main === module) {
   const args = process.argv.slice(2);
   const rootIx = args.indexOf('--root');
-  const root = rootIx >= 0 ? args[rootIx + 1] : DEFAULT_ROOT;
+  const root = rootIx >= 0 ? args[rootIx + 1] : defaultRoot();
+  if (!root) { console.error('collect: no vault — pass --root <vault> or run `aos init`'); process.exit(2); }
   const out = collect(root, { updateState: args.includes('--update-state') });
   if (args.includes('--counts')) {
     const n = out.proposals.length + out.flags.length + out.logFindings.length;
@@ -132,4 +139,4 @@ if (require.main === module) {
     console.log(JSON.stringify(out, null, 2));
   }
 }
-module.exports = { collect, parseFrontmatter, parsePremiseTable, collectFlags, stripAnsi };
+module.exports = { collect, parseFrontmatter, parsePremiseTable, collectFlags, stripAnsi, defaultRoot, defaultLogDir };

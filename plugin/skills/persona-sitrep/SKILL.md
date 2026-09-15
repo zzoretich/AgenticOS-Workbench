@@ -1,0 +1,32 @@
+---
+name: persona-sitrep
+description: Morning work-state sitrep from your Chief of Staff agent — what moved across repos and planning phases, what's stalled, what's pending approval, with exactly ONE recommended action. Use when the user says "/sitrep", "sitrep", "what's next", "what should I work on", "work status", or "project status". Do NOT use for email or calendar, or for a quick Did/Doing/Blockers standup (/standup owns that).
+---
+
+# Persona Sitrep
+
+One page of internal work state, leading with ONE recommended action.
+
+**Boundary contract:** this skill owns internal work state only (git repos listed in `<vault>/persona/repos.json`, `.planning/` phases, persona flags and proposals, duty results, open daily-note threads). It never fetches mail, calendars, or any external data.
+
+Paths: the vault is the `vault` value in `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/agenticos.json`; `NODE` is its `node` value (or `node` on PATH). `STATE=<vault>/brain/scripts/persona/sitrep-state.js`. The `aos` launcher maps `sitrep-state` to that script and exports the vault for it, so when `command -v aos` succeeds, `aos sitrep-state diff` and `aos sitrep-state update` are the preferred forms; `$NODE $STATE diff|update` below is the equivalent fallback when the launcher is not on PATH.
+
+## Fresh-copy fast path
+1. If `<vault>/brain/_index/sitrep.md` exists and its mtime is less than 18 hours old, present it verbatim, then offer: "Say 'refresh sitrep' for a live rebuild."
+2. Otherwise — or whenever the user says "refresh sitrep" — run the Rebuild below.
+
+## Rebuild (interactive)
+1. Run `$NODE $STATE diff` and keep the JSON (`first_run`, `changed`, `changes`, `state`). With no `repos.json` the repo lane is empty; say so in one line and continue.
+2. If `<vault>/persona/duties/sitrep.md` exists, execute its **Gather**, **Synthesize**, and **Deliver** sections exactly, with two interactive overrides: SKIP any notification (the user is already looking at it) and SKIP the headless duty contract (journal / STATE.md — a duty never commits). End with `$NODE $STATE update` so the next scheduled run does not re-alert on state the user has already seen.
+3. If the duty file does not exist (persona not set up yet — offer `aos persona`), synthesize directly from the step-1 JSON plus a Read of `<vault>/persona/STATE.md` (if present) and today's + yesterday's daily notes (layout `dailyNote.layout` in `<vault>/brain/config.json`, default `{yyyy}/{yyyy}-{MM}-{MMMM}/{yyyy}-{MM}-{dd}.md`), in the Output shape below; write `<vault>/brain/_index/sitrep.md`, append the sitrep to today's daily note, then run `$NODE $STATE update`.
+
+## Output shape (both paths)
+```
+# Sitrep — <YYYY-MM-DD from `date +%Y-%m-%d`, never guessed>
+**Recommended action:** <ONE imperative line>
+## Moved (24h)
+## Stalled / blocked
+## Pending your call
+## Open threads
+```
+A stalled phase or FAILED duty outranks new work when choosing the recommended action.
