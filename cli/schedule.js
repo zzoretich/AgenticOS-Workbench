@@ -60,8 +60,24 @@ function stripAgenticosCron(text) {
   return String(text || '').split('\n').filter(l => !CRON_LINE_RE.test(l)).join('\n').replace(/\n+$/, '');   // execution amendment 2026-09-15 (A30)
 }
 
+// execution amendment 2026-09-15 (A56): a failed `crontab -l` is NOT the same as "no crontab" — only ENOENT
+// (no crontab binary at all) or an explicit "no crontab for <user>" stderr means genuinely empty; any other
+// failure (spool lock contention, a permission error) means the read is unreliable and the crontab must be
+// left untouched rather than treated as empty and overwritten by the next `crontab -`.
+function readCrontabResult(exec) {
+  try {
+    const text = exec('crontab', ['-l'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }) || '';
+    return { text, unreadable: false };
+  } catch (e) {
+    const message = e && (e.stderr || e.message) ? String(e.stderr || e.message).trim() : String(e);
+    if (e && e.code === 'ENOENT') return { text: '', unreadable: false };   // no cron here: nothing to merge, nothing to write
+    if (/no crontab/i.test(message)) return { text: '', unreadable: false };   // genuinely empty crontab
+    return { text: '', unreadable: true, message };
+  }
+}
 function readCrontabWith(exec) {
-  try { return exec('crontab', ['-l'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }) || ''; } catch { return ''; }
+  const r = readCrontabResult(exec);
+  return r.unreadable ? null : r.text;   // null: "unreadable" — distinct from '' ("genuinely empty")
 }
 function writeCrontabWith(exec, text) {
   exec('crontab', ['-'], { input: text.endsWith('\n') ? text : `${text}\n`, stdio: ['pipe', 'ignore', 'ignore'] });
@@ -85,17 +101,39 @@ function installSchedules({ platform = process.platform, vars, templatesDir = TE
     return { platform, written, labels: DUTIES.map(launchdLabel), warnings };
   }
   if (platform === 'linux') {
-    const read = readCrontab || (() => readCrontabWith(exec));
+    const warnings = [];
+    let current;
+    if (readCrontab) {
+      current = readCrontab();
+    } else {
+      // execution amendment 2026-09-15 (A56): an injected readCrontab always returns a string (tests' fakes never
+      // signal "unreadable"); only the default seam, going through the real crontab binary via exec, can be unreadable.
+      const r = readCrontabResult(exec);
+      if (r.unreadable) {
+        const m = `crontab -l failed (${r.message}) — crontab left untouched; install the duty lines by hand`;
+        warnings.push(m); warn(m);
+        return { platform, written: [], labels: [], warnings };
+      }
+      current = r.text;
+    }
     const write = writeCrontab || ((t) => writeCrontabWith(exec, t));
-    const kept = stripAgenticosCron(read());
-    write(`${kept ? `${kept}\n` : ''}${renderCron(vars, templatesDir).trim()}\n`);
-    return { platform, written: ['crontab'], labels: DUTIES.map(d => `${CRON_TAG}${d}`), warnings: [] };
+    const kept = stripAgenticosCron(current);
+    // execution amendment 2026-09-15 (A57): a failing `crontab -` is reported, never thrown — it must not abort
+    // `aos init` step 8 (darwin's launchctl load failure is already handled the same way, above).
+    try {
+      write(`${kept ? `${kept}\n` : ''}${renderCron(vars, templatesDir).trim()}\n`);
+    } catch (e) {
+      const m = `crontab - failed (${e && e.message ? e.message : e})`;
+      warnings.push(m); warn(m);
+      return { platform, written: [], labels: [], warnings };
+    }
+    return { platform, written: ['crontab'], labels: DUTIES.map(d => `${CRON_TAG}${d}`), warnings };
   }
   return { platform, written: [], labels: [], unsupported: true, warnings: [] };
 }
 
-function removeSchedules({ platform = process.platform, launchAgentsDir = defaultLaunchAgentsDir(), exec = execFileSync, readCrontab, writeCrontab } = {}) {
-  const removed = [];
+function removeSchedules({ platform = process.platform, launchAgentsDir = defaultLaunchAgentsDir(), exec = execFileSync, readCrontab, writeCrontab, warn = defaultWarn } = {}) {
+  const removed = []; const warnings = [];
   // The three duty plists go on every platform (Plan 3's uninstall test seeds them under $HOME on
   // ubuntu too; a stray plist on Linux is harmless to delete). Only launchctl is darwin-specific.
   // Anything else in launchAgentsDir — com.agenticos.ollama included — is never matched.
@@ -107,12 +145,29 @@ function removeSchedules({ platform = process.platform, launchAgentsDir = defaul
     removed.push(file);
   }
   if (platform === 'linux') {
-    const read = readCrontab || (() => readCrontabWith(exec));
-    const write = writeCrontab || ((t) => writeCrontabWith(exec, t));
-    const cur = read();
-    if (CRON_LINE_RE.test(cur)) { write(`${stripAgenticosCron(cur)}\n`); removed.push('crontab'); }   // execution amendment 2026-09-15 (A30)
+    let current;
+    if (readCrontab) {
+      current = readCrontab();
+    } else {
+      // execution amendment 2026-09-15 (A56): same unreadable-vs-empty distinction as installSchedules — a
+      // teardown must finish, so an unreadable crontab is left alone rather than guessed at.
+      const r = readCrontabResult(exec);
+      if (r.unreadable) {
+        const m = `crontab -l failed (${r.message}) — crontab left untouched`;
+        warnings.push(m); warn(m);
+        return { platform, removed, warnings };
+      }
+      current = r.text;
+    }
+    if (CRON_LINE_RE.test(current)) {   // execution amendment 2026-09-15 (A30)
+      const write = writeCrontab || ((t) => writeCrontabWith(exec, t));
+      // execution amendment 2026-09-15 (A57): a failing `crontab -` is reported, never thrown — `aos uninstall`
+      // must finish its teardown even when the crontab write fails.
+      try { write(`${stripAgenticosCron(current)}\n`); removed.push('crontab'); }
+      catch (e) { const m = `crontab - failed (${e && e.message ? e.message : e})`; warnings.push(m); warn(m); }
+    }
   }
-  return { platform, removed };
+  return { platform, removed, warnings };
 }
 
 function isInstalled({ platform = process.platform, launchAgentsDir = defaultLaunchAgentsDir(), exec = execFileSync, readCrontab } = {}) {

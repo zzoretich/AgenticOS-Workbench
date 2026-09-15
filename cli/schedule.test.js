@@ -78,6 +78,57 @@ test('installSchedules on linux merges into the existing crontab without duplica
   assert.equal(S.isInstalled({ platform: 'linux', ...io }), true);
   S.removeSchedules({ platform: 'linux', ...io });
   assert.equal(crontab.trim(), '0 1 * * * echo keep-me');
+
+  // execution amendment 2026-09-15 (A56): a failed `crontab -l` (not "no crontab") must never be treated as
+  // empty — no readCrontab/writeCrontab injected here, so the real readCrontabWith/writeCrontabWith seams run
+  // through this fake exec.
+  {
+    const calls = [];
+    const exec = (cmd, args) => {
+      calls.push([cmd, ...args]);
+      if (args[0] === '-l') throw Object.assign(new Error('crontab: permission denied'), { stderr: 'crontab: permission denied', status: 1 });
+      return '';
+    };
+    const warnings = [];
+    const vars2 = { ...VARS, LOG_DIR: fs.mkdtempSync(path.join(os.tmpdir(), 'cron-logs-')) };
+    const r = S.installSchedules({ platform: 'linux', vars: vars2, launchAgentsDir: fs.mkdtempSync(path.join(os.tmpdir(), 'la-lin-')), exec, warn: (m) => warnings.push(m) });
+    assert.ok(!calls.some(c => c[1] === '-'), 'no crontab - call recorded');
+    assert.equal(r.warnings.length, 1);
+    assert.match(r.warnings[0], /crontab -l failed/);
+    assert.deepEqual(r.warnings, warnings);
+    assert.equal(r.written.length, 0, 'no cron entry written');
+  }
+
+  // A genuine "no crontab for <user>" IS empty — the three duty lines are written.
+  {
+    let writeInput = null;
+    const exec = (cmd, args, opts) => {
+      if (args[0] === '-l') throw Object.assign(new Error('no crontab for atlas'), { stderr: 'no crontab for atlas', status: 1 });
+      if (args[0] === '-') { writeInput = opts && opts.input; }
+      return '';
+    };
+    const vars3 = { ...VARS, LOG_DIR: fs.mkdtempSync(path.join(os.tmpdir(), 'cron-logs-')) };
+    const r = S.installSchedules({ platform: 'linux', vars: vars3, launchAgentsDir: fs.mkdtempSync(path.join(os.tmpdir(), 'la-lin-')), exec });
+    assert.equal(r.warnings.length, 0);
+    assert.equal(r.written.length, 1);
+    const writtenLines = writeInput.trim().split('\n');
+    assert.equal(writtenLines.length, 3);
+    for (const duty of S.DUTIES) assert.ok(writtenLines.some(l => l.endsWith(`${S.CRON_TAG}${duty}`)), duty);
+  }
+
+  // execution amendment 2026-09-15 (A57): a failing `crontab -` on removeSchedules is reported, never thrown —
+  // `aos uninstall` must finish its teardown.
+  {
+    const existingCrontab = `0 9 * * * echo mine\n${S.renderCron(VARS).trim()}\n`;
+    const exec = (cmd, args) => {
+      if (args[0] === '-l') return existingCrontab;
+      if (args[0] === '-') throw Object.assign(new Error('crontab: /var/spool/cron: Permission denied'), { status: 1 });
+      return '';
+    };
+    const rm = S.removeSchedules({ platform: 'linux', launchAgentsDir: fs.mkdtempSync(path.join(os.tmpdir(), 'la-lin-')), exec });
+    assert.equal(rm.warnings.length, 1);
+    assert.match(rm.warnings[0], /crontab - failed/);
+  }
 });
 
 test('unsupported platforms install nothing and say so', () => {
