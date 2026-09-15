@@ -4,3 +4,4 @@ node_modules/
 obsidian-plugin/main.js
 obsidian-plugin/data.json
 extras/cost/data/
+__pycache__/

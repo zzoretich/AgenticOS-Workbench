@@ -1,6 +1,6 @@
 ---
 name: persona-sitrep
-description: Morning work-state sitrep from your Chief of Staff agent — what moved across repos and planning phases, what's stalled, what's pending approval, with exactly ONE recommended action. Use when the user says "/sitrep", "sitrep", "what's next", "what should I work on", "work status", or "project status". Do NOT use for email or calendar, or for a quick Did/Doing/Blockers standup (/standup owns that).
+description: Morning work-state sitrep from your Chief of Staff agent — what moved across repos and planning phases, what's stalled, what's pending approval, with exactly ONE recommended action. Use when the user says "sitrep", "/agenticos:persona-sitrep", "what's next", "what should I work on", "work status", or "project status". Do NOT use for email or calendar, or for a quick Did/Doing/Blockers standup (/standup owns that).
 ---
 
 # Persona Sitrep
