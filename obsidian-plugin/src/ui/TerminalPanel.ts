@@ -182,7 +182,7 @@ export class TerminalPanel {
     wrap.createDiv({ cls: "aos-dim aos-term-error-msg", text: msg });
     wrap.createDiv({
       cls: "aos-dim aos-term-error-hint",
-      text: "The embedded terminal needs node-pty installed in the plugin folder (it is not part of the plugin bundle). macOS and Windows use the shipped prebuilds; Linux builds from source (needs python3, make, g++). If the module loads but reports an ABI mismatch, rebuild it for this Obsidian's Electron.",
+      text: "The embedded terminal needs node-pty installed in the plugin folder (it is not part of the plugin bundle). macOS uses the shipped prebuilds; Linux builds from source (needs python3, make, g++); Windows is not supported in v1. If the module loads but reports an ABI mismatch, rebuild it for this Obsidian's Electron.",
     });
     const actions = wrap.createDiv({ cls: "aos-term-error-actions" });
     const install = actions.createEl("button", { cls: "aos-term-btn", text: "Install terminal support" });

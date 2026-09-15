@@ -19,7 +19,7 @@ import { COMMAND_REGISTRY, executeCommand, setSpawnContext } from "./src/data/co
 import { resolveNodeBinary } from "./src/data/nodeResolver";
 import { readAgenticosJson, readVaultConfig, readProviderState, claudeConfigDir as defaultClaudeConfigDir } from "./src/data/aosConfig";
 import { resolveClaudeBin } from "./src/data/claudeAsk";
-import { installTerminalSupport, rebuildPty, electronVersion, NO_PACKAGE_JSON } from "./src/data/terminalInstall";
+import { installTerminalSupport, rebuildPty, electronVersion, hasBundle, NO_PACKAGE_JSON } from "./src/data/terminalInstall";
 import { seedToggleDefaults } from "./src/settingsDefaults";
 import { loadAllMaps } from "./src/data/workspaceMaps";
 import { listMemories } from "./src/data/memories";
@@ -50,6 +50,7 @@ export default class AgenticOSPlugin extends Plugin {
   liveRuns: LiveRunsWatcher | null = null;
   bus: Events = new Events();    // intra-plugin event bus for live-run fan-out
   terminalPool!: TerminalPool;
+  private terminalWorkBusy = false;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -241,30 +242,42 @@ export default class AgenticOSPlugin extends Plugin {
 
   /** "Install terminal support": npm install --omit=dev in the plugin dir + chmod of node-pty's prebuilt spawn-helper. */
   async installTerminalSupport(): Promise<void> {
+    if (this.terminalWorkBusy) { new Notice("Terminal support: an install or rebuild is already running — wait for it to finish"); return; }
     const dir = this.pluginDir();
     // A release-asset / BRAT install has only main.js, manifest.json and styles.css; `npm
     // install` there would exit 0 having done nothing. `aos init` / `aos upgrade` also write
     // package.json, which is the precondition cli/aos.js:550 checks (Ruling A13).
-    if (!fs.existsSync(path.join(dir, "package.json"))) {
+    if (!hasBundle(dir)) {
       new Notice(`Terminal support needs the aos bundle: ${NO_PACKAGE_JSON}`, 10000);
       return;
     }
-    new Notice("Installing terminal support (npm install --omit=dev)…");
-    const r = await installTerminalSupport({ pluginDir: dir, nodeBin: this.nodeBin() });
-    console.log("[agentic-os] terminal install:", r.output.slice(-2000));
-    new Notice(r.ok
-      ? `Terminal support installed (${r.chmodded.length} spawn-helper(s) made executable). Reload Obsidian to enable the Term tab.`
-      : `Terminal install failed (exit ${r.code}): ${r.output.trim().split("\n").pop() ?? ""} — see the console`, 8000);
+    this.terminalWorkBusy = true;
+    try {
+      new Notice("Installing terminal support (npm install --omit=dev)…");
+      const r = await installTerminalSupport({ pluginDir: dir, nodeBin: this.nodeBin() });
+      console.log("[agentic-os] terminal install:", r.output.slice(-2000));
+      new Notice(r.ok
+        ? `Terminal support installed (${r.chmodded.length} spawn-helper(s) made executable). Reload Obsidian to enable the Term tab.`
+        : `Terminal install failed (exit ${r.code}): ${r.output.trim().split("\n").pop() ?? ""} — see the console`, 8000);
+    } finally {
+      this.terminalWorkBusy = false;
+    }
   }
 
   /** "Rebuild for this Electron": npx @electron/rebuild -v <process.versions.electron> … */
   async rebuildTerminalSupport(): Promise<void> {
+    if (this.terminalWorkBusy) { new Notice("Terminal support: an install or rebuild is already running — wait for it to finish"); return; }
     const electron = electronVersion();
     if (!electron) { new Notice("Electron version unavailable — run `npx @electron/rebuild -v <version> -m . -w node-pty` in the plugin folder"); return; }
-    new Notice(`Rebuilding node-pty for Electron ${electron}…`);
-    const r = await rebuildPty({ pluginDir: this.pluginDir(), nodeBin: this.nodeBin(), electron });
-    console.log("[agentic-os] rebuild-pty:", r.output.slice(-2000));
-    new Notice(r.ok ? "node-pty rebuilt. Reload Obsidian to enable the Term tab." : `Rebuild failed (exit ${r.code}) — see the console`, 8000);
+    this.terminalWorkBusy = true;
+    try {
+      new Notice(`Rebuilding node-pty for Electron ${electron}…`);
+      const r = await rebuildPty({ pluginDir: this.pluginDir(), nodeBin: this.nodeBin(), electron });
+      console.log("[agentic-os] rebuild-pty:", r.output.slice(-2000));
+      new Notice(r.ok ? "node-pty rebuilt. Reload Obsidian to enable the Term tab." : `Rebuild failed (exit ${r.code}) — see the console`, 8000);
+    } finally {
+      this.terminalWorkBusy = false;
+    }
   }
 
   // ── activate any view by type ────────────────────────────────────────
