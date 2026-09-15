@@ -57,7 +57,7 @@ export class LiveRunsWatcher {
   }
 
   start(): void {
-    if (this.opts.createDirs) {
+    if (this.opts.createDirs && fs.existsSync(this.opts.vault)) {
       try { fs.mkdirSync(this.liveDir, { recursive: true }); } catch { /* best-effort */ }
       if (!fs.existsSync(this.summaryLog)) {
         try { fs.writeFileSync(this.summaryLog, ""); } catch { /* best-effort */ }

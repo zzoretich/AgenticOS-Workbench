@@ -104,6 +104,11 @@ export async function rebuildPty(
   o: { pluginDir: string; nodeBin: string; electron: string; timeoutMs?: number },
   d: InstallDeps = DEFAULT_DEPS,
 ): Promise<InstallResult> {
+  // Same precondition as installTerminalSupport(): a release-asset / BRAT install has only
+  // the three bundle files, so there is no node-pty to rebuild.
+  if (!hasBundle(o.pluginDir, d.existsSync)) {
+    return { ok: false, code: null, output: NO_PACKAGE_JSON, chmodded: [] };
+  }
   // @electron/rebuild through npx, not `npm run rebuild-pty`: scripts/rebuild-pty.mjs is not
   // part of the installed bundle (cli/aos.js:329 BUNDLE_FILES, release.yml assets).
   const r = await runTool({ exe: npxSiblingOf(o.nodeBin), pluginDir: o.pluginDir, nodeBin: o.nodeBin, args: ["--yes", "@electron/rebuild", "-v", o.electron, "-m", o.pluginDir, "-w", "node-pty"], timeoutMs: o.timeoutMs ?? 15 * 60_000 }, d);
