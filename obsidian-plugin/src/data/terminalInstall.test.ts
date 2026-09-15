@@ -95,6 +95,19 @@ test("installTerminalSupport refuses a folder with no package.json instead of re
   assert.equal(chmods.length, 0);
 });
 
+test("rebuildPty refuses a folder with no package.json instead of spawning npx", async () => {
+  // Mirrors the installTerminalSupport no-bundle test above: a release-asset / BRAT install
+  // has only main.js, manifest.json and styles.css, so there is nothing for
+  // @electron/rebuild to rebuild against.
+  const { d, calls, chmods } = deps([], {}, false);
+  const r = await rebuildPty({ pluginDir: PLUGIN, nodeBin: "/usr/bin/node", electron: "43.1.1" }, d);
+  assert.equal(r.ok, false);
+  assert.equal(r.code, null);
+  assert.match(r.output, /no package\.json/);
+  assert.equal(calls.length, 0, "npx is never spawned");
+  assert.equal(chmods.length, 0);
+});
+
 test("rebuildPty calls @electron/rebuild through npx with the runtime electron version", async () => {
   // NOT `npm run rebuild-pty`: scripts/ is not in cli/aos.js BUNDLE_FILES nor in release.yml's
   // assets, so the script never reaches an installed plugin folder (Ruling A13).
