@@ -238,12 +238,14 @@ test('init into a temp vault: seed set, vendored runtime, agenticos.json, plugin
   assert.equal(readJson(cfgPath).provider, 'ollama');
 });
 
-test('init --cost warns and leaves cost disabled while the analyzer is not shipped', () => {
+// execution amendment 2026-09-15 (A2): extras/cost/analyze_transcript.py ships from Plan 5 Task 1 on, so --cost
+// takes the python3 >= 3.9 preflight (cli/aos.js:646) and enables cost. python3 is on PATH here and on both CI images.
+test('init --cost enables cost once the analyzer is shipped (python3 >= 3.9)', () => {
   const sb = sandbox();
   const r = aos(sb, ['init', '--vault', sb.vault, '--no-obsidian', '--provider', 'none', '--cost', '--yes']);
   assert.equal(r.status, 0, r.stderr + r.stdout);
-  assert.match(r.stderr, /not shipped in this phase/);
-  assert.equal(readJson(path.join(sb.cfg, 'agenticos.json')).cost.enabled, false);
+  assert.ok(!/not shipped in this phase/.test(r.stderr), 'the analyzer is shipped: no warning');
+  assert.equal(readJson(path.join(sb.cfg, 'agenticos.json')).cost.enabled, true);
 });
 
 test('init with --from-local uses the local path as the marketplace source', () => {
