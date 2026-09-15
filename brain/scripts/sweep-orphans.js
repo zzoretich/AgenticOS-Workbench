@@ -11,7 +11,9 @@
  *   3. Non-empty dirs are removed ONLY when every file is known-transient runtime
  *      residue (per transientResiduePatterns) — e.g. "sessionstart-hook-8.sh"
  *      env-export snippets. Any unrecognized file makes the dir skipped, untouched.
- *   4. Skips any UUID that has a matching <uuid>.jsonl anywhere under <claudeConfigDir>/projects/.
+ *   4. Skips any UUID that has a matching <uuid>.jsonl under any project dir in <claudeConfigDir>/projects/ (no
+ *      cwd-slug filter). If projects/ cannot be read, the allow-list is unknown: nothing is swept and the result
+ *      carries reason 'projects-unreadable:<code>'.
  *   5. Skips any UUID whose dir is younger than orphanUuidMinAgeMinutes.
  *
  * Gated by scanner-config.json: `autoSweepOrphans: true`.
@@ -19,7 +21,7 @@
  *   - transientResiduePatterns (default ['-hook-\\d+\\.(sh|ps1|bat|cmd)$']):
  *     regex sources; a non-empty orphan is swept only if EVERY file matches one.
  *
- * Returns: { enabled, swept: { sessionEnv, fileHistory },
+ * Returns: { enabled, reason?, swept: { sessionEnv, fileHistory },
  *            transientSwept: { sessionEnv, fileHistory },
  *            skipped: { nonEmpty, hasJsonl, tooYoung, error } }
  */
@@ -29,9 +31,6 @@ const path = require('path');
 const { VAULT, PATHS, safeStat, listDir, readJson } = require('./collectors/util');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const WIN_CWD_RE = /^[A-Z]--/;
-const NIX_CWD_RE = /^-(Users|home|var|tmp|opt|etc|root|mnt)-/;
-const RUNTIME_CWD_RE = new RegExp(`${WIN_CWD_RE.source}|${NIX_CWD_RE.source}`);
 
 const SWEEP_TARGETS = [
   { key: 'sessionEnv', dir: 'session-env' },
@@ -116,10 +115,21 @@ function sweepOrphans(opts = {}) {
   const minAgeMs = (cfg.orphanUuidMinAgeMinutes ?? 60) * 60 * 1000;
   const projectsDir = path.join(configDir, 'projects');
 
-  // Build set of UUIDs that have a JSONL under any runtime-cwd project.
+  // The allow-list (rule 4): every UUID that has a <uuid>.jsonl under ANY project dir — no cwd-slug filter, because an
+  // allow-list smaller than reality lets a live session's side-folders look orphaned (a devcontainer cwd like
+  // /workspaces/app has no /Users or /home prefix). If projects/ cannot be read at all (missing, EACCES, an unmounted
+  // volume) the allow-list is unknown rather than empty: fail closed and sweep nothing. listDir() would have returned
+  // [] for both cases and let the sweep run with no protection.
+  let projectNames;
+  try {
+    projectNames = fs.readdirSync(projectsDir);
+  } catch (e) {
+    result.reason = `projects-unreadable:${(e && e.code) || 'error'}`;
+    result.skipped.error++;
+    return result;
+  }
   const jsonlUuids = new Set();
-  for (const name of listDir(projectsDir)) {
-    if (!RUNTIME_CWD_RE.test(name)) continue;
+  for (const name of projectNames) {
     const dir = path.join(projectsDir, name);
     for (const fn of listDir(dir)) {
       if (!fn.endsWith('.jsonl')) continue;

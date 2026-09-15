@@ -16,8 +16,12 @@ fs.writeFileSync(path.join(TMP, 'brain', '_index', 'SESSION.md'), '---\ntype: se
 const SERVER = path.join(__dirname, '..', 'sdk', 'mcp-server.js');
 
 async function withClient(fn, extraEnv) {
+  const headless = extraEnv && extraEnv.AOS_HEADLESS;
   const transport = new StdioClientTransport({
-    command: process.execPath, args: [SERVER],
+    command: process.execPath,
+    // The child sets AOS_HEADLESS itself: test/setup.js is preloaded in the child too (inherited NODE_OPTIONS)
+    // and deletes an inherited AOS_HEADLESS, so passing it through env would never reach the server.
+    args: headless ? ['-e', `process.env.AOS_HEADLESS='1'; require(${JSON.stringify(SERVER)})`] : [SERVER],
     env: { ...process.env, AOS_VAULT: TMP, AOS_CONFIG: path.join(TMP, 'none.json'), ...extraEnv },
   });
   const client = new Client({ name: 'wrap-session-test', version: '0.0.0' });

@@ -41,3 +41,40 @@ test('sweepOrphans is inert unless scanner-config.json enables it', () => {
   assert.equal(r.enabled, false);
   assert.ok(fs.existsSync(path.join(cfg, 'session-env', ORPHAN)));
 });
+
+test('sweepOrphans fails closed when <claudeConfigDir>/projects cannot be read', () => {
+  const vault = fs.mkdtempSync(path.join(os.tmpdir(), 'so-vault-noproj-'));
+  const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'so-cfg-noproj-'));
+  fs.mkdirSync(path.join(vault, 'brain', '_index'), { recursive: true });
+  fs.writeFileSync(path.join(vault, 'brain', '_index', 'scanner-config.json'), JSON.stringify({ autoSweepOrphans: true, orphanUuidMinAgeMinutes: -1 }));
+  fs.mkdirSync(path.join(cfg, 'session-env', ORPHAN), { recursive: true }); // and no projects/ directory at all
+  const r = sweepOrphans({ vault, claudeConfigDir: cfg });
+  assert.equal(r.enabled, true);
+  assert.equal(r.reason, 'projects-unreadable:ENOENT');
+  assert.equal(r.skipped.error, 1);
+  assert.deepEqual(r.swept.sessionEnv, []);
+  assert.ok(fs.existsSync(path.join(cfg, 'session-env', ORPHAN)), 'nothing is swept while the allow-list is unknown');
+});
+
+test('sweepOrphans protects a UUID whose transcript lives under a project dir with an unusual cwd slug', () => {
+  const vault = fs.mkdtempSync(path.join(os.tmpdir(), 'so-vault-slug-'));
+  const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'so-cfg-slug-'));
+  fs.mkdirSync(path.join(vault, 'brain', '_index'), { recursive: true });
+  fs.writeFileSync(path.join(vault, 'brain', '_index', 'scanner-config.json'), JSON.stringify({ autoSweepOrphans: true, orphanUuidMinAgeMinutes: -1 }));
+  fs.mkdirSync(path.join(cfg, 'session-env', LIVE), { recursive: true });
+  fs.mkdirSync(path.join(cfg, 'projects', '-workspaces-app'), { recursive: true }); // a devcontainer cwd: no /Users or /home prefix
+  fs.writeFileSync(path.join(cfg, 'projects', '-workspaces-app', `${LIVE}.jsonl`), '{}\n');
+  const r = sweepOrphans({ vault, claudeConfigDir: cfg });
+  assert.equal(r.reason, undefined);
+  assert.equal(r.skipped.hasJsonl, 1);
+  assert.deepEqual(r.swept.sessionEnv, []);
+  assert.ok(fs.existsSync(path.join(cfg, 'session-env', LIVE)));
+});
+
+test('the test harness pins CLAUDE_CONFIG_DIR away from the real ~/.claude, and a no-argument sweep is inert', () => {
+  const { PATHS } = require('../lib/paths.js');
+  assert.notEqual(path.resolve(PATHS.CLAUDE_CONFIG_DIR), path.resolve(os.homedir(), '.claude'));
+  assert.equal(PATHS.CLAUDE_CONFIG_DIR, path.resolve(process.env.CLAUDE_CONFIG_DIR));
+  const r = sweepOrphans(); // the shared test vault carries no scanner-config.json → enabled: false before any read or removal
+  assert.equal(r.enabled, false);
+});
