@@ -181,3 +181,22 @@ test('resolveClaudeBin: PATH lookup first, then candidates, else null', () => {
   assert.equal(cli.resolveClaudeBin({ lookup: () => null, candidates: [path.join(TMP, 'missing'), exe] }), exe);
   assert.equal(cli.resolveClaudeBin({ lookup: () => null, candidates: [path.join(TMP, 'missing')] }), null);
 });
+
+test('resolveClaudeBin: agenticos.json claude.bin wins while it is an executable file, else the probe order (contract §2)', () => {
+  const exe = path.join(TMP, 'recorded-claude');
+  fs.writeFileSync(exe, '#!/bin/sh\necho hi\n', { mode: 0o755 });
+  assert.equal(cli.resolveClaudeBin({ recorded: exe, lookup: () => '/from/path/claude' }), exe);
+  assert.equal(cli.resolveClaudeBin({ recorded: path.join(TMP, 'gone'), lookup: () => '/from/path/claude' }), '/from/path/claude', 'a recorded path that is gone falls through');
+  fs.mkdirSync(path.join(TMP, 'a-dir'));
+  assert.equal(cli.resolveClaudeBin({ recorded: path.join(TMP, 'a-dir'), lookup: () => null, candidates: [] }), null, 'a directory is not a CLI');
+  // Default: the key is read through loadConfig(), where agenticos.json merges last (AOS_CONFIG names that file here).
+  const cfgFile = path.join(TMP, 'agenticos.json');
+  const saved = process.env.AOS_CONFIG;
+  process.env.AOS_CONFIG = cfgFile;
+  try {
+    fs.writeFileSync(cfgFile, JSON.stringify({ claude: { bin: exe } }));
+    assert.equal(cli.resolveClaudeBin({ lookup: () => '/from/path/claude' }), exe);
+    fs.writeFileSync(cfgFile, JSON.stringify({ claude: { model: 'haiku' } }));
+    assert.equal(cli.resolveClaudeBin({ lookup: () => '/from/path/claude' }), '/from/path/claude', 'configs written before Plan 4 lack the key');
+  } finally { process.env.AOS_CONFIG = saved; }
+});
