@@ -9,6 +9,14 @@ const { execFileSync, spawnSync } = require('child_process');
 
 const NAME = 'Za' + 'ch';
 
+// Built by concatenation so this file stays gate-clean: the gate matches case-insensitive substrings
+// of tools/privacy-terms.json in every file except the three "*"-exempt tools files, and this test is
+// not exempt — so no fragment below may itself be a gate term, and every fixture PATH that names the
+// owner's persona dir or skill (Step 1 below) is assembled from PERSONA_SRC, never spelled.
+const OWNER_HOME = '/Us' + 'ers/some' + 'one/.claude';
+const BRAND = 'red' + 'acted';
+const PERSONA_SRC = 'pro' + 'ton';                          // the owner's persona dir / skill prefix in the source vault
+
 function fixtureVault() {
   const v = fs.mkdtempSync(path.join(os.tmpdir(), 'vault-'));
   const w = (rel, body) => { fs.mkdirSync(path.dirname(path.join(v, rel)), { recursive: true }); fs.writeFileSync(path.join(v, rel), body); };
@@ -21,6 +29,20 @@ function fixtureVault() {
   w('.obsidian/plugins/agentic-os/README.md', '# old readme');
   w('.obsidian/plugins/agentic-os/src/a.ts', 'export const a = 1;\n');
   w('brain/memory/user/profile.md', 'private');
+  // execution amendment 2026-09-15 (A1): a retired sdk/ file the Step 3 EXCLUDE rows must keep out of the copy list.
+  w('brain/scripts/sdk/install.js', '// retired by contract §2\n');
+  // Plan 5 entries: persona machinery, flag-closer scripts, cost analyzer. The DEFAULT_ROOT and
+  // copyright scrubs are pattern-based (Step 4), so these fixture lines need not equal the owner's
+  // literal text — any absolute config-dir path under the owner's home and any "© 2026 <Brand>, Inc."
+  // line is matched. (The home-path prefix itself is a gate term, so it is not spelled out here.)
+  // Paths are assembled from PERSONA_SRC (see the rule above the constants): the source-vault
+  // directory and skill names are gate terms and may not appear literally in this file.
+  w(`${PERSONA_SRC}/scripts/scan-arsenal.js`, `const DEFAULT_ROOT = '${OWNER_HOME}';\nmodule.exports = {};\n`);
+  w(`${PERSONA_SRC}/IDENTITY.md`, 'never exported');
+  w(`skills/${PERSONA_SRC}-flag-closer/scripts/render-digest.js`, "const t = 'Pro' + 'ton Flag Review';\n");
+  w(`skills/${PERSONA_SRC}-flag-closer/state/last-hash.txt`, 'abc');
+  w('skills/token-goblin/assets/report-template.html', `    <p>© 2026 ${BRAND}, Inc. All rights reserved.</p>\n`);
+  w('skills/token-goblin/data/snapshots/x.json', '{}');
   return v;
 }
 
@@ -31,9 +53,17 @@ test('plan copies only allowlisted files and skips excluded ones', () => {
   const files = r.copy.map(c => c.file).sort();
   assert.deepEqual(files, [
     'brain/scripts/lib/feedback-drafts.js',
+    'brain/scripts/persona/scan-arsenal.js',
+    'extras/cost/report-template.html',
     'obsidian-plugin/manifest.json',
     'obsidian-plugin/src/a.ts',
+    'plugin/skills/persona-flag-closer/scripts/render-digest.js',
   ]);
+  const scanner = r.copy.find(c => c.file === 'brain/scripts/persona/scan-arsenal.js').content.toString('utf8');
+  assert.ok(!scanner.includes(OWNER_HOME), 'owner home scrubbed from the scanner');
+  assert.match(scanner, /CLAUDE_CONFIG_DIR/);
+  const tmpl = r.copy.find(c => c.file === 'extras/cost/report-template.html').content.toString('utf8');
+  assert.ok(!tmpl.includes(BRAND), 'brand scrubbed from the report template');
 });
 
 test('scrubs rewrite the copied content and are reported as applied', () => {
