@@ -116,16 +116,17 @@ export default class AgenticOSPlugin extends Plugin {
     this.app.workspace.onLayoutReady(async () => {
       if (this.settings.autoOpenSidebarOnStart) await this.activate(VIEW_TYPE_SIDEBAR_HUD, "right");
       this.refreshStatusBar();
-      // Sweep crashed runs BEFORE the watcher starts so it doesn't latch onto dead ndjson files.
-      try {
-        const adapter = this.app.vault.adapter as unknown as { getBasePath?: () => string };
-        const vaultPath = adapter.getBasePath ? adapter.getBasePath() : process.cwd();
-        const result = sweepOrphans(vaultPath);
-        if (result.swept.length > 0 || result.errors > 0) {
-          console.log(`[agentic-os] orphan sweep: ${result.swept.length} crashed, ${result.skipped} skipped, ${result.errors} errors`);
+      // Sweep crashed runs BEFORE the watcher starts so it doesn't latch onto dead ndjson
+      // files. Off when telemetry is disabled: the plugin then writes nothing under agent-runs.
+      if (this.settings.telemetryEnabled) {
+        try {
+          const result = sweepOrphans(this.vaultRoot());
+          if (result.swept.length > 0 || result.errors > 0) {
+            console.log(`[agentic-os] orphan sweep: ${result.swept.length} crashed, ${result.skipped} skipped, ${result.errors} errors`);
+          }
+        } catch (e) {
+          console.warn("[agentic-os] orphan sweep failed:", e);
         }
-      } catch (e) {
-        console.warn("[agentic-os] orphan sweep failed:", e);
       }
       this.startRunsTail();
       this.rebindLiveSources();
@@ -253,13 +254,12 @@ export default class AgenticOSPlugin extends Plugin {
   /** Reconstruct the local live watcher (e.g. after poll-interval setting change). */
   rebindLiveSources(): void {
     if (this.liveRuns) { this.liveRuns.stop(); this.liveRuns = null; }
-    const adapter = this.app.vault.adapter as unknown as { getBasePath?: () => string };
-    const vaultPath = adapter.getBasePath ? adapter.getBasePath() : process.cwd();
     this.liveRuns = new LiveRunsWatcher({
-      vault: vaultPath,
+      vault: this.vaultRoot(),
       bus: this.bus,
       pollMs: this.settings.liveTailPollMs,
       source: "local",
+      createDirs: this.settings.telemetryEnabled,
     });
     this.liveRuns.start();
     this.hb.setSource(this.liveRuns);
