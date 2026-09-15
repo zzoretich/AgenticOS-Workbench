@@ -247,6 +247,7 @@ test('init --cost enables cost once the analyzer is shipped (python3 >= 3.9)', (
   assert.equal(r.status, 0, r.stderr + r.stdout);
   assert.ok(!/not shipped in this phase/.test(r.stderr), 'the analyzer is shipped: no warning');
   assert.equal(readJson(path.join(sb.cfg, 'agenticos.json')).cost.enabled, true);
+  assert.ok(fs.existsSync(path.join(sb.vault, 'brain', 'scripts', 'cost', 'analyze_transcript.py')), 'init --cost installs the analyzer (Task 11)');
 });
 
 test('init with --from-local uses the local path as the marketplace source', () => {
