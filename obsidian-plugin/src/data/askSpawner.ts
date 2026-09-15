@@ -7,7 +7,7 @@
 // Concurrency: hard-capped to 2 in-flight calls — matches serve.js's ASK_MAX.
 // Timeout: 90s default (longer than serve.js's 60s; SDK + tool calls add up).
 
-import { spawn, ChildProcess } from "child_process";
+import { spawn, ChildProcess, SpawnOptions } from "child_process";
 
 const DEFAULT_TIMEOUT_MS = 90_000;
 const MAX_CONCURRENT = 2;
@@ -49,7 +49,7 @@ export interface RunAskOptions {
   timeoutMs?: number;
 }
 
-export function runAsk(opts: RunAskOptions, deps: { spawn?: typeof spawn } = {}): AskHandle {
+export function runAsk(opts: RunAskOptions, deps: { spawn?: (file: string, args: string[], opts: SpawnOptions) => ChildProcess } = {}): AskHandle {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const start = Date.now();
   let stdoutBuf = "";
