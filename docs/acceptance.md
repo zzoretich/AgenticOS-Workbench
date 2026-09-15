@@ -9,7 +9,7 @@ absolute home path the installer prints. Criteria are spec §1; each block names
 - [ ] Node 20+ from the nodejs.org installer: `node -v` prints `v20` or `v22`.
 - [ ] Claude Code installed and logged in: `claude --version`; `claude -p "Reply with the word ok." --tools "" --max-budget-usd 0.01` prints `ok`.
 - [ ] Obsidian installed (drag to Applications); opened once.
-- [ ] `ls ~/.claude` shows no `agenticos.json`; note the file list for §5.
+- [ ] `ls ~/.claude` shows no `agenticos.json`.
 - [ ] python3 present (`python3 --version` ≥ 3.9) — needed for §4 and §6. `git` and `python3` come with the Command Line Tools; accept the install dialog if it appears.
 
 ## 1. Install in under ten minutes (criterion 1)
@@ -46,8 +46,8 @@ Start a timer.
 - [ ] Turn Wi-Fi on.
 
 ## 5. Uninstall (criterion 5)
-- [ ] `node ~/AgenticOS-Workbench/cli/aos.js uninstall --keep-vault` (answer the confirmation).
-- [ ] `ls ~/.claude` matches the §0 list plus only `CLAUDE.md` (which you edited by hand) and `plugins/` (Claude Code's own plugin cache — the plugin install created it, and uninstall removes the plugin through `claude` but never that directory); `agenticos.json` is gone; `claude plugin list` no longer lists `agenticos`; `ls ~/Library/LaunchAgents | grep agenticos` prints nothing; `launchctl list | grep com.agenticos` prints nothing.
+- [ ] `node ~/AgenticOS-Workbench/cli/aos.js uninstall --keep-vault` (no prompt — `--keep-vault` never asks; it prints `kept vault …`).
+- [ ] `ls ~/.claude` shows no `agenticos.json`; `plugins/` survives (Claude Code's own plugin cache — the plugin install created it, and uninstall removes the plugin through `claude` but never that directory); `claude plugin list` no longer lists `agenticos`; `ls ~/Library/LaunchAgents | grep agenticos` prints nothing; `launchctl list | grep com.agenticos` prints nothing. (Claude Code's own per-session folders — `session-env/`, `file-history/`, `projects/` — are not AgenticOS's and stay.)
 - [ ] `~/AgenticOS` is intact (memory, persona, notes present).
 - [ ] `cd ~/AgenticOS-Workbench && npm run setup -- --yes` (no prompts: with `--yes` the interview reuses the kept vault's `persona/answers.json`, so the persona — and its schedules — come back without questions), then `aos uninstall` **without** `--keep-vault`: the typed confirmation is required; afterwards `~/AgenticOS` is gone.
 
@@ -64,7 +64,7 @@ Start a timer.
 
 ## 7. Obsidian smoke under each provider
 - [ ] With Ollama running: Pulse, Spaces, Memory, Runs, Chat (answers), Term (shows "Terminal unavailable" unless `--terminal` was used) all render.
-- [ ] With Ollama stopped and Claude logged in: Chat shows a per-message cost; Pulse provider chip says `claude`.
+- [ ] With Ollama stopped and Claude logged in: Chat's header names the provider — `headless claude (haiku, capped)` — and each answer shows a per-message cost.
 - [ ] `aos provider none`: Chat tab hidden with the hint; nothing red.
 
 Result: ______ (pass / fail with the failing box numbers). Tester: ______ Date: ______
