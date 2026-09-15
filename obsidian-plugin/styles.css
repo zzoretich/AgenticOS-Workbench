@@ -1766,3 +1766,6 @@
 
 /* Task 8: the Chat tab's "no provider" hint (rendered instead of the composer) */
 .aos-asst-nohint { padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+
+/* Task 9: the two recovery buttons in the Term tab's "Terminal unavailable" panel */
+.aos-term-error-actions { display: flex; gap: 6px; margin-top: 4px; }
