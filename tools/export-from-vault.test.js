@@ -7,14 +7,18 @@ const path = require('path');
 const { plan, applyScrubs, assertSafeDest } = require('./export-from-vault.js');
 const { execFileSync, spawnSync } = require('child_process');
 
-const NAME = 'Za' + 'ch';
+// The scrubs these two feed are pattern-based — FIRST_NAME is `[A-Z][a-z]+` and the copyright scrub is
+// `© 2026 [A-Za-z]+, Inc.` (tools/export-scrubs.js:53,:71,:131) — so arbitrary neutral values work, and
+// neither is a gate term. Keep them plain (final review Minor 2 / safety-3).
+const NAME = 'Casey';
+const BRAND = 'Acme';
 
-// Built by concatenation so this file stays gate-clean: the gate matches case-insensitive substrings
-// of tools/privacy-terms.json in every file except the three "*"-exempt tools files, and this test is
-// not exempt — so no fragment below may itself be a gate term, and every fixture PATH that names the
-// owner's persona dir or skill (Step 1 below) is assembled from PERSONA_SRC, never spelled.
+// The three constants below ARE gate terms and ARE load-bearing, so each is built by concatenation: the
+// gate matches case-insensitive substrings of tools/privacy-terms.json in every file except the three
+// "*"-exempt tools files, and this test is not exempt. OWNER_HOME must start with the home-path prefix
+// that HOME_RE (export-scrubs.js:16) requires; PERSONA_SRC spells the ALLOWLIST `from` paths (:24-26);
+// the render-digest fixture below carries the flag-review title the scrub at :118 targets (concatenated, so the gate stays clean).
 const OWNER_HOME = '/Us' + 'ers/some' + 'one/.claude';
-const BRAND = 'Service' + 'Now';
 const PERSONA_SRC = 'pro' + 'ton';                          // the owner's persona dir / skill prefix in the source vault
 
 function fixtureVault() {
@@ -31,6 +35,12 @@ function fixtureVault() {
   w('brain/memory/user/profile.md', 'private');
   // execution amendment 2026-09-15 (A1): a retired sdk/ file the Step 3 EXCLUDE rows must keep out of the copy list.
   w('brain/scripts/sdk/install.js', '// retired by contract §2\n');
+  // final review Minor 16 (tests-10): one line per remaining EXCLUDE row (tools/export-scrubs.js:45-48), so
+  // all five are exercised. Each would otherwise land in the copy list the next test asserts exactly.
+  w('brain/scripts/sdk/test/test-recall.js', '// superseded by brain/scripts/test/live/\n');
+  w('brain/scripts/test/wrap-headless.test.js', '// moved to extras/ollama with its subject\n');
+  w('brain/scripts/sitrep-state.js', '// moved under persona/ in Plan 5 (ruling A22)\n');
+  w('.obsidian/plugins/agentic-os/src/data/session.ts', 'export const session = 1;\n');
   // Plan 5 entries: persona machinery, flag-closer scripts, cost analyzer. The DEFAULT_ROOT and
   // copyright scrubs are pattern-based (Step 4), so these fixture lines need not equal the owner's
   // literal text — any absolute config-dir path under the owner's home and any "© 2026 <Brand>, Inc."
