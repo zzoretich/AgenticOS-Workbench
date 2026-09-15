@@ -11,6 +11,10 @@ import * as path from "path";
 export { DEFAULT_SETTINGS };
 export type { AgenticOSSettings };
 
+function isDirectory(p: string): boolean {
+  try { return fs.statSync(p).isDirectory(); } catch { return false; }
+}
+
 export class AgenticOSSettingTab extends PluginSettingTab {
   plugin: AgenticOSPlugin;
 
@@ -66,18 +70,11 @@ export class AgenticOSSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Vault root")
       .setDesc("Absolute path used for spawns, the live-runs watcher and orphan sweep, brain/config.json, provider-state.json and persona/IDENTITY.md. Pulse/Runs/Memory/Spaces and the status bar always render this Obsidian vault, regardless of this setting. Leave blank to use this vault. Consumed by Plugin.vaultRoot() on every read/spawn — takes effect immediately.")
-      .addText((t) =>
+      .addText((t) => {
         t.setPlaceholder("(this vault)").setValue(this.plugin.settings.vaultRoot).onChange(async (v) => {
           const trimmed = v.trim();
-          const prev = this.plugin.settings.vaultRoot;
+          if (trimmed && !isDirectory(trimmed)) return;
           if (trimmed) {
-            let isDir = false;
-            try { isDir = fs.statSync(trimmed).isDirectory(); } catch { isDir = false; }
-            if (!isDir) {
-              new Notice(`Vault root: ${trimmed} is not a directory — keeping ${prev || "(this vault)"}`);
-              t.setValue(prev);
-              return;
-            }
             const adapter = this.app.vault.adapter as unknown as { getBasePath?: () => string };
             const basePath = adapter.getBasePath ? adapter.getBasePath() : process.cwd();
             if (path.resolve(trimmed) !== path.resolve(basePath)) {
@@ -92,8 +89,16 @@ export class AgenticOSSettingTab extends PluginSettingTab {
           // commandRegistry captured the context once in onload(); refresh it or ⌘K and the
           // command deck keep spawning in the old vault until Obsidian is reloaded.
           setSpawnContext({ node: this.plugin.nodeBin(), vaultRoot: this.plugin.vaultRoot() });
-        })
-      );
+        });
+        t.inputEl.addEventListener("blur", () => {
+          const trimmed = t.getValue().trim();
+          const saved = this.plugin.settings.vaultRoot;
+          if (trimmed && !isDirectory(trimmed)) {
+            new Notice(`Vault root: ${trimmed} is not a directory — keeping ${saved || "(this vault)"}`);
+            t.setValue(saved);
+          }
+        });
+      });
 
     new Setting(containerEl)
       .setName("Claude config dir")

@@ -16,7 +16,8 @@ Run before tagging a release, on a vault created by `aos init` (not the develope
 
 ## Settings
 
-- [ ] Vault root set to a path that is not a directory (e.g. a file, or a path that does not exist) shows a Notice ("Vault root: … is not a directory — keeping …") and the field keeps its previous value; nothing is saved.
+- [ ] Vault root: typing a path that is not a directory (e.g. a file, or a path that does not exist) is ignored while typing — nothing is saved, no Notice.
+- [ ] Vault root: leaving the field (blur) on a value that is not a directory shows a Notice once ("Vault root: … is not a directory — keeping …") and restores the field to the saved value.
 
 ## Pulse
 
