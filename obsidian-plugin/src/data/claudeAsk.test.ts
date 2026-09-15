@@ -34,7 +34,7 @@ const CLAUDE_JSON = JSON.stringify({
 });
 
 function harness(children: ChildProcess[]) {
-  const calls: Array<{ file: string; args: string[]; cwd?: string; env?: NodeJS.ProcessEnv }> = [];
+  const calls: Array<{ file: string; args: string[]; cwd?: string | URL; env?: NodeJS.ProcessEnv }> = [];
   const ledger: string[] = [];
   const deps: ClaudeAskDeps = {
     spawn: (file, args, opts) => { calls.push({ file, args, cwd: opts.cwd, env: opts.env }); return children.shift()!; },
