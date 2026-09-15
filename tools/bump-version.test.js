@@ -64,3 +64,27 @@ test('missing Plan 3 files are reported as skipped, not fatal', () => {
 test('an invalid version is rejected', () => {
   assert.throws(() => bumpFiles(repo(), 'v1.3'), /semver/);
 });
+
+test('--check also verifies the three package-lock.json version fields, which bumpFiles deliberately leaves to npm', () => {
+  const r = repo();
+  fs.writeFileSync(path.join(r, 'package-lock.json'), JSON.stringify({
+    name: 'agenticos-workbench',
+    version: '0.1.0',
+    lockfileVersion: 3,
+    packages: {
+      '': { name: 'agenticos-workbench', version: '0.1.0' },
+      'obsidian-plugin': { name: 'agentic-os', version: '1.2.0' },
+    },
+  }, null, 2) + '\n');
+  bumpFiles(r, '1.3.0');
+  const bad = checkFiles(r, '1.3.0');
+  assert.equal(bad.length, 3);
+  assert.ok(bad.every((b) => b.startsWith('package-lock.json (')));
+  // Simulate `npm install --package-lock-only --ignore-scripts` refreshing the lock.
+  const lock = read(r, 'package-lock.json');
+  lock.version = '1.3.0';
+  lock.packages[''].version = '1.3.0';
+  lock.packages['obsidian-plugin'].version = '1.3.0';
+  fs.writeFileSync(path.join(r, 'package-lock.json'), JSON.stringify(lock, null, 2) + '\n');
+  assert.deepEqual(checkFiles(r, '1.3.0'), []);
+});

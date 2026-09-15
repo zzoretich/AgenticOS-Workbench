@@ -9,6 +9,7 @@
  *   obsidian-plugin/versions.json   adds "<version>": "<manifest.minAppVersion>"
  *   plugin/.claude-plugin/plugin.json          .version          (Claude Code plugin)
  *   .claude-plugin/marketplace.json            .plugins[name=agenticos].version
+ *   package-lock.json               .version, .packages[""].version, .packages["obsidian-plugin"].version — checked, never written (refresh with npm install --package-lock-only --ignore-scripts)
  * Usage: node tools/bump-version.js <x.y.z> [--check]
  *   --check: exit 1 if any surface differs from <x.y.z> (release.yml runs this against the tag).
  * Exit: 0 ok · 1 mismatch (--check) · 2 usage
@@ -71,6 +72,21 @@ function checkFiles(root, version) {
     if (!fs.existsSync(abs)) continue;
     const have = versionOf(rel, readJson(abs));
     if (have !== version) bad.push(`${rel}: ${have ?? '(none)'} != ${version}`);
+  }
+  // package-lock.json is the seventh surface. bumpFiles never writes it (npm owns the lock's
+  // format; `npm install --package-lock-only --ignore-scripts` refreshes it after a bump), but
+  // --check must see it: release.yml's first step is `npm ci`, which trips on a stale lock.
+  const lockPath = path.join(root, 'package-lock.json');
+  if (fs.existsSync(lockPath)) {
+    const lock = readJson(lockPath);
+    const fields = [
+      ['version', lock.version],
+      ['packages[""].version', lock.packages && lock.packages[''] && lock.packages[''].version],
+      ['packages["obsidian-plugin"].version', lock.packages && lock.packages['obsidian-plugin'] && lock.packages['obsidian-plugin'].version],
+    ];
+    for (const [name, have] of fields) {
+      if (have !== version) bad.push(`package-lock.json (${name}): ${have ?? '(none)'} != ${version}`);
+    }
   }
   return bad;
 }
