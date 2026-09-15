@@ -6,6 +6,7 @@ import { loadRunsForMonth, AgentRun, formatRelative } from "../data/runs";
 import { buildMonthlyBudget, formatUSD, BudgetConfig } from "../data/cost";
 import { sparklineSvg, deltaArrow } from "../data/sparkline";
 import { donutSvg, DONUT_COLORS } from "../data/donut";
+import { readVaultConfig } from "../data/aosConfig";
 
 // Sections: INVENTORY (counts + full lists: agents, skills, commands, hooks — ported from
 // InventoryView's list renderers against src/data/inventory.ts loaders, extended with two
@@ -30,7 +31,10 @@ export async function renderSystemDrawer(plugin: AgenticOSPlugin, host: HTMLElem
 
   renderInventorySection(host, app, inv, snapshot);
   renderDiskSection(host, snapshot);
-  renderCostDetailSection(host, monthRuns, budgetConfig, budgetLedger);
+  const monthlyBudget = readVaultConfig(plugin.vaultRoot(), plugin.claudeConfigDir()).cost.monthlyBudget;
+  if (plugin.settings.costEnabled && typeof monthlyBudget === "number") {
+    renderCostDetailSection(host, monthRuns, budgetConfig, budgetLedger, monthlyBudget);
+  }
 }
 
 // ── INVENTORY ────────────────────────────────────────────────────────────
@@ -249,8 +253,9 @@ function renderCostDetailSection(
   monthRuns: AgentRun[],
   budgetConfig: Partial<BudgetConfig> | undefined,
   budgetLedger: { readings: number; settled: number; lastDerived: number | null },
+  monthlyBudget: number,
 ): void {
-  const b = buildMonthlyBudget(monthRuns, budgetConfig);
+  const b = buildMonthlyBudget(monthRuns, budgetConfig, new Date(), monthlyBudget);
   const monthShort = b.monthLabel.split(" ")[0].toLowerCase();
   const panel = makeSectionPanel(panelHost, `COST DETAIL  ── ${monthShort} · /$${b.budget}`);
   const body = panel.createDiv({ cls: "aos-panel-body" });
