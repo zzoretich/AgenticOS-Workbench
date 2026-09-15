@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AgenticOS Cost Report</title>
+<style>
+  :root{
+    --infinite-blue:#032D42; --wasabi-green:#63DF4E; --icon-bg:#2A4F62;
+    --bright-blue:#52B8FF; --bright-indigo:#7661FF; --bright-purple:#BF71F2;
+    --err:#F87171; --warn:#FBBF24; --white:#FFFFFF; --gray-400:#9CA3AF; --gray-500:#6B7280;
+    --font-sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;
+    --font-mono:'Consolas','Monaco','Courier New',monospace;
+    --radius-md:1rem;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--infinite-blue);color:var(--white);font-family:var(--font-sans);
+       padding:2.5rem;line-height:1.5;}
+  h1{font-weight:700;font-size:2rem;}
+  h1 span{color:var(--wasabi-green);}
+  h2{font-weight:700;font-size:1.1rem;margin:2rem 0 .75rem;color:var(--bright-blue);}
+  .sub{color:var(--gray-400);margin-bottom:1.5rem;}
+  .cards{display:flex;gap:1rem;flex-wrap:wrap;}
+  .card{background:#06384f;border:1px solid #0d4a66;border-radius:var(--radius-md);
+        padding:1.25rem 1.5rem;min-width:180px;}
+  .card .label{color:var(--gray-400);font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;}
+  .card .value{font-size:1.6rem;font-weight:700;font-family:var(--font-mono);margin-top:.25rem;}
+  table{width:100%;border-collapse:collapse;margin-top:.5rem;font-size:.9rem;}
+  th,td{text-align:left;padding:.6rem .75rem;border-bottom:1px solid #0d4a66;}
+  th{color:var(--gray-400);text-transform:uppercase;font-size:.72rem;letter-spacing:.05em;}
+  td.num{font-family:var(--font-mono);text-align:right;}
+  .badge{display:inline-block;padding:.1rem .5rem;border-radius:9999px;font-size:.7rem;
+         font-family:var(--font-mono);}
+  .badge.billed{background:rgba(99,223,78,.18);color:var(--wasabi-green);}
+  .badge.tokenizer-split{background:rgba(82,184,255,.18);color:var(--bright-blue);}
+  .badge.len-split{background:rgba(251,191,36,.2);color:var(--warn);}
+  .badge.unattributed{background:rgba(248,113,113,.2);color:var(--err);}
+  .badge.amortized-share{background:rgba(118,97,255,.2);color:var(--bright-indigo);}
+  .delta-up{color:var(--err);} .delta-down{color:var(--wasabi-green);}
+  .spark{display:flex;align-items:flex-end;gap:3px;height:80px;margin-top:.5rem;}
+  .spark .bar{flex:1;background:var(--bright-indigo);border-radius:3px 3px 0 0;min-height:2px;}
+  .flags{margin-top:1.5rem;}
+  .flags li{color:var(--warn);font-size:.85rem;margin-left:1.2rem;}
+  footer{margin-top:2.5rem;color:var(--gray-500);font-size:.78rem;border-top:1px solid #0d4a66;
+         padding-top:1rem;}
+  .legend span{margin-right:1rem;}
+</style>
+</head>
+<body>
+  <h1>The Token <span>Goblin</span></h1>
+  <p class="sub">Forensic token-cost hoard · transcript <code>{{TRANSCRIPT}}</code> · {{GENERATED}}</p>
+
+  <h2>The Hoard</h2>
+  <div class="cards">
+    <div class="card"><div class="label">Total Tokens</div><div class="value">{{TOTAL_TOKENS}}</div></div>
+    <div class="card"><div class="label">Total Cost</div><div class="value">${{TOTAL_COST}}</div></div>
+    <div class="card"><div class="label">Cache Savings</div><div class="value">${{CACHE_SAVINGS}}</div></div>
+    <div class="card"><div class="label">Turns</div><div class="value">{{TURNS}}</div></div>
+    <div class="card"><div class="label">Model Mix</div><div class="value">{{MODEL_MIX}}</div></div>
+  </div>
+
+  <h2>Per-Skill Breakdown</h2>
+  <table>
+    <thead><tr>
+      <th>Skill</th><th>Load (tok)</th><th>Load $</th><th>Source</th>
+      <th>Amortized (tok)</th><th>Amortized $</th><th>Total $</th><th>Δ vs last</th>
+    </tr></thead>
+    <tbody>{{SKILL_ROWS}}</tbody>
+  </table>
+
+  <h2>Cost Over Turns</h2>
+  <div class="spark">{{SPARKLINE}}</div>
+
+  <h2>Heaviest to Trim</h2>
+  <table><tbody>{{HEAVIEST_ROWS}}</tbody></table>
+
+  <ul class="flags">{{FLAGS}}</ul>
+
+  <footer>
+    <div class="legend">Accuracy legend:
+      <span class="badge billed">billed</span>
+      <span class="badge tokenizer-split">tokenizer-split</span>
+      <span class="badge len-split">len-split</span>
+      <span class="badge amortized-share">amortized-share</span>
+    </div>
+    <p>Pricing rates as of {{RATES_AS_OF}} — verify current rates. Excludes Anthropic's hidden
+    platform/system-prompt + tool-definition baseline (never in the transcript). Claude-Code-only
+    forensic estimate; not a chargeback bill.</p>
+    <p>AgenticOS Workbench cost report. MIT licensed.</p>
+  </footer>
+</body>
+</html>

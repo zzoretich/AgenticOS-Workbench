@@ -1,0 +1,15 @@
+{
+  "rates_as_of": "2026-05-29",
+  "currency": "USD",
+  "unit": "per_million_tokens",
+  "verify_note": "Confirm against current Anthropic pricing before trusting dollar figures. claude-opus-5 was added 2026-08-04 by assumption (matched to the existing claude-opus-4-7/4-8 rate already in this file) after a transcript surfaced that model id with no pricing entry, silently falling back to default_model (Sonnet) rates. Re-verify against Anthropic's published Opus 5 price before trusting dollar figures derived from it.",
+  "default_model": "claude-sonnet-4-6",
+  "models": {
+    "claude-opus-5":     {"in": 15.0, "out": 75.0},
+    "claude-opus-4-8":   {"in": 15.0, "out": 75.0},
+    "claude-opus-4-7":   {"in": 15.0, "out": 75.0},
+    "claude-sonnet-4-6": {"in": 3.0,  "out": 15.0},
+    "claude-haiku-4-5":  {"in": 1.0,  "out": 5.0}
+  },
+  "cache": {"write_5m_mult": 1.25, "write_1h_mult": 2.00, "read_mult": 0.10}
+}

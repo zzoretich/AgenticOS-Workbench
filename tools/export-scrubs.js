@@ -20,6 +20,15 @@ const FIRST_NAME = '[A-Z][a-z]+';                                // one capitali
 const ALLOWLIST = [
   { from: 'brain/scripts', to: 'brain/scripts' },
   { from: '.obsidian/plugins/agentic-os', to: 'obsidian-plugin' },
+  // ── Plan 5: persona machinery (scripts only — never IDENTITY/STATE/PLAYBOOK/journal/proposals) ──
+  { from: 'proton/scripts/scan-arsenal.js', to: 'brain/scripts/persona/scan-arsenal.js' },
+  { from: 'proton/scripts/build-playbook.js', to: 'brain/scripts/persona/build-playbook.js' },
+  { from: 'skills/proton-flag-closer/scripts', to: 'plugin/skills/persona-flag-closer/scripts' },
+  // ── Plan 5: cost analyzer (no data/, no SKILL.md — the plugin's cost skill is authored in Plan 3) ──
+  { from: 'skills/token-goblin/scripts/analyze_transcript.py', to: 'extras/cost/analyze_transcript.py' },
+  { from: 'skills/token-goblin/scripts/test_analyze_transcript.py', to: 'extras/cost/test_analyze_transcript.py' },
+  { from: 'skills/token-goblin/scripts/pricing.json', to: 'extras/cost/pricing.json' },
+  { from: 'skills/token-goblin/assets/report-template.html', to: 'extras/cost/report-template.html' },
 ];
 
 const EXCLUDE = [
@@ -30,10 +39,13 @@ const EXCLUDE = [
   /(^|\/)\.DS_Store$/,
   /(^|\/)package-lock\.json$/,
   /^README\.md$/,
+  // ── Plan 5 (execution amendment 2026-09-15, A1): vault-drift files the repo deliberately lacks. Tested against
+  //    the path relative to each allowlisted root (brain/scripts → sdk/…, test/…; obsidian-plugin → src/…).
+  /^sdk\/(install|local-code|reason|wrap-headless)\.js$/,                                        // install.js retired by contract §2; the other three moved to extras/ollama
+  /^sdk\/test\/test-(embed-vault|embed|models|ollama-body|reason|recall-hybrid|recall)\.js$/,    // superseded by brain/scripts/test/live/
+  /^test\/wrap-headless\.test\.js$/,                                                             // moved to extras/ollama with its subject; would move the brain lane 307 → 308
+  /^src\/data\/session\.ts$/,                                                                    // deleted in Plan 4; nothing under obsidian-plugin/src references it
 ];
-
-const LIVE_TESTS = ['embed-vault', 'embed', 'models', 'ollama-body', 'reason', 'recall-hybrid', 'recall']
-  .map(n => `brain/scripts/sdk/test/test-${n}.js`);
 
 const SCRUBS = [
   // ── brain/scripts: comments and fixtures ──
@@ -53,9 +65,6 @@ const SCRUBS = [
   { file: 'brain/scripts/test/auto-wrap.test.js', from: 'Relocated the brief output to OneDrive', to: 'Relocated the brief output to cloud storage' },
   { file: 'brain/scripts/test/auto-wrap.test.js', from: /Gmail/g, to: 'a personal mailbox' },
   { file: 'brain/scripts/test/sitrep-state.test.js', from: '# Proton State', to: '# Persona State' },
-  { file: LIVE_TESTS, from: /\/\/ Run: node \/Users\/[^\/\s]+\/\.claude\/brain\/scripts\/sdk\/test\//, to: '// Run: node brain/scripts/test/live/' },
-  { file: 'brain/scripts/sdk/test/test-recall.js', from: /proton\/journal/g, to: 'persona/journal' },
-  { file: 'brain/scripts/sdk/test/test-recall.js', from: 'type: proton-journal', to: 'type: persona-journal' },
 
   // ── obsidian plugin: labels, comments, fixtures, manifest ──
   { file: 'obsidian-plugin/manifest.json', from: new RegExp(`"author": "${FIRST_NAME}"`), to: '"author": "AgenticOS Workbench contributors"' },
@@ -72,6 +81,54 @@ const SCRUBS = [
   { file: 'obsidian-plugin/styles.css', from: 'Jarvis-style terminal aesthetic', to: 'Terminal aesthetic' },
   { file: 'obsidian-plugin/src/ui/AnchorModal.ts', from: 't.setPlaceholder("162.94")', to: 't.setPlaceholder("0.00")' },
   { file: 'obsidian-plugin/src/ui/TerminalPanel.ts', from: 'text: "[ TERMINAL // .claude ]"', to: 'text: "[ TERMINAL ]"' },
+
+  // ── Plan 5: persona machinery ──
+  { file: 'brain/scripts/persona/scan-arsenal.js',
+    from: ' * Proton arsenal scanner — inventories skills, agents, and commands as JSON.',
+    to:   ' * Arsenal scanner — inventories the skills, agents, and commands under a Claude config dir as JSON.' },
+  { file: ['brain/scripts/persona/scan-arsenal.js', 'brain/scripts/persona/build-playbook.js'],
+    from: /const DEFAULT_ROOT = '\/Users\/[^']+\/\.claude';/,           // the owner's absolute config dir (line 10 / line 11)
+    to:   "const DEFAULT_ROOT = process.env.CLAUDE_CONFIG_DIR || require('path').join(require('os').homedir(), '.claude');" },
+  { file: 'brain/scripts/persona/build-playbook.js',
+    from: ' * Proton playbook bootstrap — generates the initial PLAYBOOK.md from the',
+    to:   ' * Playbook bootstrap — generates the initial PLAYBOOK.md from the' },
+  { file: 'brain/scripts/persona/build-playbook.js',
+    from: " * Proton's to curate; regenerating would destroy annotations.",
+    to:   " * the persona's to curate; regenerating would destroy annotations." },
+  { file: 'brain/scripts/persona/build-playbook.js', from: 'type: proton-playbook', to: 'type: persona-playbook' },
+  { file: 'brain/scripts/persona/build-playbook.js', from: '# PROTON PLAYBOOK — the front door', to: '# {{AGENT_NAME}} PLAYBOOK — the front door' },
+  { file: 'brain/scripts/persona/build-playbook.js', from: /proton\/PLAYBOOK\.md/g, to: 'persona/PLAYBOOK.md' },
+
+  // ── Plan 5: flag-closer scripts ──
+  { file: 'plugin/skills/persona-flag-closer/scripts/collect.js',
+    from: '// proton-flag-closer collector: pending proposals + STATE.md flags + new silent failures.',
+    to:   '// persona-flag-closer collector: pending proposals + STATE.md flags + new silent failures.' },
+  { file: 'plugin/skills/persona-flag-closer/scripts/collect.js', from: "'proton/proposals'", to: "'persona/proposals'" },
+  { file: 'plugin/skills/persona-flag-closer/scripts/collect.js', from: "'proton/STATE.md'", to: "'persona/STATE.md'" },
+  { file: 'plugin/skills/persona-flag-closer/scripts/collect.js', from: '/^proton-.*-error\\.log$/', to: '/^duty-.*-error\\.log$/' },
+  { file: ['plugin/skills/persona-flag-closer/scripts/collect.js', 'plugin/skills/persona-flag-closer/scripts/recheck.js'],
+    from: "'skills/proton-flag-closer/state'", to: "'persona/flag-closer'" },
+  { file: 'plugin/skills/persona-flag-closer/scripts/collect.js', from: 'Proton flag-closer: ', to: 'Persona flag-closer: ' },
+  { file: 'plugin/skills/persona-flag-closer/scripts/collect.js', from: 'say "review proton flags"', to: 'say "review persona flags"' },
+  { file: 'plugin/skills/persona-flag-closer/scripts/recheck.js',
+    from: '// Deterministic re-verification for proton-flag-closer.', to: '// Deterministic re-verification for persona-flag-closer.' },
+  { file: 'plugin/skills/persona-flag-closer/scripts/recheck.js',
+    from: "'skills/proton-flag-closer/config/autoapply.json'", to: "'persona/autoapply.json'" },
+  { file: 'plugin/skills/persona-flag-closer/scripts/render-digest.js', from: /Proton Flag Review/g, to: 'Persona Flag Review' },
+
+  // ── Plan 5: cost analyzer report template (brand fonts and copyright; pattern-based so this file
+  //    and the plan never spell the brand — the brand font is "<Brand> Sans" / "<Brand> Sans Mono" on
+  //    lines 12–13, the copyright line is line 89 with four leading spaces) ──
+  { file: 'extras/cost/report-template.html', from: '<title>The Token Goblin — Token Hoard Report</title>', to: '<title>AgenticOS Cost Report</title>' },
+  { file: 'extras/cost/report-template.html',
+    from: /^([ \t]*--font-sans:)'[A-Za-z]+ Sans',/m,
+    to:   '$1' },                                                       // → --font-sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;
+  { file: 'extras/cost/report-template.html',
+    from: /^([ \t]*--font-mono:)'[A-Za-z]+ Sans Mono',/m,
+    to:   '$1' },                                                       // → --font-mono:'Consolas','Monaco','Courier New',monospace;
+  { file: 'extras/cost/report-template.html',
+    from: /^([ \t]*)<p>© 2026 [A-Za-z]+, Inc\. All rights reserved\.<\/p>/m,
+    to:   '$1<p>AgenticOS Workbench cost report. MIT licensed.</p>' },
 ];
 
 module.exports = { ALLOWLIST, EXCLUDE, SCRUBS };
