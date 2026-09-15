@@ -7,10 +7,11 @@ on:
 # scopes its own `permissions:` instead of widening this block.
 permissions:
   contents: read
-# A newer commit on the same ref supersedes an in-flight run; both jobs are side-effect free, so cancelling is safe.
+# Runs queue per ref. A newer push to a pull request supersedes its in-flight run (both jobs are side-effect free, so
+# cancelling is safe); pushes to main are never cancelled, so every commit on main keeps its own pass/fail result.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   test:
     strategy:
