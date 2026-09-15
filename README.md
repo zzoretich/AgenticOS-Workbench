@@ -4,6 +4,11 @@ A second brain for Claude Code: persistent memory, recall, session capture, and 
 
 Install: `git clone … && npm ci --ignore-scripts && npm run setup` — see [docs/install.md](docs/install.md). After install, `aos doctor` checks everything and `/wrap` in Claude Code writes your first memories.
 
+## Docs
+
+- Chief of Staff layer: `docs/chief-of-staff.md` — your named agent, duties, schedules, proposals.
+- Cost module (opt-in, python3): `docs/cost.md` — `aos cost enable`.
+
 ## Development
 
 - `npm test` runs every suite.
