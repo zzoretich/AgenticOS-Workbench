@@ -45,6 +45,7 @@ const EXCLUDE = [
   /^sdk\/test\/test-(embed-vault|embed|models|ollama-body|reason|recall-hybrid|recall)\.js$/,    // superseded by brain/scripts/test/live/
   /^test\/wrap-headless\.test\.js$/,                                                             // moved to extras/ollama with its subject; would move the brain lane 307 → 308
   /^src\/data\/session\.ts$/,                                                                    // deleted in Plan 4; nothing under obsidian-plugin/src references it
+  /^sitrep-state\.js$/,                                                                          // moved under persona/ in Plan 5 (execution amendment 2026-09-15, A22)
 ];
 
 const SCRUBS = [
