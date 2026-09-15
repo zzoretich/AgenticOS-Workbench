@@ -12,6 +12,7 @@
  *               before the SessionEnd hook existed, or were otherwise missed:
  *                   node ~/.claude/brain/scripts/auto-cost.js --backfill
  *
+ * Opt-in: with cost.enabled=false (the default) the stage reports "disabled" and does nothing.
  * The per-skill count-tokens API call inside the analyzer only affects co-load
  * attribution, NOT the session total. With no ANTHROPIC_API_KEY it degrades to
  * len-split and never hits the network. Child calls are timeout-bounded so a hung
@@ -27,14 +28,17 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFileSync, spawn } = require('child_process');
-const brain = require('./sdk/lib/brain.js');
+const { PATHS } = require('./lib/paths.js');   // execution amendment 2026-09-15 (A13): the file's only path source after this task
 const { withReport } = require('./lib/pipeline-report.js');
+const { loadConfig } = require('./lib/config.js');
 
-const VAULT = brain.PATHS.VAULT;
-const ANALYZER = path.join(VAULT, 'skills/token-goblin/scripts/analyze_transcript.py');
-const COST_SYNC = path.join(VAULT, 'brain/scripts/cost-sync.js');
-const RUNS = path.join(VAULT, 'brain/_index/agent-runs/runs.jsonl');
-const PROJECTS = brain.PATHS.PROJECTS;
+const ANALYZER = path.join(PATHS.SCRIPTS, 'cost', 'analyze_transcript.py');   // installed by `aos cost enable`
+const COST_SYNC = path.join(PATHS.SCRIPTS, 'cost-sync.js');
+const SNAPSHOTS = path.join(PATHS.INDEX, 'cost', 'snapshots');
+const RUNS = path.join(PATHS.AGENT_RUNS, 'runs.jsonl');
+const PROJECTS = PATHS.PROJECTS;
+
+function costEnabled() { try { return !!loadConfig().cost.enabled; } catch { return false; } }
 
 /** Find <sessionId>.jsonl under any direct projects/<slug>/ dir. Sessions whose cwd
  *  was not ~/.claude land in other slugs (e.g. projects/-/), which the old
@@ -58,7 +62,7 @@ function findTranscript(sessionId, projectsRoot = PROJECTS) {
  *                       end before their transcript is flushed (and subagent /
  *                       job sessions that never get one) legitimately have
  *                       nothing to price, and must not enter the Fix Queue.
- *   'no-analyzer'     — token-goblin analyzer missing. A real misconfiguration.
+ *   'no-analyzer'     — analyzer missing under brain/scripts/cost/ (run `aos cost enable`).
  *   'analyzer-failed' — python3/cost-sync threw or timed out. A real failure,
  *                       and `detail` carries the tail of its stderr.
  * These used to collapse into a bare `false`, so a missing transcript was
@@ -69,7 +73,10 @@ function costTranscript(transcript, sessionId) {
   if (!fs.existsSync(ANALYZER)) return { status: 'no-analyzer', detail: ANALYZER };
   const out = path.join(os.tmpdir(), `auto-cost-${sessionId || Date.now()}.json`);
   try {
-    execFileSync('python3', [ANALYZER, '--transcript', transcript, '--prev', 'auto', '--out', out], {
+    fs.mkdirSync(SNAPSHOTS, { recursive: true });
+    // execution amendment 2026-09-15 (A36): --no-api — the analyzer's count_tokens call fires whenever ANTHROPIC_API_KEY is
+    // inherited by the hook; the SessionEnd path must never contact the API, so docs/cost.md's "nothing leaves your machine" holds.
+    execFileSync('python3', [ANALYZER, '--transcript', transcript, '--prev', 'auto', '--out', out, '--no-api', '--snapshots-dir', SNAPSHOTS], {
       timeout: 60000,
       stdio: ['ignore', 'ignore', 'pipe'],
     });
@@ -92,6 +99,7 @@ function costTranscript(transcript, sessionId) {
 
 /** Cost every run lacking a cost that still has a transcript in ANY project dir. */
 function backfill(report) {
+  if (!costEnabled()) { process.stdout.write('[auto-cost] cost module disabled — run `aos cost enable`\n'); if (report) report.disable('cost disabled'); return; }
   let lines = [];
   try { lines = fs.readFileSync(RUNS, 'utf8').trim().split('\n').filter(Boolean); } catch { return; }
   const seen = new Set();
@@ -117,6 +125,7 @@ function backfill(report) {
  *  projects/<slug>/ dir) and cost it under the 'auto-cost' ledger name. */
 async function costOne(sessionId, transcriptArg) {
   await withReport('auto-cost', async (report) => {
+    if (!costEnabled()) { report.disable('cost disabled'); return; }
     const transcript = (transcriptArg && fs.existsSync(transcriptArg))
       ? transcriptArg
       : findTranscript(sessionId);
@@ -170,4 +179,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { findTranscript, costTranscript };
+module.exports = { findTranscript, costTranscript, costOne };

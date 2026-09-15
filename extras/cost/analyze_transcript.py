@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The Token Goblin — forensic per-skill token-cost analysis of a Claude Code transcript.
+"""AgenticOS cost analyzer — forensic per-skill token-cost analysis of a Claude Code transcript.
 
 Pure functions + a CLI. No network at import time. The only optional network call
 (count_tokens, to split co-loaded skills) is dependency-injected so tests run offline.
@@ -504,14 +504,15 @@ def _load_pricing(path):
 
 def main(argv=None):
     here = os.path.dirname(os.path.abspath(__file__))
-    skill_root = os.path.dirname(here)
-    ap = argparse.ArgumentParser(description="The Token Goblin — forensic token-cost analysis.")
+    ap = argparse.ArgumentParser(description="AgenticOS cost analyzer — forensic token-cost analysis of one Claude Code transcript.")
     ap.add_argument("--transcript", required=True)
     ap.add_argument("--pricing", default=os.path.join(here, "pricing.json"))
     ap.add_argument("--prev", default="auto", help='"auto" | path to prior snapshot | "none"')
     ap.add_argument("--out", default=None, help="write report JSON here")
     ap.add_argument("--html-out", default=None, help="write rendered HTML report here")
     ap.add_argument("--no-api", action="store_true", help="force len-split (skip count_tokens)")
+    ap.add_argument("--snapshots-dir", default=os.path.join(here, "data", "snapshots"),
+                    help="where snapshot JSON files accumulate (auto-cost.js passes <vault>/brain/_index/cost/snapshots)")
     args = ap.parse_args(argv)
 
     if not os.path.isfile(args.transcript):
@@ -520,7 +521,7 @@ def main(argv=None):
     pricing = _load_pricing(args.pricing)
     counter = (lambda t: None) if args.no_api else (lambda t: count_tokens_real(t, pricing["default_model"]))
 
-    snapshots_dir = os.path.join(skill_root, "data", "snapshots")
+    snapshots_dir = args.snapshots_dir
     prelim = build_report(args.transcript, pricing, None, counter)
     if args.prev == "auto":
         prev = find_latest_snapshot(snapshots_dir, prelim["skillset_hash"])
@@ -539,7 +540,7 @@ def main(argv=None):
             json.dump(report, f, indent=2)
 
     if args.html_out:
-        template_path = os.path.join(skill_root, "assets", "report-template.html")
+        template_path = os.path.join(here, "report-template.html")
         with open(template_path) as f:
             template = f.read()
         with open(args.html_out, "w") as f:

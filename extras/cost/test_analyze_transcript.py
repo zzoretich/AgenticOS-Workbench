@@ -359,5 +359,30 @@ class TestRenderHtml(unittest.TestCase):
         self.assertIn("no skills", html.lower())
 
 
+class TestMainCli(unittest.TestCase):
+    def test_snapshots_dir_flag_controls_where_snapshots_land(self):
+        path = write_jsonl([asst("claude-sonnet-4-6", {
+            "input_tokens": 10, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0,
+            "output_tokens": 5, "service_tier": "standard"})])
+        snaps = tempfile.mkdtemp()
+        report = az.main(["--transcript", path, "--prev", "none", "--no-api", "--snapshots-dir", snaps])
+        files = [f for f in os.listdir(snaps) if f.endswith(".json")]
+        self.assertEqual(len(files), 1)
+        self.assertTrue(report["_snapshot_path"].startswith(snaps))
+        self.assertGreater(report["totals"]["cost_usd"], 0)
+
+    def test_html_out_uses_the_sibling_template(self):
+        path = write_jsonl([asst("claude-sonnet-4-6", {
+            "input_tokens": 10, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0,
+            "output_tokens": 5, "service_tier": "standard"})])
+        snaps = tempfile.mkdtemp()
+        html = os.path.join(snaps, "r.html")
+        az.main(["--transcript", path, "--prev", "none", "--no-api", "--snapshots-dir", snaps, "--html-out", html])
+        with open(html) as f:
+            body = f.read()
+        self.assertIn("<title>AgenticOS Cost Report</title>", body)
+        self.assertNotIn("{{TOTAL_COST}}", body)
+
+
 if __name__ == "__main__":
     unittest.main()
