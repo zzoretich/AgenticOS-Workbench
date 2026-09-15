@@ -37,12 +37,21 @@ const { defaultBudget, readConfig, deriveState } = require('../cost-budget.js');
 
 test('defaultBudget and readConfig take the monthly budget from cost.monthlyBudget', () => {
   const vault = process.env.BRAIN_VAULT || process.env.AOS_VAULT;
-  fs.writeFileSync(path.join(vault, 'brain', 'config.json'), JSON.stringify({ cost: { enabled: true, monthlyBudget: 150 } }));
-  assert.equal(defaultBudget(), 150);
-  const c = readConfig();
-  assert.equal(c.budget, 150);
-  assert.equal(deriveState(c).budget, 150);
-  fs.writeFileSync(path.join(vault, 'brain', 'config.json'), JSON.stringify({ cost: { enabled: true, monthlyBudget: null } }));
-  assert.equal(defaultBudget(), 0);
-  assert.equal(deriveState({ month: '', anchorUsd: 0, anchorAt: '', calibration: 1 }).budget, 0);
+  const cfgFile = path.join(vault, 'brain', 'config.json');
+  // execution amendment 2026-09-15 (A60): merge into the existing config rather than replacing it —
+  // test/setup.js:12 writes { provider: 'none' } to this same file as a hard harness invariant ("No test
+  // may resolve a real provider"), and restore the original bytes afterwards so nothing is left behind.
+  const original = fs.readFileSync(cfgFile, 'utf8');
+  try {
+    fs.writeFileSync(cfgFile, JSON.stringify({ ...JSON.parse(original), cost: { enabled: true, monthlyBudget: 150 } }));
+    assert.equal(defaultBudget(), 150);
+    const c = readConfig();
+    assert.equal(c.budget, 150);
+    assert.equal(deriveState(c).budget, 150);
+    fs.writeFileSync(cfgFile, JSON.stringify({ ...JSON.parse(original), cost: { enabled: true, monthlyBudget: null } }));
+    assert.equal(defaultBudget(), 0);
+    assert.equal(deriveState({ month: '', anchorUsd: 0, anchorAt: '', calibration: 1 }).budget, 0);
+  } finally {
+    fs.writeFileSync(cfgFile, original);
+  }
 });
