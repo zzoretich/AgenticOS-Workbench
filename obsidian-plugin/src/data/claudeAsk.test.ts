@@ -17,6 +17,17 @@ function fakeChild(stdout: string, code = 0, stderr = ""): ChildProcess {
   return child as unknown as ChildProcess;
 }
 
+/** A child whose "close" fires (with code null, as a real killed process reports) only when
+ *  kill() is called — never on its own, unlike fakeChild's setImmediate. Models the headless
+ *  claude process while a user cancel is in flight. */
+function cancelableChild(): ChildProcess {
+  const child = new EventEmitter() as EventEmitter & { stdout: EventEmitter; stderr: EventEmitter; kill: () => boolean };
+  child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
+  child.kill = () => { setImmediate(() => child.emit("close", null)); return true; };
+  return child as unknown as ChildProcess;
+}
+
 const CLAUDE_JSON = JSON.stringify({
   type: "result", subtype: "success", is_error: false, result: "**Answer** from context",
   total_cost_usd: 0.0034, usage: { input_tokens: 1505, output_tokens: 185 }, duration_api_ms: 2911,
@@ -126,4 +137,15 @@ test("resolveClaudeBin prefers agenticos.json claude.bin, then provider-state, t
   assert.equal(resolveClaudeBin("/v", d2), "/home/alice/.local/bin/claude");
   const d3 = { readAgenticosJson: () => null, readProviderState: () => null, existsSync: () => false, homedir: () => "/home/alice" };
   assert.equal(resolveClaudeBin("/v", d3), "claude");
+});
+
+test('a user cancel under claude reports "cancelled", never "exit null"', async () => {
+  const h = harness([fakeChild(""), cancelableChild()]);
+  const handle = runClaudeAsk(OPTS, h.deps);
+  while (h.calls.length < 2) await new Promise((r) => setImmediate(r));
+  handle.cancel();
+  const r = await handle.result;
+  assert.equal(r.ok, false);
+  assert.equal(r.error, "cancelled");
+  assert.equal(h.ledger.length, 0);
 });
