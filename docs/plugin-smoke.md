@@ -18,6 +18,7 @@ Run before tagging a release, on a vault created by `aos init` (not the develope
 
 - [ ] Vault root: typing a path that is not a directory (e.g. a file, or a path that does not exist) is ignored while typing — nothing is saved, no Notice.
 - [ ] Vault root: leaving the field (blur) on a value that is not a directory shows a Notice once ("Vault root: … is not a directory — keeping …") and restores the field to the saved value.
+- [ ] Vault root: typing a valid directory changes nothing until the field loses focus; on blur it saves once and, if it differs from this vault, shows the 10 s explanation once (Task 1 of Plan 5b — no per-keystroke save or Notice); reopen Settings — the saved value is shown, including after closing the modal with Escape while the field was focused.
 
 ## Pulse
 
