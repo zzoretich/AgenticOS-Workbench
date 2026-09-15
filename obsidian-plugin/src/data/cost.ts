@@ -61,9 +61,9 @@ export function buildCostBreakdown(runs: AgentRun[], days = 14): CostBreakdown {
 
 /**
  * Anchored budget config (brain/_index/cost-budget.json). The panel does NOT sum
- * token-goblin retail estimates (they run ~3.6× hot vs actual billing). It anchors
+ * the analyzer's retail estimates (they run ~3.6× hot vs actual billing). It anchors
  * to a real claude.ai billed figure at a point in time, then adds calibrated
- * token-goblin cost for sessions AFTER the anchor. Re-anchoring at each check-in
+ * analyzer cost for sessions AFTER the anchor. Re-anchoring at each check-in
  * resets accumulated drift to zero. Manage via brain/scripts/cost-budget.js.
  */
 export interface BudgetConfig {
@@ -71,13 +71,13 @@ export interface BudgetConfig {
   month: string; // "YYYY-MM" the anchor applies to
   anchorUsd: number; // real billed $ as of anchorAt
   anchorAt: string; // ISO timestamp the anchor was taken
-  calibration: number; // token-goblin → billed scaling factor (1 = raw)
+  calibration: number; // analyzer → billed scaling factor (1 = raw)
   note?: string;
 }
 
 export interface MonthlyBudget {
   monthLabel: string; // "June 2026"
-  monthToDate: number; // anchored: anchorUsd + calibration × post-anchor token-goblin cost
+  monthToDate: number; // anchored: anchorUsd + calibration × post-anchor analyzer cost
   budget: number;
   budgetRemaining: number; // budget - monthToDate (may go negative)
   pctOfBudget: number; // monthToDate / budget (0..1+, 0 if budget<=0)
@@ -90,7 +90,7 @@ export interface MonthlyBudget {
   costedCount: number; // runs this month carrying a cost (sync-coverage hint)
   // anchored-model fields
   anchorUsd: number; // real billed figure the month-to-date builds on
-  newSpend: number; // calibrated token-goblin cost since the anchor
+  newSpend: number; // calibrated analyzer cost since the anchor
   calibration: number;
   anchored: boolean; // true when a usable same-month anchor is present
   stale: boolean; // true when the anchor is from a previous month (needs re-anchor)
@@ -157,8 +157,8 @@ export function buildMonthlyBudget(
 
   const byDay = new Map<string, CostByDay>();
   const byScript = new Map<string, { cost: number; count: number }>();
-  let estTotal = 0; // raw token-goblin sum of the whole month
-  let newSpendRaw = 0; // raw token-goblin sum of sessions started at/after the anchor
+  let estTotal = 0; // raw analyzer sum of the whole month
+  let newSpendRaw = 0; // raw analyzer sum of sessions started at/after the anchor
   let costedCount = 0;
 
   for (const r of monthRuns) {
