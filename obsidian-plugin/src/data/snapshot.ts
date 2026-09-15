@@ -74,14 +74,12 @@ export interface SnapshotBrain {
     [k: string]: number | Record<string, number> | undefined;
   };
   sessions: {
-    count?: number;
+    // The daily-note count is counts.sessions (collectors/brain.js writes no count/active/stale here).
     today?: string;
     todayPresent?: boolean;
     streak?: number;
     latestDate?: string;
     oldestDate?: string;
-    active?: number;
-    stale?: number;
   };
   indexFiles: {
     brainMd?: { present: boolean; size: number; mtime: string; ageDays: number };
@@ -280,10 +278,12 @@ export interface SnapshotGsd {
 
 export interface FolderAtlasEntry {
   name: string;
+  scope?: "config" | "vault";
   present: boolean;
   entries?: number;
   files?: number;
   bytes?: number;
+  approx?: boolean;   // stat-walked two levels deep (collectors/folderAtlas.js STAT_ONLY_DEEP): files/bytes undercount deeper trees
   newestMtime?: string;
   mtime?: string;
 }
@@ -307,7 +307,9 @@ export interface SnapshotHealth {
 export interface SnapshotMaintenance {
   orphanSweep?: {
     enabled: boolean;
+    reason?: string;   // 'projects-unreadable:<code>' — the allow-list could not be read, nothing was swept (sweep-orphans.js rule 4)
     swept: { sessionEnv?: string[]; fileHistory?: string[] };
+    transientSwept?: { sessionEnv?: string[]; fileHistory?: string[] };
     skipped: { nonEmpty: number; hasJsonl: number; tooYoung: number; error: number };
   };
 }
