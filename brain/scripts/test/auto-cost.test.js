@@ -50,8 +50,10 @@ test('costTranscript surfaces a real analyzer failure with its stderr', () => {
 
 test('requiring auto-cost.js as a library does not run the hook prologue', () => {
   // With the prologue at module scope, AOS_HEADLESS=1 made this require() process.exit(0) before the marker printed.
-  const script = `require(${JSON.stringify(path.resolve(__dirname, '..', 'auto-cost.js'))}); process.stdout.write('LOADED_OK');`;
-  const r = spawnSync(process.execPath, ['-e', script], { encoding: 'utf8', env: { ...process.env, AOS_HEADLESS: '1' } });
+  // The child sets the variable itself: test/setup.js is preloaded in the child too (inherited NODE_OPTIONS) and
+  // deletes an inherited AOS_HEADLESS, so passing it through env would never reach the require below.
+  const script = `process.env.AOS_HEADLESS = '1'; require(${JSON.stringify(path.resolve(__dirname, '..', 'auto-cost.js'))}); process.stdout.write('LOADED_OK');`;
+  const r = spawnSync(process.execPath, ['-e', script], { encoding: 'utf8', env: { ...process.env } });
   assert.equal(r.status, 0, r.stderr);
   assert.equal(r.stdout, 'LOADED_OK');
 });
