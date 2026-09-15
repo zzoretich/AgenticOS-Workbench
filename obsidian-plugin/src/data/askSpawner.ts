@@ -1,4 +1,4 @@
-// askSpawner.ts — local spawner for brain/scripts/sdk/ask.js.
+// askSpawner.ts — local spawner for brain/scripts/sdk/ask.js --local (the provider path; see below).
 //
 // Replaces the legacy POST /api/ask round-trip. Captures the run id by
 // scraping the first stderr chunk (telemetry.js writes `[telemetry] run_id=<id>`)
@@ -8,25 +8,11 @@
 // Timeout: 90s default (longer than serve.js's 60s; SDK + tool calls add up).
 
 import { spawn, ChildProcess } from "child_process";
-import * as fs from "fs";
 
 const DEFAULT_TIMEOUT_MS = 90_000;
 const MAX_CONCURRENT = 2;
 
 let inflight = 0;
-
-function resolveNode(): string {
-  const candidates =
-    process.platform === "darwin"
-      ? ["/opt/homebrew/bin/node", "/usr/local/bin/node", "/usr/bin/node"]
-      : process.platform === "linux"
-      ? ["/usr/local/bin/node", "/usr/bin/node", "/snap/bin/node"]
-      : ["node.exe", "node"];
-  for (const p of candidates) {
-    try { if (fs.existsSync(p)) return p; } catch { /* ignore */ }
-  }
-  return "node";
-}
 
 export interface AskResult {
   ok: boolean;
@@ -52,6 +38,8 @@ export function isAskBusy(): boolean { return inflight >= MAX_CONCURRENT; }
 export interface RunAskOptions {
   vault: string;
   question: string;
+  /** Absolute node binary from Plugin.nodeBin(); "node" lets spawn try PATH. */
+  node?: string;
   timeoutMs?: number;
 }
 
@@ -87,7 +75,10 @@ export function runAsk(opts: RunAskOptions): AskHandle {
 
   const result = new Promise<AskResult>((resolve) => {
     try {
-      child = spawn(resolveNode(), ["brain/scripts/sdk/ask.js", opts.question], {
+      // --local is mandatory: Plan 2 made ask.js default to --context (prints the
+      // <<<AOS_CONTEXT feature=ask>>> block for a Claude Code session and exits without
+      // answering). The Chat tab wants the answer, so it always asks for the provider path.
+      child = spawn(opts.node ?? "node", ["brain/scripts/sdk/ask.js", "--local", opts.question], {
         cwd: opts.vault,
         windowsHide: true,
       });

@@ -15,7 +15,10 @@ import { CaptureModal } from "./src/ui/CaptureModal";
 import { HeartbeatClient } from "./src/data/heartbeatClient";
 import { LiveRunsWatcher } from "./src/data/liveRuns";
 import { sweepOrphans } from "./src/data/orphanSweep";
-import { resolveExe, COMMAND_REGISTRY, executeCommand } from "./src/data/commandRegistry";
+import { COMMAND_REGISTRY, executeCommand, setSpawnContext } from "./src/data/commandRegistry";
+import { resolveNodeBinary } from "./src/data/nodeResolver";
+import { readAgenticosJson, readVaultConfig, claudeConfigDir as defaultClaudeConfigDir } from "./src/data/aosConfig";
+import { seedToggleDefaults } from "./src/settingsDefaults";
 import { loadAllMaps } from "./src/data/workspaceMaps";
 import { listMemories } from "./src/data/memories";
 import { loadStaff } from "./src/data/staff";
@@ -48,6 +51,7 @@ export default class AgenticOSPlugin extends Plugin {
 
   async onload(): Promise<void> {
     await this.loadSettings();
+    setSpawnContext({ node: this.nodeBin(), vaultRoot: this.vaultRoot() });
 
     // heartbeat client — now a thin reflector over the local live watcher.
     // setSource() is called after the LiveRunsWatcher is constructed on onLayoutReady.
@@ -161,6 +165,15 @@ export default class AgenticOSPlugin extends Plugin {
     }
     this.settings = merged as unknown as AgenticOSSettings;
 
+    // Toggles that mirror keys the scripts own start from the vault config when data.json has
+    // never stored them (fresh install, or a data.json from before these settings existed):
+    // `aos cost enable` shows the COST row and telemetry.enabled=false stops the orphan sweep
+    // with no second switch here. After the merge because readVaultConfig() needs
+    // this.settings.vaultRoot. Once the user saves settings the stored value wins on every load.
+    // claudeConfigDir() is passed so an Obsidian launched without $CLAUDE_CONFIG_DIR still finds
+    // the agenticos.json the settings tab names (Ruling A6).
+    seedToggleDefaults(this.settings, raw, readVaultConfig(this.vaultRoot(), this.claudeConfigDir()));
+
     // One-time prune of dead data.json keys from the pre-P0 era (no interface
     // fields since P0 removed them, but the stored keys lingered on disk).
     const deadKeys = ["snapshotPath", "runsPath", "sessionPath", "snapshotHistoryDir", "refreshDebounceMs"];
@@ -171,6 +184,35 @@ export default class AgenticOSPlugin extends Plugin {
     }
   }
   async saveSettings(): Promise<void> { await this.saveData(this.settings); }
+
+  // ── AgenticOS accessors: every read of brain/_index and every spawn goes through these ──
+
+  /** Vault the plugin renders and spawns in: settings.vaultRoot, else this Obsidian vault. */
+  vaultRoot(): string {
+    if (this.settings.vaultRoot) return this.settings.vaultRoot;
+    const adapter = this.app.vault.adapter as unknown as { getBasePath?: () => string };
+    return adapter.getBasePath ? adapter.getBasePath() : process.cwd();
+  }
+
+  /**
+   * Claude Code config dir: settings → agenticos.json → $CLAUDE_CONFIG_DIR → ~/.claude.
+   * The tail delegates to aosConfig.claudeConfigDir() so this method and the data readers can
+   * never disagree, and this method is the single source every plugin-side agenticos.json read
+   * passes as `configDir` (loadSettings, PulseTab, SystemDrawer, ChatTab, claudeBin) — Ruling A6.
+   */
+  claudeConfigDir(): string {
+    if (this.settings.claudeConfigDir) return this.settings.claudeConfigDir;
+    // No argument on purpose: this call is what *resolves* the config dir, so it uses the env chain.
+    return readAgenticosJson()?.claudeConfigDir || defaultClaudeConfigDir();
+  }
+
+  /** Node binary for spawns; a login-shell probe result lands in settings and is persisted here. */
+  nodeBin(): string {
+    const before = this.settings.nodePath;
+    const bin = resolveNodeBinary(this.settings);
+    if (this.settings.nodePath !== before) void this.saveSettings();
+    return bin;
+  }
 
   // ── activate any view by type ────────────────────────────────────────
 
@@ -294,8 +336,7 @@ export default class AgenticOSPlugin extends Plugin {
   /** Refresh only if snapshot.json is missing or older than the stale threshold. */
   private async refreshSnapshotIfStale(): Promise<void> {
     try {
-      const adapter = this.app.vault.adapter as unknown as { getBasePath?: () => string };
-      const base = adapter.getBasePath ? adapter.getBasePath() : process.cwd();
+      const base = this.vaultRoot();
       const abs = path.join(base, SNAPSHOT_PATH);
       const ageMs = fs.existsSync(abs) ? Date.now() - fs.statSync(abs).mtimeMs : Infinity;
       if (ageMs > SNAPSHOT_STALE_MS) this.refreshSnapshot("stale-on-open");
@@ -308,13 +349,11 @@ export default class AgenticOSPlugin extends Plugin {
   private refreshSnapshot(reason: string): void {
     if (this.snapshotRefreshing) return;
     try {
-      const adapter = this.app.vault.adapter as unknown as { getBasePath?: () => string };
-      const base = adapter.getBasePath ? adapter.getBasePath() : process.cwd();
-      const root = base;
+      const root = this.vaultRoot();
       const script = path.join(root, "brain/scripts/scan-vault.js");
       if (!fs.existsSync(script)) { console.warn(`[agentic-os] scan-vault.js missing at ${script}`); return; }
       this.snapshotRefreshing = true;
-      const child = spawn(resolveExe("node"), [script, "--quiet"], {
+      const child = spawn(this.nodeBin(), [script, "--quiet"], {
         cwd: root,
         stdio: "ignore",
         detached: true,
@@ -334,12 +373,10 @@ export default class AgenticOSPlugin extends Plugin {
   /** Spawn the regen CLI for one workspace; snapshot.json modify triggers the view to refresh. */
   regenWorkspaceInsight(name: string): void {
     try {
-      const adapter = this.app.vault.adapter as unknown as { getBasePath?: () => string };
-      const base = adapter.getBasePath ? adapter.getBasePath() : process.cwd();
-      const root = base;
+      const root = this.vaultRoot();
       const script = path.join(root, "brain/scripts/regen-workspace-insight.js");
       if (!fs.existsSync(script)) { new Notice("regen script missing"); return; }
-      const child = spawn(resolveExe("node"), [script, name], { cwd: root, stdio: "ignore", detached: true });
+      const child = spawn(this.nodeBin(), [script, name], { cwd: root, stdio: "ignore", detached: true });
       child.unref();
       child.on("error", (e) => { console.warn("[agentic-os] regen failed:", e); });
     } catch (e) {
@@ -351,11 +388,10 @@ export default class AgenticOSPlugin extends Plugin {
    *  UI feedback comes from the pipelines ledger, not the exit code. */
   runBrainScript(relScript: string, args: string[] = [], onDone?: () => void): void {
     try {
-      const adapter = this.app.vault.adapter as unknown as { getBasePath?: () => string };
-      const base = adapter.getBasePath ? adapter.getBasePath() : process.cwd();
+      const base = this.vaultRoot();
       const script = path.join(base, relScript);
       if (!fs.existsSync(script)) { new Notice(`script missing: ${relScript}`); return; }
-      const child = spawn(resolveExe("node"), [script, ...args], { cwd: base, stdio: "ignore", detached: true });
+      const child = spawn(this.nodeBin(), [script, ...args], { cwd: base, stdio: "ignore", detached: true });
       child.unref();
       child.on("error", (e) => { console.warn("[agentic-os] runBrainScript failed:", e); new Notice(`spawn failed: ${relScript}`); });
       if (onDone) child.on("close", onDone);

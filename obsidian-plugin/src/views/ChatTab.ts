@@ -330,9 +330,7 @@ export class ChatTab {
     this.busy = true;
     await this.appendHistory({ ts: Date.now(), role: "user", text: q });
 
-    const adapter = this.plugin.app.vault.adapter as unknown as { getBasePath?: () => string };
-    const vaultPath = adapter.getBasePath ? adapter.getBasePath() : process.cwd();
-    const handle = runAsk({ vault: vaultPath, question: q });
+    const handle = runAsk({ vault: this.plugin.vaultRoot(), node: this.plugin.nodeBin(), question: q });
 
     this.liveTurn = {
       runId: null,
