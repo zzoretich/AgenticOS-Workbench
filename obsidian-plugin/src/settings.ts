@@ -5,8 +5,8 @@ import type { AgenticOSSettings } from "./settingsDefaults";
 import { resolveNodeBinary, resetProbeForTests } from "./data/nodeResolver";
 import { readProviderState, readAgenticosJson } from "./data/aosConfig";
 import { setSpawnContext } from "./data/commandRegistry";
+import { decideVaultRoot } from "./data/vaultRootField";
 import * as fs from "fs";
-import * as path from "path";
 
 export { DEFAULT_SETTINGS };
 export type { AgenticOSSettings };
@@ -69,34 +69,29 @@ export class AgenticOSSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Vault root")
-      .setDesc("Absolute path used for spawns, the live-runs watcher and orphan sweep, brain/config.json, provider-state.json and persona/IDENTITY.md. Pulse/Runs/Memory/Spaces and the status bar always render this Obsidian vault, regardless of this setting. Leave blank to use this vault. Consumed by Plugin.vaultRoot() on every read/spawn — takes effect immediately.")
+      .setDesc("Absolute path used for spawns, the live-runs watcher and orphan sweep, brain/config.json, provider-state.json and persona/IDENTITY.md. Pulse/Runs/Memory/Spaces and the status bar always render this Obsidian vault, regardless of this setting. Leave blank to use this vault. Consumed by Plugin.vaultRoot() on every read/spawn — committed when the field loses focus, and in effect from that moment.")
       .addText((t) => {
-        t.setPlaceholder("(this vault)").setValue(this.plugin.settings.vaultRoot).onChange(async (v) => {
-          const trimmed = v.trim();
-          if (trimmed && !isDirectory(trimmed)) return;
-          if (trimmed) {
-            const adapter = this.app.vault.adapter as unknown as { getBasePath?: () => string };
-            const basePath = adapter.getBasePath ? adapter.getBasePath() : process.cwd();
-            if (path.resolve(trimmed) !== path.resolve(basePath)) {
-              new Notice(
-                "Pulse/Runs/Memory/Spaces render this Obsidian vault; the Vault root governs spawns, the live-runs watcher, brain/config.json and provider-state.json.",
-                10000
-              );
-            }
-          }
-          this.plugin.settings.vaultRoot = trimmed;
+        // Plan 4 Ruling F12: no onChange. Obsidian binds onChange to the input event, so saving there
+        // committed every keystroke — stacking Notices, saving abandoned typo prefixes, and re-validating
+        // an unchanged value. The field commits ONCE, on blur, through the pure decideVaultRoot().
+        t.setPlaceholder("(this vault)").setValue(this.plugin.settings.vaultRoot);
+        t.inputEl.addEventListener("blur", async () => {
+          const adapter = this.app.vault.adapter as unknown as { getBasePath?: () => string };
+          const d = decideVaultRoot({
+            typed: t.getValue(),
+            saved: this.plugin.settings.vaultRoot,
+            basePath: adapter.getBasePath ? adapter.getBasePath() : process.cwd(),
+            isDirectory,
+          });
+          if (d.notice) new Notice(d.notice, d.noticeMs);
+          t.setValue(d.value);
+          if (d.action === "none") return;
+          if (d.action === "reject") return;
+          this.plugin.settings.vaultRoot = d.value;
           await this.plugin.saveSettings();
           // commandRegistry captured the context once in onload(); refresh it or ⌘K and the
           // command deck keep spawning in the old vault until Obsidian is reloaded.
           setSpawnContext({ node: this.plugin.nodeBin(), vaultRoot: this.plugin.vaultRoot() });
-        });
-        t.inputEl.addEventListener("blur", () => {
-          const trimmed = t.getValue().trim();
-          const saved = this.plugin.settings.vaultRoot;
-          if (trimmed && !isDirectory(trimmed)) {
-            new Notice(`Vault root: ${trimmed} is not a directory — keeping ${saved || "(this vault)"}`);
-            t.setValue(saved);
-          }
         });
       });
 
