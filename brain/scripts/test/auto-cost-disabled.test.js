@@ -45,3 +45,12 @@ test('with cost enabled and no analyzer, costOne records an error (a real miscon
   assert.equal(lastRun().status, 'error');
   assert.match(String(lastRun().error), /no-analyzer/);
 });
+
+test('with no brain/config.json at all, cost is disabled by default', async () => {
+  // final review Minor 12 residual (tests-6, M5): VAULT is private to this file (its own fs.mkdtempSync
+  // above, not the shared test/setup.js vault — that vault only forms when BRAIN_VAULT is unset, and this
+  // file overrides it), so removing its config.json affects no other test file in the run.
+  fs.rmSync(path.join(VAULT, 'brain', 'config.json'), { force: true });
+  await costOne('sess-absent', '');
+  assert.equal(lastRun().status, 'disabled');
+});
