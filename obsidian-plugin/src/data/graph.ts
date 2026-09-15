@@ -1,7 +1,8 @@
 import { App, TFile } from "obsidian";
-import { isDailyNotePath } from "./dailyNote";
-
-export type NodeKind = "memory" | "pattern" | "session" | "agent";
+import { DEFAULT_LAYOUT } from "./dailyNote";
+import { classifyPath } from "./graphKinds";
+import type { NodeKind } from "./graphKinds";
+export type { NodeKind };
 
 export interface GraphNode {
   id: string;
@@ -30,7 +31,8 @@ export interface Graph {
 
 const LINK_RE = /\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]/g;
 
-export async function buildGraph(app: App): Promise<Graph> {
+/** @param layout dailyNote.layout from brain/config.json — daily notes under it become "session" nodes. */
+export async function buildGraph(app: App, layout: string = DEFAULT_LAYOUT): Promise<Graph> {
   const files = app.vault.getMarkdownFiles();
   const nodes: GraphNode[] = [];
   const labelIndex = new Map<string, string>(); // lowercase label -> node id
@@ -38,7 +40,7 @@ export async function buildGraph(app: App): Promise<Graph> {
   const recentCutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
 
   for (const f of files) {
-    const kind = classify(f);
+    const kind = classifyPath(f.path, layout);
     if (!kind) continue;
     // sessions: keep only last 30 days
     if (kind === "session" && f.stat.mtime < recentCutoff) continue;
@@ -98,15 +100,6 @@ export async function buildGraph(app: App): Promise<Graph> {
   const byId = new Map<string, GraphNode>();
   for (const n of nodes) byId.set(n.id, n);
   return { nodes, edges, byId };
-}
-
-function classify(f: TFile): NodeKind | null {
-  const p = f.path;
-  if (p.startsWith("brain/memory/")) return "memory";
-  if (p.startsWith("brain/patterns/")) return "pattern";
-  if (isDailyNotePath(p)) return "session";
-  if (p.startsWith("agents/")) return "agent";
-  return null;
 }
 
 function makeLabel(f: TFile, kind: NodeKind): string {
