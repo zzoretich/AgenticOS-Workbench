@@ -8,7 +8,7 @@ const INPUTS: OmniInputs = {
   memories: [{ path: "brain/memory/user/profile.md", slug: "profile", type: "user", title: "Profile", created: null, updated: null, reviewed: null }],
   runs: [{ id: "run-123", label: "scan sweep" } as never],
   agents: [{ name: "Explore" } as never],
-  skills: [{ name: "token-goblin", path: "skills/token-goblin/SKILL.md" }],
+  skills: [{ name: "cost", path: "skills/cost/SKILL.md" }],
   actions: [{ id: "run-scan", title: "scan-vault is stale" } as never],
 };
 
