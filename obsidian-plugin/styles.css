@@ -1763,3 +1763,6 @@
 }
 .aos-omni-label { font-family: var(--aos-mono); font-size: 13px; }
 .aos-omni-hint { margin-left: 8px; font-size: 11px; }
+
+/* Task 8: the Chat tab's "no provider" hint (rendered instead of the composer) */
+.aos-asst-nohint { padding: 16px; display: flex; flex-direction: column; gap: 8px; }
