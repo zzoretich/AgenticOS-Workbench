@@ -63,3 +63,16 @@ test('persona.enabled=false in agenticos.json (merged last; the file aos init wr
   assert.ok(!out.includes('<persona>'), 'agenticos.json wins over brain/config.json');
   assert.match(out, /<brain-context>/);
 });
+
+// final review Minor 11 (tests-5): every case above is satisfied by an or-of-falses gate as well as by
+// last-wins, because no case has the two files disagreeing in THIS direction. lib/config.js merges
+// agenticos.json LAST, so a `true` there must beat a `false` in brain/config.json and inject the block.
+test('persona.enabled=true in agenticos.json overrides false in brain/config.json (last wins, not an or-of-falses)', () => {
+  const v = vault();
+  const cfgPath = path.join(v, 'agenticos.json');
+  fs.writeFileSync(path.join(v, 'brain', 'config.json'), JSON.stringify({ persona: { enabled: false } }));
+  fs.writeFileSync(cfgPath, JSON.stringify({ persona: { enabled: true } }));
+  const out = run(v, cfgPath);
+  assert.match(out, /<persona>\n# Atlas\n/, 'agenticos.json wins over brain/config.json in both directions');
+  assert.match(out, /<brain-context>/);
+});

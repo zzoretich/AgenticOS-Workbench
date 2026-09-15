@@ -217,7 +217,10 @@ test('init into a temp vault: seed set, vendored runtime, agenticos.json, plugin
   assert.ok(fs.existsSync(path.join(v, 'brain', '_index', 'recall-index.json')), 'recall --warm ran');
   assert.match(fs.readFileSync(path.join(v, 'brain', '_index', 'BRAIN.md'), 'utf8'), /^## Who$/m);
   assert.match(r.stdout, new RegExp(`@${v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/AGENTICOS\\.md`));
-  assert.match(r.stdout, /persona interview not installed in this phase|skipping the interview/);
+  // final review Minor 13 (tests-7): the Plan-3-era "not installed in this phase" alternative is dead —
+  // cli/persona-cmd.js:53's SKIP_MSG is the only branch reachable here (--yes, stdin a pipe, no
+  // --persona-json, and agenticos.json says persona.enabled true so aos.js:600 is not taken).
+  assert.match(r.stdout + r.stderr, /skipping the interview \(run `aos persona` later\)/);
 
   // Idempotent: a second init keeps user files and does not duplicate the seed.
   fs.appendFileSync(path.join(v, 'MEMORY.md'), '- [Kept](brain/memory/reference/kept.md) — user line\n');
@@ -607,14 +610,14 @@ test('persona on/off toggle the kill switch; persona and cost subcommands are wi
   const seeded = aos(sb, ['persona', '--persona-json', path.join(ROOT, 'cli', 'fixtures', 'persona.json')]);
   assert.equal(seeded.status, 0, seeded.stderr);
   assert.match(fs.readFileSync(path.join(sb.vault, 'persona', 'IDENTITY.md'), 'utf8'), /^# Atlas$/m);
-  assert.ok(!fs.existsSync(path.join(sb.home, 'Library', 'LaunchAgents')), 'fixture says schedule: false');
+  // final review Minor 19 (tests-13): ~/Library/LaunchAgents only exists on darwin, so the old check was
+  // vacuously true on Linux. cli/persona-cmd.js:84 prints "persona: scheduled <labels>" on every platform.
+  assert.ok(!/scheduled com\.agenticos/.test(seeded.stdout + seeded.stderr), 'fixture says schedule: false — nothing installed on any platform');
+  // final review Minor 13 (tests-7): the analyzer has shipped in extras/cost since Plan 5 Task 1 (ruling A2),
+  // so the "not installed in this phase" branch is dead — assert the one outcome that can happen.
   const cost = aos(sb, ['cost', 'enable'], { AOS_REPO_HINT: ROOT });
-  if (fs.existsSync(path.join(ROOT, 'extras', 'cost', 'analyze_transcript.py'))) {
-    assert.equal(cost.status, 0, cost.stderr);
-  } else {
-    assert.equal(cost.status, 1);
-    assert.match(cost.stdout, /cost module not installed in this phase/);
-  }
+  assert.equal(cost.status, 0, cost.stderr);
+  assert.match(cost.stdout, /cost: enabled \(python3 /);
   assert.equal(aos(sb, ['cost', 'disable']).status, 0);
   assert.equal(readJson(path.join(sb.cfg, 'agenticos.json')).cost.enabled, false);
   assert.match(aos(sb, ['cost']).stdout, /cost disabled/);

@@ -41,7 +41,9 @@ function sandbox() {
   const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   return { vault, env, logDir, journal: path.join(vault, 'persona', 'journal', `${day}.md`) };
 }
-function run(args, env) { return spawnSync('sh', [RUNNER, ...args], { env, encoding: 'utf8' }); }
+// final review Minor 14 (tests-8): a hung runner must fail the test, not hang the lane. 60 s is ~60× the
+// slowest real sub-run here (the 1 s PERSONA_TIMEOUT watchdog case), so it can never fire on a green run.
+function run(args, env) { return spawnSync('sh', [RUNNER, ...args], { env, encoding: 'utf8', timeout: 60000 }); }
 
 test('dry-run prints the invocation (binary, model, effort, tools, budget, json output, MCP/session flags) and executes nothing', () => {
   const s = sandbox();
@@ -180,13 +182,15 @@ test('watchdog kills the claude process itself on PERSONA_TIMEOUT; a non-executa
 
   const isAlive = (p) => { try { process.kill(p, 0); return true; } catch (e) { return e.code !== 'ESRCH'; } };
 
-  const start = Date.now();
-  const r = run(['monitor'], { ...s.env, PERSONA_CLAUDE_BIN: sleeper, PERSONA_TIMEOUT: '1' });
-  const elapsed = Date.now() - start;
-  assert.ok(elapsed < 10000, `runner should return within a few seconds of the 1s timeout, took ${elapsed}ms`);
-
   let pid = null;
   try {
+    // final review Minor 14 (tests-8): the timing assertion runs INSIDE the try, so a slow runner still
+    // reaches the finally below and the `sleep 30` fake is reaped instead of being left running.
+    const start = Date.now();
+    const r = run(['monitor'], { ...s.env, PERSONA_CLAUDE_BIN: sleeper, PERSONA_TIMEOUT: '1' });
+    const elapsed = Date.now() - start;
+    assert.ok(elapsed < 10000, `runner should return within a few seconds of the 1s timeout, took ${elapsed}ms`);
+
     assert.ok(fs.existsSync(pidFile), 'the fake claude should have started and recorded its own pid');
     pid = Number(fs.readFileSync(pidFile, 'utf8').trim());
     let alive = isAlive(pid);

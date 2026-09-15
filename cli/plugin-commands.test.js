@@ -52,6 +52,12 @@ test('MCP tools use the plugin-prefixed names Claude Code exposes for a plugin-d
 
 test('the six plugin skills exist with frontmatter and are free of owner paths', () => {   // execution amendment 2026-09-15 (A32)
   const SK = path.resolve(__dirname, '..', 'plugin', 'skills');
+  // final review Minor 18 (tests-12): iterating six names never catches a SEVENTH skill directory shipping
+  // by accident — pin the directory listing itself.
+  assert.deepEqual(
+    fs.readdirSync(SK, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort(),
+    ['cost', 'feedback-review', 'persona-flag-closer', 'persona-sitrep', 'recall', 'wrap'],
+    'exactly six plugin skills ship');
   for (const name of ['recall', 'wrap', 'feedback-review', 'cost', 'persona-flag-closer', 'persona-sitrep']) {
     const text = fs.readFileSync(path.join(SK, name, 'SKILL.md'), 'utf8');
     const fm = /^---\n([\s\S]*?)\n---\n/.exec(text);
