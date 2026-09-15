@@ -89,7 +89,7 @@ test('AGENTICOS.md sections and .obsidian seeds', () => {
 
 test('_gitignore carries the spec rules and is stored without the dot', () => {
   const g = read('_gitignore');
-  for (const line of ['brain/_index/*', '!brain/_index/scanner-config.json', '!brain/_index/MOC-*.md', 'persona/journal/', 'persona/STATE.md', 'persona/answers.json', 'persona/autoapply.json', '.obsidian/workspace.json', '.obsidian/plugins/*/data.json', '.obsidian/plugins/*/node_modules/']) {
+  for (const line of ['brain/_index/*', '!brain/_index/scanner-config.json', '!brain/_index/MOC-*.md', 'persona/journal/', 'persona/STATE.md', 'persona/answers.json', 'persona/autoapply.json', 'persona/DISABLED', 'persona/flag-closer/', '.obsidian/workspace.json', '.obsidian/plugins/*/data.json', '.obsidian/plugins/*/node_modules/']) {
     assert.ok(g.split('\n').includes(line), `missing rule ${line}`);
   }
   assert.ok(!fs.existsSync(path.join(T, '.gitignore')));

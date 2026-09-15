@@ -187,7 +187,7 @@ test('watchdog kills the claude process itself on PERSONA_TIMEOUT; a non-executa
     // final review Minor 14 (tests-8): the timing assertion runs INSIDE the try, so a slow runner still
     // reaches the finally below and the `sleep 30` fake is reaped instead of being left running.
     const start = Date.now();
-    const r = run(['monitor'], { ...s.env, PERSONA_CLAUDE_BIN: sleeper, PERSONA_TIMEOUT: '1' });
+    const r = run(['monitor'], { ...s.env, PERSONA_CLAUDE_BIN: sleeper, PERSONA_TIMEOUT: '1', PATH: '/usr/bin:/bin', HOME: s.vault });
     const elapsed = Date.now() - start;
     assert.ok(elapsed < 10000, `runner should return within a few seconds of the 1s timeout, took ${elapsed}ms`);
 
