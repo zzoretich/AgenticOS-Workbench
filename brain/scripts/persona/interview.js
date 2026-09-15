@@ -47,7 +47,7 @@ function positionals(argv) {
 
 const QUESTIONS = [
   { key: 'name', prompt: (c) => `Agent name (required; e.g. ${c.exampleName || 'Atlas'})`, required: true },
-  { key: 'addressAs', prompt: () => 'How should the agent address you? (name or title)', def: () => 'you' },
+  { key: 'addressAs', prompt: () => 'How should the agent address you? (name or title)', def: () => 'the user' },
   { key: 'voice', prompt: () => 'Voice, in one line', def: () => 'concise, direct, dry' },
   { key: 'priorities', prompt: () => 'What should it watch most? (comma-separated)', def: () => '' },
   { key: 'dutyModel', prompt: () => 'Model for background duties', def: (c) => c.defaultModel || 'haiku' },
@@ -76,7 +76,7 @@ function normalizeAnswers(raw, ctx = {}) {
   if (!EFFORTS.includes(dutyEffort)) throw new Error(`dutyEffort must be one of ${EFFORTS.join('|')}`);
   return {
     name,
-    addressAs: String(a.addressAs || '').trim() || 'you',
+    addressAs: String(a.addressAs || '').trim() || 'the user',
     voice: String(a.voice || '').trim() || 'concise, direct, dry',
     priorities: toList(a.priorities),
     dutyModel: String(a.dutyModel || '').trim() || ctx.defaultModel || 'haiku',
@@ -113,11 +113,33 @@ function templateVars(answers, { vault, node, logDir, now = new Date() }) {
   };
 }
 
+/**
+ * Renders and writes IDENTITY.md and duties/*.md from templatesDir — the persona's "always
+ * regenerated" files. Shared by writePersona (a fresh interview or a prefilled re-run) and
+ * renameAgent (A53): a rename re-renders these exactly like a prefilled re-run would, so the
+ * new name lands correctly with no leftover text from the old one.
+ * @returns {string[]} the rel paths written, relative to persona/.
+ */
+function renderRegenerated(persona, templatesDir, vars) {
+  const tmpl = (rel) => fs.readFileSync(path.join(templatesDir, rel), 'utf8');
+  const files = { 'IDENTITY.md': 'identity.template.md' };
+  for (const d of DUTIES) files[`duties/${d}.md`] = path.join('duties', `${d}.md`);
+  const written = [];
+  for (const rel of Object.keys(files)) {
+    const file = path.join(persona, rel);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, renderTemplate(tmpl(files[rel]), vars));
+    written.push(rel);
+  }
+  return written;
+}
+
 function writePersona({ vault, configDir, templatesDir, answers, node, logDir, now = new Date() }) {
   if (!vault || !configDir || !templatesDir) throw new Error('writePersona needs vault, configDir and templatesDir');
   const persona = path.join(vault, 'persona');
   const vars = templateVars(answers, { vault, node, logDir, now });
-  const written = []; const kept = [];
+  const written = renderRegenerated(persona, templatesDir, vars);
+  const kept = [];
   const put = (rel, body, keep = false) => {
     const file = path.join(persona, rel);
     if (keep && fs.existsSync(file)) { kept.push(rel); return; }
@@ -126,9 +148,7 @@ function writePersona({ vault, configDir, templatesDir, answers, node, logDir, n
     written.push(rel);
   };
   const tmpl = (rel) => fs.readFileSync(path.join(templatesDir, rel), 'utf8');
-  put('IDENTITY.md', renderTemplate(tmpl('identity.template.md'), vars));
   put('STATE.md', renderTemplate(tmpl('STATE.template.md'), vars), true);
-  for (const d of DUTIES) put(`duties/${d}.md`, renderTemplate(tmpl(path.join('duties', `${d}.md`)), vars));
   put('proposals/README.md', renderTemplate(tmpl(path.join('proposals', 'README.md')), vars), true);
   put('autoapply.json', JSON.stringify({ classes: [] }, null, 2) + '\n', true);
   fs.mkdirSync(path.join(persona, 'journal', 'logs'), { recursive: true });
@@ -151,21 +171,46 @@ function currentName(vault) {
   return null;
 }
 
+/**
+ * A53 — safe rename. A blind `\b<old>\b` replace across every guarded file would silently mangle
+ * a parsed heading for a name the validator still accepts (an agent named "Flags" turns the
+ * runner's `## Flags` anchor into `## Beacon`; "Persona" turns `# Persona State` into
+ * `# Beacon State`). Instead: IDENTITY.md and duties/*.md are re-rendered from the templates
+ * (the same path a prefilled re-run uses, so the new name lands correctly with nothing left
+ * over); PLAYBOOK.md only has its own H1 rewritten — it is the persona's hand-curated file, nothing
+ * else in it is touched; STATE.md gets the word-boundary replace, but only on lines that are not
+ * a heading.
+ */
 function renameAgent({ vault, newName }) {
   const old = currentName(vault);
   if (!old) throw new Error('no persona to rename (run the interview first)');
   const answers = normalizeAnswers({ ...(readAnswers(vault) || {}), name: newName });
   const persona = path.join(vault, 'persona');
-  const re = new RegExp(`\\b${old.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'g');
+  const escapedOld = old.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const changed = [];
-  for (const rel of ['IDENTITY.md', 'PLAYBOOK.md', 'STATE.md', ...DUTIES.map(d => `duties/${d}.md`)]) {
-    const file = path.join(persona, rel);
-    if (!fs.existsSync(file)) continue;
-    const before = fs.readFileSync(file, 'utf8');
-    const after = before.replace(re, answers.name);
-    if (after !== before) { fs.writeFileSync(file, after); changed.push(rel); }
-  }
+
   fs.writeFileSync(path.join(persona, 'answers.json'), JSON.stringify(answers, null, 2) + '\n');
+
+  const templatesDir = defaultTemplatesDir();
+  if (!templatesDir) throw new Error(`renameAgent: no persona templates found (looked in ${TEMPLATE_DIRS.join(', ')})`);
+  changed.push(...renderRegenerated(persona, templatesDir, templateVars(answers, { vault })));
+
+  const playbook = path.join(persona, 'PLAYBOOK.md');
+  if (fs.existsSync(playbook)) {
+    const h1 = new RegExp(`^# ${escapedOld} PLAYBOOK — the front door$`, 'm');
+    const before = fs.readFileSync(playbook, 'utf8');
+    const after = before.replace(h1, `# ${answers.name} PLAYBOOK — the front door`);
+    if (after !== before) { fs.writeFileSync(playbook, after); changed.push('PLAYBOOK.md'); }
+  }
+
+  const state = path.join(persona, 'STATE.md');
+  if (fs.existsSync(state)) {
+    const re = new RegExp(`\\b${escapedOld}\\b`, 'g');
+    const before = fs.readFileSync(state, 'utf8');
+    const after = before.split('\n').map(line => (line.startsWith('#') ? line : line.replace(re, answers.name))).join('\n');
+    if (after !== before) { fs.writeFileSync(state, after); changed.push('STATE.md'); }
+  }
+
   return { from: old, to: answers.name, changed, answers };
 }
 
@@ -176,8 +221,10 @@ function renameAgent({ vault, newName }) {
  * (`aos persona < answers.txt`), a pasted block, or a test writing every line at once — would
  * otherwise be dropped between prompts and the next question would wait forever. Input that
  * closes before a required answer throws (exit 1 from the CLI) instead of hanging.
+ * Default output is stderr, not stdout (A52): main()'s CLI contract is "prints one JSON line" —
+ * prompts (and readline's terminal echo) must never share stdout with that summary line.
  */
-async function ask(ctx = {}, prefill = null, streams = { input: process.stdin, output: process.stdout }) {
+async function ask(ctx = {}, prefill = null, streams = { input: process.stdin, output: process.stderr }) {
   const rl = readline.createInterface({ input: streams.input, output: streams.output });
   const pending = []; const waiters = []; let closed = false;
   rl.on('line', (line) => { const w = waiters.shift(); if (w) w(line); else pending.push(line); });
