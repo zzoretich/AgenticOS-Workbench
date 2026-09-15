@@ -91,6 +91,28 @@ test('renameAgent rewrites the name everywhere it was rendered', () => {
   assert.match(fs.readFileSync(path.join(v2, 'persona', 'IDENTITY.md'), 'utf8'), /^# Beacon$/m);
   assert.match(fs.readFileSync(path.join(v2, 'persona', 'PLAYBOOK.md'), 'utf8'), /^# Beacon PLAYBOOK — the front door$/m);
   assert.match(fs.readFileSync(path.join(v2, 'persona', 'duties', 'monitor.md'), 'utf8'), /You are Beacon\./);
+
+  // execution amendment 2026-09-15 (A55): a rename must keep an absolute node path in the
+  // re-rendered duty files (Task 8 calls renameAgent from launchd with a minimal PATH), and a
+  // same-name rename must report no changes and leave every file byte-identical.
+  const v3 = vaultDir();
+  I.writePersona({ vault: v3, configDir: configDir(), templatesDir: TEMPLATES, answers: I.normalizeAnswers(ANSWERS, {}), node: process.execPath });
+  I.renameAgent({ vault: v3, newName: 'Beacon' });
+  const sitrep3 = fs.readFileSync(path.join(v3, 'persona', 'duties', 'sitrep.md'), 'utf8');
+  // Anchored on the markdown backtick: process.execPath itself typically ends in "node" (e.g.
+  // /usr/local/bin/node), so a plain "node <path>" substring check would false-pass against the
+  // correct value's suffix. The backtick can only precede the start of the rendered command.
+  assert.ok(sitrep3.includes(`\`${process.execPath} ${v3}/brain/scripts/persona/sitrep-state.js diff`), 'the absolute node path survived the rename');
+  assert.ok(!sitrep3.includes(`\`node ${v3}/brain/scripts/persona/sitrep-state.js diff`), 'must not degrade to the bare "node" fallback');
+  const before3 = {};
+  for (const rel of ['IDENTITY.md', 'PLAYBOOK.md', 'STATE.md', 'duties/monitor.md', 'duties/reflect.md', 'duties/sitrep.md']) {
+    before3[rel] = fs.readFileSync(path.join(v3, 'persona', rel), 'utf8');
+  }
+  const r3 = I.renameAgent({ vault: v3, newName: 'Beacon' });
+  assert.deepEqual(r3.changed, []);
+  for (const rel of Object.keys(before3)) {
+    assert.equal(fs.readFileSync(path.join(v3, 'persona', rel), 'utf8'), before3[rel], `${rel} byte-identical after a same-name rename`);
+  }
 });
 
 test('ask() reads answers from a stream, applying defaults and prefill', async () => {
