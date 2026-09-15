@@ -77,6 +77,20 @@ test('renameAgent rewrites the name everywhere it was rendered', () => {
   assert.match(fs.readFileSync(path.join(vault, 'persona', 'PLAYBOOK.md'), 'utf8'), /^# Beacon PLAYBOOK/m);
   assert.equal(I.currentName(vault), 'Beacon');
   assert.throws(() => I.renameAgent({ vault: vaultDir(), newName: 'X' }), /no persona to rename/);
+
+  // execution amendment 2026-09-15 (A53): a rename must never rewrite a parsed STATE.md heading
+  // — a name that matches a heading word (e.g. "Flags") is exactly what the validator still
+  // accepts, and the old \b<old>\b replace across the whole file would turn `## Flags` into
+  // `## Beacon`.
+  const v2 = vaultDir();
+  I.writePersona({ vault: v2, configDir: configDir(), templatesDir: TEMPLATES, answers: I.normalizeAnswers({ ...ANSWERS, name: 'Flags' }, {}) });
+  I.renameAgent({ vault: v2, newName: 'Beacon' });
+  const state2 = fs.readFileSync(path.join(v2, 'persona', 'STATE.md'), 'utf8');
+  assert.match(state2, /## Flags/);
+  assert.match(state2, /^# Persona State$/m);
+  assert.match(fs.readFileSync(path.join(v2, 'persona', 'IDENTITY.md'), 'utf8'), /^# Beacon$/m);
+  assert.match(fs.readFileSync(path.join(v2, 'persona', 'PLAYBOOK.md'), 'utf8'), /^# Beacon PLAYBOOK — the front door$/m);
+  assert.match(fs.readFileSync(path.join(v2, 'persona', 'duties', 'monitor.md'), 'utf8'), /You are Beacon\./);
 });
 
 test('ask() reads answers from a stream, applying defaults and prefill', async () => {
@@ -85,7 +99,7 @@ test('ask() reads answers from a stream, applying defaults and prefill', async (
   for (const line of ['Atlas', '', '', 'docs', '', '', 'n']) input.write(line + '\n');
   const raw = await p;
   assert.equal(raw.name, 'Atlas');
-  assert.equal(raw.addressAs, 'you');
+  assert.equal(raw.addressAs, 'the user');
   assert.equal(raw.voice, 'terse');
   assert.equal(raw.priorities, 'docs');
   assert.equal(raw.dutyModel, 'haiku');
@@ -104,6 +118,17 @@ test('CLI --answers writes the layout and prints a JSON summary', () => {
   const usage = spawnSync(process.execPath, [path.join(__dirname, '..', 'persona', 'interview.js'), '--vault', vault, '--yes'], { encoding: 'utf8', env: { ...process.env, AOS_VAULT: '' } });
   assert.equal(usage.status, 0, 'a second --yes run reuses persona/answers.json and finds the checkout templates without --templates');
   assert.equal(I.defaultTemplatesDir(), TEMPLATES, 'from the checkout the fallback is vault-template/persona');
+
+  // execution amendment 2026-09-15 (A52): the interactive path (no --answers, no --yes) must
+  // still print exactly one JSON line on stdout — prompts go to stderr instead. Input is the
+  // name, then six empty lines accepting every default (7 lines for 7 QUESTIONS).
+  const interactiveVault = vaultDir();
+  const interactive = spawnSync(process.execPath, [path.join(__dirname, '..', 'persona', 'interview.js'), '--vault', interactiveVault, '--config-dir', configDir(), '--templates', TEMPLATES], { encoding: 'utf8', input: 'Atlas\n\n\n\n\n\n\n' });
+  assert.equal(interactive.status, 0, interactive.stderr);
+  const interactiveOut = JSON.parse(interactive.stdout.trim().split('\n').pop());
+  assert.ok(interactiveOut.persona && interactiveOut.written && interactiveOut.kept);
+  assert.equal(interactiveOut.schedule, true);
+  assert.ok(!interactive.stdout.includes('Agent name'), 'prompt text went to stderr, not stdout');
 });
 
 test('CLI positional `rename <name>` (the launcher form, contract §4.3) renames without starting the interview', () => {
