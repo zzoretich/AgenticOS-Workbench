@@ -14,8 +14,10 @@ const CONFIG_DIR_FOLDERS = new Set([
   'projects', 'session-env', 'sessions', 'shell-snapshots', 'skills', 'tasks',
 ]);
 
-// Directories where we should stat-only to stay fast (and avoid reading JS)
-const STAT_ONLY_DEEP = new Set(['.obsidian']);
+// Two-level stat walk (depth 2 instead of 10) for .obsidian (plugin bundles) and Claude Code's churn trees, which can
+// hold thousands of files and are scanned at every session end. Rows for these carry approx: true — files/bytes
+// undercount anything deeper (projects/<slug>/<uuid>.jsonl is depth 2 and still counted).
+const STAT_ONLY_DEEP = new Set(['.obsidian', 'projects', 'file-history', 'shell-snapshots', 'cache', 'session-env']);
 
 function collectFolderAtlas(opts = {}) {
   const vault = opts.vault || VAULT;
@@ -42,6 +44,7 @@ function collectFolderAtlas(opts = {}) {
       bytes: sizeInfo.bytes,
       newestMtime: sizeInfo.newestMtime,
       mtime: iso(s.mtimeMs),
+      ...(STAT_ONLY_DEEP.has(name) ? { approx: true } : {}),
     });
   }
   return rows;

@@ -198,7 +198,11 @@ test('init into a temp vault: seed set, vendored runtime, agenticos.json, plugin
   assert.equal(cfg.node, process.execPath);
   assert.equal(cfg.claudeConfigDir, sb.cfg);
   assert.equal(cfg.provider, 'none');
-  assert.deepEqual(cfg.claude, { model: 'haiku', perCallUsd: 0.05, perDayUsd: 0.5 });
+  // Contract §2: claude.bin records the resolved CLI (the sandbox's fake); the caps are unchanged — a subset check now.
+  assert.equal(cfg.claude.model, 'haiku');
+  assert.equal(cfg.claude.perCallUsd, 0.05);
+  assert.equal(cfg.claude.perDayUsd, 0.5);
+  assert.equal(cfg.claude.bin, FAKE_CLAUDE);
   assert.deepEqual(cfg.cost, { enabled: false });
   assert.deepEqual(cfg.persona, { enabled: true });
 
@@ -452,6 +456,70 @@ test('doctor warns when AOS_VAULT points at a directory that does not exist', ()
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.match(r.stdout, /warn\s+AOS_VAULT env\s+.*does not exist/);
   assert.match(r.stdout, /all checks passed/);
+});
+
+const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/** A hand-written agenticos.json whose claude.bin is `bin`, with the env knob and PATH out of the way so only the
+ *  recorded path — or the fallback chain after it — can produce a CLI. Nothing here is initialized (no plugin, no MCP). */
+function recordedSandbox(bin) {
+  const sb = sandbox();
+  fs.mkdirSync(path.join(sb.vault, 'brain', '_index'), { recursive: true });
+  fs.writeFileSync(path.join(sb.cfg, 'agenticos.json'), JSON.stringify({
+    vault: sb.vault, node: process.execPath, provider: 'auto', claude: { model: 'haiku', perCallUsd: 0.05, perDayUsd: 0.5, bin },
+  }, null, 2));
+  const emptyBin = path.join(sb.dir, 'empty-bin');
+  fs.mkdirSync(emptyBin);
+  // AOS_CLAUDE_BIN='' is falsy → ignored; a PATH without /bin makes `command -v claude` (and `sh`) unfindable.
+  return { sb, env: { AOS_CLAUDE_BIN: '', PATH: emptyBin } };
+}
+
+test('doctor and status prefer the claude.bin recorded in agenticos.json over the PATH probe (contract §2)', () => {
+  const { sb, env } = recordedSandbox(FAKE_CLAUDE);
+  const st = aos(sb, ['status'], env);
+  assert.equal(st.status, 0, st.stdout + st.stderr);
+  assert.match(st.stdout, new RegExp(`^claude\\s+bin=${reEsc(FAKE_CLAUDE)} `, 'm'));
+  const dr = aos(sb, ['doctor'], env);
+  assert.match(dr.stdout, new RegExp(`ok\\s+claude CLI\\s+${reEsc(FAKE_CLAUDE)}`));
+  assert.match(dr.stdout, /ok\s+claude login/);
+  assert.doesNotMatch(dr.stdout, /claude\.bin/, 'no warning while the recorded path is executable');
+});
+
+test('doctor warns on a recorded claude.bin that is no longer executable and falls back to the probe chain', () => {
+  const { sb, env } = recordedSandbox(path.join(os.tmpdir(), `aos-no-such-claude-${process.pid}`));
+  const dr = aos(sb, ['doctor'], env);
+  assert.match(dr.stdout, /FAIL\s+claude CLI\s+not found on PATH or in ~\/\.local\/bin/);
+  assert.match(dr.stdout, /warn\s+claude\.bin\s+\S+ is not an executable file/);
+  // With the env knob back, the chain finds the fake and the warning stays.
+  const again = aos(sb, ['doctor'], { PATH: env.PATH });
+  assert.match(again.stdout, new RegExp(`ok\\s+claude CLI\\s+${reEsc(FAKE_CLAUDE)}`));
+  assert.match(again.stdout, /warn\s+claude\.bin/);
+});
+
+test('upgrade re-records claude.bin and clears the cached provider probe only when the path changed', () => {
+  const sb = initialized();
+  const cfgPath = path.join(sb.cfg, 'agenticos.json');
+  assert.equal(readJson(cfgPath).claude.bin, FAKE_CLAUDE, 'init recorded the sandbox fake');
+  const moved = path.join(sb.dir, 'moved-claude.sh');
+  fs.copyFileSync(FAKE_CLAUDE, moved);
+  fs.chmodSync(moved, 0o755);
+  const state = path.join(sb.vault, 'brain', '_index', 'provider-state.json');
+  const now = new Date().toISOString();
+  const seed = (bin) => fs.writeFileSync(state, JSON.stringify({ checkedAt: now, name: 'none', reason: 'forced', claude: { loggedIn: false, checkedAt: now, bin } }));
+  seed(FAKE_CLAUDE);
+  const r = aos(sb, ['upgrade', '--no-obsidian', '--from-local', ROOT], { AOS_CLAUDE_BIN: moved });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(readJson(cfgPath).claude.bin, moved);
+  assert.match(r.stdout, /claude\.bin now \S+ \(was \S+\); cached provider probe cleared/);
+  // The stale probe is gone (the rebuild step may have written a fresh, claude-less state file under provider none;
+  // the file-local readJson throws on a missing file, hence the existsSync guard).
+  const st = fs.existsSync(state) ? readJson(state) : null;
+  assert.ok(!st || !st.claude, `stale claude probe should be gone: ${JSON.stringify(st)}`);
+  // Same path again: the cache is left alone.
+  seed(moved);
+  const same = aos(sb, ['upgrade', '--no-obsidian', '--from-local', ROOT], { AOS_CLAUDE_BIN: moved });
+  assert.equal(same.status, 0, same.stdout + same.stderr);
+  assert.doesNotMatch(same.stdout, /cached provider probe cleared/);
+  assert.equal(readJson(state).claude.bin, moved, 'unchanged path → cache kept');
 });
 
 test('upgrade re-vendors the runtime, migrates config, keeps memory', () => {

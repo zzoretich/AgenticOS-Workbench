@@ -19,6 +19,7 @@ const os = require('os');
 const path = require('path');
 const { spawn, execFileSync } = require('child_process');
 const { PATHS } = require('../../lib/paths.js');
+const { loadConfig } = require('../../lib/config.js');
 const { ProviderUnavailable, recordSpend } = require('./spend-ledger.js');
 
 const NOT_LOGGED_IN = /not logged in/i;
@@ -31,12 +32,28 @@ function defaultLookup() {
   } catch { return null; }
 }
 
-/** PATH (`command -v claude`) first, then ~/.local/bin/claude, else null. */
+function isExecutableFile(p) {
+  try { fs.accessSync(p, fs.constants.X_OK); return fs.statSync(p).isFile(); } catch { return false; }
+}
+
+/** agenticos.json `claude.bin` (contract §2), read through loadConfig() where that file merges last; null when unset. */
+function recordedBin() {
+  let cfg = null;
+  try { cfg = loadConfig(); } catch { return null; }
+  const b = cfg && cfg.claude && cfg.claude.bin;
+  return typeof b === 'string' && b ? b : null;
+}
+
+/** The path `aos init` recorded (while it is still an executable file) → PATH (`command -v claude`) →
+ *  ~/.local/bin/claude, else null. opts.recorded overrides the config read (null = "no recorded path");
+ *  opts.lookup / opts.candidates override the probes (tests). */
 function resolveClaudeBin(opts = {}) {
+  const recorded = opts.recorded === undefined ? recordedBin() : opts.recorded;
+  if (recorded && isExecutableFile(recorded)) return recorded;
   const found = (opts.lookup || defaultLookup)();
   if (found) return found;
   for (const c of opts.candidates || DEFAULT_CANDIDATES) {
-    try { fs.accessSync(c, fs.constants.X_OK); return c; } catch { /* next */ }
+    if (isExecutableFile(c)) return c;
   }
   return null;
 }

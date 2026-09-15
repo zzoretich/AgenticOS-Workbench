@@ -32,6 +32,9 @@ function fixtures() {
   w(cfg, 'downloads/d1', 'xx');
   w(cfg, 'ide/1.lock', '');
   w(cfg, 'sessions/4308.json', '{}');
+  // projects/: a transcript at depth 2 (counted) and a subagent file at depth 3 (beyond the two-level stat walk).
+  w(cfg, 'projects/-home-alice-app/abc.jsonl', '{}');
+  w(cfg, 'projects/-home-alice-app/abc/subagents/x.jsonl', '{}');
   return { vault, cfg };
 }
 
@@ -88,4 +91,9 @@ test('collectFolderAtlas resolves Claude-owned folders against the config dir an
   assert.equal(rows.templates.present, true);
   assert.equal(rows.tasks.present, false);
   assert.equal(rows.tasks.scope, 'config');
+  // Claude's churn trees are stat-walked two levels deep (a scan runs at every session end); the row says so.
+  assert.equal(rows.projects.present, true);
+  assert.equal(rows.projects.approx, true);
+  assert.equal(rows.projects.files, 1, 'the depth-3 file is not counted');
+  assert.equal(rows.agents.approx, undefined, 'ordinary rows are unchanged');
 });
