@@ -18,6 +18,9 @@ const { LEDGER_PATH, readLedgerFile } = require('../lib/pipeline-report.js');
 const lastRun = () => readLedgerFile().pipelines['auto-cost'].lastRun;
 
 test('with cost disabled, costOne records a disabled ledger entry and costs nothing', async () => {
+  // final review Minor 12 (tests-6): state the precondition rather than depending on the absence of a
+  // file the tests below create — an explicit `false` is what the disabled branch is supposed to read.
+  fs.writeFileSync(path.join(VAULT, 'brain', 'config.json'), JSON.stringify({ cost: { enabled: false } }));
   await costOne('sess-disabled', '');
   assert.equal(lastRun().status, 'disabled');
   assert.match(String(lastRun().reason), /cost disabled/);
