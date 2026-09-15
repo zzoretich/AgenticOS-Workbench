@@ -7,7 +7,7 @@
  *            [--persona-json <file>] [--from-local <repo-dir>] [--dry-run] [--yes]
  *   aos doctor · aos status · aos provider [auto|ollama|claude|none]
  *   aos upgrade [--from-local <repo-dir>] [--no-obsidian] · aos uninstall [--keep-vault] [--yes]
- *   aos persona [rename <name> | on | off] [--persona-json <file>] · aos cost [enable [--budget <usd>] | disable]
+ *   aos persona [rename <name> | on | off] [--persona-json <file>] · aos cost [enable [--budget <usd>] [--yes] | disable]
  *   aos terminal install
  *
  * Exit codes: 0 ok · 1 a check failed · 2 usage.
@@ -17,7 +17,7 @@
  * Config file: $AOS_CONFIG when set (the launcher exports it), else <configDir>/agenticos.json — the same
  * rule as lib/paths.js configFile(), so every aos subcommand reads the file the hooks read.
  * Test seams (env): AOS_CONFIG, AOS_CLAUDE_BIN, AOS_NPM_BIN, AOS_SKIP_NPM=1, AOS_CONFIRM_DELETE=<vault path>,
- * AOS_SKIP_OLLAMA_PROBE=1.
+ * AOS_SKIP_OLLAMA_PROBE=1, AOS_REPO_HINT=<repo-dir> (where cost-cmd.js looks for extras/cost before the checkout and the marketplace clone).
  */
 const fs = require('fs');
 const os = require('os');
@@ -42,7 +42,7 @@ const USAGE = `usage:
   aos upgrade [--from-local <repo-dir>] [--no-obsidian]
   aos uninstall [--keep-vault] [--yes]
   aos persona [rename <name> | on | off] [--persona-json <file>]
-  aos cost [enable [--budget <usd>] | disable]
+  aos cost [enable [--budget <usd>] [--yes] | disable]
   aos terminal install`;
 
 class UsageError extends Error {}
@@ -264,6 +264,9 @@ async function doctor() {
   if (cfg && cfg.cost && cfg.cost.enabled) {
     const py = python3Version();
     add('python3 >= 3.9', python3Ok(py), py ? `${py.major}.${py.minor}` : 'python3 not found (needed because cost is enabled)');
+    // execution amendment 2026-09-15 (A39): the opt-in analyzer is not in `need`; check it here, where cost is known to be on.
+    const analyzer = vault ? scriptPath(vault, 'cost/analyze_transcript.py') : null;
+    add('cost analyzer', !!analyzer && exists(analyzer), analyzer ? (exists(analyzer) ? analyzer : `${analyzer} missing — run aos cost enable`) : 'no vault');
   }
   for (const c of checks) {
     const tag = c.ok ? 'ok  ' : c.level === 'fail' ? 'FAIL' : c.level === 'warn' ? 'warn' : 'info';
@@ -391,7 +394,7 @@ function dailyNotesJson(layout) {
   return { folder: first.replace(/\{yyyy\}/g, String(new Date().getFullYear())), format: 'YYYY-MM-DD' };
 }
 
-function buildUserConfig(existing, { vault, provider, version, cost, bin }) {
+function buildUserConfig(existing, { vault, provider, version, bin }) {
   const base = {
     version, vault, node: process.execPath, claudeConfigDir: configDir(), provider: 'auto',
     claude: { model: 'haiku', perCallUsd: 0.05, perDayUsd: 0.5 },
@@ -406,7 +409,6 @@ function buildUserConfig(existing, { vault, provider, version, cost, bin }) {
   merged.node = process.execPath;
   merged.claudeConfigDir = configDir();
   if (provider) merged.provider = provider;
-  if (cost) merged.cost = { ...merged.cost, enabled: true };
   // Contract §2: record the resolved `claude` CLI; absent when none was found, so every reader falls back to its probe.
   if (bin !== undefined) {
     const caps = { ...(merged.claude || {}) };
@@ -646,12 +648,9 @@ async function init(flags) {
     out.warn('claude is not logged in; plugin install may fail');
   }
   out.log(`preflight: claude ${bin ? bin : 'absent'} · obsidian ${obsidianDetected() ? 'detected' : 'not detected (optional)'}`);
-  // `aos cost enable` refuses when the analyzer is not shipped yet; --cost must not flip the flag behind its back,
-  // or doctor demands python3 and every session end ledgers auto-cost with nothing to run.
-  const costShipped = exists(path.join(repo, 'extras', 'cost', 'analyze_transcript.py'));
-  if (flags.cost && !costShipped) out.warn('cost module is not shipped in this phase; leaving cost.enabled=false — run `aos cost enable` after the cost extra lands');
-  const wantCost = !!flags.cost && costShipped;
-  if (wantCost && !python3Ok(python3Version())) throw new CheckFailed('--cost needs python3 >= 3.9');
+  // execution amendment 2026-09-15 (A37): the analyzer ships from Plan 5 Task 1 on. --cost has one preflight (python3) and installs
+  // the module through cost-cmd.js right after agenticos.json is written (step 5b) — no shipped/not-shipped branch any more.
+  if (flags.cost && !python3Ok(python3Version())) throw new CheckFailed('--cost needs python3 >= 3.9');
   const oll = ollamaEndpoint(readJson(configPath()));
   out.log(`preflight: ollama ${oll.host}:${oll.port} ${ollamaProbeSkipped() ? 'not probed (AOS_SKIP_OLLAMA_PROBE=1)' : (await httpProbe(`http://${oll.host}:${oll.port}/api/tags`)) ? 'reachable' : 'not reachable (auto falls back to claude, then none)'}`);
 
@@ -687,10 +686,16 @@ async function init(flags) {
   // 5. agenticos.json
   await act(`write ${configPath()}`, () => {
     const existing = readJson(configPath());
-    const next = buildUserConfig(existing, { vault, provider, version, cost: wantCost, bin });
+    const next = buildUserConfig(existing, { vault, provider, version, bin });   // execution amendment 2026-09-15 (A15): `cost:` dropped, `bin` stays
     writeJson(configPath(), next);
     written.push(configPath());
     noteClaudeBinChange(vault, existing && existing.claude && existing.claude.bin, next.claude.bin);
+  });
+  // 5b. cost module (only with --cost) — execution amendment 2026-09-15 (A39): the three installed files join the checklist
+  if (flags.cost) await act('install the cost module (aos cost enable)', async () => {
+    const cc = require('./cost-cmd.js');
+    await cc.enable({ configDir: configDir(), vault, budget: flags.budget, yes, hint: flags.fromLocal || process.env.AOS_REPO_HINT, io: console });
+    for (const f of cc.FILES) written.push(path.join('brain', 'scripts', 'cost', f));
   });
 
   // 6. plugin
@@ -813,38 +818,8 @@ function persona(sub, flags) {
   });
 }
 
-async function cost(sub, flags) {
-  const cfg = loadConfigOrThrow();
-  const enabled = !!(cfg.cost && cfg.cost.enabled);
-  if (!sub[0]) { out.log(`cost ${enabled ? 'enabled' : 'disabled'}`); return 0; }
-  if (sub[0] === 'disable') {
-    cfg.cost = { ...(cfg.cost || {}), enabled: false };
-    writeJson(configPath(), cfg);
-    out.log('cost disabled (auto-cost reports "disabled" from the next session end)');
-    return 0;
-  }
-  if (sub[0] !== 'enable') throw new UsageError('usage: aos cost [enable [--budget <usd>] | disable]');
-  let repo = null;
-  try { repo = repoRoot({ fromLocal: flags.fromLocal || process.env.AOS_REPO_HINT }); } catch { repo = null; }
-  const src = repo ? path.join(repo, 'extras', 'cost') : null;
-  if (!src || !exists(path.join(src, 'analyze_transcript.py'))) { out.log('cost module not installed in this phase'); return 1; }
-  if (!python3Ok(python3Version())) throw new CheckFailed('python3 >= 3.9 is required for the cost module');
-  copyTree(src, scriptPath(cfg.vault, 'cost'), { force: true, written: [] });
-  cfg.cost = { ...(cfg.cost || {}), enabled: true };
-  writeJson(configPath(), cfg);
-  let budget = flags.budget !== undefined ? Number(flags.budget) : null;
-  if (budget === null && !flags.yes) {
-    const answer = await ask('Monthly budget in USD (blank to skip): ', '');
-    budget = answer ? Number(answer) : null;
-  }
-  if (budget !== null && !Number.isNaN(budget)) {
-    const p = path.join(cfg.vault, 'brain', 'config.json');
-    const vc = readJson(p, {}) || {};
-    vc.cost = { ...(vc.cost || {}), monthlyBudget: budget };
-    writeJson(p, vc);
-  }
-  out.log(`cost enabled (analyzer at ${scriptPath(cfg.vault, 'cost')}${budget !== null && !Number.isNaN(budget) ? `, monthly budget ${budget}` : ''})`);
-  return 0;
+function cost(sub, flags) {
+  return require('./cost-cmd.js').run(sub, { budget: flags.budget, yes: !!flags.yes, hint: flags.fromLocal || process.env.AOS_REPO_HINT, io: console });
 }
 
 // ── args and main ─────────────────────────────────────────────────────────────

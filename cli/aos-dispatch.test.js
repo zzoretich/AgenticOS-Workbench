@@ -47,3 +47,11 @@ test('vendorRuntime copies cli/ (no tests, fixtures, rehearsal), the persona tem
     assert.ok(!fs.existsSync(S(rel)), `${rel} is not vendored`);
   }
 });
+
+test('aos cost disable is wired through cli/aos.js', () => {
+  const w = world();
+  const r = aos(['cost', 'disable'], w);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(w.configDir, 'agenticos.json'), 'utf8')).cost.enabled, false);
+  assert.match(r.stdout, /cost: disabled/);
+});
