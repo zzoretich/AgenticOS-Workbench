@@ -1,0 +1,57 @@
+'use strict';
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { scanArsenal } = require('../persona/scan-arsenal.js');
+const { buildPlaybook } = require('../persona/build-playbook.js');
+
+function fixtureConfigDir() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-cfg-'));
+  const w = (rel, body) => { fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true }); fs.writeFileSync(path.join(root, rel), body); };
+  w('skills/demo-skill/SKILL.md', '---\nname: demo-skill\ndescription: Does demo things\n---\n# Demo\n');
+  w('skills/bare-skill/SKILL.md', '# Bare Skill Title\nbody\n');
+  w('agents/demo-agent.md', '---\nname: demo-agent\ndescription: Reviews demo output\n---\nbody\n');
+  w('agents/INDEX.md', '# not an agent\n');
+  w('commands/ship.md', '---\ndescription: Pre-commit checks\n---\nbody\n');
+  return root;
+}
+
+test('scanArsenal inventories skills, agents and commands with frontmatter fallbacks', () => {
+  const out = scanArsenal(fixtureConfigDir());
+  const byName = Object.fromEntries(out.map(e => [e.name, e]));
+  assert.equal(byName['demo-skill'].type, 'skill');
+  assert.equal(byName['demo-skill'].description, 'Does demo things');
+  assert.equal(byName['bare-skill'].description, 'Bare Skill Title');
+  assert.equal(byName['demo-agent'].type, 'agent');
+  assert.equal(byName['ship'].type, 'command');
+  assert.ok(!byName['INDEX'], 'INDEX.md is not an agent');
+  assert.deepEqual(out.map(e => e.type), ['agent', 'command', 'skill', 'skill'], 'sorted by type then name');
+});
+
+test('scanArsenal returns [] for a config dir with none of the three folders', () => {
+  assert.deepEqual(scanArsenal(fs.mkdtempSync(path.join(os.tmpdir(), 'aos-empty-'))), []);
+});
+
+test('buildPlaybook writes <vault>/persona/PLAYBOOK.md with the agent name and generated sections', () => {
+  const configDir = fixtureConfigDir();
+  const vault = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-vault-'));
+  const md = buildPlaybook({ configDir, vault, name: 'Atlas', now: new Date('2026-09-04T00:00:00Z') });
+  const file = path.join(vault, 'persona', 'PLAYBOOK.md');
+  assert.equal(fs.readFileSync(file, 'utf8'), md);
+  assert.match(md, /^type: persona-playbook$/m);
+  assert.match(md, /^updated: 2026-09-04$/m);
+  assert.match(md, /^# Atlas PLAYBOOK — the front door$/m);
+  for (const h of ['## Core Routes', '## Skills (generated)', '## Agents (generated)', '## Commands (generated)']) assert.ok(md.includes(h), h);
+  assert.ok(md.includes('| demo-skill | Does demo things | |'));
+  assert.ok(!md.includes('{{'), 'no unrendered placeholder');
+});
+
+test('buildPlaybook refuses to overwrite without force', () => {
+  const configDir = fixtureConfigDir();
+  const vault = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-vault-'));
+  buildPlaybook({ configDir, vault, name: 'Atlas' });
+  assert.throws(() => buildPlaybook({ configDir, vault, name: 'Atlas' }), /--force/);
+  assert.doesNotThrow(() => buildPlaybook({ configDir, vault, name: 'Atlas', force: true }));
+});
