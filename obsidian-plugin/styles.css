@@ -1769,3 +1769,8 @@
 
 /* Task 9: the two recovery buttons in the Term tab's "Terminal unavailable" panel */
 .aos-term-error-actions { display: flex; gap: 6px; margin-top: 4px; }
+
+/* Task 12: folder-atlas scope tag in the DISK legend (config = Claude config dir, vault = the vault).
+   margin-right: auto keeps the tag next to the folder name: .aos-disk-name is flex: 1, so without
+   it the tag is pushed across the row and renders flush against the byte figure. */
+.aos-disk-scope { font-size: 0.75em; margin-left: 0.4em; margin-right: auto; letter-spacing: 0.04em; text-transform: uppercase; }
