@@ -6,6 +6,13 @@ const os = require('os');
 const path = require('path');
 const C = require('./cost-cmd.js');
 
+// cost-cmd.js:25 reads AOS_CONFIG ahead of the injected configDir, so a developer's exported AOS_CONFIG
+// (or AOS_VAULT/AOS_REPO_HINT) would redirect this file's writes at their real vault (final review F2/safety-1,
+// same class as A12's cli/persona-cmd.test.js precedent).
+delete process.env.AOS_CONFIG;
+delete process.env.AOS_VAULT;
+delete process.env.AOS_REPO_HINT;
+
 const py = (line) => () => ({ stdout: `${line}\n`, stderr: '' });
 
 function world() {
@@ -41,6 +48,23 @@ test('enable refuses an old python and writes nothing', async () => {
   await assert.rejects(() => C.enable({ configDir: w.configDir, budget: '10', io: w.io, exec: py('Python 3.8.1') }), /3\.9/);
   assert.ok(!fs.existsSync(path.join(w.vault, 'brain', 'scripts', 'cost')));
   assert.equal(w.agenticos().cost.enabled, false);
+});
+
+// final review F7/safety-6: cost-cmd.js used to `readJson(vaultCfgFile) || {}` — a corrupt brain/config.json
+// (ENOENT and SyntaxError both return null from readJson) was silently replaced with just {"cost":{…}},
+// dropping dailyNote/recallRoots/roster/etc. with no warning. It must now refuse before touching anything.
+test('enable refuses an unparseable brain/config.json and writes nothing', async () => {
+  const w = world();
+  const vaultCfgFile = path.join(w.vault, 'brain', 'config.json');
+  const corrupt = '{"dailyNote":{"layout":"x"}, not valid json';
+  fs.writeFileSync(vaultCfgFile, corrupt);
+  await assert.rejects(
+    () => C.enable({ configDir: w.configDir, budget: '50', io: w.io, exec: py('Python 3.12.1') }),
+    /unparseable/,
+  );
+  assert.equal(fs.readFileSync(vaultCfgFile, 'utf8'), corrupt, 'brain/config.json bytes unchanged');
+  assert.equal(w.agenticos().cost.enabled, false, 'agenticos.json cost.enabled not flipped');
+  assert.ok(!fs.existsSync(path.join(w.vault, 'brain', 'scripts', 'cost')), 'no analyzer file copied');
 });
 
 test('disable flips the flag and leaves the files; run() maps subcommands to exit codes', async () => {

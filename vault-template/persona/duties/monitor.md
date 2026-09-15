@@ -4,7 +4,7 @@ You are {{AGENT_NAME}}. Work only inside the vault at `{{VAULT}}`. Read before y
 
 ## Checklist
 1. **Duty health:** list `{{LOG_DIR}}`; for every `duty-*.log` read the last line and note any duty whose last run says FAILED or "contract unmet"; for every `duty-*-error.log` that grew since yesterday, copy its last 3 lines into "found".
-2. **Vault repo health:** if `{{VAULT}}` is a git repository, run `git -C {{VAULT}} status --porcelain | wc -l`; more than 40 uncommitted changes is a "vault drifting" flag.
+2. **Vault repo health:** if `{{VAULT}}` is a git repository, run `git status --porcelain | wc -l` (the runner's cwd is the vault); more than 40 uncommitted changes is a "vault drifting" flag.
 3. **Unfinished work:** read the newest directory under `{{VAULT}}/brain/_index/agent-runs/` and today's and yesterday's daily notes (layout `{{DAILY_NOTE_LAYOUT}}` under `{{VAULT}}`); list sessions that ended mid-task.
 4. **Pending review:** count files in `{{VAULT}}/persona/proposals/` other than README.md and the `- [ ]` lines under `## Flags` in `{{VAULT}}/persona/STATE.md`; carry both counts into the sitrep line.
 5. **Prepare, don't just report:** for at most ONE flagged item whose fix is mechanical and safe, write the exact command or text into the journal entry. Never run it.

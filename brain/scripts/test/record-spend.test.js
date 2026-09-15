@@ -1,6 +1,10 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { spawnSync } = require('child_process');
 const { parseClaudeJson, rowFrom, check, dutySpendFrom } = require('../persona/record-spend.js');
 
 const RESULT = '{"type":"result","result":"done","total_cost_usd":0.0123,"usage":{"input_tokens":1505,"output_tokens":185},"duration_api_ms":2911}';
@@ -44,4 +48,30 @@ test('dutySpendFrom sums only today\'s duty:* rows and skips bad lines', () => {
   ].join('\n');
   assert.equal(dutySpendFrom(text), 0.75);
   assert.equal(dutySpendFrom(''), 0);
+});
+
+// final review F6/spec-8: an explicit persona.perDayUsd/perDutyUsd of 0 used to fall through the `||`
+// defaults (0 || 6 → 6) instead of being honoured — the user asking for "$0/day" silently got $6/day.
+test('record-spend.js --check honours an explicit zero cap: exit 3 for perDayUsd:0, and for perDutyUsd:0', () => {
+  const vault = fs.mkdtempSync(path.join(os.tmpdir(), 'record-spend-vault-'));
+  const cfgFile = path.join(vault, 'brain', 'config.json');
+  fs.mkdirSync(path.join(vault, 'brain', '_index'), { recursive: true });
+  const script = path.join(__dirname, '..', 'persona', 'record-spend.js');
+  const env = { ...process.env, AOS_VAULT: vault, AOS_CONFIG: path.join(vault, 'no-agenticos.json') };
+
+  fs.writeFileSync(cfgFile, JSON.stringify({ persona: { perDayUsd: 0 } }));
+  const r1 = spawnSync(process.execPath, [script, '--check'], { env, encoding: 'utf8' });
+  assert.equal(r1.status, 3, r1.stderr);
+  const out1 = JSON.parse(r1.stdout);
+  assert.equal(out1.perDayUsd, 0);
+  assert.equal(out1.allowed, false);
+
+  fs.writeFileSync(cfgFile, JSON.stringify({ persona: { perDutyUsd: 0 } }));
+  const r2 = spawnSync(process.execPath, [script, '--check'], { env, encoding: 'utf8' });
+  assert.equal(r2.status, 3, r2.stderr);
+  const out2 = JSON.parse(r2.stdout);
+  assert.equal(out2.perDutyUsd, 0);
+  assert.equal(out2.allowed, false);
+
+  fs.rmSync(vault, { recursive: true, force: true });
 });

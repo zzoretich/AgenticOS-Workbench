@@ -3,11 +3,11 @@
 /**
  * aos.js — AgenticOS Workbench installer and maintenance CLI. Zero dependencies (node: builtins only).
  *
- *   aos init [--vault <dir>] [--provider auto|ollama|claude|none] [--no-obsidian] [--terminal] [--cost]
+ *   aos init [--vault <dir>] [--provider auto|ollama|claude|none] [--no-obsidian] [--terminal] [--cost] [--budget <usd>]
  *            [--persona-json <file>] [--from-local <repo-dir>] [--dry-run] [--yes]
  *   aos doctor · aos status · aos provider [auto|ollama|claude|none]
  *   aos upgrade [--from-local <repo-dir>] [--no-obsidian] · aos uninstall [--keep-vault] [--yes]
- *   aos persona [rename <name> | on | off] [--persona-json <file>] · aos cost [enable [--budget <usd>] [--yes] | disable]
+ *   aos persona [rename <name> | on | off] [--persona-json <file>] [--yes] · aos cost [enable [--budget <usd>] [--yes] | disable]
  *   aos terminal install
  *
  * Exit codes: 0 ok · 1 a check failed · 2 usage.
@@ -36,12 +36,12 @@ const PROVIDERS = ['auto', 'ollama', 'claude', 'none'];
 const RUNTIME_SCRIPTS = { 'scan-vault': 'scan-vault.js', 'build-brain-md': 'build-brain-md.js', recall: 'sdk/recall-cli.js' };
 
 const USAGE = `usage:
-  aos init [--vault <dir>] [--provider auto|ollama|claude|none] [--no-obsidian] [--terminal] [--cost]
+  aos init [--vault <dir>] [--provider auto|ollama|claude|none] [--no-obsidian] [--terminal] [--cost] [--budget <usd>]
            [--persona-json <file>] [--from-local <repo-dir>] [--dry-run] [--yes]
   aos doctor | status | provider [auto|ollama|claude|none]
   aos upgrade [--from-local <repo-dir>] [--no-obsidian]
   aos uninstall [--keep-vault] [--yes]
-  aos persona [rename <name> | on | off] [--persona-json <file>]
+  aos persona [rename <name> | on | off] [--persona-json <file>] [--yes]
   aos cost [enable [--budget <usd>] [--yes] | disable]
   aos terminal install`;
 
