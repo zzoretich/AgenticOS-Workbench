@@ -17,7 +17,8 @@ import { LiveRunsWatcher } from "./src/data/liveRuns";
 import { sweepOrphans } from "./src/data/orphanSweep";
 import { COMMAND_REGISTRY, executeCommand, setSpawnContext } from "./src/data/commandRegistry";
 import { resolveNodeBinary } from "./src/data/nodeResolver";
-import { readAgenticosJson, readVaultConfig, claudeConfigDir as defaultClaudeConfigDir } from "./src/data/aosConfig";
+import { readAgenticosJson, readVaultConfig, readProviderState, claudeConfigDir as defaultClaudeConfigDir } from "./src/data/aosConfig";
+import { resolveClaudeBin } from "./src/data/claudeAsk";
 import { seedToggleDefaults } from "./src/settingsDefaults";
 import { loadAllMaps } from "./src/data/workspaceMaps";
 import { listMemories } from "./src/data/memories";
@@ -213,6 +214,21 @@ export default class AgenticOSPlugin extends Plugin {
     const bin = resolveNodeBinary(this.settings);
     if (this.settings.nodePath !== before) void this.saveSettings();
     return bin;
+  }
+
+  /** Chat needs a provider; the scripts publish theirs in brain/_index/provider-state.json. */
+  chatAvailable(): boolean {
+    return (readProviderState(this.vaultRoot())?.name ?? "none") !== "none";
+  }
+
+  /**
+   * claude CLI for the Chat tab's headless calls: agenticos.json `claude.bin` → provider-state
+   * bin → ~/.local/bin/claude → PATH. The agenticos.json read is threaded through
+   * claudeConfigDir() so the settings override reaches the recorded path (Ruling A6).
+   */
+  claudeBin(): string {
+    const configDir = this.claudeConfigDir();
+    return resolveClaudeBin(this.vaultRoot(), { readAgenticosJson: () => readAgenticosJson(configDir) });
   }
 
   // ── activate any view by type ────────────────────────────────────────

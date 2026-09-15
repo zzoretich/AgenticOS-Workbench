@@ -73,6 +73,7 @@ export class WorkbenchView extends ItemView {
     const body = root.createDiv({ cls: "aos-wb-body" });
     this.railEl = body.createDiv({ cls: "aos-wb-rail" });
     for (const tab of RAIL) {
+      if (tab.id === "chat" && !this.plugin.chatAvailable()) continue; // no provider → no Chat tab (hint lives in ChatTab.render)
       const b = this.railEl.createDiv({ cls: "aos-wb-railbtn", attr: { "data-tab": tab.id, "aria-label": tab.label } });
       b.createDiv({ text: tab.icon, cls: "aos-wb-railicon" });
       b.createDiv({ text: tab.label, cls: "aos-wb-raillabel" });
