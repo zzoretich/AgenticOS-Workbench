@@ -176,13 +176,19 @@ export class TerminalPanel {
   private renderError(e: unknown): void {
     this.bodyEl?.empty();
     const wrap = this.bodyEl?.createDiv({ cls: "aos-term-error" });
-    wrap?.createDiv({ cls: "aos-text-rose", text: "Terminal unavailable" });
+    if (!wrap) return;
+    wrap.createDiv({ cls: "aos-text-rose", text: "Terminal unavailable" });
     const msg = e instanceof Error ? e.message : String(e);
-    wrap?.createDiv({ cls: "aos-dim aos-term-error-msg", text: msg });
-    wrap?.createDiv({
+    wrap.createDiv({ cls: "aos-dim aos-term-error-msg", text: msg });
+    wrap.createDiv({
       cls: "aos-dim aos-term-error-hint",
-      text: "node-pty needs a binary matching Obsidian's Electron ABI. From the plugin dir run: npx @electron/rebuild -v <electron-version> (find it via process.versions.electron in the dev console).",
+      text: "The embedded terminal needs node-pty installed in the plugin folder (it is not part of the plugin bundle). macOS and Windows use the shipped prebuilds; Linux builds from source (needs python3, make, g++). If the module loads but reports an ABI mismatch, rebuild it for this Obsidian's Electron.",
     });
+    const actions = wrap.createDiv({ cls: "aos-term-error-actions" });
+    const install = actions.createEl("button", { cls: "aos-term-btn", text: "Install terminal support" });
+    install.addEventListener("click", () => { void this.plugin.installTerminalSupport(); });
+    const rebuild = actions.createEl("button", { cls: "aos-term-btn", text: "Rebuild for this Electron" });
+    rebuild.addEventListener("click", () => { void this.plugin.rebuildTerminalSupport(); });
   }
 
   private renderTabs(): void {

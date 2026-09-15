@@ -10,7 +10,7 @@
     "check:hex": "sh -c \"! grep -rnE '#[0-9a-fA-F]{3,8}' main.ts src --include='*.ts' | grep -v 'src/ui/tokens.ts' | grep -v 'src/ui/tokens.test.ts' | grep .\"",
     "build": "node scripts/gen-tokens.mjs && node esbuild.config.mjs production",
     "dev": "node scripts/gen-tokens.mjs && node esbuild.config.mjs",
-    "rebuild-pty": "electron-rebuild -v 43.1.1 -m . -w node-pty",
+    "rebuild-pty": "node scripts/rebuild-pty.mjs",
     "test": "npm run check:hex && node --import tsx --test $(find src -name '*.test.ts' | sort)"
   },
   "dependencies": {
