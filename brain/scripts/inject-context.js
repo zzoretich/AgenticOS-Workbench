@@ -92,12 +92,13 @@ process.stdin.on('end', () => {
     } catch (_) {}
 
     // Persona identity layer (<vault>/persona/): every session wakes as the user's named agent.
-    // Fails open: missing files or the DISABLED kill switch → no block, never an error.
+    // Off when persona.enabled=false (merged config; agenticos.json wins) or persona/DISABLED exists (kill switch). Fails open.
     let personaBlock = '';
     try {
       const PERSONA = PATHS.PERSONA;
       const identityPath = path.join(PERSONA, 'IDENTITY.md');
-      if (!fs.existsSync(path.join(PERSONA, 'DISABLED')) && fs.existsSync(identityPath)) {
+      const personaOn = require('./lib/config.js').loadConfig().persona.enabled !== false;
+      if (personaOn && !fs.existsSync(path.join(PERSONA, 'DISABLED')) && fs.existsSync(identityPath)) {
         const identity = fs.readFileSync(identityPath, 'utf8');
         let state = '';
         try { state = fs.readFileSync(path.join(PERSONA, 'STATE.md'), 'utf8'); } catch (_) {}
