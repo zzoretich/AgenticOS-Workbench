@@ -43,6 +43,8 @@ const USAGE = `usage:
   aos uninstall [--keep-vault] [--yes]
   aos persona [rename <name> | on | off] [--persona-json <file>] [--yes]
   aos cost [enable [--budget <usd>] [--yes] | disable]
+  aos update-status [--statusline | --snooze <N>d|<N>h | --off]
+  aos update-check [--quiet]
   aos terminal install`;
 
 class UsageError extends Error {}
@@ -271,6 +273,16 @@ async function doctor() {
     } catch (e) { add('MCP server answers', false, e.message); }
   }
   if (vault) add('obsidian plugin', exists(path.join(vault, '.obsidian', 'plugins', OBSIDIAN_PLUGIN_ID, 'main.js')), `${vault}/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/main.js`, 'warn');
+  if (vault) {
+    const u = require('./update-check.js');
+    const st = u.readState(vault);
+    const cfgU = u.updatesConfig({ configDir: configDir(), vault });
+    if (!cfgU.check) add('update check', true, 'disabled (updates.check = false)', 'info');
+    else if (!st) add('update check', true, 'never run — the next session start schedules one', 'info');
+    else add('update check', !st.lastError,
+      `checked ${st.checkedAt} · latest ${st.latest || '(none published)'}${st.lastError ? ` · ${st.lastError}` : ''}`,
+      'warn');
+  }
   const { host, port } = ollamaEndpoint(cfg);
   if (ollamaProbeSkipped()) add('ollama reachable', false, `${host}:${port} not probed (AOS_SKIP_OLLAMA_PROBE=1)`, 'info');
   else add('ollama reachable', await httpProbe(`http://${host}:${port}/api/tags`), `${host}:${port} (informational)`, 'info');
@@ -777,6 +789,9 @@ async function upgrade(flags) {
     runScript(vault, 'build-brain-md', [], { allowFail: true });
     runScript(vault, 'recall', ['--warm'], { allowFail: true });
   });
+  await act('refresh the update check', async () => {
+    await require('./update-check.js').runCheck({ vault, vaultVersion: version, configDir: configDir() });
+  });
   out.log(`upgraded to v${version}. Memory, notes and persona were not touched.`);
   return 0;
 }
@@ -846,9 +861,22 @@ function cost(sub, flags) {
   return require('./cost-cmd.js').run(sub, { budget: flags.budget, yes: !!flags.yes, hint: flags.fromLocal || process.env.AOS_REPO_HINT, io: console });
 }
 
+// ── updates ───────────────────────────────────────────────────────────────────
+function updateVault() { const cfg = readJson(configPath()); return (cfg && cfg.vault) || null; }
+
+function updateCheck(flags) {
+  return require('./update-check.js').cmdUpdateCheck({ vault: updateVault(), configDir: configDir(), flags, io: console });
+}
+function updateStatus(flags) {
+  return require('./update-check.js').cmdUpdateStatus({ vault: updateVault(), configDir: configDir(), flags, io: console });
+}
+function updateNotice() {
+  return require('./update-check.js').cmdUpdateNotice({ vault: updateVault(), configDir: configDir(), io: console });
+}
+
 // ── args and main ─────────────────────────────────────────────────────────────
-const VALUE_FLAGS = new Set(['vault', 'provider', 'persona-json', 'from-local', 'budget']);
-const BOOL_FLAGS = new Set(['dry-run', 'yes', 'terminal', 'cost', 'keep-vault']);
+const VALUE_FLAGS = new Set(['vault', 'provider', 'persona-json', 'from-local', 'budget', 'snooze']);
+const BOOL_FLAGS = new Set(['dry-run', 'yes', 'terminal', 'cost', 'keep-vault', 'statusline', 'off', 'quiet']);
 const NEGATABLE_FLAGS = new Set(['obsidian']);
 function camel(s) { return s.replace(/-([a-z])/g, (_, c) => c.toUpperCase()); }
 /** `--flag`, `--no-flag`, `--flag value`, `--flag=value`; unknown flags are a usage error (a typo must never start a real install). */
@@ -898,6 +926,9 @@ async function main(argv) {
     case 'doctor': return doctor();
     case 'status': return status();
     case 'provider': return provider(sub[0]);
+    case 'update-check': return updateCheck(flags);
+    case 'update-status': return updateStatus(flags);
+    case 'update-notice': return updateNotice();
     case 'help': case '--help': case '-h': out.log(USAGE); return 0;
     case '': out.log(USAGE); return 2;
     default: throw new UsageError(`unknown command: ${cmd}`);
@@ -920,7 +951,7 @@ module.exports = {
   doctor, status, provider, main,
   init, repoRoot, productVersion, copyTree, assertVaultOk, dailyNotesJson, buildUserConfig, linkLauncher, vendorRuntime,
   installPlugin, download, obsidianBundle, terminalInstall, personaInterview, checklist,
-  upgrade, uninstall, removeSchedules, terminal, persona, cost,
+  upgrade, uninstall, removeSchedules, terminal, persona, cost, updateCheck, updateStatus, updateNotice,
   PROVIDERS, PLUGIN_ID, MARKETPLACE, REPO_SLUG, OBSIDIAN_PLUGIN_ID, DEFAULT_VAULT, RUNTIME_SCRIPTS, USAGE,
   VALUE_FLAGS, BOOL_FLAGS, NEGATABLE_FLAGS,
   UsageError, CheckFailed, out,

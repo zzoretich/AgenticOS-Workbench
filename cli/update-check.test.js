@@ -452,3 +452,33 @@ test('update-notice records the plugin version it can see', async () => {
   assert.equal(s.installed, '0.1.0', 'min(plugin 0.2.0, vault 0.1.0)');
   assert.match(w.outs[0], /\(plugin 0\.2\.0, vault 0\.1\.0\)/);
 });
+
+const { spawnSync } = require('child_process');
+
+test('aos.js dispatches the three update commands and rejects a bad flag', () => {
+  const w = cmdWorld();
+  // AOS_NO_SPAWN=1 is mandatory here: this runs a real subprocess against the real clock, so the
+  // seeded checkedAt is stale and update-notice would otherwise spawn a live api.github.com request,
+  // breaking the no-network constraint.
+  const env = {
+    ...process.env, AOS_CONFIG: path.join(w.configDir, 'agenticos.json'),
+    HOME: w.configDir, AOS_NO_SPAWN: '1',
+  };
+  const aos = (args) => spawnSync(process.execPath, [path.join(__dirname, 'aos.js'), ...args], { encoding: 'utf8', env });
+
+  U.writeState(w.vault, behindState());
+  const line = aos(['update-status', '--statusline']);
+  assert.equal(line.status, 0, line.stderr);
+  assert.equal(line.stdout.trim(), '⬆ AgenticOS 0.2.0');
+
+  const notice = aos(['update-notice']);
+  assert.equal(notice.status, 0, notice.stderr);
+  assert.match(notice.stdout, /0\.2\.0 available/);
+
+  const bad = aos(['update-status', '--nope']);
+  assert.equal(bad.status, 2);
+  assert.match(bad.stderr, /unknown flag --nope/);
+
+  const help = aos(['help']);
+  assert.match(help.stdout, /aos update-status/);
+});
