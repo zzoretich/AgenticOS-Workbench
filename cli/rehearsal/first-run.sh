@@ -54,6 +54,10 @@ OUT=$(AOS_NO_SPAWN=1 sh "$AOS" update-notice 2>&1)
 [ -z "$OUT" ] || { echo "update-notice printed before any check: $OUT"; exit 1; }
 
 # A seeded store proves the render path without any network call.
+# AOS_NO_SPAWN=1 — NOT the timestamp — is the only thing keeping this leg off the network.
+# isStale() treats a FUTURE checkedAt as stale by design (clock skew: re-check rather than wait it
+# out), so 2099 reads as "maximally fresh" and behaves as "recheck immediately". Dropping
+# AOS_NO_SPAWN here would hand this CI gate a dependency on GitHub's uptime.
 cat > "$VAULT/brain/_index/update-check.json" <<'JSON'
 { "schema": 1, "checkedAt": "2099-01-01T00:00:00.000Z", "installed": "0.1.0", "vaultVersion": "0.1.0",
   "pluginVersion": "0.1.0", "latest": "9.9.9", "behind": true, "url": null, "snooze": null,
