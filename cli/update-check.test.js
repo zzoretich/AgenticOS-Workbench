@@ -57,12 +57,19 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-/** A temp vault with brain/_index/, plus helpers to read what the module wrote. */
+/**
+ * A temp vault with brain/_index/, plus helpers to read what the module wrote. `configDir` is a
+ * second, empty temp dir standing in for `~/.claude` — `updatesConfig`/`runCheck` default `configDir`
+ * to the REAL `CLAUDE_CONFIG_DIR || ~/.claude`, so any test that skips this would read (and could be
+ * broken by) the developer's actual `agenticos.json` (same class as cli/cost-cmd.test.js:18-20).
+ */
 function vaultWorld() {
   const vault = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-upd-'));
+  const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-upd-cfg-'));
   fs.mkdirSync(path.join(vault, 'brain', '_index'), { recursive: true });
   return {
     vault,
+    configDir,
     line: () => fs.readFileSync(path.join(vault, 'brain', '_index', 'update-line.txt'), 'utf8'),
     store: () => JSON.parse(fs.readFileSync(path.join(vault, 'brain', '_index', 'update-check.json'), 'utf8')),
   };
@@ -191,6 +198,15 @@ function fakeGet({ status = 200, body = '{}', err = null, chunks = null } = {}) 
 }
 
 const release = (tag) => JSON.stringify({ tag_name: tag, body: 'CHANGELOG\nwith\nmany\nlines' });
+const NOW3 = () => new Date('2026-09-16T00:00:00.000Z');
+
+/**
+ * `runCheck` bound to one world's ISOLATED config dir and a fixed clock. Tests call this, never
+ * `U.runCheck` directly — `configDir` defaults to `CLAUDE_CONFIG_DIR || ~/.claude`, so a call that
+ * omits it reads the developer's real `agenticos.json`. Binding it here makes that mistake
+ * impossible instead of relying on every future call site to remember.
+ */
+const check = (w, opts = {}) => U.runCheck({ vault: w.vault, configDir: w.configDir, now: NOW3, ...opts });
 
 test('httpGetJson surfaces the status code on a non-200', async () => {
   await assert.rejects(
@@ -209,10 +225,7 @@ test('httpGetJson surfaces the status code on a non-200', async () => {
 
 test('runCheck records a newer release and never renders the release body', async () => {
   const w = vaultWorld();
-  const s = await U.runCheck({
-    vault: w.vault, vaultVersion: '0.1.0', pluginVersion: '0.1.0',
-    get: fakeGet({ body: release('v0.2.0') }), now: () => new Date('2026-09-16T00:00:00.000Z'),
-  });
+  const s = await check(w, { vaultVersion: '0.1.0', pluginVersion: '0.1.0', get: fakeGet({ body: release('v0.2.0') }) });
   assert.equal(s.latest, '0.2.0');
   assert.equal(s.behind, true);
   assert.equal(s.installed, '0.1.0');
@@ -225,10 +238,7 @@ test('runCheck records a newer release and never renders the release body', asyn
 
 test('runCheck treats 404 as "no release yet" and stays silent', async () => {
   const w = vaultWorld();
-  const s = await U.runCheck({
-    vault: w.vault, vaultVersion: '0.1.0',
-    get: fakeGet({ status: 404 }), now: () => new Date('2026-09-16T00:00:00.000Z'),
-  });
+  const s = await check(w, { vaultVersion: '0.1.0', get: fakeGet({ status: 404 }) });
   assert.equal(s.latest, null);
   assert.equal(s.behind, false);
   assert.equal(w.line(), '', 'a private repo or an untagged repo says nothing at all');
@@ -236,42 +246,37 @@ test('runCheck treats 404 as "no release yet" and stays silent', async () => {
 
 test('runCheck keeps the last known-good latest when the transport fails', async () => {
   const w = vaultWorld();
-  const now = () => new Date('2026-09-16T00:00:00.000Z');
-  await U.runCheck({ vault: w.vault, vaultVersion: '0.1.0', get: fakeGet({ body: release('v0.2.0') }), now });
+  await check(w, { vaultVersion: '0.1.0', get: fakeGet({ body: release('v0.2.0') }) });
   for (const bad of [{ err: new Error('ENOTFOUND') }, { status: 403 }, { body: 'not json' }]) {
-    const s = await U.runCheck({ vault: w.vault, vaultVersion: '0.1.0', get: fakeGet(bad), now });
+    const s = await check(w, { vaultVersion: '0.1.0', get: fakeGet(bad) });
     assert.equal(s.latest, '0.2.0', 'the notice must not flicker on a flaky network');
     assert.equal(s.behind, true);
     assert.ok(s.lastError);
   }
   assert.equal(U.readState(w.vault).consecutiveFailures, 3);
-  const ok = await U.runCheck({ vault: w.vault, vaultVersion: '0.1.0', get: fakeGet({ body: release('v0.2.0') }), now });
+  const ok = await check(w, { vaultVersion: '0.1.0', get: fakeGet({ body: release('v0.2.0') }) });
   assert.equal(ok.consecutiveFailures, 0, 'a success resets the backoff');
 });
 
 test('runCheck carries pluginVersion forward when it cannot observe it', async () => {
   const w = vaultWorld();
-  const now = () => new Date('2026-09-16T00:00:00.000Z');
-  await U.runCheck({ vault: w.vault, vaultVersion: '0.1.0', pluginVersion: '0.2.0', get: fakeGet({ body: release('v0.2.0') }), now });
+  await check(w, { vaultVersion: '0.1.0', pluginVersion: '0.2.0', get: fakeGet({ body: release('v0.2.0') }) });
   // The detached producer has no CLAUDE_PLUGIN_ROOT, so it passes no pluginVersion at all.
-  const s = await U.runCheck({ vault: w.vault, vaultVersion: '0.1.0', get: fakeGet({ body: release('v0.2.0') }), now });
+  const s = await check(w, { vaultVersion: '0.1.0', get: fakeGet({ body: release('v0.2.0') }) });
   assert.equal(s.pluginVersion, '0.2.0', 'the skew signal survives a daily check');
   assert.equal(s.installed, '0.1.0');
 });
 
 test('runCheck ignores a tag it cannot order', async () => {
   const w = vaultWorld();
-  const s = await U.runCheck({
-    vault: w.vault, vaultVersion: '0.1.0',
-    get: fakeGet({ body: release('nightly') }), now: () => new Date('2026-09-16T00:00:00.000Z'),
-  });
+  const s = await check(w, { vaultVersion: '0.1.0', get: fakeGet({ body: release('nightly') }) });
   assert.equal(s.latest, null);
   assert.equal(w.line(), '');
 });
 
 test('updatesConfig merges brain/config.json under agenticos.json', () => {
   const w = vaultWorld();
-  const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-cfg-'));
+  const configDir = w.configDir;
   assert.deepEqual(U.updatesConfig({ configDir, vault: w.vault }), { check: true, intervalHours: 24 });
   fs.writeFileSync(path.join(w.vault, 'brain', 'config.json'),
     JSON.stringify({ updates: { check: true, intervalHours: 6 } }));
@@ -284,13 +289,11 @@ test('updatesConfig merges brain/config.json under agenticos.json', () => {
 
 test('runCheck does nothing when the check is disabled', async () => {
   const w = vaultWorld();
-  const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-cfg-'));
-  fs.writeFileSync(path.join(configDir, 'agenticos.json'),
+  fs.writeFileSync(path.join(w.configDir, 'agenticos.json'),
     JSON.stringify({ vault: w.vault, updates: { check: false } }));
-  const s = await U.runCheck({
-    vault: w.vault, vaultVersion: '0.1.0', configDir,
+  const s = await check(w, {
+    vaultVersion: '0.1.0',
     get: () => { throw new Error('the network must not be touched'); },
-    now: () => new Date('2026-09-16T00:00:00.000Z'),
   });
   assert.equal(s, null);
   assert.equal(fs.existsSync(path.join(w.vault, 'brain', '_index', 'update-check.json')), false);
