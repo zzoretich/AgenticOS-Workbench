@@ -20,6 +20,14 @@ test('cmpSemver orders releases and refuses what it cannot order', () => {
   assert.equal(U.cmpSemver('1.0.0-rc.1', '1.0.0'), -1, 'a prerelease precedes its release');
   assert.equal(U.cmpSemver('1.0.0-rc.1', '1.0.0-rc.2'), -1);
   assert.equal(U.cmpSemver('1.0.0-alpha-1', '1.0.0'), -1, 'a hyphen inside the prerelease is not a separator');
+  // Semver §11 prerelease precedence. A plain string compare gets every one of these wrong.
+  assert.equal(U.cmpSemver('1.0.0-rc.9', '1.0.0-rc.10'), -1, 'numeric identifiers compare numerically, not as text');
+  assert.equal(U.cmpSemver('1.0.0-rc.10', '1.0.0-rc.9'), 1);
+  assert.equal(U.cmpSemver('1.0.0-beta.2', '1.0.0-beta.11'), -1);
+  assert.equal(U.cmpSemver('1.0.0-alpha', '1.0.0-alpha.1'), -1, 'fewer identifiers rank lower');
+  assert.equal(U.cmpSemver('1.0.0-alpha.1', '1.0.0-alpha.beta'), -1, 'numeric ranks below alphanumeric');
+  assert.equal(U.cmpSemver('1.0.0-alpha.beta', '1.0.0-beta'), -1);
+  assert.equal(U.cmpSemver('1.0.0-rc.1', '1.0.0-rc.1'), 0);
   assert.equal(U.cmpSemver('nightly', '1.0.0'), null);
   assert.equal(U.cmpSemver('1.0', '1.0.0'), null, 'two-part versions are not orderable');
   assert.equal(U.cmpSemver(null, '1.0.0'), null);
