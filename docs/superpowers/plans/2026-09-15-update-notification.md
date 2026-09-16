@@ -780,7 +780,7 @@ Thin wrappers that resolve the environment and call Task 1–3 logic. `io` is in
 
 **Interfaces:**
 - Consumes: everything from Tasks 1–3.
-- Produces: `parseSnooze(spec) -> number|null` (milliseconds); `applySnooze({vault, configDir, spec, now}) -> state|null`; `setOff({configDir}) -> string` (the path written); `cmdUpdateStatus({vault, configDir, flags, io, now}) -> Promise<number>`; `cmdUpdateCheck({vault, configDir, flags, io, now, get}) -> Promise<number>`; `cmdUpdateNotice({vault, configDir, io, now, spawnFn}) -> Promise<number>`. All three resolve to an exit code and never throw except `--snooze` usage.
+- Produces: `parseSnooze(spec) -> number|null` (milliseconds); `applySnooze({vault, spec, now}) -> state|null` (no `configDir` — a snooze touches only vault-scoped store state); `setOff({configDir}) -> string` (the path written); `cmdUpdateStatus({vault, configDir, flags, io, now}) -> Promise<number>`; `cmdUpdateCheck({vault, configDir, flags, io, now, get}) -> Promise<number>`; `cmdUpdateNotice({vault, configDir, io, now, spawnFn}) -> Promise<number>`. All three resolve to an exit code and never throw except `--snooze` usage.
 
 - [ ] **Step 1: Write the failing test**
 
