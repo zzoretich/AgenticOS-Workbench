@@ -5,3 +5,6 @@ obsidian-plugin/main.js
 obsidian-plugin/data.json
 extras/cost/data/
 __pycache__/
+
+# Subagent-driven-development scratch (ledger, briefs, review packages)
+.superpowers/
