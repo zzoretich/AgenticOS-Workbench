@@ -90,8 +90,74 @@ function lowerVersion(a, b) {
   return c <= 0 ? a : b;
 }
 
+function storePath(vault) { return path.join(vault, STORE_REL); }
+function linePath(vault) { return path.join(vault, LINE_REL); }
+
+/** tmp + rename: a reader always sees the whole old file or the whole new one, never a partial write. */
+function writeAtomic(file, text) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = `${file}.tmp`;
+  fs.writeFileSync(tmp, text);
+  fs.renameSync(tmp, file);
+}
+
+/** Missing, unparseable, or a foreign schema all mean "no state" — never an error, never a migration. */
+function readState(vault) {
+  try {
+    const s = JSON.parse(fs.readFileSync(storePath(vault), 'utf8'));
+    return s && s.schema === SCHEMA ? s : null;
+  } catch { return null; }
+}
+
+function writeState(vault, state) { writeAtomic(storePath(vault), `${JSON.stringify(state, null, 2)}\n`); }
+
+function isBehind(state) {
+  return !!(state && state.latest && state.installed && cmpSemver(state.installed, state.latest) === -1);
+}
+
+/** A snooze covers one specific version, so a newer release breaks it. */
+function isSnoozed(state, now = new Date()) {
+  const s = state && state.snooze;
+  if (!s || !s.version || !s.until) return false;
+  if (s.version !== state.latest) return false;
+  const until = new Date(s.until).getTime();
+  return Number.isFinite(until) && until > now.getTime();
+}
+
+function isStale(state, { intervalHours = DEFAULT_INTERVAL_HOURS, now = new Date() } = {}) {
+  if (!state || !state.checkedAt) return true;
+  const t = new Date(state.checkedAt).getTime();
+  if (!Number.isFinite(t)) return true;
+  if (t > now.getTime()) return true; // clock skew: re-check rather than wait it out
+  const doublings = Math.min(state.consecutiveFailures || 0, MAX_BACKOFF_DOUBLINGS - 1);
+  return now.getTime() - t > intervalHours * 3600e3 * Math.pow(2, doublings);
+}
+
+function renderStatusline(state, now = new Date()) {
+  if (!isBehind(state) || isSnoozed(state, now)) return '';
+  return `⬆ AgenticOS ${state.latest}`;
+}
+
+function renderNotice(state, now = new Date()) {
+  if (!isBehind(state) || isSnoozed(state, now)) return '';
+  const { latest, pluginVersion, vaultVersion, installed } = state;
+  const skew = pluginVersion && vaultVersion && cmpSemver(pluginVersion, vaultVersion) !== 0;
+  const have = skew ? `plugin ${pluginVersion}, vault ${vaultVersion}` : `you have ${installed}`;
+  return `AgenticOS Workbench ${latest} available (${have}) — run \`aos upgrade\``;
+}
+
+/** Re-rendered by the producer on every check AND by update-notice at every session start, so
+ *  snooze expiry is never more than one session stale. */
+function writeFragment(vault, state, now = new Date()) {
+  const line = renderStatusline(state, now);
+  writeAtomic(linePath(vault), line ? `${line}\n` : '');
+  return line;
+}
+
 module.exports = {
   REPO_SLUG, LATEST_URL, STORE_REL, LINE_REL, SCHEMA,
   DEFAULT_INTERVAL_HOURS, MAX_BACKOFF_DOUBLINGS, MAX_BODY_BYTES, TAG_RE,
   parseTag, cmpSemver, lowerVersion,
+  storePath, linePath, writeAtomic, readState, writeState,
+  isBehind, isSnoozed, isStale, renderStatusline, renderNotice, writeFragment,
 };
