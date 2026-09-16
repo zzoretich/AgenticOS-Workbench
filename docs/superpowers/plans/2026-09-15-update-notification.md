@@ -1229,6 +1229,9 @@ git commit -m "feat: register update-check, update-status and update-notice in t
 - Modify: `plugin/bin/aos`
 - Modify: `plugin/hooks/hooks.json`
 - Test: `cli/plugin-manifests.test.js`
+- Test: `cli/aos-wrapper.test.js:131` — **required, not optional.** That assertion hardcodes the shim's
+  `SCRIPT=cli/aos.js` case arm as a literal string, so extending the arm below necessarily makes it
+  stale. Updating the expected literal is part of this task, not scope creep.
 
 **Interfaces:**
 - Consumes: the three commands from Task 5.
@@ -1277,15 +1280,29 @@ In `plugin/bin/aos`, extend the arm that routes to `cli/aos.js`:
   doctor|status|upgrade|uninstall|persona|cost|terminal|provider|update-check|update-status|update-notice) SCRIPT=cli/aos.js; set -- "$NAME" "$@" ;;
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [ ] **Step 4: Update the stale literal assertion in `cli/aos-wrapper.test.js`**
 
-Run: `node --test cli/plugin-manifests.test.js`
+Extending the case arm breaks an assertion that pinned its old text. Update the expected literal to
+match — do not loosen the assertion, which would lose the coverage it provides:
+
+```js
+  assert.ok(src.includes('doctor|status|upgrade|uninstall|persona|cost|terminal|provider|update-check|update-status|update-notice) SCRIPT=cli/aos.js'), 'maintenance names reach cli/aos.js');
+```
+
+- [ ] **Step 5: Run the tests to verify they pass**
+
+Run: `node --test cli/plugin-manifests.test.js cli/aos-wrapper.test.js`
 Expected: PASS — including `claude plugin validate` if the CLI is on PATH.
 
-- [ ] **Step 5: Commit**
+Then the full suite, because this task touches two shared test files:
+
+Run: `node --test cli/*.test.js tools/*.test.js`
+Expected: 126 passing, 0 failures.
+
+- [ ] **Step 6: Commit**
 
 ```bash
-git add plugin/bin/aos plugin/hooks/hooks.json cli/plugin-manifests.test.js
+git add plugin/bin/aos plugin/hooks/hooks.json cli/plugin-manifests.test.js cli/aos-wrapper.test.js
 git commit -m "feat: print the update notice from the SessionStart hook"
 ```
 
