@@ -374,6 +374,61 @@ test('update-status --off writes to agenticos.json and clears the fragment', asy
   assert.equal(w.line(), '', 'nothing will refresh the fragment again, so it must not outlive the switch');
 });
 
+test('update-status --off refuses an unparseable agenticos.json instead of clobbering it', async () => {
+  const w = cmdWorld();
+  const cfgFile = path.join(w.configDir, 'agenticos.json');
+  const corrupt = '{ not json, and definitely not the vault/node/claude.bin the user had';
+  fs.writeFileSync(cfgFile, corrupt);
+  const code = await U.cmdUpdateStatus({ vault: w.vault, configDir: w.configDir, flags: { off: true }, io: w.io, now: NOW });
+  assert.equal(code, 1);
+  assert.equal(fs.readFileSync(cfgFile, 'utf8'), corrupt, 'a file that does not parse is left byte-identical, never replaced');
+  assert.match(w.outs.join('\n'), /ERR .*refusing/);
+});
+
+test('update-status with state present prints the full dump (default, no flags)', async () => {
+  const w = cmdWorld();
+  U.writeState(w.vault, behindState());
+  assert.equal(await U.cmdUpdateStatus({ vault: w.vault, configDir: w.configDir, flags: {}, io: w.io, now: NOW }), 0);
+  const text = w.outs.join('\n');
+  assert.match(text, /installed 0\.1\.0 · latest 0\.2\.0/);
+  assert.match(text, /checked 2026-09-15T00:00:00\.000Z/);
+  assert.match(text, /AgenticOS Workbench 0\.2\.0 available/);
+});
+
+test('update-status default dump falls back on a store with no checkedAt instead of printing "checked undefined"', async () => {
+  const w = cmdWorld();
+  const s = behindState();
+  delete s.checkedAt;
+  U.writeState(w.vault, s);
+  assert.equal(await U.cmdUpdateStatus({ vault: w.vault, configDir: w.configDir, flags: {}, io: w.io, now: NOW }), 0);
+  assert.match(w.outs.join('\n'), /checked \(unknown\)/);
+});
+
+test('runCheck resolves rather than rejecting when the vault cannot be written (spec §9)', async (t) => {
+  const w = vaultWorld();
+  const idx = path.join(w.vault, 'brain', '_index');
+  fs.chmodSync(idx, 0o500);
+  // A root process (or some filesystems) ignores this chmod entirely — verify it actually blocks a
+  // write before trusting the assertion below, per plan instructions, rather than passing vacuously.
+  let blocked = true;
+  try {
+    fs.writeFileSync(path.join(idx, 'probe.tmp'), 'x');
+    fs.unlinkSync(path.join(idx, 'probe.tmp'));
+    blocked = false;
+  } catch { /* expected: this is what the test needs */ }
+  if (!blocked) {
+    fs.chmodSync(idx, 0o700);
+    return t.skip('this platform/user does not enforce directory permissions (likely running as root)');
+  }
+  try {
+    const s = await check(w, { vaultVersion: '0.1.0', get: fakeGet({ body: release('v0.2.0') }) });
+    assert.equal(s.latest, '0.2.0', 'the result is still computed even though nothing could be written to disk');
+    assert.equal(s.behind, true);
+  } finally {
+    fs.chmodSync(idx, 0o700); // restore write access so the OS can reclaim the temp dir later
+  }
+});
+
 test('update-check --quiet writes state and prints nothing', async () => {
   const w = cmdWorld();
   assert.equal(await U.cmdUpdateCheck({
@@ -382,6 +437,16 @@ test('update-check --quiet writes state and prints nothing', async () => {
   }), 0);
   assert.deepEqual(w.outs, []);
   assert.equal(U.readState(w.vault).latest, '0.2.0');
+});
+
+test('update-check without --quiet prints the installed/latest line', async () => {
+  const w = cmdWorld();
+  assert.equal(await U.cmdUpdateCheck({
+    vault: w.vault, configDir: w.configDir, flags: {}, io: w.io, now: NOW,
+    get: fakeGet({ body: release('v0.2.0') }),
+  }), 0);
+  assert.equal(w.outs.length, 1);
+  assert.match(w.outs[0], /^installed 0\.1\.0 · latest 0\.2\.0$/);
 });
 
 test('update-notice prints the notice and re-renders the fragment', async () => {

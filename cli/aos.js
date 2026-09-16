@@ -790,7 +790,19 @@ async function upgrade(flags) {
     runScript(vault, 'recall', ['--warm'], { allowFail: true });
   });
   await act('refresh the update check', async () => {
-    await require('./update-check.js').runCheck({ vault, vaultVersion: version, configDir: configDir() });
+    const u = require('./update-check.js');
+    // upgrade() is the one caller that knows all three surfaces just moved, and it can observe the
+    // plugin's version directly (installedPlugin(bin).installPath, same as doctor()) — unlike the detached
+    // producer, which has no CLAUDE_PLUGIN_ROOT and must carry the stored pluginVersion forward. Passing
+    // `version` here instead would be wrong on --from-local, where `claude plugin update` is skipped and
+    // the installed plugin genuinely stays behind.
+    const plugin = bin ? installedPlugin(bin) : null;
+    await u.runCheck({
+      vault,
+      vaultVersion: version,
+      pluginVersion: plugin ? u.pluginVersionFrom(plugin.installPath) : null,
+      configDir: configDir(),
+    });
   });
   out.log(`upgraded to v${version}. Memory, notes and persona were not touched.`);
   return 0;
