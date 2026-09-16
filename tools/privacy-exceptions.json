@@ -3,5 +3,9 @@
   { "path": "tools/privacy-exceptions.json", "term": "*" },
   { "path": "tools/export-scrubs.js", "term": "*" },
   { "path": "cli/aos.js", "term": "Proton" },
-  { "path": "docs/chief-of-staff.md", "term": "Proton" }
+  { "path": "docs/chief-of-staff.md", "term": "Proton" },
+  { "path": "README.md", "term": "Zach" },
+  { "path": "tools/brand-assets.js", "term": "Zach" },
+  { "path": "tools/brand-assets.test.js", "term": "Zach" },
+  { "path": "docs/assets/banner.svg", "term": "Zach" }
 ]
