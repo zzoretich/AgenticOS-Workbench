@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/banner.svg" width="960" alt="AgenticOS Workbench — a second brain for Claude Code" />
+  <img src="docs/assets/banner.svg" width="960" alt="AgenticOS Workbench — a second brain for Claude Code. Created by Zach Zoretich." />
 </p>
 
 <p align="center">
@@ -8,11 +8,11 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/zzoretich/AgenticOS-Workbench/actions/workflows/ci.yml"><img src="https://github.com/zzoretich/AgenticOS-Workbench/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
-  <img src="https://img.shields.io/badge/node-%E2%89%A5%2020-3fb950?style=flat-square" alt="Node 20 or newer" />
-  <img src="https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Linux-58a6ff?style=flat-square" alt="macOS and Linux" />
-  <img src="https://img.shields.io/badge/models-Claude%20Code%20alone%20%C2%B7%20Ollama%20optional-bc8cff?style=flat-square" alt="Works with Claude Code alone; Ollama optional" />
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-e6edf3?style=flat-square" alt="MIT" /></a>
+  <a href="https://github.com/zzoretich/AgenticOS-Workbench/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/zzoretich/AgenticOS-Workbench/ci.yml?branch=main&amp;style=flat-square&amp;labelColor=0d1117&amp;label=ci" alt="CI status" /></a>
+  <img src="https://img.shields.io/badge/node-%E2%89%A5%2020-3fb950?style=flat-square&amp;labelColor=0d1117" alt="Node 20 or newer" />
+  <img src="https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Linux-58a6ff?style=flat-square&amp;labelColor=0d1117" alt="macOS and Linux" />
+  <img src="https://img.shields.io/badge/models-Claude%20Code%20alone%20%C2%B7%20Ollama%20optional-bc8cff?style=flat-square&amp;labelColor=0d1117" alt="Works with Claude Code alone; Ollama optional" />
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-e6edf3?style=flat-square&amp;labelColor=0d1117" alt="MIT" /></a>
 </p>
 
 <p align="center">
@@ -277,7 +277,7 @@ plugin             the Claude Code plugin: hooks.json, .mcp.json, bin/aos, 14 co
 obsidian-plugin    the Agentic OS HUD (TypeScript, esbuild)
 vault-template     the seed vault (AGENTICOS.md, MEMORY.md, brain/, persona templates)
 extras             schedule templates (launchd, cron), the cost analyzer, optional Ollama helpers
-tools              export-from-vault, the privacy gate, and the pixel-art generator behind docs/assets
+tools              export-from-vault, the privacy gate, and the brand-asset generator behind docs/assets
 docs               install, chief of staff, cost, the Obsidian smoke checklist, the release acceptance runbook
 ```
 
@@ -290,7 +290,7 @@ npm run gate             # the privacy gate — fails on any forbidden term
 cd extras/cost && python3 -m unittest      # the cost analyzer's tests
 sh cli/rehearsal/first-run.sh              # a complete install in a temp HOME with a fake claude (what CI runs)
 npm run build -w obsidian-plugin           # rebuild the HUD bundle
-node tools/pixel-assets.js                 # regenerate the 8-bit assets under docs/assets
+node tools/brand-assets.js                 # regenerate the brand assets under docs/assets
 ```
 
 `brain/scripts/test/live/` needs a running Ollama and is excluded from `npm test`. The Obsidian plugin's manual checklist is `docs/plugin-smoke.md`; the per-release acceptance runbook is `docs/acceptance.md`.
@@ -318,6 +318,18 @@ aos uninstall                  # additionally delete the vault, after you type i
 | [extras/ollama/README.md](extras/ollama/README.md) | Running Ollama as a supervised service, pulling the default models. |
 
 <p align="center"><img src="docs/assets/divider.svg" width="960" alt="" /></p>
+
+<a name="credits"></a>
+## <img src="docs/assets/icon-staff.svg" width="36" align="top" alt="" /> Credits
+
+Created by **Zach Zoretich** — [@zzoretich](https://github.com/zzoretich).
+
+Built with [Claude Code](https://claude.com/claude-code). The brand assets under `docs/assets/` are
+generated, not hand-drawn: `node tools/brand-assets.js` rebuilds all 23 from one palette in
+[tools/brand-assets.js](tools/brand-assets.js), and `tools/brand-assets.test.js` holds them to being
+inert, on-palette and byte-stable.
+
+Issues and pull requests are welcome — the project stays contributor-owned under the license below.
 
 <a name="license"></a>
 ## <img src="docs/assets/icon-license.svg" width="36" align="top" alt="" /> License
