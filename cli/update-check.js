@@ -129,8 +129,9 @@ function isStale(state, { intervalHours = DEFAULT_INTERVAL_HOURS, now = new Date
   const t = new Date(state.checkedAt).getTime();
   if (!Number.isFinite(t)) return true;
   if (t > now.getTime()) return true; // clock skew: re-check rather than wait it out
-  const doublings = Math.min(state.consecutiveFailures || 0, MAX_BACKOFF_DOUBLINGS - 1);
-  return now.getTime() - t > intervalHours * 3600e3 * Math.pow(2, doublings);
+  // Math.max clamps negative failure counts to 0 so exponential backoff never shrinks the interval.
+  const doublings = Math.min(Math.max(state.consecutiveFailures || 0, 0), MAX_BACKOFF_DOUBLINGS);
+  return now.getTime() - t >= intervalHours * 3600e3 * Math.pow(2, doublings);
 }
 
 function renderStatusline(state, now = new Date()) {
