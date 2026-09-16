@@ -4,6 +4,7 @@ import { loadRuns, AgentRun, RUNS_PATH, formatDuration, formatRelative, formatCl
 import { sparkline } from "../data/sparkline";
 import { loadStaff, StaffAgent } from "../data/staff";
 import { loadPipelines, pipelineStatuses, PipelineStatus, PIPELINES_PATH } from "../data/pipelines";
+import { updateBadge } from "../data/updateBadge";
 import type AgenticOSPlugin from "../../main";
 
 export const VIEW_TYPE_SIDEBAR_HUD = "agentic-os-sidebar-hud";
@@ -106,6 +107,12 @@ export class SidebarHUDView extends ItemView {
     status.createSpan({ cls: `aos-pill ${hbUp ? "aos-pill-cyan" : "aos-pill-dim"}`, text: hbUp ? "⚡ live" : "⚡ idle" });
     if (s.config.settings.dangerousMode) {
       status.createSpan({ cls: "aos-pill aos-pill-rose", text: "danger" });
+    }
+    // Only when the scanner says a newer release exists and it is not snoozed; otherwise the row is
+    // unchanged. updateBadge() owns that decision (src/data/updateBadge.ts).
+    const update = updateBadge(s.config.updates, formatRelative);
+    if (update) {
+      status.createSpan({ cls: "aos-pill aos-pill-amber", text: update.label, attr: { title: update.title } });
     }
 
     // sparkline trend tiles
