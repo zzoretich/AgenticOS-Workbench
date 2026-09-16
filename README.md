@@ -206,6 +206,29 @@ Every runtime script is also reachable as `aos <name>` — `aos scan-vault`, `ao
 
 Skills answer to plain phrases: *sitrep* (or `/agenticos:persona-sitrep`), *review persona flags* (`/agenticos:persona-flag-closer`), plus `recall`, `wrap`, `feedback-review` and `cost`.
 
+### Staying up to date
+
+`aos upgrade` pulls the newest version. To be told when there is one, AgenticOS writes a one-line
+fragment that is either empty or the update notice:
+
+```sh
+cat "$HOME/AgenticOS/brain/_index/update-line.txt" 2>/dev/null
+```
+
+Add that line to your own status line script and it contributes nothing until an update exists. It
+reads a file and never touches the network, so it costs nothing per render. AgenticOS never edits
+your `settings.json` or claims the status line itself.
+
+You are also told once at the start of every session. The check itself runs at most once a day, in a
+detached process, so nothing ever waits on GitHub.
+
+```sh
+aos update-status                 # what is installed, what is available
+aos update-status --snooze 7d     # silence this version for a week
+aos update-status --off           # stop checking entirely
+aos update-check                  # check right now
+```
+
 <p align="center"><img src="docs/assets/divider.svg" width="960" alt="" /></p>
 
 <a name="how-it-works"></a>

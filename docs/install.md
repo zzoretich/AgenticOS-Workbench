@@ -64,6 +64,19 @@ Every runtime script is also reachable as `aos <name>` (`aos scan-vault`, `aos r
 
 **In-session commands.** `/ask-brain`, `/standup`, `/reflect-week`, `/consolidate-memory` and `/compress` print an assembled context block by default and let Claude answer in your own session; that step persists nothing model-generated. The one write it may perform is recall's self-heal: a missing `brain/_index/recall-index.json` is rebuilt in pure Node, with no model call.
 
+## Update checks
+
+### `updates`
+
+| Key | Default | Meaning |
+|---|---|---|
+| `updates.check` | `true` | Whether to check GitHub Releases for a newer version. |
+| `updates.intervalHours` | `24` | Minimum hours between checks. Doubles on consecutive failures, capped at four doublings. |
+
+Set in `brain/config.json`, or in `~/.claude/agenticos.json` to override it (`agenticos.json` wins).
+`aos update-status --off` writes `updates.check = false` to `agenticos.json`. The check is
+unauthenticated and sends nothing but an HTTP GET to `api.github.com`.
+
 ## Uninstall
 
 `aos uninstall --keep-vault` leaves `~/.claude` as it was and keeps the vault. `aos uninstall` additionally deletes the vault after you type its path (or with `AOS_CONFIRM_DELETE=<vault>` for scripts). `--yes` skips the prompt and always keeps the vault; deletion needs the typed path or `AOS_CONFIRM_DELETE=<vault>`.

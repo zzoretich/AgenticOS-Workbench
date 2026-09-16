@@ -48,6 +48,24 @@ node "$ROOT/cli/rehearsal/mcp-call.js" wrap_session '{"facts":["The first-run re
 [ -f "$VAULT/brain/memory/reference/rehearsal-marker.md" ]
 grep -q 'rehearsal-marker.md' "$VAULT/MEMORY.md"
 
+echo "== update notice degrades silently and renders a seeded update"
+# Nothing has been checked yet: the notice must print nothing and still exit 0.
+OUT=$(AOS_NO_SPAWN=1 sh "$AOS" update-notice 2>&1)
+[ -z "$OUT" ] || { echo "update-notice printed before any check: $OUT"; exit 1; }
+
+# A seeded store proves the render path without any network call.
+cat > "$VAULT/brain/_index/update-check.json" <<'JSON'
+{ "schema": 1, "checkedAt": "2099-01-01T00:00:00.000Z", "installed": "0.1.0", "vaultVersion": "0.1.0",
+  "pluginVersion": "0.1.0", "latest": "9.9.9", "behind": true, "url": null, "snooze": null,
+  "lastError": null, "consecutiveFailures": 0 }
+JSON
+AOS_NO_SPAWN=1 sh "$AOS" update-status --statusline | grep -q '9.9.9' || { echo "no fragment for a seeded update"; exit 1; }
+AOS_NO_SPAWN=1 sh "$AOS" update-notice | grep -q '9.9.9 available' || { echo "no session notice for a seeded update"; exit 1; }
+grep -q '9.9.9' "$VAULT/brain/_index/update-line.txt" || { echo "update-notice did not re-render the fragment"; exit 1; }
+
+# Leave the vault as the later legs expect: an unseeded store renders nothing.
+rm -f "$VAULT/brain/_index/update-check.json" "$VAULT/brain/_index/update-line.txt"
+
 echo "== doctor"
 # doctor's "plugin installed" check reads fake-claude's `plugin list --json`, which lists the plugin only while
 # FAKE_PLUGIN_PATH is set — so it is exported here, after init has already exercised the install path.
