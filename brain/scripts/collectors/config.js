@@ -79,6 +79,9 @@ function collectConfig(opts = {}) {
   // The update check owns brain/_index/update-check.json; the HUD only ever reads the summary.
   const upd = readJson(path.join(vault, 'brain', '_index', 'update-check.json'));
   if (upd && upd.schema === 1) {
+    // NOTE: this duplicates isSnoozed() in cli/update-check.js, which is the source of truth for the
+    // snooze rule. The duplication is deliberate — brain/scripts must not require from cli/ — so if
+    // you change the rule in either place, change it in both.
     const snoozed = !!(upd.snooze && upd.snooze.version === upd.latest
       && new Date(upd.snooze.until).getTime() > Date.now());
     out.updates = {

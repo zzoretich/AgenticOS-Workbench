@@ -209,15 +209,24 @@ Skills answer to plain phrases: *sitrep* (or `/agenticos:persona-sitrep`), *revi
 ### Staying up to date
 
 `aos upgrade` pulls the newest version. To be told when there is one, AgenticOS writes a one-line
-fragment that is either empty or the update notice:
+fragment that is either empty or the update notice, at `<vault>/brain/_index/update-line.txt`. With
+the default vault (`~/AgenticOS`, unless you passed `--vault` to `aos init`):
 
 ```sh
 cat "$HOME/AgenticOS/brain/_index/update-line.txt" 2>/dev/null
 ```
 
-Add that line to your own status line script and it contributes nothing until an update exists. It
-reads a file and never touches the network, so it costs nothing per render. AgenticOS never edits
-your `settings.json` or claims the status line itself.
+If you used a different vault, `aos update-status --statusline` prints the same fragment without you
+having to hardcode the path:
+
+```sh
+aos update-status --statusline 2>/dev/null
+```
+
+Add either line to your own status line script and it contributes nothing until an update exists.
+Both read a file (the second through one short-lived `aos` process) and never touch the network, so
+they cost nothing per render. AgenticOS never edits your `settings.json` or claims the status line
+itself.
 
 You are also told once at the start of every session. The check itself runs at most once a day, in a
 detached process, so nothing ever waits on GitHub.
