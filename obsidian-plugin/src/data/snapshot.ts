@@ -33,8 +33,17 @@ export interface GsdManifestMeta {
   timestamp: string;
 }
 
+export interface SnapshotUpdates {
+  installed: string | null;
+  latest: string | null;
+  behind: boolean;
+  checkedAt: string | null;
+  snoozed: boolean;
+}
+
 export interface SnapshotConfig {
   settings: SnapshotSettings;
+  updates?: SnapshotUpdates;
   claudeMd?: ConfigFileMeta;
   memoryMd?: ConfigFileMeta;
   gsdManifest?: GsdManifestMeta;
