@@ -56,7 +56,7 @@ Pure functions, no I/O. Everything downstream depends on ordering being correct,
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: `cmpSemver(a, b) -> -1 | 0 | 1 | null`; `parseTag(tag) -> string | null`; `lowerVersion(a, b) -> string | null`; constants `REPO_SLUG`, `LATEST_URL`, `STORE_REL`, `LINE_REL`, `SCHEMA`, `DEFAULT_INTERVAL_HOURS`, `MAX_BACKOFF_DOUBLINGS`.
+- Produces: `cmpSemver(a, b) -> -1 | 0 | 1 | null`; `parseTag(tag) -> string | null`; `lowerVersion(a, b) -> string | null`; constants `REPO_SLUG`, `LATEST_URL`, `STORE_REL`, `LINE_REL`, `SCHEMA`, `DEFAULT_INTERVAL_HOURS`, `MAX_BACKOFF_DOUBLINGS`, `MAX_BODY_BYTES`, `TAG_RE`. `parseSemver` and `cmpPre` stay module-internal and are deliberately not exported.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -85,6 +85,14 @@ test('cmpSemver orders releases and refuses what it cannot order', () => {
   assert.equal(U.cmpSemver('1.0.0-rc.1', '1.0.0'), -1, 'a prerelease precedes its release');
   assert.equal(U.cmpSemver('1.0.0-rc.1', '1.0.0-rc.2'), -1);
   assert.equal(U.cmpSemver('1.0.0-alpha-1', '1.0.0'), -1, 'a hyphen inside the prerelease is not a separator');
+  // Semver §11 prerelease precedence. A plain string compare gets every one of these wrong.
+  assert.equal(U.cmpSemver('1.0.0-rc.9', '1.0.0-rc.10'), -1, 'numeric identifiers compare numerically, not as text');
+  assert.equal(U.cmpSemver('1.0.0-rc.10', '1.0.0-rc.9'), 1);
+  assert.equal(U.cmpSemver('1.0.0-beta.2', '1.0.0-beta.11'), -1);
+  assert.equal(U.cmpSemver('1.0.0-alpha', '1.0.0-alpha.1'), -1, 'fewer identifiers rank lower');
+  assert.equal(U.cmpSemver('1.0.0-alpha.1', '1.0.0-alpha.beta'), -1, 'numeric ranks below alphanumeric');
+  assert.equal(U.cmpSemver('1.0.0-alpha.beta', '1.0.0-beta'), -1);
+  assert.equal(U.cmpSemver('1.0.0-rc.1', '1.0.0-rc.1'), 0);
   assert.equal(U.cmpSemver('nightly', '1.0.0'), null);
   assert.equal(U.cmpSemver('1.0', '1.0.0'), null, 'two-part versions are not orderable');
   assert.equal(U.cmpSemver(null, '1.0.0'), null);
@@ -168,16 +176,39 @@ function parseSemver(v) {
   };
 }
 
+/**
+ * Semver §11 prerelease precedence, over the dot-separated identifiers: numeric identifiers
+ * compare numerically, a numeric identifier ranks below an alphanumeric one, and a shorter set of
+ * identifiers ranks below a longer one when every shared identifier is equal. An absent prerelease
+ * (a real release) outranks any prerelease.
+ * A plain `a < b` string compare is wrong here: it puts "rc.9" above "rc.10".
+ */
+function cmpPre(a, b) {
+  if (a === b) return 0;
+  if (!a) return 1;
+  if (!b) return -1;
+  const ai = a.split('.');
+  const bi = b.split('.');
+  for (let i = 0; i < Math.max(ai.length, bi.length); i++) {
+    if (ai[i] === undefined) return -1;
+    if (bi[i] === undefined) return 1;
+    if (ai[i] === bi[i]) continue;
+    const an = /^\d+$/.test(ai[i]);
+    const bn = /^\d+$/.test(bi[i]);
+    if (an && bn) return Number(ai[i]) < Number(bi[i]) ? -1 : 1;
+    if (an !== bn) return an ? -1 : 1;
+    return ai[i] < bi[i] ? -1 : 1;
+  }
+  return 0;
+}
+
 /** -1 | 0 | 1, or null when either side is not orderable. A prerelease precedes its release. */
 function cmpSemver(a, b) {
   const pa = parseSemver(a);
   const pb = parseSemver(b);
   if (!pa || !pb) return null;
   for (let i = 0; i < 3; i++) if (pa.nums[i] !== pb.nums[i]) return pa.nums[i] < pb.nums[i] ? -1 : 1;
-  if (pa.pre === pb.pre) return 0;
-  if (!pa.pre) return 1;
-  if (!pb.pre) return -1;
-  return pa.pre < pb.pre ? -1 : 1;
+  return cmpPre(pa.pre, pb.pre);
 }
 
 /** The skew rule (design §8): a user is only as upgraded as their least-upgraded part. */
