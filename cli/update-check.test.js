@@ -298,3 +298,157 @@ test('runCheck does nothing when the check is disabled', async () => {
   assert.equal(s, null);
   assert.equal(fs.existsSync(path.join(w.vault, 'brain', '_index', 'update-check.json')), false);
 });
+
+/**
+ * A vault plus an agenticos.json pointing at it, and a captured io. Reuses the isolated `configDir`
+ * `vaultWorld()` already owns — never the developer's real `~/.claude`.
+ */
+function cmdWorld(extra = {}) {
+  const w = vaultWorld();
+  fs.writeFileSync(path.join(w.configDir, 'agenticos.json'),
+    JSON.stringify({ version: '0.1.0', vault: w.vault, node: process.execPath, ...extra }, null, 2));
+  const outs = [];
+  return { ...w, outs, io: { log: (m) => outs.push(String(m)), error: (m) => outs.push(`ERR ${m}`) } };
+}
+
+const NOW = () => new Date('2026-09-16T00:00:00.000Z');
+
+test('parseSnooze accepts whole days and hours only', () => {
+  assert.equal(U.parseSnooze('7d'), 7 * 86400e3);
+  assert.equal(U.parseSnooze('12h'), 12 * 3600e3);
+  assert.equal(U.parseSnooze('1d'), 86400e3);
+  assert.equal(U.parseSnooze('0d'), null);
+  assert.equal(U.parseSnooze('7'), null);
+  assert.equal(U.parseSnooze('7w'), null);
+  assert.equal(U.parseSnooze('1.5d'), null);
+  assert.equal(U.parseSnooze(''), null);
+});
+
+test('update-status --statusline prints the fragment and nothing else', async () => {
+  const w = cmdWorld();
+  U.writeState(w.vault, behindState());
+  assert.equal(await U.cmdUpdateStatus({ vault: w.vault, configDir: w.configDir, flags: { statusline: true }, io: w.io, now: NOW }), 0);
+  assert.deepEqual(w.outs, ['⬆ AgenticOS 0.2.0']);
+});
+
+test('update-status --statusline prints nothing when current, and still exits 0', async () => {
+  const w = cmdWorld();
+  U.writeState(w.vault, behindState({ latest: '0.1.0' }));
+  assert.equal(await U.cmdUpdateStatus({ vault: w.vault, configDir: w.configDir, flags: { statusline: true }, io: w.io, now: NOW }), 0);
+  assert.deepEqual(w.outs, []);
+});
+
+test('update-status with no state explains itself to a human', async () => {
+  const w = cmdWorld();
+  assert.equal(await U.cmdUpdateStatus({ vault: w.vault, configDir: w.configDir, flags: {}, io: w.io, now: NOW }), 0);
+  assert.match(w.outs.join('\n'), /never checked|no update information/i);
+});
+
+test('update-status --snooze records the version and rejects a bad argument', async () => {
+  const w = cmdWorld();
+  U.writeState(w.vault, behindState());
+  assert.equal(await U.cmdUpdateStatus({ vault: w.vault, configDir: w.configDir, flags: { snooze: '7d' }, io: w.io, now: NOW }), 0);
+  const s = U.readState(w.vault);
+  assert.equal(s.snooze.version, '0.2.0');
+  assert.equal(s.snooze.until, '2026-09-23T00:00:00.000Z');
+  assert.equal(w.line(), '', 'the fragment is re-rendered immediately');
+
+  const bad = cmdWorld();
+  U.writeState(bad.vault, behindState());
+  assert.equal(await U.cmdUpdateStatus({ vault: bad.vault, configDir: bad.configDir, flags: { snooze: '7w' }, io: bad.io, now: NOW }), 2);
+  assert.match(bad.outs.join('\n'), /ERR .*--snooze/);
+});
+
+test('update-status --off writes to agenticos.json and clears the fragment', async () => {
+  const w = cmdWorld();
+  U.writeState(w.vault, behindState());
+  U.writeFragment(w.vault, behindState(), NOW());
+  assert.equal(w.line(), '⬆ AgenticOS 0.2.0\n', 'precondition: a fragment exists');
+
+  assert.equal(await U.cmdUpdateStatus({ vault: w.vault, configDir: w.configDir, flags: { off: true }, io: w.io, now: NOW }), 0);
+  const cfg = JSON.parse(fs.readFileSync(path.join(w.configDir, 'agenticos.json'), 'utf8'));
+  assert.equal(cfg.updates.check, false);
+  assert.equal(cfg.vault, w.vault, 'the rest of the config survives');
+  assert.equal(fs.existsSync(path.join(w.vault, 'brain', 'config.json')), false,
+    'the off switch must live where nothing can override it');
+  assert.equal(w.line(), '', 'nothing will refresh the fragment again, so it must not outlive the switch');
+});
+
+test('update-check --quiet writes state and prints nothing', async () => {
+  const w = cmdWorld();
+  assert.equal(await U.cmdUpdateCheck({
+    vault: w.vault, configDir: w.configDir, flags: { quiet: true }, io: w.io, now: NOW,
+    get: fakeGet({ body: release('v0.2.0') }),
+  }), 0);
+  assert.deepEqual(w.outs, []);
+  assert.equal(U.readState(w.vault).latest, '0.2.0');
+});
+
+test('update-notice prints the notice and re-renders the fragment', async () => {
+  const w = cmdWorld();
+  U.writeState(w.vault, behindState({ checkedAt: NOW().toISOString() }));
+  const spawned = [];
+  assert.equal(await U.cmdUpdateNotice({
+    vault: w.vault, configDir: w.configDir, io: w.io, now: NOW,
+    spawnFn: (...a) => spawned.push(a),
+  }), 0);
+  assert.equal(w.outs.length, 1);
+  assert.match(w.outs[0], /^AgenticOS Workbench 0\.2\.0 available/);
+  assert.equal(w.line(), '⬆ AgenticOS 0.2.0\n');
+  assert.deepEqual(spawned, [], 'a fresh check is not re-spawned');
+});
+
+test('update-notice spawns a detached check when the state is stale, without waiting', async () => {
+  const w = cmdWorld();
+  U.writeState(w.vault, behindState({ checkedAt: '2026-09-01T00:00:00.000Z' }));
+  const spawned = [];
+  assert.equal(await U.cmdUpdateNotice({
+    vault: w.vault, configDir: w.configDir, io: w.io, now: NOW,
+    spawnFn: (...a) => spawned.push(a),
+  }), 0);
+  assert.equal(spawned.length, 1, 'exactly one detached producer');
+  assert.match(w.outs[0], /0\.2\.0 available/, 'the notice still comes from the cached state');
+});
+
+test('AOS_NO_SPAWN=1 suppresses the detached producer but not the notice', async () => {
+  const w = cmdWorld();
+  U.writeState(w.vault, behindState({ checkedAt: '2026-09-01T00:00:00.000Z' }));
+  const spawned = [];
+  process.env.AOS_NO_SPAWN = '1';
+  try {
+    assert.equal(await U.cmdUpdateNotice({
+      vault: w.vault, configDir: w.configDir, io: w.io, now: NOW,
+      spawnFn: (...a) => spawned.push(a),
+    }), 0);
+  } finally { delete process.env.AOS_NO_SPAWN; }
+  assert.deepEqual(spawned, [], 'the CI rehearsal must never reach the network');
+  assert.match(w.outs[0], /0\.2\.0 available/);
+});
+
+test('update-notice is silent and exits 0 with no vault, no state, or an unreadable store', async () => {
+  const none = cmdWorld();
+  assert.equal(await U.cmdUpdateNotice({ vault: null, configDir: none.configDir, io: none.io, now: NOW, spawnFn: () => {} }), 0);
+  assert.deepEqual(none.outs, []);
+
+  const empty = cmdWorld();
+  assert.equal(await U.cmdUpdateNotice({ vault: empty.vault, configDir: empty.configDir, io: empty.io, now: NOW, spawnFn: () => {} }), 0);
+  assert.deepEqual(empty.outs, [], 'nothing to say before the first check');
+
+  const broken = cmdWorld();
+  fs.writeFileSync(path.join(broken.vault, 'brain', '_index', 'update-check.json'), '{ not json');
+  assert.equal(await U.cmdUpdateNotice({ vault: broken.vault, configDir: broken.configDir, io: broken.io, now: NOW, spawnFn: () => {} }), 0);
+  assert.deepEqual(broken.outs, []);
+});
+
+test('update-notice records the plugin version it can see', async () => {
+  const w = cmdWorld();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-plug-'));
+  fs.mkdirSync(path.join(root, '.claude-plugin'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.claude-plugin', 'plugin.json'), JSON.stringify({ name: 'agenticos', version: '0.2.0' }));
+  U.writeState(w.vault, behindState({ checkedAt: NOW().toISOString(), latest: '0.3.0' }));
+  await U.cmdUpdateNotice({ vault: w.vault, configDir: w.configDir, io: w.io, now: NOW, spawnFn: () => {}, pluginRoot: root });
+  const s = U.readState(w.vault);
+  assert.equal(s.pluginVersion, '0.2.0');
+  assert.equal(s.installed, '0.1.0', 'min(plugin 0.2.0, vault 0.1.0)');
+  assert.match(w.outs[0], /\(plugin 0\.2\.0, vault 0\.1\.0\)/);
+});
