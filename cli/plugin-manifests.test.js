@@ -34,7 +34,7 @@ test('hooks.json wires exactly the contract events, in order, through bin/aos', 
     assert.equal(typeof x.timeout, 'number');
     return m[1] + m[2];
   }));
-  assert.deepEqual(names('SessionStart'), ['telemetry-hook']);
+  assert.deepEqual(names('SessionStart'), ['telemetry-hook', 'update-notice']);
   assert.deepEqual(names('UserPromptSubmit'), ['inject-context']);
   assert.deepEqual(names('PostToolUse'), ['telemetry-hook']);
   assert.equal(h.PostToolUse[0].matcher, '');
@@ -56,5 +56,17 @@ test('claude plugin validate accepts the plugin and the marketplace (skipped wit
   for (const target of ['plugin', '.']) {
     const r = spawnSync('claude', ['plugin', 'validate', path.join(ROOT, target)], { encoding: 'utf8' });
     assert.equal(r.status, 0, r.stdout + r.stderr);
+  }
+});
+
+test('bin/aos dispatches every hook and CLI name the manifests reference', () => {
+  const shim = fs.readFileSync(path.join(ROOT, 'plugin', 'bin', 'aos'), 'utf8');
+  const h = read('plugin/hooks/hooks.json').hooks;
+  const referenced = new Set(Object.values(h).flatMap((groups) => groups.flatMap((g) => g.hooks.map((x) => HOOK_RE.exec(x.command)[1]))));
+  for (const name of referenced) {
+    assert.match(shim, new RegExp(`(^|[|(])\\s*${name}[)|]`, 'm'), `bin/aos does not dispatch ${name}`);
+  }
+  for (const name of ['update-check', 'update-status', 'update-notice']) {
+    assert.match(shim, new RegExp(`[|(]${name}[|)]`), `bin/aos does not route ${name} to cli/aos.js`);
   }
 });
