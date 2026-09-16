@@ -23,6 +23,7 @@ export interface AgenticosJson {
   claude?: { model?: string; perCallUsd?: number; perDayUsd?: number; bin?: string };
   ollama?: { host?: string; port?: number };
   telemetry?: { enabled?: boolean; redact?: boolean; retentionDays?: number };
+  updates?: { check?: boolean; intervalHours?: number };
   cost?: { enabled?: boolean; monthlyBudget?: number | null };
   persona?: { enabled?: boolean };
 }
@@ -39,6 +40,7 @@ export interface VaultConfig {
   claude: { model: string; perCallUsd: number; perDayUsd: number };
   ollama: { host: string; port: number };
   telemetry: { enabled: boolean; redact: boolean; retentionDays: number };
+  updates: { check: boolean; intervalHours: number };
   cost: { enabled: boolean; monthlyBudget: number | null };
   persona: { enabled: boolean; perDutyUsd: number; perDayUsd: number };
 }
@@ -67,6 +69,7 @@ export const VAULT_CONFIG_DEFAULTS: VaultConfig = {
   claude: { model: "haiku", perCallUsd: 0.05, perDayUsd: 0.5 },
   ollama: { host: "127.0.0.1", port: 11434 },
   telemetry: { enabled: true, redact: true, retentionDays: 30 },
+  updates: { check: true, intervalHours: 24 },
   cost: { enabled: false, monthlyBudget: null },
   persona: { enabled: true, perDutyUsd: 2.0, perDayUsd: 6.0 },
 };
