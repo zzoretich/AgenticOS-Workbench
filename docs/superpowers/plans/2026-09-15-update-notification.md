@@ -323,12 +323,21 @@ test('isStale honours the interval, failure backoff and clock skew', () => {
   const at = (iso, over = {}) => behindState({ checkedAt: iso, ...over });
   assert.equal(U.isStale(null, { now }), true, 'no state is stale');
   assert.equal(U.isStale(at('2026-09-15T23:00:00.000Z'), { now }), false, 'one hour old, 24h interval');
-  assert.equal(U.isStale(at('2026-09-14T23:00:00.000Z'), { now }), true, 'over 24h old');
-  assert.equal(U.isStale(at('2026-09-15T12:00:00.000Z', { consecutiveFailures: 0 }), { now, intervalHours: 6 }), true);
-  assert.equal(U.isStale(at('2026-09-15T12:00:00.000Z', { consecutiveFailures: 1 }), { now, intervalHours: 6 }), false,
-    'one failure doubles 6h to 12h, so 12h old is not yet stale');
-  assert.equal(U.isStale(at('2026-09-01T00:00:00.000Z', { consecutiveFailures: 99 }), { now }), true,
-    'backoff caps at four doublings (16 days), so a 15-day-old check is stale');
+  assert.equal(U.isStale(at('2026-09-14T23:00:00.000Z'), { now }), true, '25h old, 24h interval');
+  assert.equal(U.isStale(at('2026-09-15T12:00:00.000Z', { consecutiveFailures: 0 }), { now, intervalHours: 6 }), true,
+    '12h old against a 6h interval');
+  assert.equal(U.isStale(at('2026-09-15T13:00:00.000Z', { consecutiveFailures: 1 }), { now, intervalHours: 6 }), false,
+    'one failure doubles 6h to 12h, so an 11h-old check is not yet due');
+  assert.equal(U.isStale(at('2026-09-15T12:00:00.000Z', { consecutiveFailures: 1 }), { now, intervalHours: 6 }), true,
+    'exactly one interval elapsed counts as due');
+  // These two together pin the cap at FOUR doublings (16x24h = 16 days). A three-doubling cap
+  // (8 days) would make the 10-day case stale and silently pass the 46-day case too.
+  assert.equal(U.isStale(at('2026-08-01T00:00:00.000Z', { consecutiveFailures: 99 }), { now }), true,
+    '46 days old is past even the capped 16-day backoff');
+  assert.equal(U.isStale(at('2026-09-06T00:00:00.000Z', { consecutiveFailures: 99 }), { now }), false,
+    '10 days old is still inside the capped 16-day backoff');
+  assert.equal(U.isStale(at('2026-09-15T23:00:00.000Z', { consecutiveFailures: -5 }), { now }), false,
+    'a negative failure count must not shrink the interval');
   assert.equal(U.isStale(at('2026-09-17T00:00:00.000Z'), { now }), true, 'a future checkedAt is clock skew');
   assert.equal(U.isStale(at('not a date'), { now }), true);
 });
@@ -414,6 +423,9 @@ function isStale(state, { intervalHours = DEFAULT_INTERVAL_HOURS, now = new Date
   const t = new Date(state.checkedAt).getTime();
   if (!Number.isFinite(t)) return true;
   if (t > now.getTime()) return true; // clock skew: re-check rather than wait it out
+  // MAX_BACKOFF_DOUBLINGS counts DOUBLINGS, so 4 means at most 16x the base interval (16 days at
+  // the 24h default). Math.max floors the count at 0: a negative would make 2^n < 1 and SHRINK the
+  // interval, turning the backoff into a hammer. Due when at least the interval has elapsed.
   const doublings = Math.min(Math.max(state.consecutiveFailures || 0, 0), MAX_BACKOFF_DOUBLINGS);
   return now.getTime() - t >= intervalHours * 3600e3 * Math.pow(2, doublings);
 }
