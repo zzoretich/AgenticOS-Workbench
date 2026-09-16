@@ -4,7 +4,8 @@
     "SessionStart": [
       {
         "hooks": [
-          { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/bin/aos\" telemetry-hook", "timeout": 10 }
+          { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/bin/aos\" telemetry-hook", "timeout": 10 },
+          { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/bin/aos\" update-notice", "timeout": 10 }
         ]
       }
     ],
