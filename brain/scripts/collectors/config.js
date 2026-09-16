@@ -76,6 +76,20 @@ function collectConfig(opts = {}) {
   if (exists(path.join(vault, 'nul'))) stray.push('nul');
   out.stray = stray;
 
+  // The update check owns brain/_index/update-check.json; the HUD only ever reads the summary.
+  const upd = readJson(path.join(vault, 'brain', '_index', 'update-check.json'));
+  if (upd && upd.schema === 1) {
+    const snoozed = !!(upd.snooze && upd.snooze.version === upd.latest
+      && new Date(upd.snooze.until).getTime() > Date.now());
+    out.updates = {
+      installed: upd.installed || null,
+      latest: upd.latest || null,
+      behind: !!upd.behind,
+      checkedAt: upd.checkedAt || null,
+      snoozed,
+    };
+  }
+
   return out;
 }
 
