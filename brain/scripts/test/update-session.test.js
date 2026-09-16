@@ -1,0 +1,103 @@
+'use strict';
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const { isJunkSummary, renderLastSession, renderWorkingMemory } = require('../update-session.js');
+
+const GOOD = '*   Shipped the P0 repair pass and committed plugin source.\n*   Decided cost re-anchors monthly via cost-budget.js.\n*   Open thread: verify pty rebuild on next Obsidian update.';
+const JUNK1 = '- The provided session log contains empty `user:` fields with no actual conversation captured.\n- No code files were built, modified, or changed.\n- Summary reflects an empty state rather than completed work.';
+const JUNK2 = '';
+
+test('isJunkSummary keeps real summaries', () => {
+  assert.equal(isJunkSummary(GOOD), false);
+});
+
+test('isJunkSummary rejects empty-log boilerplate and blanks', () => {
+  assert.equal(isJunkSummary(JUNK1), true);
+  assert.equal(isJunkSummary(JUNK2), true);
+});
+
+test('renderLastSession replaces the section WITHOUT accumulating trailing blank lines', () => {
+  const brain = '# BRAIN\n\n## Active context\n- stuff\n\n## Last Session\n- **Date**: 2026-08-01\n- **Auto-summary**: old\n' + '\n'.repeat(120);
+  const out = renderLastSession(brain, GOOD, '2026-08-05');
+  assert.ok(out.includes('- **Date**: 2026-08-05'));
+  assert.ok(!out.includes('old'));
+  assert.ok(out.endsWith('.md\n') === false); // sanity: no path garbage
+  assert.ok(!/\n{3,}$/.test(out), 'must not end with piles of blank lines');
+  // idempotent: re-rendering does not grow the file
+  assert.equal(renderLastSession(out, GOOD, '2026-08-05').length, out.length);
+});
+
+test('renderWorkingMemory fills Key Context between its heading and the next section', () => {
+  const sess = '# Current Session Working Memory\n\n## Active Task\n\n## Key Context This Session\n\n## Decisions Made\n\n## Things to Remember\n';
+  const out = renderWorkingMemory(sess, GOOD, '8/5/2026, 14:00:00');
+  assert.ok(out.includes('## Key Context This Session'));
+  assert.ok(out.includes('Shipped the P0 repair pass'));
+  assert.ok(out.indexOf('## Decisions Made') > out.indexOf('Shipped the P0 repair pass'));
+  // idempotent: second write replaces, not appends
+  const out2 = renderWorkingMemory(out, GOOD, '8/5/2026, 15:00:00');
+  assert.equal((out2.match(/Shipped the P0 repair pass/g) || []).length, 1);
+});
+
+// --- live incident 2026-08-07: the last-10-raw-entries window fed qwen mostly
+// tool-results/command envelopes; it truthfully described the garbage and the
+// blocklist missed the paraphrase, so the junk landed in BRAIN.md + daily note ---
+
+const LIVE_HALLUCINATION = [
+  '*   Session text contains only metadata headers (date/prompt fields) with no actual user or assistant conversation logs.',
+  '*   No code, features, or architectural changes were built based on the absence of interaction history in this block.',
+  '*   Critical decisions remain undocumented as there were no instructions provided to drive specific outcomes.',
+  '*   Open threads regarding project scope and execution are undefined due to missing context in the provided session data.',
+].join('\n');
+
+test('isJunkSummary rejects the 2026-08-07 live hallucination verbatim', () => {
+  assert.equal(isJunkSummary(LIVE_HALLUCINATION), true);
+});
+
+test('isJunkSummary still keeps a real summary that MENTIONS metadata work', () => {
+  const real = '*   Fixed the transcript parser to skip metadata headers before costing.\n*   Decided num_ctx auto-sizes per request.\n*   Open thread: reload Obsidian for the rebuilt plugin.';
+  assert.equal(isJunkSummary(real), false);
+});
+
+const { conversationTail } = require('../update-session.js');
+
+function userEntry(text) { return { type: 'user', message: { content: [{ type: 'text', text }] } }; }
+function assistantEntry(text) { return { type: 'assistant', message: { content: [{ type: 'text', text }] } }; }
+function toolResultEntry() {
+  return { type: 'user', message: { content: [{ type: 'tool_result', content: [{ type: 'text', text: 'raw tool output' }] }] } };
+}
+
+test('conversationTail keeps real dialogue and drops empty/tool-result entries', () => {
+  const t = [
+    userEntry('fix the scanner please'),
+    assistantEntry('on it — reading the code'),
+    toolResultEntry(),           // extracted text is empty → dropped
+    { type: 'system', content: 'hook noise' },
+    assistantEntry('fixed and tested'),
+  ];
+  const out = conversationTail(t);
+  assert.match(out, /user: fix the scanner please/);
+  assert.match(out, /assistant: fixed and tested/);
+  assert.ok(!/tool output/.test(out), 'tool_result bodies must not leak in');
+  assert.ok(!/hook noise/.test(out), 'non-dialogue entry types are dropped');
+});
+
+test('conversationTail drops slash-command envelopes and isMeta entries', () => {
+  const t = [
+    userEntry('<command-name>/wrap</command-name>\n<command-message>wrap</command-message>'),
+    { ...userEntry('meta helper line'), isMeta: true },
+    userEntry('real question about the build'),
+  ];
+  const out = conversationTail(t);
+  assert.ok(!/command-name/.test(out));
+  assert.ok(!/meta helper line/.test(out));
+  assert.match(out, /real question about the build/);
+});
+
+test('conversationTail fills its budget from the END of the conversation', () => {
+  const t = [];
+  for (let i = 0; i < 200; i++) t.push(userEntry(`turn ${i} ` + 'x'.repeat(400)));
+  const out = conversationTail(t);
+  assert.ok(out.length <= 12000 + 500, `bounded input, got ${out.length}`);
+  assert.match(out, /turn 199/, 'newest messages included');
+  assert.ok(!/turn 0 /.test(out), 'oldest messages dropped first');
+});

@@ -1,0 +1,14 @@
+{
+  "name": "claude-brain-scripts",
+  "private": true,
+  "version": "1.0.0",
+  "type": "commonjs",
+  "description": "Local second-brain runtime: brain MCP server, qwen3.5:4b engine, vault scanner. No Claude Agent SDK.",
+  "scripts": {
+    "test": "NODE_OPTIONS=--require=./test/setup.js node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "zod": "^3.23.8"
+  }
+}
