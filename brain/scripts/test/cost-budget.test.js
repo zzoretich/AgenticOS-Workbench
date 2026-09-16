@@ -1,0 +1,32 @@
+'use strict';
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const { pooledCalibration } = require('../cost-budget.js');
+
+const CLEAN = { ts: '2026-06-05T00:00:00Z', prevTs: '2026-06-04T05:22:00Z',
+                realDelta: 49.91, tgRawDelta: 149.98 };
+const POISON_NEG = { ts: '2026-08-05T15:37:33Z', prevTs: '2026-06-05T00:00:00Z',
+                     realDelta: -341.23, tgRawDelta: 7857.15 };
+const POISON_XMONTH_POS = { ts: '2026-09-20T00:00:00Z', prevTs: '2026-08-05T15:37:33Z',
+                            realDelta: 38.0, tgRawDelta: 900.0 };
+const LEGACY_NO_PREVTS = { ts: '2026-06-05T00:00:00Z', realDelta: 49.91, tgRawDelta: 149.98 };
+
+test('negative realDelta rows are excluded from the pool', () => {
+  const p = pooledCalibration([CLEAN, POISON_NEG]);
+  assert.equal(p.intervals, 1);
+  assert.equal(p.value, Math.round((49.91 / 149.98) * 1e4) / 1e4);
+});
+
+test('cross-month intervals are excluded even with positive delta', () => {
+  const p = pooledCalibration([CLEAN, POISON_XMONTH_POS]);
+  assert.equal(p.intervals, 1);
+});
+
+test('legacy rows without prevTs still pool when delta is positive', () => {
+  const p = pooledCalibration([LEGACY_NO_PREVTS]);
+  assert.equal(p.intervals, 1);
+});
+
+test('all-poison ledger returns null (calibration left unchanged by caller)', () => {
+  assert.equal(pooledCalibration([POISON_NEG]), null);
+});

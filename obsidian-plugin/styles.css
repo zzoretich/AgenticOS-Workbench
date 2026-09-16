@@ -1,0 +1,1765 @@
+/* =========================================================================
+   AGENTIC OS — Mission Control HUD
+   Terminal aesthetic, scoped under .aos-root
+   ========================================================================= */
+
+.aos-root {
+  --aos-bg:        #0a0e14;
+  --aos-panel:    #11161d;
+  --aos-border:   #1f2933;
+  --aos-text:     #c5d6e0;
+  --aos-dim:      #6b7d8c;
+  --aos-cyan:     #00d4ff;
+  --aos-amber:    #ffb454;
+  --aos-rose:     #ff5e7e;
+  --aos-green:    #5ee2a0;
+  --aos-mono:     'Berkeley Mono', 'JetBrains Mono', 'SF Mono', 'Menlo', 'Consolas', monospace;
+
+  /* terminal (xterm ITheme) — values mirror the pre-P5 HUD_THEME verbatim */
+  --aos-term-background: #0a0e14;
+  --aos-term-foreground: #c5d6e0;
+  --aos-term-cursor: #00d4ff;
+  --aos-term-cursor-accent: #0a0e14;
+  --aos-term-selection-background: rgba(0,212,255,0.25);
+  --aos-term-black: #0a0e14;
+  --aos-term-red: #ff5e7e;
+  --aos-term-green: #5ee2a0;
+  --aos-term-yellow: #ffb454;
+  --aos-term-blue: #00d4ff;
+  --aos-term-magenta: #c792ea;
+  --aos-term-cyan: #7fdbff;
+  --aos-term-white: #c5d6e0;
+  --aos-term-bright-black: #6b7d8c;
+  --aos-term-bright-red: #ff7a93;
+  --aos-term-bright-green: #7feeb3;
+  --aos-term-bright-yellow: #ffc97a;
+  --aos-term-bright-blue: #5be0ff;
+  --aos-term-bright-magenta: #dba8ff;
+  --aos-term-bright-cyan: #a3eaff;
+  --aos-term-bright-white: #e3eef5;
+  /* chart palette — values mirror the pre-P5 DONUT_COLORS in order */
+  --aos-chart-1: #00d4ff;
+  --aos-chart-2: #ff66c4;
+  --aos-chart-3: #ffc800;
+  --aos-chart-4: #7afc7a;
+  --aos-chart-5: #a78bfa;
+  --aos-chart-6: #ff8a4c;
+  --aos-chart-7: #94a3b8;
+
+  background: var(--aos-bg);
+  color: var(--aos-text);
+  font-family: var(--aos-mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+  padding: 18px 20px 24px;
+  overflow-y: auto;
+  height: 100%;
+}
+
+/* subtle scanline overlay */
+.aos-root::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 2px,
+    rgba(255,255,255,0.012) 3px,
+    transparent 4px
+  );
+  z-index: 1;
+}
+
+.aos-root > * { position: relative; z-index: 2; }
+
+.aos-title {
+  color: var(--aos-cyan);
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-shadow: 0 0 8px rgba(0, 212, 255, 0.3);
+}
+
+.aos-pill {
+  display: inline-block;
+  padding: 1px 8px;
+  border: 1px solid;
+  border-radius: 2px;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+}
+.aos-pill-cyan { color: var(--aos-cyan); border-color: rgba(0,212,255,0.4); background: rgba(0,212,255,0.08); }
+.aos-pill-rose { color: var(--aos-rose); border-color: rgba(255,94,126,0.4); background: rgba(255,94,126,0.08); }
+.aos-pill-dim  { color: var(--aos-dim);  border-color: var(--aos-border); }
+
+/* ── PANEL ─────────────────────────────────────────────────────────────── */
+
+.aos-panel {
+  background: var(--aos-panel);
+  border: 1px solid var(--aos-border);
+  padding: 8px 12px 10px;
+  min-height: 140px;
+  display: flex;
+  flex-direction: column;
+}
+
+.aos-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 8px;
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: var(--aos-cyan);
+}
+
+.aos-panel-bracket {
+  color: var(--aos-cyan);
+  font-size: 14px;
+  line-height: 1;
+}
+
+.aos-panel-title {
+  color: var(--aos-cyan);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.aos-panel-rule {
+  flex: 1;
+  border-bottom: 1px solid var(--aos-border);
+  margin: 0 4px;
+}
+
+.aos-panel-badge {
+  color: var(--aos-cyan);
+  font-size: 10px;
+  padding: 0 6px;
+  border: 1px solid rgba(0,212,255,0.3);
+  border-radius: 2px;
+  animation: aos-pulse 2.2s ease-in-out infinite;
+}
+
+.aos-panel-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ── ROW / STAT ────────────────────────────────────────────────────────── */
+
+.aos-stat-row {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+.aos-stat-label { color: var(--aos-text); }
+.aos-stat-dots  { flex: 1; border-bottom: 1px dotted var(--aos-border); margin: 0 4px; transform: translateY(-2px); }
+.aos-stat-value { color: var(--aos-cyan); font-variant-numeric: tabular-nums; }
+
+/* ── DOT ───────────────────────────────────────────────────────────────── */
+
+.aos-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.aos-dot-ok   { background: var(--aos-green); }
+.aos-dot-err  { background: var(--aos-rose); }
+
+@keyframes aos-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.4; }
+}
+
+/* ── TILES (big numbers) ───────────────────────────────────────────────── */
+
+.aos-tiles {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.aos-tile {
+  background: var(--aos-bg);
+  border: 1px solid var(--aos-border);
+  padding: 8px 4px 6px;
+  text-align: center;
+}
+
+.aos-tile-value {
+  color: var(--aos-cyan);
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  text-shadow: 0 0 6px rgba(0,212,255,0.25);
+}
+
+.aos-tile-label {
+  color: var(--aos-dim);
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+/* ── MEMORY MAP ────────────────────────────────────────────────────────── */
+
+.aos-mem-rows { display: flex; flex-direction: column; gap: 2px; }
+
+.aos-mem-row {
+  display: grid;
+  grid-template-columns: 80px 1fr 30px;
+  gap: 6px;
+  align-items: center;
+  font-size: 11.5px;
+}
+/* ── COMMAND DECK ──────────────────────────────────────────────────────── */
+
+.aos-deck {
+  background: var(--aos-panel);
+  border: 1px solid var(--aos-border);
+  padding: 8px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.aos-deck-label {
+  color: var(--aos-cyan);
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  font-weight: 600;
+}
+
+.aos-deck-list { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; }
+
+.aos-deck-btn {
+  background: transparent;
+  color: var(--aos-text);
+  border: 1px solid var(--aos-border);
+  border-radius: 2px;
+  padding: 3px 10px;
+  font-family: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+.aos-deck-btn:hover {
+  color: var(--aos-cyan);
+  border-color: var(--aos-cyan);
+  background: rgba(0,212,255,0.05);
+  box-shadow: 0 0 8px rgba(0,212,255,0.2);
+}
+
+/* ── LINKS ─────────────────────────────────────────────────────────────── */
+
+.aos-link {
+  display: inline-block;
+  color: var(--aos-dim);
+  font-size: 11px;
+  text-decoration: none;
+  margin-top: 4px;
+  cursor: pointer;
+  transition: color 120ms ease;
+}
+.aos-link:hover { color: var(--aos-cyan); }
+
+/* ── TEXT HELPERS ──────────────────────────────────────────────────────── */
+
+.aos-dim        { color: var(--aos-dim); }
+.aos-text-cyan  { color: var(--aos-cyan); }
+.aos-text-amber { color: var(--aos-amber); }
+.aos-text-rose  { color: var(--aos-rose); }
+.aos-text-green { color: var(--aos-green); }
+
+/* ── SPARKLINE TRENDS (mission control) ────────────────────────────────── */
+
+.aos-trends {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--aos-border);
+}
+
+.aos-trend {
+  display: grid;
+  grid-template-columns: 70px 1fr 36px;
+  gap: 6px;
+  align-items: baseline;
+  font-size: 11px;
+}
+.aos-trend-label { color: var(--aos-dim); }
+.aos-trend-spark { color: var(--aos-cyan); letter-spacing: 0; font-size: 13px; line-height: 1; white-space: pre; }
+.aos-trend-delta { color: var(--aos-amber); text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ── SIDEBAR HUD ───────────────────────────────────────────────────────── */
+
+.aos-sidebar {
+  padding: 12px 12px 16px;
+  font-size: 11.5px;
+  gap: 8px;
+}
+
+.aos-sidebar .aos-root::before { display: none; }
+
+.aos-sb-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--aos-border);
+  margin-bottom: 8px;
+}
+.aos-sb-title {
+  color: var(--aos-cyan);
+  letter-spacing: 1px;
+  font-weight: 600;
+  font-size: 11px;
+  text-shadow: 0 0 6px rgba(0,212,255,0.25);
+}
+.aos-sb-clock {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  font-size: 11.5px;
+}
+
+/* pipeline LED strip — reuses .aos-pulse-chip/.aos-pulse-dot (Pulse tab, below);
+   this wrapper just stacks them vertically instead of Pulse's flex-wrap row. */
+.aos-hud-leds {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.aos-sb-status {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.aos-sb-trends {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 0;
+  border-top: 1px dashed var(--aos-border);
+  border-bottom: 1px dashed var(--aos-border);
+  margin-bottom: 8px;
+}
+
+.aos-sb-trend {
+  display: grid;
+  grid-template-columns: 60px 1fr 30px;
+  gap: 6px;
+  align-items: baseline;
+}
+.aos-sb-trend-label { color: var(--aos-dim); font-size: 10.5px; }
+.aos-sb-trend-spark { color: var(--aos-cyan); font-size: 13px; line-height: 1; white-space: pre; }
+.aos-sb-trend-value { color: var(--aos-cyan); text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+
+.aos-sb-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 10.5px;
+  margin-bottom: 8px;
+}
+
+.aos-sb-section-label {
+  color: var(--aos-dim);
+  font-size: 10px;
+  letter-spacing: 1px;
+  margin: 8px 0 4px;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.aos-sb-ticker {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.aos-sb-ticker-row {
+  display: grid;
+  grid-template-columns: 12px 50px 1fr 40px;
+  gap: 4px;
+  font-size: 10.5px;
+  align-items: center;
+}
+.aos-sb-tk-time { color: var(--aos-dim); font-variant-numeric: tabular-nums; }
+.aos-sb-tk-name { color: var(--aos-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.aos-sb-tk-dur  { color: var(--aos-amber); text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ── COST PANEL ────────────────────────────────────────────────────────── */
+
+.aos-cost-top {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--aos-border);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.aos-cost-top-head {
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+.aos-cost-row {
+  display: grid;
+  grid-template-columns: 1fr 36px 60px;
+  gap: 6px;
+  font-size: 11.5px;
+  align-items: baseline;
+}
+.aos-cost-script { color: var(--aos-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.aos-cost-count  { text-align: right; font-variant-numeric: tabular-nums; }
+.aos-cost-amount { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+
+/* ── BUDGET burndown (monthly cost vs budget) ──────────────────────────── */
+.aos-budget {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.aos-budget-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 11px;
+}
+.aos-budget-pct { color: var(--aos-text); font-variant-numeric: tabular-nums; }
+.aos-budget-state {
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+.aos-budget-bar {
+  position: relative;
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+}
+.aos-budget-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  border-radius: 4px;
+  transition: width 0.4s ease;
+}
+.aos-bg-green { background: var(--aos-green); }
+.aos-bg-amber { background: var(--aos-amber); }
+.aos-bg-rose  { background: var(--aos-rose); }
+/* pace marker: where projected month-end spend lands on the budget bar */
+.aos-budget-marker {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--aos-text);
+  opacity: 0.85;
+  /* sit above the fill so it stays visible at any pace */
+  z-index: 1;
+}
+.aos-budget-note { font-size: 10px; margin-top: 4px; }
+
+/* ── CAPTURE MODAL ─────────────────────────────────────────────────────── */
+
+.aos-capture-modal {
+  font-family: var(--aos-mono, 'JetBrains Mono', 'SF Mono', monospace);
+}
+.aos-capture-title {
+  color: var(--aos-cyan, #00d4ff);
+  letter-spacing: 1px;
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+.aos-capture-section-label {
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin-top: 12px;
+  margin-bottom: 4px;
+  opacity: 0.7;
+}
+.aos-capture-body {
+  width: 100%;
+  font-family: var(--aos-mono, 'JetBrains Mono', 'SF Mono', monospace);
+  font-size: 12.5px;
+  line-height: 1.5;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  padding: 8px;
+  resize: vertical;
+  min-height: 140px;
+}
+.aos-capture-body:focus {
+  border-color: var(--aos-cyan, #00d4ff);
+  outline: none;
+}
+.aos-capture-hint {
+  font-size: 10.5px;
+  margin-top: 4px;
+}
+.aos-capture-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+/* ── COMMAND DECK kinds ────────────────────────────────────────────────── */
+
+.aos-deck-btn-exec      { border-color: rgba(94, 226, 160, 0.4); color: #5ee2a0; }
+.aos-deck-btn-exec:hover { border-color: #5ee2a0; box-shadow: 0 0 6px rgba(94,226,160,0.3); }
+.aos-deck-btn-capture   { border-color: rgba(0, 212, 255, 0.4); }
+.aos-deck-btn-openFile  { border-color: rgba(255, 180, 84, 0.3); color: #ffb454; }
+.aos-deck-btn-clipboard { color: var(--aos-dim); }
+
+/* ── CORTEX GRAPH ──────────────────────────────────────────────────────── */
+
+.aos-cortex {
+  padding: 12px 12px 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.aos-cortex-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--aos-border);
+}
+
+.aos-cortex-chips {
+  display: flex;
+  gap: 6px;
+}
+
+.aos-cortex-chip {
+  background: transparent;
+  border: 1px solid;
+  border-radius: 2px;
+  padding: 2px 10px;
+  font-family: var(--aos-mono);
+  font-size: 10.5px;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  transition: opacity 100ms;
+}
+.aos-cortex-chip-off { opacity: 0.35; }
+
+.aos-cortex-stats {
+  font-size: 10.5px;
+  margin: 4px 0;
+}
+
+.aos-cortex-canvas {
+  flex: 1;
+  min-height: 400px;
+  background:
+    radial-gradient(circle at center, rgba(0,212,255,0.04), transparent 60%),
+    var(--aos-bg);
+  border: 1px solid var(--aos-border);
+  position: relative;
+  overflow: hidden;
+  cursor: grab;
+}
+.aos-cortex-canvas:active { cursor: grabbing; }
+
+.aos-cortex-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.aos-cortex-node { cursor: pointer; transition: opacity 120ms; }
+
+/* ── MEMORY INSPECTOR ──────────────────────────────────────────────────── */
+
+.aos-memscope {
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.aos-memscope-header {
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--aos-border);
+}
+
+.aos-memscope-crumb {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.aos-memscope-body {
+  background: rgba(0,0,0,0.2);
+  border: 1px solid var(--aos-border);
+  padding: 12px 16px;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.aos-memscope-body h1,
+.aos-memscope-body h2,
+.aos-memscope-body h3 { color: var(--aos-cyan); letter-spacing: 0.5px; }
+.aos-memscope-body code {
+  background: rgba(0,212,255,0.08);
+  color: var(--aos-cyan);
+  padding: 1px 5px;
+  border-radius: 2px;
+  font-size: 11.5px;
+}
+
+.aos-memscope-backlinks {
+  background: var(--aos-panel);
+  border: 1px solid var(--aos-border);
+  padding: 8px 12px;
+}
+.aos-memscope-backlist { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
+.aos-memscope-backrow {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── pill amber ────────────────────────────────────────────────────────── */
+
+.aos-pill-amber {
+  color: var(--aos-amber);
+  border-color: rgba(255, 180, 84, 0.4);
+  background: rgba(255, 180, 84, 0.06);
+}
+
+/* ── RUN INSPECTOR ─────────────────────────────────────────────────────── */
+
+.aos-runinspector { padding: 14px 18px; }
+
+.aos-ri-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--aos-border);
+  margin-bottom: 10px;
+}
+.aos-ri-id { font-size: 10.5px; font-variant-numeric: tabular-nums; }
+
+.aos-ri-card {
+  background: var(--aos-panel);
+  border: 1px solid var(--aos-border);
+  padding: 10px 14px;
+  margin-bottom: 12px;
+}
+.aos-ri-top {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+.aos-ri-status { font-weight: 700; text-transform: uppercase; font-size: 11px; letter-spacing: 1px; }
+.aos-ri-script { color: var(--aos-text); font-weight: 600; }
+.aos-ri-when { font-size: 11px; }
+
+.aos-ri-stats {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+}
+.aos-ri-stat {
+  background: var(--aos-bg);
+  border: 1px solid var(--aos-border);
+  padding: 6px 4px;
+  text-align: center;
+}
+.aos-ri-stat-v { color: var(--aos-cyan); font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.aos-ri-stat-l { font-size: 10px; letter-spacing: 1px; text-transform: uppercase; }
+
+.aos-ri-error {
+  margin-top: 8px;
+  padding: 6px 10px;
+  background: rgba(255, 94, 126, 0.08);
+  border-left: 2px solid var(--aos-rose);
+  font-size: 11.5px;
+}
+
+.aos-ri-section {
+  background: var(--aos-panel);
+  border: 1px solid var(--aos-border);
+  padding: 8px 12px;
+  margin-bottom: 8px;
+}
+.aos-ri-section-head {
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: var(--aos-cyan);
+  text-transform: uppercase;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+.aos-ri-collapse-head { cursor: pointer; user-select: none; }
+.aos-ri-section-toggle { display: inline-block; margin-right: 4px; }
+.aos-ri-collapse-body {
+  font-size: 11.5px;
+  color: var(--aos-text);
+  background: var(--aos-bg);
+  padding: 8px;
+  border: 1px solid var(--aos-border);
+  white-space: pre-wrap;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.aos-ri-pre {
+  font-family: var(--aos-mono);
+  font-size: 10.5px;
+  margin: 0;
+  background: transparent;
+  color: var(--aos-text);
+}
+
+.aos-ri-subagent {
+  font-size: 11px;
+  padding: 2px 6px;
+  background: rgba(0,212,255,0.04);
+  border-left: 2px solid var(--aos-cyan);
+}
+
+.aos-ri-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.aos-ri-evt {
+  background: var(--aos-bg);
+  border: 1px solid var(--aos-border);
+  padding: 2px 6px;
+  font-size: 11px;
+}
+.aos-ri-evt-head {
+  display: grid;
+  grid-template-columns: 60px 1fr 16px;
+  gap: 6px;
+  align-items: baseline;
+}
+.aos-ri-evt-time { font-variant-numeric: tabular-nums; }
+.aos-ri-evt-type { color: var(--aos-text); }
+.aos-ri-evt-toggle { color: var(--aos-dim); text-align: right; }
+.aos-ri-evt-detail {
+  padding: 4px 0 6px 60px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.aos-ri-tool { font-size: 10.5px; color: var(--aos-dim); }
+.aos-ri-evt-json {
+  font-family: var(--aos-mono);
+  font-size: 10px;
+  background: rgba(0,0,0,0.3);
+  padding: 4px 6px;
+  margin: 0;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+/* ── STAFF ROSTER ──────────────────────────────────────────────────────── */
+
+.aos-staff { padding: 14px 18px; }
+.aos-staff-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--aos-border);
+  margin-bottom: 12px;
+}
+.aos-staff-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px;
+}
+.aos-staff-card {
+  background: var(--aos-panel);
+  border: 1px solid var(--aos-border);
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.aos-staff-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.aos-staff-name { color: var(--aos-text); font-weight: 600; }
+.aos-staff-fresh {
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+.aos-staff-desc { font-size: 11px; }
+.aos-staff-summary {
+  font-size: 11.5px;
+  padding: 4px 0;
+  border-top: 1px dashed var(--aos-border);
+  border-bottom: 1px dashed var(--aos-border);
+  margin: 4px 0;
+}
+.aos-staff-meta { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 10.5px; }
+.aos-staff-times { font-size: 11px; display: flex; flex-direction: column; gap: 1px; }
+.aos-staff-actions { display: flex; gap: 14px; margin-top: 4px; }
+
+.aos-sb-staff {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 0;
+  margin-bottom: 4px;
+}
+.aos-sb-staff-cell {
+  display: grid;
+  grid-template-columns: 12px 1fr;
+  gap: 6px;
+  align-items: center;
+  font-size: 10.5px;
+}
+.aos-sb-staff-name { color: var(--aos-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ── INVENTORY ─────────────────────────────────────────────────────────── */
+
+.aos-inv-tabs { display: flex; gap: 6px; margin-bottom: 8px; }
+.aos-inv-tab {
+  background: transparent;
+  border: 1px solid var(--aos-border);
+  border-radius: 2px;
+  color: var(--aos-text);
+  padding: 4px 12px;
+  font-family: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: all 120ms;
+}
+.aos-inv-tab:hover { border-color: var(--aos-cyan); }
+.aos-inv-tab-active {
+  border-color: var(--aos-cyan);
+  background: rgba(0,212,255,0.06);
+  color: var(--aos-cyan);
+}
+.aos-inv-search { margin-bottom: 8px; }
+.aos-inv-input {
+  width: 100%;
+  background: var(--aos-bg);
+  border: 1px solid var(--aos-border);
+  color: var(--aos-text);
+  font-family: var(--aos-mono);
+  font-size: 11.5px;
+  padding: 4px 8px;
+}
+.aos-inv-input:focus { border-color: var(--aos-cyan); outline: none; }
+.aos-inv-strip {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.aos-inv-table {
+  background: var(--aos-panel);
+  border: 1px solid var(--aos-border);
+  max-height: 600px;
+  overflow-y: auto;
+}
+.aos-inv-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 10px;
+  border-bottom: 1px solid rgba(31, 41, 51, 0.5);
+  font-size: 11.5px;
+}
+.aos-inv-row:last-child { border-bottom: none; }
+.aos-inv-row-clickable { cursor: pointer; transition: background 100ms; }
+.aos-inv-row-clickable:hover { background: rgba(0, 212, 255, 0.04); }
+.aos-inv-name { color: var(--aos-text); flex: 1; }
+
+/* ── ASSISTANT ─────────────────────────────────────────────────────────── */
+
+.aos-assistant {
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.aos-asst-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--aos-border);
+  margin-bottom: 8px;
+}
+.aos-asst-log {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-right: 4px;
+}
+.aos-asst-turn { display: flex; flex-direction: column; gap: 2px; }
+.aos-asst-turn-user .aos-asst-body {
+  background: rgba(0, 212, 255, 0.04);
+  border-left: 2px solid var(--aos-cyan);
+}
+.aos-asst-turn-assistant .aos-asst-body {
+  background: var(--aos-panel);
+  border: 1px solid var(--aos-border);
+}
+.aos-asst-label { font-size: 10px; letter-spacing: 1px; text-transform: uppercase; }
+.aos-asst-body {
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.aos-asst-body h1, .aos-asst-body h2, .aos-asst-body h3 {
+  color: var(--aos-cyan);
+  font-size: 12.5px;
+  margin: 4px 0 2px;
+}
+.aos-asst-body code {
+  background: rgba(0,212,255,0.08);
+  color: var(--aos-cyan);
+  padding: 1px 4px;
+  border-radius: 2px;
+  font-size: 11px;
+}
+.aos-asst-meta {
+  font-size: 10px;
+  align-self: flex-end;
+  margin-top: 2px;
+}
+.aos-asst-composer {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--aos-border);
+}
+.aos-asst-input {
+  width: 100%;
+  background: var(--aos-bg);
+  border: 1px solid var(--aos-border);
+  color: var(--aos-text);
+  font-family: var(--aos-mono);
+  font-size: 12px;
+  padding: 6px 8px;
+  resize: vertical;
+}
+.aos-asst-input:focus { border-color: var(--aos-cyan); outline: none; }
+.aos-asst-input:disabled { opacity: 0.5; }
+.aos-asst-actions { display: flex; justify-content: flex-end; margin-top: 6px; }
+
+/* live in-flight turn */
+.aos-asst-live .aos-asst-body { display: none; }
+.aos-asst-mode { font-size: 10px; margin-left: 6px; }
+.aos-asst-run-meta { font-size: 10px; letter-spacing: 0.5px; padding: 2px 0; }
+.aos-asst-timeline-wrap {
+  background: var(--aos-panel);
+  border: 1px solid var(--aos-border);
+  padding: 4px 8px;
+  font-size: 11px;
+}
+.aos-asst-timeline-summary { padding: 2px 0; }
+.aos-asst-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px dashed var(--aos-border);
+  max-height: 240px;
+  overflow-y: auto;
+}
+.aos-asst-timeline-row {
+  display: flex;
+  gap: 8px;
+  font-family: var(--aos-mono);
+}
+.aos-asst-timeline-time { flex-shrink: 0; min-width: 60px; }
+.aos-asst-timeline-msg { word-break: break-word; }
+.aos-asst-partial {
+  margin-top: 6px;
+  padding: 6px 8px;
+  background: var(--aos-panel);
+  border-left: 2px solid var(--aos-cyan);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  min-height: 1em;
+}
+.aos-asst-partial:empty { display: none; }
+.aos-asst-live-actions { display: flex; justify-content: flex-end; margin-top: 6px; }
+.aos-asst-cancel {
+  background: transparent;
+  border: 1px solid var(--aos-border);
+  color: var(--aos-amber);
+  font-family: var(--aos-mono);
+  font-size: 11px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+.aos-asst-cancel:hover { background: rgba(255, 200, 0, 0.08); }
+
+/* ── STATUS BAR ────────────────────────────────────────────────────────── */
+
+.aos-statusbar {
+  font-family: var(--aos-mono, 'JetBrains Mono', 'SF Mono', monospace);
+  font-size: 11px;
+  cursor: pointer;
+  color: var(--aos-text, #c5d6e0);
+}
+.aos-statusbar:hover { color: var(--aos-cyan, #00d4ff); }
+.aos-sbar-wrap { display: inline-flex; gap: 0; align-items: center; }
+.aos-statusbar .aos-text-cyan  { color: #00d4ff; }
+.aos-statusbar .aos-text-amber { color: #ffb454; }
+.aos-statusbar .aos-text-rose  { color: #ff5e7e; }
+
+/* ── TERMINAL PANEL ────────────────────────────────────────────────────── */
+
+.aos-term {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: var(--aos-bg, #0a0e14);
+  border: 1px solid var(--aos-border, #1f2933);
+  border-left: 3px solid var(--aos-cyan, #00d4ff);
+  overflow: hidden;
+}
+
+.aos-term-fullpane {
+  height: 100% !important;
+  border-left: none;
+}
+
+.aos-term-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 10px;
+  background: linear-gradient(180deg, rgba(0,212,255,0.05), transparent);
+  border-bottom: 1px solid var(--aos-border, #1f2933);
+  flex-shrink: 0;
+}
+
+.aos-term-header-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.aos-term-title {
+  color: var(--aos-cyan, #00d4ff);
+  font-size: 10.5px;
+  letter-spacing: 1px;
+  font-weight: 600;
+}
+
+.aos-term-tabs {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+.aos-term-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border: 1px solid var(--aos-border, #1f2933);
+  background: transparent;
+  font-size: 10.5px;
+  color: var(--aos-dim, #6b7d8c);
+  cursor: pointer;
+  border-radius: 2px;
+  transition: all 100ms ease;
+}
+.aos-term-tab:hover {
+  color: var(--aos-text, #c5d6e0);
+  border-color: rgba(0,212,255,0.3);
+}
+.aos-term-tab-active {
+  color: var(--aos-cyan, #00d4ff);
+  border-color: var(--aos-cyan, #00d4ff);
+  background: rgba(0,212,255,0.06);
+}
+.aos-term-tab-exited {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+.aos-term-tab-label { font-variant-numeric: tabular-nums; }
+.aos-term-tab-close {
+  font-size: 12px;
+  opacity: 0.5;
+  margin-left: 2px;
+}
+.aos-term-tab-close:hover {
+  opacity: 1;
+  color: var(--aos-rose, #ff5e7e);
+}
+
+.aos-term-header-right {
+  display: flex;
+  gap: 4px;
+}
+.aos-term-btn {
+  background: transparent;
+  border: 1px solid var(--aos-border, #1f2933);
+  border-radius: 2px;
+  color: var(--aos-text, #c5d6e0);
+  font-family: var(--aos-mono);
+  font-size: 10.5px;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: all 100ms ease;
+}
+.aos-term-btn:hover {
+  border-color: var(--aos-cyan, #00d4ff);
+  color: var(--aos-cyan, #00d4ff);
+}
+.aos-term-btn-close:hover {
+  border-color: var(--aos-rose, #ff5e7e);
+  color: var(--aos-rose, #ff5e7e);
+}
+
+.aos-term-body {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  min-height: 80px;
+  background: var(--aos-bg, #0a0e14);
+}
+
+.aos-term-xterm {
+  position: absolute;
+  inset: 6px 6px 6px 8px;
+  /* xterm fills */
+}
+
+.aos-term-handle {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 5px;
+  cursor: row-resize;
+  background: linear-gradient(180deg, transparent, rgba(0,212,255,0.15));
+  z-index: 10;
+  transition: background 100ms;
+}
+.aos-term-handle:hover { background: linear-gradient(180deg, transparent, rgba(0,212,255,0.35)); }
+
+.aos-term-error {
+  padding: 24px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 11.5px;
+}
+.aos-term-error-msg {
+  font-family: var(--aos-mono);
+  background: rgba(255,94,126,0.04);
+  border-left: 2px solid var(--aos-rose, #ff5e7e);
+  padding: 6px 10px;
+  white-space: pre-wrap;
+}
+.aos-term-error-hint { font-size: 11px; line-height: 1.5; }
+
+.aos-term-collapsed {
+  padding: 8px 12px;
+  background: var(--aos-panel, #11161d);
+  border: 1px solid var(--aos-border, #1f2933);
+  border-left: 3px solid var(--aos-cyan, #00d4ff);
+  font-size: 11px;
+}
+
+/* xterm inside the panel: nudge sizing so cursor + scrollbar fit nicely */
+.aos-term .xterm {
+  height: 100%;
+}
+.aos-term .xterm-viewport {
+  background-color: transparent !important;
+}
+.aos-term .xterm-screen { background-color: var(--aos-bg, #0a0e14); }
+
+/* ══ Workbench shell (P1) ══════════════════════════════════════════ */
+.aos-wb { display: flex; flex-direction: column; height: 100%; }
+.aos-wb-topbar {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 6px 12px; background: var(--aos-panel);
+  border-bottom: 1px solid var(--aos-border);
+  font-family: var(--aos-mono); font-size: 12px;
+}
+.aos-wb-brand { letter-spacing: 1px; }
+.aos-wb-clock { color: var(--aos-dim); font-family: var(--aos-mono); }
+/* ⌘K trigger (Task 7) — not in the brief's literal CSS block; disclosed in the
+   task report. Sits next to the clock, same mono/dim palette as the rest of
+   the topbar until hovered. */
+.aos-wb-omnibtn {
+  margin-left: 10px; color: var(--aos-dim); font-family: var(--aos-mono); font-size: 11px;
+  border: 1px solid var(--aos-border); border-radius: 3px; padding: 1px 8px;
+  background: transparent; cursor: pointer;
+}
+.aos-wb-omnibtn:hover { color: var(--aos-cyan); border-color: var(--aos-cyan); }
+.aos-wb-body { display: flex; flex: 1; min-height: 0; }
+.aos-wb-rail {
+  display: flex; flex-direction: column; gap: 6px; padding: 10px 6px;
+  background: var(--aos-bg); border-right: 1px solid var(--aos-border);
+  min-width: 56px; align-items: stretch;
+}
+.aos-wb-railbtn {
+  text-align: center; padding: 7px 4px; border-radius: 4px; cursor: pointer;
+  color: var(--aos-dim); font-family: var(--aos-mono);
+}
+.aos-wb-railbtn:hover { color: var(--aos-text); background: var(--aos-panel); }
+.aos-wb-railbtn.is-active { color: var(--aos-cyan); background: var(--aos-panel); }
+.aos-wb-railicon { font-size: 15px; line-height: 1.2; }
+.aos-wb-raillabel { font-size: 9px; letter-spacing: 0.5px; text-transform: uppercase; margin-top: 2px; }
+.aos-wb-content { flex: 1; overflow-y: auto; padding: 12px; min-width: 0; }
+.aos-wb-drawer { width: 0; border-left: none; overflow: hidden; transition: width 0.15s; }
+.aos-wb-drawer.is-open { width: 220px; border-left: 1px solid var(--aos-border); padding: 10px; overflow-y: auto; }
+.aos-wb-drawerhead { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+.aos-wb-drawertitle { color: var(--aos-amber); font-family: var(--aos-mono); font-size: 11px; letter-spacing: 1px; }
+.aos-wb-draweractions { display: flex; gap: 6px; }
+
+/* System drawer (Task 6) — not in the brief's literal CSS block; added because the ported
+   Mission Control panels (.aos-tiles is a fixed 4-column grid, .aos-inv-tabs has no wrap)
+   need more than the drawer's default 220px to stay legible, and the 3 stacked .aos-panel
+   sections need vertical rhythm the drawer's plain body div doesn't provide on its own.
+   Scoped to .aos-sysdrawer so Memory/Runs drawers (Tasks 2-3) are unaffected. Disclosed in
+   the task report. */
+.aos-wb-drawer.is-open:has(.aos-sysdrawer) { width: 320px; }
+.aos-sysdrawer .aos-panel { margin-bottom: 12px; }
+.aos-sysdrawer .aos-inv-tabs { flex-wrap: wrap; }
+
+/* Pulse tab */
+.aos-pulse-strip { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.aos-pulse-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--aos-border); border-radius: 3px; padding: 3px 9px;
+  font-family: var(--aos-mono); font-size: 11px; color: var(--aos-text);
+}
+.aos-pulse-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--aos-border); }
+.aos-pulse-chip.is-ok    { color: var(--aos-green); }
+.aos-pulse-chip.is-ok    .aos-pulse-dot { background: var(--aos-green); box-shadow: 0 0 5px #5ee2a088; }
+.aos-pulse-chip.is-stale { color: var(--aos-amber); border-color: var(--aos-amber); }
+.aos-pulse-chip.is-stale .aos-pulse-dot { background: var(--aos-amber); }
+.aos-pulse-chip.is-failed, .aos-pulse-chip.is-died { color: var(--aos-rose); border-color: var(--aos-rose); }
+.aos-pulse-chip.is-failed .aos-pulse-dot, .aos-pulse-chip.is-died .aos-pulse-dot { background: var(--aos-rose); box-shadow: 0 0 5px #ff5e7e88; }
+.aos-pulse-chip.is-never { color: var(--aos-dim); }
+.aos-pulse-briefing { display: flex; gap: 10px; padding: 8px 10px; margin-bottom: 10px; border-left: 2px solid var(--aos-cyan); }
+.aos-pulse-delta { font-family: var(--aos-mono); font-size: 11px; margin-bottom: 12px; }
+.aos-pulse-rows { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
+.aos-pulse-row { display: flex; gap: 12px; font-family: var(--aos-mono); font-size: 12px; }
+.aos-pulse-rowlabel { color: var(--aos-cyan); min-width: 64px; letter-spacing: 1px; font-size: 10px; padding-top: 1px; }
+.aos-pulse-fixq-title { color: var(--aos-amber); font-family: var(--aos-mono); font-size: 11px; letter-spacing: 1px; margin-bottom: 8px; }
+.aos-pulse-fix { border: 1px solid var(--aos-border); border-radius: 4px; padding: 8px 10px; margin-bottom: 8px; }
+.aos-pulse-fix.is-error { border-left: 2px solid var(--aos-rose); }
+.aos-pulse-fix.is-warn  { border-left: 2px solid var(--aos-amber); }
+.aos-pulse-fix.is-info  { border-left: 2px solid var(--aos-cyan); }
+.aos-pulse-fix-title { font-size: 12.5px; color: var(--aos-text); }
+/* not in the brief's literal CSS block — Mission Control's .aos-deck has no bottom margin of
+   its own (spacing there comes from its .aos-grid parent's gap); Pulse stacks blocks with
+   their own margin-bottom instead, so the ported deck needs one too or it visually collides
+   with BRIEFING below it. Disclosed in the task report. */
+.aos-pulse-deck { margin-bottom: 12px; }
+.aos-pulse-fix-detail { font-size: 11px; color: var(--aos-dim); margin: 2px 0 6px; }
+.aos-pulse-term { margin-top: 14px; }
+
+/* Recently auto-promoted trail (Task 7) — not in the brief's literal CSS block beyond
+   the aos-trail-* prefix; rows are lightweight list lines (mono chip + text) rather
+   than boxed cards like .aos-pulse-fix, since these are audit-log entries, not
+   actionable alerts. Disclosed in the task report. */
+.aos-trail { margin-top: 14px; }
+.aos-trail-title { color: var(--aos-cyan); font-family: var(--aos-mono); font-size: 11px; letter-spacing: 1px; margin-bottom: 8px; }
+.aos-trail-row {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  font-family: var(--aos-mono); font-size: 12px;
+  padding: 4px 6px; border-radius: 3px;
+}
+.aos-trail-row:hover { background: var(--aos-panel); }
+.aos-trail-chip {
+  font-size: 9px; letter-spacing: 0.5px; padding: 1px 6px;
+  border: 1px solid var(--aos-border); border-radius: 3px; white-space: nowrap;
+}
+.aos-trail-chip.is-written  { color: var(--aos-cyan);  border-color: rgba(0,212,255,0.4); }
+.aos-trail-chip.is-kept     { color: var(--aos-green); border-color: rgba(94,226,160,0.4); }
+.aos-trail-chip.is-reverted { color: var(--aos-rose);  border-color: rgba(255,94,126,0.4); }
+.aos-trail-chip.is-edited   { color: var(--aos-amber); border-color: rgba(255,180,84,0.4); }
+.aos-trail-name { color: var(--aos-text); flex: 1; min-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aos-trail-type { color: var(--aos-dim); font-size: 10.5px; }
+.aos-trail-actions { display: flex; gap: 8px; }
+
+/* Spaces tab (P2) */
+.aos-sp-empty { padding: 20px; display: flex; gap: 10px; align-items: center; }
+.aos-sp-mapbar { display: flex; gap: 12px; align-items: center; margin-bottom: 10px; font-family: var(--aos-mono); font-size: 11px; }
+.aos-sp-filter { flex: 1; max-width: 320px; background: var(--aos-panel); border: 1px solid var(--aos-border); border-radius: 3px; color: var(--aos-text); font-family: var(--aos-mono); font-size: 11px; padding: 3px 8px; }
+.aos-sp-maprows { display: flex; flex-direction: column; gap: 2px; }
+.aos-sp-maprow { display: grid; grid-template-columns: minmax(180px, 1fr) auto 2fr auto; gap: 10px; align-items: baseline; padding: 3px 6px; border-radius: 3px; font-size: 12px; }
+.aos-sp-maprow:hover { background: var(--aos-panel); }
+.aos-sp-mappath { font-family: var(--aos-mono); font-size: 11px; color: var(--aos-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aos-sp-mapdesc { color: var(--aos-dim); font-size: 11.5px; }
+.aos-sp-badge { font-family: var(--aos-mono); font-size: 9px; color: var(--aos-amber); border: 1px solid var(--aos-amber); border-radius: 3px; padding: 0 4px; }
+.aos-sp-maprow.is-new .aos-sp-badge { color: var(--aos-cyan); border-color: var(--aos-cyan); }
+.aos-sp-badge:empty { border: none; padding: 0; }
+.aos-sp-redesc { font-size: 11px; }
+.aos-sp-maproll { display: flex; gap: 10px; align-items: baseline; padding: 6px 6px 2px; font-family: var(--aos-mono); font-size: 11px; color: var(--aos-cyan); }
+
+/* === XTERM.JS CSS (bundled from @xterm/xterm/css/xterm.css) === */
+/**
+ * Copyright (c) 2014 The xterm.js authors. All rights reserved.
+ * Copyright (c) 2012-2013, Christopher Jeffrey (MIT License)
+ * https://github.com/chjj/term.js
+ * @license MIT
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ *
+ * Originally forked from (with the author's permission):
+ *   Fabrice Bellard's javascript vt100 for jslinux:
+ *   http://bellard.org/jslinux/
+ *   Copyright (c) 2011 Fabrice Bellard
+ *   The original design remains. The terminal itself
+ *   has been extended to include xterm CSI codes, among
+ *   other features.
+ */
+
+/**
+ *  Default styles for xterm.js
+ */
+
+.xterm {
+    cursor: text;
+    position: relative;
+    user-select: none;
+    -ms-user-select: none;
+    -webkit-user-select: none;
+}
+
+.xterm.focus,
+.xterm:focus {
+    outline: none;
+}
+
+.xterm .xterm-helpers {
+    position: absolute;
+    top: 0;
+    /**
+     * The z-index of the helpers must be higher than the canvases in order for
+     * IMEs to appear on top.
+     */
+    z-index: 5;
+}
+
+.xterm .xterm-helper-textarea {
+    padding: 0;
+    border: 0;
+    margin: 0;
+    /* Move textarea out of the screen to the far left, so that the cursor is not visible */
+    position: absolute;
+    opacity: 0;
+    left: -9999em;
+    top: 0;
+    width: 0;
+    height: 0;
+    z-index: -5;
+    /** Prevent wrapping so the IME appears against the textarea at the correct position */
+    white-space: nowrap;
+    overflow: hidden;
+    resize: none;
+}
+
+.xterm .composition-view {
+    /* TODO: Composition position got messed up somewhere */
+    background: #000;
+    color: #FFF;
+    display: none;
+    position: absolute;
+    white-space: nowrap;
+    z-index: 1;
+}
+
+.xterm .composition-view.active {
+    display: block;
+}
+
+.xterm .xterm-viewport {
+    /* On OS X this is required in order for the scroll bar to appear fully opaque */
+    background-color: #000;
+    overflow-y: scroll;
+    cursor: default;
+    position: absolute;
+    right: 0;
+    left: 0;
+    top: 0;
+    bottom: 0;
+}
+
+.xterm .xterm-screen {
+    position: relative;
+}
+
+.xterm .xterm-screen canvas {
+    position: absolute;
+    left: 0;
+    top: 0;
+}
+
+.xterm-char-measure-element {
+    display: inline-block;
+    visibility: hidden;
+    position: absolute;
+    top: 0;
+    left: -9999em;
+    line-height: normal;
+}
+
+.xterm.enable-mouse-events {
+    /* When mouse events are enabled (eg. tmux), revert to the standard pointer cursor */
+    cursor: default;
+}
+
+.xterm.xterm-cursor-pointer,
+.xterm .xterm-cursor-pointer {
+    cursor: pointer;
+}
+
+.xterm.column-select.focus {
+    /* Column selection mode */
+    cursor: crosshair;
+}
+
+.xterm .xterm-accessibility:not(.debug),
+.xterm .xterm-message {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    right: 0;
+    z-index: 10;
+    color: transparent;
+    pointer-events: none;
+}
+
+.xterm .xterm-accessibility-tree:not(.debug) *::selection {
+  color: transparent;
+}
+
+.xterm .xterm-accessibility-tree {
+  font-family: monospace;
+  user-select: text;
+  white-space: pre;
+}
+
+.xterm .xterm-accessibility-tree > div {
+  transform-origin: left;
+  width: fit-content;
+}
+
+.xterm .live-region {
+    position: absolute;
+    left: -9999px;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+}
+
+.xterm-dim {
+    /* Dim should not apply to background, so the opacity of the foreground color is applied
+     * explicitly in the generated class and reset to 1 here */
+    opacity: 1 !important;
+}
+
+.xterm-underline-1 { text-decoration: underline; }
+.xterm-underline-2 { text-decoration: double underline; }
+.xterm-underline-3 { text-decoration: wavy underline; }
+.xterm-underline-4 { text-decoration: dotted underline; }
+.xterm-underline-5 { text-decoration: dashed underline; }
+
+.xterm-overline {
+    text-decoration: overline;
+}
+
+.xterm-overline.xterm-underline-1 { text-decoration: overline underline; }
+.xterm-overline.xterm-underline-2 { text-decoration: overline double underline; }
+.xterm-overline.xterm-underline-3 { text-decoration: overline wavy underline; }
+.xterm-overline.xterm-underline-4 { text-decoration: overline dotted underline; }
+.xterm-overline.xterm-underline-5 { text-decoration: overline dashed underline; }
+
+.xterm-strikethrough {
+    text-decoration: line-through;
+}
+
+.xterm-screen .xterm-decoration-container .xterm-decoration {
+	z-index: 6;
+	position: absolute;
+}
+
+.xterm-screen .xterm-decoration-container .xterm-decoration.xterm-decoration-top-layer {
+	z-index: 7;
+}
+
+.xterm-decoration-overview-ruler {
+    z-index: 8;
+    position: absolute;
+    top: 0;
+    right: 0;
+    pointer-events: none;
+}
+
+.xterm-decoration-top {
+    z-index: 2;
+    position: relative;
+}
+
+
+
+/* Derived from vs/base/browser/ui/scrollbar/media/scrollbar.css */
+
+/* xterm.js customization: Override xterm's cursor style */
+.xterm .xterm-scrollable-element > .scrollbar {
+    cursor: default;
+}
+
+/* Arrows */
+.xterm .xterm-scrollable-element > .scrollbar > .scra {
+	cursor: pointer;
+	font-size: 11px !important;
+}
+
+.xterm .xterm-scrollable-element > .visible {
+	opacity: 1;
+
+	/* Background rule added for IE9 - to allow clicks on dom node */
+	background:rgba(0,0,0,0);
+
+	transition: opacity 100ms linear;
+	/* In front of peek view */
+	z-index: 11;
+}
+.xterm .xterm-scrollable-element > .invisible {
+	opacity: 0;
+	pointer-events: none;
+}
+.xterm .xterm-scrollable-element > .invisible.fade {
+	transition: opacity 800ms linear;
+}
+
+/* Scrollable Content Inset Shadow */
+.xterm .xterm-scrollable-element > .shadow {
+	position: absolute;
+	display: none;
+}
+.xterm .xterm-scrollable-element > .shadow.top {
+	display: block;
+	top: 0;
+	left: 3px;
+	height: 3px;
+	width: 100%;
+	box-shadow: var(--vscode-scrollbar-shadow, #000) 0 6px 6px -6px inset;
+}
+.xterm .xterm-scrollable-element > .shadow.left {
+	display: block;
+	top: 3px;
+	left: 0;
+	height: 100%;
+	width: 3px;
+	box-shadow: var(--vscode-scrollbar-shadow, #000) 6px 0 6px -6px inset;
+}
+.xterm .xterm-scrollable-element > .shadow.top-left-corner {
+	display: block;
+	top: 0;
+	left: 0;
+	height: 3px;
+	width: 3px;
+}
+.xterm .xterm-scrollable-element > .shadow.top.left {
+	box-shadow: var(--vscode-scrollbar-shadow, #000) 6px 0 6px -6px inset;
+}
+
+/* ── PHASE 7 PANELS ──────────────────────────────────────────────────────── */
+
+/* BRIEFING briefing banner — between header and delta */
+.aos-briefing-critical { border-left-color: var(--aos-rose); background: rgba(255, 94, 126, 0.06); }
+.aos-briefing-alert    { border-left-color: var(--aos-amber); background: rgba(255, 180, 84, 0.06); }
+.aos-briefing-info     { border-left-color: var(--aos-cyan); }
+.aos-briefing-label {
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--aos-cyan);
+  flex-shrink: 0;
+}
+.aos-briefing-text { flex: 1; color: var(--aos-text); }
+
+/* Disk donut + legend */
+.aos-disk-chart { display: flex; justify-content: center; padding: 4px 0; }
+.aos-disk-total { font-size: 14px; font-family: var(--aos-mono); text-align: center; margin-bottom: 4px; color: var(--aos-cyan); }
+.aos-disk-legend { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }
+.aos-disk-legend-row { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+.aos-disk-swatch {
+  width: 10px; height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+.aos-disk-name { flex: 1; }
+.aos-disk-bytes { margin-left: auto; }
+
+/* ── Workspaces tab ─────────────────────────────────────────────── */
+.aos-ws-body { display: grid; grid-template-columns: minmax(220px, 280px) 1fr; gap: 12px; align-items: start; }
+
+.aos-ws-list { display: flex; flex-direction: column; gap: 2px; border-right: 1px solid var(--aos-border); padding-right: 8px; }
+.aos-ws-row { display: flex; gap: 8px; padding: 6px 4px; cursor: pointer; align-items: flex-start; }
+.aos-ws-row:hover { background: rgba(0, 212, 255, 0.06); }
+.aos-ws-row-active { background: rgba(0, 212, 255, 0.10); }
+.aos-ws-dot { flex: 0 0 auto; }
+.aos-ws-name { color: var(--aos-text); font-weight: 600; }
+.aos-ws-sub { font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 230px; }
+
+.aos-ws-detail { display: flex; flex-direction: column; gap: 10px; }
+.aos-ws-detail-head { display: flex; align-items: center; gap: 8px; }
+.aos-ws-detail-title { color: var(--aos-cyan); font-size: 15px; font-weight: 700; }
+.aos-ws-action { margin-left: auto; background: var(--aos-panel); border: 1px solid var(--aos-border);
+  color: var(--aos-dim); font-family: var(--aos-mono); font-size: 11px; padding: 2px 8px; cursor: pointer; }
+.aos-ws-detail-head .aos-ws-action:nth-of-type(2) { margin-left: 6px; }
+.aos-ws-action:hover { color: var(--aos-cyan); border-color: var(--aos-cyan); }
+
+.aos-ws-section { background: var(--aos-panel); border: 1px solid var(--aos-border); padding: 8px 10px; }
+.aos-ws-section-head { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.aos-ws-section-body { font-size: 12px; }
+.aos-ws-text { color: var(--aos-text); white-space: pre-wrap; }
+.aos-ws-ul { margin: 0; padding-left: 18px; }
+.aos-ws-link { padding: 3px 2px; }
+.aos-ws-insight-foot { font-size: 10px; margin-top: 4px; }
+
+.aos-ws-badge { font-size: 9px; text-transform: uppercase; padding: 1px 5px; border: 1px solid var(--aos-border); }
+.aos-ws-badge-manifest { color: var(--aos-cyan); border-color: var(--aos-cyan); }
+.aos-ws-badge-derived { color: var(--aos-dim); }
+.aos-ws-badge-ai { color: var(--aos-amber); border-color: var(--aos-amber); }
+
+/* Files tab: tabs */
+.aos-ws-tabs { display: flex; gap: 6px; margin: 4px 0 8px; }
+.aos-ws-tab { background: var(--aos-panel); border: 1px solid var(--aos-border); color: var(--aos-dim);
+  font-family: var(--aos-mono); font-size: 11px; text-transform: uppercase; padding: 3px 10px; cursor: pointer;
+  transition: border-color 120ms, color 120ms; }
+.aos-ws-tab:hover { border-color: var(--aos-cyan); color: var(--aos-cyan); }
+.aos-ws-tab-active { color: var(--aos-cyan); border-color: var(--aos-cyan); }
+
+/* Files tab: two-column tree + preview */
+.aos-ws-files { display: grid; grid-template-columns: minmax(200px, 280px) 1fr; gap: 12px; align-items: start; }
+.aos-ws-tree { display: flex; flex-direction: column; gap: 1px; border-right: 1px solid var(--aos-border);
+  padding-right: 8px; max-height: 70vh; overflow: auto; font-size: 12px; }
+.aos-ws-subtree { display: flex; flex-direction: column; gap: 1px; }
+.aos-ws-tnode { display: flex; gap: 6px; padding: 2px 4px; cursor: pointer; align-items: center;
+  white-space: nowrap; }
+.aos-ws-tnode:hover { background: rgba(0, 212, 255, 0.06); }
+.aos-ws-tnode-active { background: rgba(0, 212, 255, 0.10); }
+.aos-ws-twig { flex: 0 0 auto; color: var(--aos-dim); width: 10px; text-align: center; }
+.aos-ws-tnode-dir > span:last-child { color: var(--aos-text); font-weight: 600; }
+
+/* Files tab: preview */
+.aos-ws-preview { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.aos-ws-preview-head { display: flex; align-items: center; gap: 6px; }
+.aos-ws-preview-name { color: var(--aos-cyan); font-weight: 600; font-size: 12px; }
+.aos-ws-trunc { font-size: 10px; }
+.aos-ws-pre { background: var(--aos-panel); border: 1px solid var(--aos-border); padding: 8px 10px;
+  margin: 0; font-family: var(--aos-mono); font-size: 12px; white-space: pre; overflow: auto; max-height: 70vh; }
+/* list-row subtitle (status emoji + one-line summary under the workspace name) */
+.aos-ws-rowmeta {
+  font-size: 11px;
+  color: var(--aos-dim);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* file (vs. directory) rows in the Files-tab tree */
+.aos-ws-tnode-file {
+  color: var(--aos-text);
+  opacity: 0.9;
+}
+.aos-ws-tnode-file:hover { color: var(--aos-cyan); }
+
+/* Memory tab (P3) */
+.aos-mem-head { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+.aos-mem-chip { font-family: var(--aos-mono); font-size: 10px; padding: 2px 8px; border: 1px solid var(--aos-border); border-radius: 3px; cursor: pointer; color: var(--aos-dim); }
+.aos-mem-chip.is-active { color: var(--aos-cyan); border-color: var(--aos-cyan); }
+.aos-mem-row { display: grid; grid-template-columns: 2fr auto auto auto; gap: 10px; padding: 4px 6px; border-radius: 3px; cursor: pointer; font-size: 12px; align-items: baseline; }
+.aos-mem-row:hover { background: var(--aos-panel); }
+.aos-mem-unreviewed { color: var(--aos-amber); font-family: var(--aos-mono); font-size: 9px; border: 1px solid var(--aos-amber); border-radius: 3px; padding: 0 4px; }
+.aos-mem-graphhost { height: 100%; min-height: 420px; }
+/* not in the brief's literal CSS block — added because these elements had no existing
+   class to reuse; disclosed in the task report. */
+.aos-mem-rows { display: flex; flex-direction: column; gap: 2px; }
+.aos-mem-unreviewed:empty { border: none; padding: 0; }
+.aos-mem-search { flex: 1; max-width: 260px; background: var(--aos-panel); border: 1px solid var(--aos-border); border-radius: 3px; color: var(--aos-text); font-family: var(--aos-mono); font-size: 11px; padding: 3px 8px; }
+.aos-mem-fm { display: flex; flex-direction: column; gap: 2px; margin-bottom: 8px; }
+.aos-mem-fmrow { display: grid; grid-template-columns: 80px 1fr; gap: 8px; font-size: 11px; font-family: var(--aos-mono); }
+.aos-mem-footer { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--aos-border); }
+
+/* Runs tab (P3) */
+.aos-runs-head { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
+.aos-runs-row { display: grid; grid-template-columns: auto 2fr auto auto auto; gap: 10px; padding: 4px 6px; border-radius: 3px; cursor: pointer; font-size: 12px; font-family: var(--aos-mono); }
+.aos-runs-row:hover { background: var(--aos-panel); }
+.aos-runs-id { color: var(--aos-cyan); font-size: 11px; }
+/* not in the brief's literal CSS block — added because these elements had no existing
+   class to reuse; disclosed in the task report. */
+.aos-runs-chip { font-family: var(--aos-mono); font-size: 10px; padding: 2px 8px; border: 1px solid var(--aos-border); border-radius: 3px; cursor: pointer; color: var(--aos-dim); }
+.aos-runs-chip.is-active { color: var(--aos-cyan); border-color: var(--aos-cyan); }
+.aos-runs-filter { flex: 1; max-width: 260px; background: var(--aos-panel); border: 1px solid var(--aos-border); border-radius: 3px; color: var(--aos-text); font-family: var(--aos-mono); font-size: 11px; padding: 3px 8px; }
+.aos-runs-body { display: flex; flex-direction: column; gap: 2px; }
+.aos-runs-script { color: var(--aos-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ⌘K Omnisearch (Task 7) — scoped to OmniModal's suggestion rows. Obsidian's
+   own prompt chrome (.prompt, .suggestion-item, input) supplies the modal
+   shell and hover/selection states; these three classes only style the
+   content this plugin puts inside each row. Not in the brief's literal CSS
+   block — disclosed in the task report. */
+.aos-omni-kind {
+  display: inline-block; min-width: 46px; margin-right: 8px; padding: 1px 6px;
+  border: 1px solid var(--aos-border); border-radius: 3px;
+  font-family: var(--aos-mono); font-size: 9px; letter-spacing: 0.5px;
+  text-transform: uppercase; text-align: center; color: var(--aos-cyan);
+}
+.aos-omni-label { font-family: var(--aos-mono); font-size: 13px; }
+.aos-omni-hint { margin-left: 8px; font-size: 11px; }

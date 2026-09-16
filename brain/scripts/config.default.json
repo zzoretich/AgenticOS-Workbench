@@ -1,0 +1,17 @@
+{
+  "dailyNote": { "layout": "{yyyy}/{yyyy}-{MM}-{MMMM}/{yyyy}-{MM}-{dd}.md" },
+  "recallRoots": ["brain/memory", "brain/patterns", "persona/journal"],
+  "quickLinks": [
+    "- Memory index: `MEMORY.md` (root) · Working memory: [[SESSION]]",
+    "- Projects: `brain/memory/projects/` · Reference: `brain/memory/reference/` · Patterns: `brain/patterns/`",
+    "- Daily logs: `<year>/<year>-<month>/<date>.md`"
+  ],
+  "roster": { "orchestrators": {} },
+  "scan": { "fileMapBudget": 40, "embedBudget": 40, "insightsUnderClaude": false, "autoSweepOrphans": false },
+  "provider": "auto",
+  "claude": { "model": "haiku", "perCallUsd": 0.05, "perDayUsd": 0.5 },
+  "ollama": { "host": "127.0.0.1", "port": 11434 },
+  "telemetry": { "enabled": true, "redact": true, "retentionDays": 30 },
+  "cost": { "enabled": false, "monthlyBudget": null },
+  "persona": { "enabled": true, "perDutyUsd": 2.0, "perDayUsd": 6.0 }
+}

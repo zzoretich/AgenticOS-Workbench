@@ -1,0 +1,119 @@
+#!/usr/bin/env node
+/**
+ * UserPromptSubmit hook — injects BRAIN.md + SESSION.md on the first user turn of a session.
+ * Uses a per-session marker file for idempotency. Claude Code pipes hook input as JSON to stdin.
+ */
+
+const { PATHS, dailyNotePath } = require('./lib/hook-entry.js').hookEntry();
+const fs = require('fs');
+const path = require('path');
+
+const VAULT = PATHS.VAULT;
+const BRAIN = PATHS.BRAIN_MD;
+const SESSION = PATHS.SESSION_MD;
+const MARKER_DIR = PATHS.INDEX;
+
+let raw = '';
+process.stdin.on('data', chunk => raw += chunk);
+process.stdin.on('end', () => {
+  try {
+    const input = JSON.parse(raw || '{}');
+    const sessionId = input.session_id || input.sessionId || 'unknown';
+    const transcriptPath = input.transcript_path || input.transcriptPath || '';
+
+    // Ensure today's daily note exists (user's 2026/<month>/<date>.md structure)
+    const d = new Date();
+    const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    const sessionFile = dailyNotePath(d);
+    if (!fs.existsSync(sessionFile)) {
+      fs.mkdirSync(path.dirname(sessionFile), { recursive: true });
+      const template = `---\ntype: daily-note\ndate: ${today}\ntags: [daily-note]\n---\n\n# ${today}\n\n## Claude Code Sessions\n`;
+      fs.writeFileSync(sessionFile, template);
+    }
+
+    // Per-session idempotency: only inject once per session_id
+    const marker = path.join(MARKER_DIR, `.injected-${sessionId}`);
+    if (fs.existsSync(marker)) process.exit(0);
+
+    // Secondary safety: count user turns in transcript JSONL if available
+    if (transcriptPath && fs.existsSync(transcriptPath)) {
+      const lines = fs.readFileSync(transcriptPath, 'utf8').split('\n').filter(Boolean);
+      let userTurns = 0;
+      for (const line of lines) {
+        try {
+          const entry = JSON.parse(line);
+          if (entry.type === 'user' || entry.role === 'user') userTurns++;
+        } catch (_) {}
+      }
+      if (userTurns > 0) {
+        fs.writeFileSync(marker, String(Date.now()));
+        process.exit(0);
+      }
+    }
+
+    const brainContent = fs.existsSync(BRAIN) ? fs.readFileSync(BRAIN, 'utf8') : '';
+    const sessionContent = fs.existsSync(SESSION) ? fs.readFileSync(SESSION, 'utf8') : '';
+
+    // Surface today's morning brief if fresh (< 18h old).
+    const briefPath = path.join(VAULT, 'brain/_index/brief.md');
+    let briefBlock = '';
+    try {
+      if (fs.existsSync(briefPath)) {
+        const st = fs.statSync(briefPath);
+        const ageMs = Date.now() - st.mtimeMs;
+        if (ageMs < 18 * 60 * 60 * 1000) {
+          briefBlock = `\n\n---\n${fs.readFileSync(briefPath, 'utf8')}`;
+        }
+      }
+    } catch (_) {}
+
+    // Auto-recall (brain-recall skill): top-3 ranked snippets if fresh (< 48h old).
+    const recallPath = path.join(VAULT, 'brain/_index/recall-wake.md');
+    let recallBlock = '';
+    try {
+      if (fs.existsSync(recallPath)) {
+        const st = fs.statSync(recallPath);
+        if (Date.now() - st.mtimeMs < 48 * 60 * 60 * 1000) {
+          recallBlock = `\n\n---\n${fs.readFileSync(recallPath, 'utf8')}`;
+        }
+      }
+    } catch (_) {}
+
+    // Persona sitrep (internal work state) — injected while fresh (< 18h), like the brief.
+    const sitrepPath = path.join(VAULT, 'brain/_index/sitrep.md');
+    let sitrepBlock = '';
+    try {
+      if (fs.existsSync(sitrepPath)) {
+        const st = fs.statSync(sitrepPath);
+        if (Date.now() - st.mtimeMs < 18 * 60 * 60 * 1000) {
+          sitrepBlock = `\n\n---\n${fs.readFileSync(sitrepPath, 'utf8')}`;
+        }
+      }
+    } catch (_) {}
+
+    // Persona identity layer (<vault>/persona/): every session wakes as the user's named agent.
+    // Fails open: missing files or the DISABLED kill switch → no block, never an error.
+    let personaBlock = '';
+    try {
+      const PERSONA = PATHS.PERSONA;
+      const identityPath = path.join(PERSONA, 'IDENTITY.md');
+      if (!fs.existsSync(path.join(PERSONA, 'DISABLED')) && fs.existsSync(identityPath)) {
+        const identity = fs.readFileSync(identityPath, 'utf8');
+        let state = '';
+        try { state = fs.readFileSync(path.join(PERSONA, 'STATE.md'), 'utf8'); } catch (_) {}
+        personaBlock = `<persona>\n${identity}\n\n---\n${state}\n</persona>\n`;
+      }
+    } catch (_) {}
+
+    if (personaBlock || brainContent || sessionContent || briefBlock || sitrepBlock || recallBlock) {
+      process.stdout.write(
+        `${personaBlock}<brain-context>\n${brainContent}\n\n---\n${sessionContent}${briefBlock}${sitrepBlock}${recallBlock}\n</brain-context>\n`
+      );
+    }
+
+    fs.writeFileSync(marker, String(Date.now()));
+  } catch (_) {
+    // Never block the user's message on error
+    process.exit(0);
+  }
+});

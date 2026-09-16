@@ -1,0 +1,30 @@
+{
+  "name": "agentic-os",
+  "version": "1.2.0",
+  "description": "Agentic OS: Obsidian workbench for an AgenticOS vault",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "gen:tokens": "node scripts/gen-tokens.mjs",
+    "check:hex": "sh -c \"! grep -rnE '#[0-9a-fA-F]{3,8}' main.ts src --include='*.ts' | grep -v 'src/ui/tokens.ts' | grep -v 'src/ui/tokens.test.ts' | grep .\"",
+    "build": "node scripts/gen-tokens.mjs && node esbuild.config.mjs production",
+    "dev": "node scripts/gen-tokens.mjs && node esbuild.config.mjs",
+    "rebuild-pty": "electron-rebuild -v 43.1.1 -m . -w node-pty",
+    "test": "npm run check:hex && node --import tsx --test \"src/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/addon-web-links": "^0.11.0",
+    "@xterm/xterm": "^5.5.0",
+    "node-pty": "^1.0.0"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^3.7.0",
+    "@types/node": "^22.0.0",
+    "builtin-modules": "^4.0.0",
+    "esbuild": "^0.24.0",
+    "obsidian": "latest",
+    "tsx": "^4.22.4",
+    "typescript": "^5.6.0"
+  }
+}

@@ -1,0 +1,310 @@
+'use strict';
+/**
+ * build-brain-md.js — compiles brain/_index/BRAIN.md from the memory store,
+ * and regenerates the "## Manual index" section of the 3 MOC files. Pure
+ * compilation — no model calls, no judgment calls: every section is a
+ * mechanical projection of frontmatter (`pin: true`, `status/active`) and
+ * MEMORY.md lines.
+ *
+ * Hard 850-token budget, enforced BEFORE any write: the whole document is
+ * composed and measured first, and only written (tmp+rename) if it fits.
+ * update-session.js also owns this file's "## Last Session" block (Stop-hook
+ * rewrites it every session) — this compiler never regenerates that block,
+ * only lifts it from whatever is currently on disk, so the two writers never
+ * fight over the same bytes.
+ *
+ * That borrowed block is the document's one variable-length part, and its
+ * writer has no view of this budget — so it is CLAMPED to whatever headroom
+ * the compiler-owned sections leave, never allowed to fail the compile. A long
+ * session summary must not be able to freeze BRAIN.md.
+ * Only compiler-owned content overflowing still throws: that means too many
+ * pinned rules / active projects, which is actionable by pruning the store.
+ *
+ * The 3 MOCs do NOT share that budget, so they are written first and a BRAIN.md
+ * overflow leaves them fresh. Per-bullet descriptions are clamped to
+ * BULLET_DESC_CHARS so a verbose MEMORY.md line cannot silently walk the
+ * compiler-owned sections into overflow.
+ */
+const fs = require('fs');
+const path = require('path');
+const { PATHS } = require('./lib/paths.js');
+const { estimateTokens } = require('./lib/text-budget.js');
+const { readFrontmatter } = require('./collectors/util.js');
+const { withReport } = require('./lib/pipeline-report.js');
+
+// Raised 500 → 850 on 2026-09-04: the fixed skeleton + quick links + Who
+// paragraph (~950 chars) left room for only ~9 bullets, and 7 pinned rules +
+// 7 active projects overflowed it, freezing BRAIN.md for eight days.
+const BUDGET = 850;
+// Floor on the headroom left for the borrowed "## Last Session" block. Below
+// this the block cannot carry its heading + date line plus any summary at all,
+// which means the compiler-owned sections are themselves the problem.
+const MIN_LAST_SESSION_CHARS = 96;
+// Per-bullet description ceiling for "## Critical rules" / "## Active context".
+// These sections are the document's unbounded growth path: every new pinned
+// rule or active project adds a line whose length is whatever MEMORY.md's
+// description happens to be, and once they crowd out MIN_LAST_SESSION_CHARS the
+// whole compile throws. Clamping the description bounds that growth without
+// ever dropping an entry — the bold title still identifies every rule, and
+// MEMORY.md keeps the untruncated text.
+const BULLET_DESC_CHARS = 72;
+const TTL = '24h';
+
+// Quick links come from config (quickLinks: string[]); the shipped defaults are neutral
+// pointers, and a vault can replace them in brain/config.json.
+const { loadConfig } = require('./lib/config.js');
+const QUICK_LINKS = (loadConfig().quickLinks || []).join('\n');
+
+function todayIso() { return new Date().toISOString().slice(0, 10); }
+
+function listMdFiles(dir) {
+  try { return fs.readdirSync(dir).filter((f) => f.endsWith('.md')).sort(); }
+  catch { return []; }
+}
+
+function readBody(absPath) {
+  let raw;
+  try { raw = fs.readFileSync(absPath, 'utf8'); } catch { return ''; }
+  return raw.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '');
+}
+
+/** First non-heading, non-blank paragraph of a memory body (blank-line delimited). */
+function firstParagraph(body) {
+  const blocks = body.split(/\r?\n\s*\r?\n/).map((b) => b.trim()).filter(Boolean);
+  const p = blocks.find((b) => !b.startsWith('#'));
+  return p ? p.replace(/\s*\n\s*/g, ' ') : '';
+}
+
+/** First H1 heading text ("# Title") in a body. */
+function firstH1(body) {
+  const m = body.match(/^#\s+(.+)$/m);
+  return m ? m[1].trim() : '';
+}
+
+function slugOf(relPath) { return path.basename(relPath, '.md'); }
+
+/** Maps "brain/memory/x/y.md" -> {title, description} from MEMORY.md's own bullet lines. */
+function parseMemoryIndex() {
+  let raw;
+  try { raw = fs.readFileSync(PATHS.MEMORY_INDEX, 'utf8'); } catch { return new Map(); }
+  const map = new Map();
+  const re = /^-\s*\[([^\]]+)\]\(([^)]+)\)\s*—\s*(.*)$/gm;
+  let m;
+  while ((m = re.exec(raw))) map.set(m[2].trim(), { title: m[1].trim(), description: m[3].trim() });
+  return map;
+}
+
+/** Every memory file under brain/memory/** whose frontmatter carries pin: true. */
+function findPinned() {
+  const out = [];
+  for (const type of ['user', 'feedback', 'reference', 'projects']) {
+    const dir = path.join(PATHS.MEMORY_DIR, type);
+    for (const f of listMdFiles(dir)) {
+      const fm = readFrontmatter(path.join(dir, f));
+      if (fm.pin === 'true') out.push(`brain/memory/${type}/${f}`);
+    }
+  }
+  return out;
+}
+
+/** Project memories tagged status/active. */
+function findActiveProjects() {
+  const dir = path.join(PATHS.MEMORY_DIR, 'projects');
+  const out = [];
+  for (const f of listMdFiles(dir)) {
+    const fm = readFrontmatter(path.join(dir, f));
+    if (fm.tags && fm.tags.includes('status/active')) out.push(`brain/memory/projects/${f}`);
+  }
+  return out;
+}
+
+function bulletFor(rel, memIndex) {
+  const e = memIndex.get(rel);
+  if (!e) return `- **${slugOf(rel)}** — (no MEMORY.md entry)`;
+  return `- **${e.title}** — ${clampToChars(e.description, BULLET_DESC_CHARS)}`;
+}
+
+function renderWho() {
+  const para = firstParagraph(readBody(path.join(PATHS.MEMORY_DIR, 'user', 'profile.md')));
+  return para || '_profile not found_';
+}
+
+function renderCriticalRules(memIndex) {
+  const pinned = findPinned();
+  return pinned.length ? pinned.map((rel) => bulletFor(rel, memIndex)).join('\n') : '_none pinned_';
+}
+
+function renderActiveContext(memIndex) {
+  const active = findActiveProjects();
+  return active.length ? active.map((rel) => bulletFor(rel, memIndex)).join('\n') : '_no active projects_';
+}
+
+/** Regex-lifts the "## Last Session" block (heading through EOF or next "## ") verbatim. */
+function extractLastSession(brainMdContent) {
+  const m = brainMdContent.match(/## Last Session[\s\S]*?(?=\n## |$)/);
+  return m ? m[0].trim() : '## Last Session\n\n_none yet_';
+}
+
+function readExistingBrainMeta() {
+  let raw = '';
+  try { raw = fs.readFileSync(PATHS.BRAIN_MD, 'utf8'); } catch { /* first-ever compile */ }
+  const fm = readFrontmatter(PATHS.BRAIN_MD);
+  return {
+    tags: fm.tags || '[brain/bootstrap, status/active]',
+    lastSession: extractLastSession(raw),
+  };
+}
+
+/**
+ * Trims `text` to at most `maxChars`, preferring a word boundary, and marks the
+ * cut with an ellipsis. Works in chars rather than tokens because the vault's
+ * heuristic is ceil(chars/4): composing the document with a block of length N
+ * adds exactly N chars, so a char ceiling converts to the token budget without
+ * rounding slack.
+ */
+function clampToChars(text, maxChars) {
+  if (text.length <= maxChars) return text;
+  const cut = text.slice(0, maxChars - 1); // 1 char reserved for the ellipsis
+  const wordBreak = cut.lastIndexOf(' ');
+  return (wordBreak > maxChars * 0.6 ? cut.slice(0, wordBreak) : cut).trimEnd() + '…';
+}
+
+function composeBrainMd(meta, memIndex, lastSession) {
+  const lines = [];
+  lines.push('---');
+  lines.push('type: index');
+  lines.push(`tags: ${meta.tags}`);
+  lines.push('generatedBy: build-brain-md.js');
+  lines.push(`generatedAt: ${new Date().toISOString()}`);
+  lines.push(`ttl: ${TTL}`);
+  lines.push(`updated: ${todayIso()}`);
+  lines.push('---');
+  lines.push('');
+  lines.push('# BRAIN');
+  lines.push('');
+  lines.push(`> Auto-injected on the first turn of every session. Keep ≤${BUDGET} tokens — pointers, not content.`);
+  lines.push('');
+  lines.push('## Who');
+  lines.push(renderWho());
+  lines.push('');
+  lines.push('## Critical rules');
+  lines.push(renderCriticalRules(memIndex));
+  lines.push('');
+  lines.push('## Active context');
+  lines.push(renderActiveContext(memIndex));
+  lines.push('');
+  lines.push('## Quick links');
+  lines.push(QUICK_LINKS);
+  lines.push('');
+  lines.push(lastSession);
+  lines.push('');
+  return lines.join('\n');
+}
+
+function writeAtomic(absPath, content) {
+  const tmp = absPath + '.tmp';
+  fs.writeFileSync(tmp, content);
+  fs.renameSync(tmp, absPath);
+}
+
+/** Replaces (or, if absent, appends) ONLY the "## Manual index" section of a MOC body. */
+function upsertManualIndex(content, bulletsBody) {
+  const re = /## Manual index[\s\S]*?(?=\n## |$)/;
+  const block = `## Manual index\n${bulletsBody}\n`;
+  if (re.test(content)) return content.replace(re, block).replace(/\n{3,}/g, '\n\n');
+  const sep = content.endsWith('\n') ? '\n' : '\n\n';
+  return `${content}${sep}${block}`;
+}
+
+/** Strips any prior contract keys from the frontmatter block, then appends fresh ones. */
+function addContractFrontmatter(content) {
+  const m = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!m) return content; // no frontmatter block — leave untouched
+  const kept = m[1].split(/\r?\n/).filter((l) => !/^(generatedBy|generatedAt|ttl|updated):/.test(l));
+  const inner = [...kept, `generatedBy: build-brain-md.js`, `generatedAt: ${new Date().toISOString()}`, `ttl: ${TTL}`, `updated: ${todayIso()}`].join('\n');
+  return content.slice(0, m.index) + '---\n' + inner + '\n---' + content.slice(m.index + m[0].length);
+}
+
+function regenMoc(relPath, bullets) {
+  const abs = path.join(PATHS.VAULT, relPath);
+  let content;
+  try { content = fs.readFileSync(abs, 'utf8'); } catch { return null; }
+  return { abs, content: addContractFrontmatter(upsertManualIndex(content, bullets || '_(none)_')) };
+}
+
+async function buildBrainMd({ report }) {
+  const memIndex = parseMemoryIndex();
+  const meta = readExistingBrainMeta();
+
+  // Reference / projects MOCs: from MEMORY.md, filtered by folder.
+  const byFolder = (prefix) => [...memIndex.entries()]
+    .filter(([rel]) => rel.startsWith(prefix))
+    .map(([rel, e]) => `- [[${slugOf(rel)}]] — ${e.description}`).join('\n');
+  // Patterns MOC: from brain/patterns/*.md H1 titles directly (not MEMORY.md) —
+  // see report for the dataview-root verification this mirrors.
+  const patternBullets = listMdFiles(PATHS.PATTERNS)
+    .map((f) => `- [[${slugOf(f)}]] — ${firstH1(readBody(path.join(PATHS.PATTERNS, f))) || slugOf(f)}`)
+    .join('\n');
+
+  const mocs = [
+    regenMoc('brain/_index/MOC-reference.md', byFolder('brain/memory/reference/')),
+    regenMoc('brain/_index/MOC-projects.md', byFolder('brain/memory/projects/')),
+    regenMoc('brain/_index/MOC-patterns.md', patternBullets),
+  ].filter(Boolean);
+
+  // MOCs are written BEFORE the token budget is enforced, and deliberately so:
+  // their "## Manual index" content has nothing to do with BRAIN.md's 850-token
+  // ceiling. Both writes used to sit behind the budget gate, so one oversized
+  // pinned rule stranded all four artifacts at once and the Fix Queue's
+  // "rebuild the compiled brain artifacts" action could never succeed. The run
+  // ledger persists report.wrote even when the fn throws, so a partial run
+  // still reports exactly which artifacts refreshed.
+  const wrote = [];
+  for (const moc of mocs) {
+    writeAtomic(moc.abs, moc.content);
+    wrote.push(path.relative(PATHS.VAULT, moc.abs).replace(/\\/g, '/'));
+  }
+  if (report) {
+    report.wrote.push(...wrote);
+    report.counts.mocsRegenerated = mocs.length;
+  }
+
+  // Two-pass budget. First compose with the borrowed "## Last Session" block
+  // omitted to price the compiler-owned sections, then hand that block only the
+  // headroom left over. Throwing is reserved for the case the compiler can
+  // actually act on — its own sections not fitting.
+  const fixed = composeBrainMd(meta, memIndex, '');
+  const headroomChars = BUDGET * 4 - fixed.length;
+  if (headroomChars < MIN_LAST_SESSION_CHARS) {
+    throw new Error(
+      `compiler sections leave ${headroomChars} chars for "## Last Session", need ` +
+      `${MIN_LAST_SESSION_CHARS} (sections are ${estimateTokens(fixed)}/${BUDGET} tokens) — ` +
+      'prune pinned rules or active projects');
+  }
+
+  const lastSession = clampToChars(meta.lastSession, headroomChars);
+  const brainMdContent = composeBrainMd(meta, memIndex, lastSession);
+  const tokens = estimateTokens(brainMdContent);
+
+  writeAtomic(PATHS.BRAIN_MD, brainMdContent);
+  wrote.push('brain/_index/BRAIN.md');
+
+  if (report) {
+    report.wrote.push('brain/_index/BRAIN.md');
+    report.counts.tokens = tokens;
+    report.counts.pinnedRules = findPinned().length;
+    report.counts.activeProjects = findActiveProjects().length;
+    // Surfaced rather than silent: a clamp means the Stop-hook summary is
+    // outrunning the budget and BRAIN.md is showing a trimmed one.
+    report.counts.lastSessionClampedChars = meta.lastSession.length - lastSession.length;
+  }
+
+  return { tokens, wrote, lastSessionClamped: lastSession !== meta.lastSession };
+}
+
+if (require.main === module) {
+  withReport('build-brain-md', async (report) => {
+    await buildBrainMd({ report });
+  }).catch((e) => { console.error('[build-brain-md]', e.message); process.exit(1); });
+}
+module.exports = { buildBrainMd, BUDGET };
