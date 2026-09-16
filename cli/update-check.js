@@ -159,7 +159,23 @@ function claudeConfigDir() { return path.resolve(process.env.CLAUDE_CONFIG_DIR |
 function agenticosPath(configDir) { return process.env.AOS_CONFIG || path.join(configDir, 'agenticos.json'); }
 function readJsonOrNull(file) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; } }
 
-/** brain/config.json then agenticos.json, the latter winning key by key (the established precedence). */
+/** brain/config.json then agenticos.json, the latter winning key by key (the established precedence).
+ *
+ *  Three declarations of these defaults exist, all deliberate, and they go stale DIFFERENTLY:
+ *   - brain/scripts/config.default.json — the declared default. `init` and `upgrade` merge it into
+ *     <vault>/brain/config.json, so changing it reaches only vaults created or upgraded afterwards;
+ *     an older vault keeps its own copy, which then OUTRANKS the new default, by design.
+ *   - the fallback below — applies only when NEITHER file carries the key, so a stale value here
+ *     would be supplied forever and silently.
+ *   - brain/scripts/lib/config.js — the canonical precedence implementation this function mirrors.
+ *     cli/ cannot require across the vendoring boundary (no path resolves in both the repository
+ *     layout and the vendored layout), so the mirror is forced, not chosen.
+ *
+ *  lib/config.js merges DEEPLY; this merges key-by-key with type guards. Equivalent for a two-scalar
+ *  block, and this one is the stricter of the two — a string "6" for intervalHours is rejected rather
+ *  than accepted, and a non-boolean `check` is ignored rather than propagated. Revisit the mirror if
+ *  the `updates` block ever gains a nested key.
+ */
 function updatesConfig({ configDir = claudeConfigDir(), vault } = {}) {
   const out = { check: true, intervalHours: DEFAULT_INTERVAL_HOURS };
   const apply = (u) => {
@@ -251,8 +267,14 @@ async function runCheck({
     }
   }
   next.behind = isBehind(next);
-  writeState(vault, next);
-  writeFragment(vault, next, at);
+  // Spec §9: a read-only or full vault makes the producer give up silently. It must not turn a
+  // completed `aos upgrade` into a failed one.
+  try {
+    writeState(vault, next);
+    writeFragment(vault, next, at);
+  } catch (e) {
+    if (process.env.AOS_DEBUG === '1') process.stderr.write(`update-check: ${e.message}\n`);
+  }
   return next;
 }
 
@@ -279,10 +301,20 @@ function applySnooze({ vault, spec, now = () => new Date() }) {
   return next;
 }
 
-/** The off switch goes in agenticos.json, the higher-precedence file, so nothing can re-enable it. */
+/** The off switch goes in agenticos.json, the higher-precedence file, so nothing can re-enable it. A
+ *  file that exists but does not parse is REFUSED, never replaced: rewriting it would discard the
+ *  user's vault/node/claude.bin with no warning and silently kill every hook (cli/aos.js:63-75
+ *  added readJsonStrict for exactly this class). */
 function setOff({ configDir = claudeConfigDir() } = {}) {
   const file = agenticosPath(configDir);
-  const cfg = readJsonOrNull(file) || {};
+  let cfg;
+  try {
+    cfg = JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch (e) {
+    if (e.code === 'ENOENT') cfg = {};
+    else throw new Error(`refusing to rewrite unparseable ${file}: ${e.message}`);
+  }
+  if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) throw new Error(`refusing to rewrite ${file}: not a JSON object`);
   cfg.updates = { ...(cfg.updates || {}), check: false };
   writeAtomic(file, `${JSON.stringify(cfg, null, 2)}\n`);
   return file;
@@ -296,7 +328,8 @@ function pluginVersionFrom(pluginRoot) {
 
 async function cmdUpdateStatus({ vault, configDir = claudeConfigDir(), flags = {}, io = console, now = () => new Date() } = {}) {
   if (flags.off) {
-    const file = setOff({ configDir });
+    let file;
+    try { file = setOff({ configDir }); } catch (e) { io.error(e.message); return 1; }
     // Clear the fragment too: nothing will refresh it again, and a lingering line would outlive the
     // switch that was meant to silence it.
     if (vault) { try { writeAtomic(linePath(vault), ''); } catch { /* read-only vault: nothing to clear */ } }
@@ -318,7 +351,9 @@ async function cmdUpdateStatus({ vault, configDir = claudeConfigDir(), flags = {
   if (!state) { io.log('no update information yet — this vault has never checked'); return 0; }
   const cfg = updatesConfig({ configDir, vault });
   io.log(`installed ${state.installed || '(unknown)'} · latest ${state.latest || '(none published)'}`);
-  io.log(`checked ${state.checkedAt}${state.lastError ? ` · last error: ${state.lastError}` : ''}`);
+  // A store with no checkedAt (hand-written or from a future schema this build still accepts) used to
+  // print "checked undefined" — fall back the same way `installed`/`latest` already do above.
+  io.log(`checked ${state.checkedAt || '(unknown)'}${state.lastError ? ` · last error: ${state.lastError}` : ''}`);
   if (state.snooze) io.log(`snoozed ${state.snooze.version} until ${state.snooze.until}`);
   if (!cfg.check) io.log('update checks are disabled (updates.check = false)');
   const notice = renderNotice(state, now());
@@ -364,6 +399,7 @@ async function cmdUpdateNotice({
     if (process.env.AOS_NO_SPAWN !== '1' && isStale(state, { intervalHours: cfg.intervalHours, now: at })) {
       const child = spawnFn(process.execPath, [path.join(__dirname, 'aos.js'), 'update-check', '--quiet'],
         { detached: true, stdio: 'ignore' });
+      if (child && typeof child.on === 'function') child.on('error', () => {}); // an unhandled 'error' would fail the session
       if (child && typeof child.unref === 'function') child.unref();
     }
 

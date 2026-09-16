@@ -76,10 +76,15 @@ pure read of small files.**
  ┌────────▼───────┐ ┌─────▼──────────┐ ┌─────▼─────────┐ ┌──────▼────────┐
  │ user's status  │ │ aos            │ │ aos           │ │ scan-vault.js │
  │ line:          │ │ update-notice  │ │ update-status │ │ -> snapshot   │
- │ cat update-    │ │ (SessionStart) │ │ (humans,      │ │ .json -> HUD  │
- │ line.txt       │ │                │ │  scripting)   │ │               │
+ │ cat update-    │ │ (SessionStart) │ │ (humans,      │ │ .json (data   │
+ │ line.txt       │ │                │ │  scripting)   │ │  only — no    │
+ │                │ │                │ │               │ │  HUD render)  │
  └────────────────┘ └────────────────┘ └───────────────┘ └───────────────┘
 ```
+
+The fourth path is data-only in this branch: `snapshot.json` carries the `updates` flag, but nothing in
+`obsidian-plugin/src/views/` renders it yet. A HUD indicator for it is a follow-up, not part of this
+branch.
 
 **Why the split.** The status line is re-run on every session event, debounced at 300ms, and the
 in-flight script is **cancelled** when another trigger lands. Anything slower than reading a small
@@ -145,12 +150,16 @@ before the first successful check and whenever the upstream tag is not orderable
 `null` when unset. `url` is constructed from `REPO_SLUG` and the validated tag, never copied from the
 response body.
 
-**Who writes `pluginVersion`.** Only `update-notice` can observe the plugin's version, because only it
-runs with `CLAUDE_PLUGIN_ROOT` set. It is therefore the sole writer of that field. The detached
-producer runs without that variable and must **carry the existing `pluginVersion` forward unchanged**
+**Who writes `pluginVersion`.** `update-notice` is the *usual* writer of the plugin's version, because
+`CLAUDE_PLUGIN_ROOT` makes it the one consumer that can read it for free on every session start. It is
+not, however, the *only* component that can observe it — `aos upgrade` resolves the plugin directly
+(`installedPlugin(bin).installPath`, the same lookup `doctor()` already makes) and passes it into the
+same `runCheck` the detached producer uses, because `upgrade()` is the one caller that knows for
+certain all three surfaces just moved. The detached producer itself runs without `CLAUDE_PLUGIN_ROOT`
+and, absent a caller-supplied version, must **carry the existing `pluginVersion` forward unchanged**
 rather than clearing it — otherwise every daily check would erase the skew signal that §8 depends on.
-When the field has never been written (a check that precedes the first session start), `installed`
-falls back to `vaultVersion` alone.
+When the field has never been written (a check that precedes the first session start or an upgrade),
+`installed` falls back to `vaultVersion` alone.
 
 ### 6.2 `<vault>/brain/_index/update-line.txt`
 
