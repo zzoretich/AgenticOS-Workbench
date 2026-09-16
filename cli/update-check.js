@@ -46,16 +46,39 @@ function parseSemver(v) {
   };
 }
 
+/**
+ * Semver §11 prerelease precedence, over the dot-separated identifiers: numeric identifiers
+ * compare numerically, a numeric identifier ranks below an alphanumeric one, and a shorter set of
+ * identifiers ranks below a longer one when every shared identifier is equal. An absent prerelease
+ * (a real release) outranks any prerelease.
+ * A plain `a < b` string compare is wrong here: it puts "rc.9" above "rc.10".
+ */
+function cmpPre(a, b) {
+  if (a === b) return 0;
+  if (!a) return 1;
+  if (!b) return -1;
+  const ai = a.split('.');
+  const bi = b.split('.');
+  for (let i = 0; i < Math.max(ai.length, bi.length); i++) {
+    if (ai[i] === undefined) return -1;
+    if (bi[i] === undefined) return 1;
+    if (ai[i] === bi[i]) continue;
+    const an = /^\d+$/.test(ai[i]);
+    const bn = /^\d+$/.test(bi[i]);
+    if (an && bn) return Number(ai[i]) < Number(bi[i]) ? -1 : 1;
+    if (an !== bn) return an ? -1 : 1;
+    return ai[i] < bi[i] ? -1 : 1;
+  }
+  return 0;
+}
+
 /** -1 | 0 | 1, or null when either side is not orderable. A prerelease precedes its release. */
 function cmpSemver(a, b) {
   const pa = parseSemver(a);
   const pb = parseSemver(b);
   if (!pa || !pb) return null;
   for (let i = 0; i < 3; i++) if (pa.nums[i] !== pb.nums[i]) return pa.nums[i] < pb.nums[i] ? -1 : 1;
-  if (pa.pre === pb.pre) return 0;
-  if (!pa.pre) return 1;
-  if (!pb.pre) return -1;
-  return pa.pre < pb.pre ? -1 : 1;
+  return cmpPre(pa.pre, pb.pre);
 }
 
 /** The skew rule (design §8): a user is only as upgraded as their least-upgraded part. */
