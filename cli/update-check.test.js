@@ -167,3 +167,131 @@ test('writeFragment writes zero bytes when there is nothing to say', () => {
   U.writeFragment(w.vault, behindState({ latest: '0.1.0' }), now);
   assert.equal(w.line(), '', 'exactly zero bytes, so a cat contributes nothing');
 });
+
+const { EventEmitter } = require('events');
+
+/** A fake https.get: replays one scripted response (or an error) with no network. */
+function fakeGet({ status = 200, body = '{}', err = null, chunks = null } = {}) {
+  return (_url, _opts, cb) => {
+    const req = new EventEmitter();
+    req.destroy = (e) => { if (e) req.emit('error', e); };
+    req.setTimeout = () => {};
+    process.nextTick(() => {
+      if (err) return req.emit('error', err);
+      const res = new EventEmitter();
+      res.statusCode = status;
+      res.setEncoding = () => {};
+      res.resume = () => {};
+      cb(res);
+      for (const c of (chunks || [body])) res.emit('data', c);
+      res.emit('end');
+    });
+    return req;
+  };
+}
+
+const release = (tag) => JSON.stringify({ tag_name: tag, body: 'CHANGELOG\nwith\nmany\nlines' });
+
+test('httpGetJson surfaces the status code on a non-200', async () => {
+  await assert.rejects(
+    () => U.httpGetJson('https://example.invalid/x', { getFn: fakeGet({ status: 404 }) }),
+    (e) => e.statusCode === 404);
+  await assert.rejects(
+    () => U.httpGetJson('https://example.invalid/x', { getFn: fakeGet({ status: 403 }) }),
+    (e) => e.statusCode === 403);
+  await assert.rejects(
+    () => U.httpGetJson('https://example.invalid/x', { getFn: fakeGet({ body: 'not json' }) }),
+    /bad JSON/);
+  await assert.rejects(
+    () => U.httpGetJson('https://example.invalid/x', { getFn: fakeGet({ err: new Error('ENOTFOUND') }) }),
+    /ENOTFOUND/);
+});
+
+test('runCheck records a newer release and never renders the release body', async () => {
+  const w = vaultWorld();
+  const s = await U.runCheck({
+    vault: w.vault, vaultVersion: '0.1.0', pluginVersion: '0.1.0',
+    get: fakeGet({ body: release('v0.2.0') }), now: () => new Date('2026-09-16T00:00:00.000Z'),
+  });
+  assert.equal(s.latest, '0.2.0');
+  assert.equal(s.behind, true);
+  assert.equal(s.installed, '0.1.0');
+  assert.equal(s.url, 'https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.2.0');
+  assert.equal(s.consecutiveFailures, 0);
+  assert.equal(s.lastError, null);
+  assert.equal(w.line(), '⬆ AgenticOS 0.2.0\n');
+  assert.ok(!JSON.stringify(s).includes('CHANGELOG'), 'the release body never enters the store');
+});
+
+test('runCheck treats 404 as "no release yet" and stays silent', async () => {
+  const w = vaultWorld();
+  const s = await U.runCheck({
+    vault: w.vault, vaultVersion: '0.1.0',
+    get: fakeGet({ status: 404 }), now: () => new Date('2026-09-16T00:00:00.000Z'),
+  });
+  assert.equal(s.latest, null);
+  assert.equal(s.behind, false);
+  assert.equal(w.line(), '', 'a private repo or an untagged repo says nothing at all');
+});
+
+test('runCheck keeps the last known-good latest when the transport fails', async () => {
+  const w = vaultWorld();
+  const now = () => new Date('2026-09-16T00:00:00.000Z');
+  await U.runCheck({ vault: w.vault, vaultVersion: '0.1.0', get: fakeGet({ body: release('v0.2.0') }), now });
+  for (const bad of [{ err: new Error('ENOTFOUND') }, { status: 403 }, { body: 'not json' }]) {
+    const s = await U.runCheck({ vault: w.vault, vaultVersion: '0.1.0', get: fakeGet(bad), now });
+    assert.equal(s.latest, '0.2.0', 'the notice must not flicker on a flaky network');
+    assert.equal(s.behind, true);
+    assert.ok(s.lastError);
+  }
+  assert.equal(U.readState(w.vault).consecutiveFailures, 3);
+  const ok = await U.runCheck({ vault: w.vault, vaultVersion: '0.1.0', get: fakeGet({ body: release('v0.2.0') }), now });
+  assert.equal(ok.consecutiveFailures, 0, 'a success resets the backoff');
+});
+
+test('runCheck carries pluginVersion forward when it cannot observe it', async () => {
+  const w = vaultWorld();
+  const now = () => new Date('2026-09-16T00:00:00.000Z');
+  await U.runCheck({ vault: w.vault, vaultVersion: '0.1.0', pluginVersion: '0.2.0', get: fakeGet({ body: release('v0.2.0') }), now });
+  // The detached producer has no CLAUDE_PLUGIN_ROOT, so it passes no pluginVersion at all.
+  const s = await U.runCheck({ vault: w.vault, vaultVersion: '0.1.0', get: fakeGet({ body: release('v0.2.0') }), now });
+  assert.equal(s.pluginVersion, '0.2.0', 'the skew signal survives a daily check');
+  assert.equal(s.installed, '0.1.0');
+});
+
+test('runCheck ignores a tag it cannot order', async () => {
+  const w = vaultWorld();
+  const s = await U.runCheck({
+    vault: w.vault, vaultVersion: '0.1.0',
+    get: fakeGet({ body: release('nightly') }), now: () => new Date('2026-09-16T00:00:00.000Z'),
+  });
+  assert.equal(s.latest, null);
+  assert.equal(w.line(), '');
+});
+
+test('updatesConfig merges brain/config.json under agenticos.json', () => {
+  const w = vaultWorld();
+  const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-cfg-'));
+  assert.deepEqual(U.updatesConfig({ configDir, vault: w.vault }), { check: true, intervalHours: 24 });
+  fs.writeFileSync(path.join(w.vault, 'brain', 'config.json'),
+    JSON.stringify({ updates: { check: true, intervalHours: 6 } }));
+  assert.equal(U.updatesConfig({ configDir, vault: w.vault }).intervalHours, 6);
+  fs.writeFileSync(path.join(configDir, 'agenticos.json'),
+    JSON.stringify({ vault: w.vault, updates: { check: false } }));
+  assert.deepEqual(U.updatesConfig({ configDir, vault: w.vault }), { check: false, intervalHours: 6 },
+    'agenticos.json wins key by key');
+});
+
+test('runCheck does nothing when the check is disabled', async () => {
+  const w = vaultWorld();
+  const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-cfg-'));
+  fs.writeFileSync(path.join(configDir, 'agenticos.json'),
+    JSON.stringify({ vault: w.vault, updates: { check: false } }));
+  const s = await U.runCheck({
+    vault: w.vault, vaultVersion: '0.1.0', configDir,
+    get: () => { throw new Error('the network must not be touched'); },
+    now: () => new Date('2026-09-16T00:00:00.000Z'),
+  });
+  assert.equal(s, null);
+  assert.equal(fs.existsSync(path.join(w.vault, 'brain', '_index', 'update-check.json')), false);
+});
