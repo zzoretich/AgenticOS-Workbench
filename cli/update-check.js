@@ -256,6 +256,128 @@ async function runCheck({
   return next;
 }
 
+const { spawn } = require('child_process');
+
+/** "<N>d" or "<N>h", whole numbers only, in milliseconds. null means usage error. */
+function parseSnooze(spec) {
+  const m = /^(\d+)([dh])$/.exec(String(spec == null ? '' : spec).trim());
+  if (!m) return null;
+  const n = Number(m[1]);
+  if (!n) return null;
+  return n * (m[2] === 'd' ? 86400e3 : 3600e3);
+}
+
+function applySnooze({ vault, spec, now = () => new Date() }) {
+  const ms = parseSnooze(spec);
+  if (ms === null) return null;
+  const prev = readState(vault);
+  if (!prev || !prev.latest) return prev;
+  const at = now();
+  const next = { ...prev, snooze: { version: prev.latest, until: new Date(at.getTime() + ms).toISOString() } };
+  writeState(vault, next);
+  writeFragment(vault, next, at);
+  return next;
+}
+
+/** The off switch goes in agenticos.json, the higher-precedence file, so nothing can re-enable it. */
+function setOff({ configDir = claudeConfigDir() } = {}) {
+  const file = agenticosPath(configDir);
+  const cfg = readJsonOrNull(file) || {};
+  cfg.updates = { ...(cfg.updates || {}), check: false };
+  writeAtomic(file, `${JSON.stringify(cfg, null, 2)}\n`);
+  return file;
+}
+
+function pluginVersionFrom(pluginRoot) {
+  if (!pluginRoot) return null;
+  const p = readJsonOrNull(path.join(pluginRoot, '.claude-plugin', 'plugin.json'));
+  return (p && parseTag(p.version)) || null;
+}
+
+async function cmdUpdateStatus({ vault, configDir = claudeConfigDir(), flags = {}, io = console, now = () => new Date() } = {}) {
+  if (flags.off) {
+    const file = setOff({ configDir });
+    // Clear the fragment too: nothing will refresh it again, and a lingering line would outlive the
+    // switch that was meant to silence it.
+    if (vault) { try { writeAtomic(linePath(vault), ''); } catch { /* read-only vault: nothing to clear */ } }
+    io.log(`update checks disabled in ${file}`);
+    return 0;
+  }
+  if (flags.snooze !== undefined) {
+    if (parseSnooze(flags.snooze) === null) { io.error('--snooze takes <N>d or <N>h, for example --snooze 7d'); return 2; }
+    const s = vault ? applySnooze({ vault, spec: flags.snooze, now }) : null;
+    io.log(s && s.snooze ? `snoozed ${s.snooze.version} until ${s.snooze.until}` : 'nothing to snooze');
+    return 0;
+  }
+  const state = vault ? readState(vault) : null;
+  if (flags.statusline) {
+    const line = renderStatusline(state, now());
+    if (line) io.log(line);
+    return 0;
+  }
+  if (!state) { io.log('no update information yet — this vault has never checked'); return 0; }
+  const cfg = updatesConfig({ configDir, vault });
+  io.log(`installed ${state.installed || '(unknown)'} · latest ${state.latest || '(none published)'}`);
+  io.log(`checked ${state.checkedAt}${state.lastError ? ` · last error: ${state.lastError}` : ''}`);
+  if (state.snooze) io.log(`snoozed ${state.snooze.version} until ${state.snooze.until}`);
+  if (!cfg.check) io.log('update checks are disabled (updates.check = false)');
+  const notice = renderNotice(state, now());
+  if (notice) io.log(notice);
+  return 0;
+}
+
+async function cmdUpdateCheck({ vault, configDir = claudeConfigDir(), flags = {}, io = console, now = () => new Date(), get } = {}) {
+  const s = await runCheck({ vault, vaultVersion: (readJsonOrNull(agenticosPath(configDir)) || {}).version || null, configDir, get, now });
+  if (!flags.quiet) {
+    if (!s) io.log('update checks are disabled');
+    else io.log(`installed ${s.installed || '(unknown)'} · latest ${s.latest || '(none published)'}${s.lastError ? ` · ${s.lastError}` : ''}`);
+  }
+  return 0;
+}
+
+/**
+ * The SessionStart consumer. Reads, optionally spawns a detached producer, re-renders the fragment
+ * and prints at most one line. Every failure is silence.
+ */
+async function cmdUpdateNotice({
+  vault, configDir = claudeConfigDir(), io = console, now = () => new Date(),
+  pluginRoot = process.env.CLAUDE_PLUGIN_ROOT || null, spawnFn = spawn,
+} = {}) {
+  try {
+    if (!vault) return 0;
+    const cfg = updatesConfig({ configDir, vault });
+    if (!cfg.check) return 0;
+    const at = now();
+    let state = readState(vault);
+
+    // Only this process can see the plugin's own version; persist it so the other consumers can too.
+    const pv = pluginVersionFrom(pluginRoot);
+    if (state && pv && pv !== state.pluginVersion) {
+      state = { ...state, pluginVersion: pv };
+      state.installed = lowerVersion(pv, state.vaultVersion);
+      state.behind = isBehind(state);
+      writeState(vault, state);
+    }
+
+    // AOS_NO_SPAWN=1 is a test seam (the shape of AOS_SKIP_NPM / AOS_SKIP_OLLAMA_PROBE /
+    // AOS_NODE_CANDIDATES) so the CI rehearsal can exercise this path without touching the network.
+    if (process.env.AOS_NO_SPAWN !== '1' && isStale(state, { intervalHours: cfg.intervalHours, now: at })) {
+      const child = spawnFn(process.execPath, [path.join(__dirname, 'aos.js'), 'update-check', '--quiet'],
+        { detached: true, stdio: 'ignore' });
+      if (child && typeof child.unref === 'function') child.unref();
+    }
+
+    if (!state) return 0;
+    writeFragment(vault, state, at);
+    const notice = renderNotice(state, at);
+    if (notice) io.log(notice);
+    return 0;
+  } catch (e) {
+    if (process.env.AOS_DEBUG === '1') process.stderr.write(`update-notice: ${e.message}\n`);
+    return 0;
+  }
+}
+
 module.exports = {
   REPO_SLUG, LATEST_URL, STORE_REL, LINE_REL, SCHEMA,
   DEFAULT_INTERVAL_HOURS, MAX_BACKOFF_DOUBLINGS, MAX_BODY_BYTES, TAG_RE,
@@ -263,4 +385,5 @@ module.exports = {
   storePath, linePath, writeAtomic, readState, writeState,
   isBehind, isSnoozed, isStale, renderStatusline, renderNotice, writeFragment,
   claudeConfigDir, agenticosPath, updatesConfig, httpGetJson, runCheck,
+  parseSnooze, applySnooze, setOff, pluginVersionFrom, cmdUpdateStatus, cmdUpdateCheck, cmdUpdateNotice,
 };
