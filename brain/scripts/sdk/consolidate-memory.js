@@ -77,10 +77,10 @@ async function main() {
   if (!spec) { log('[consolidate] not enough memory files.'); return; }
   if (mode === 'context') { printContext({ feature: 'consolidate-memory', system: spec.system, context: spec.prompt, format: CONSOLIDATION_FORMAT }); return; }
 
-  const p = await localProvider('consolidate-memory');
-  log(`[consolidate] reviewing ${spec.count} files via ${p.name}…`);
+  const p = await localProvider('reason:consolidate-memory', { role: 'reasoner' });
+  log(`[consolidate] reviewing ${spec.count} files via ${p.name}${p.degraded ? ` (reasoner unavailable: ${p.degraded}; workhorse)` : ''}…`);
   let text;
-  try { text = await reason(spec.prompt, { system: spec.system, effort: 'medium', numPredict: 3072, chatFn: (o) => p.chat({ ...o, feature: 'consolidate-memory' }), noFallback: p.name !== 'ollama' }); }
+  try { text = await reason(spec.prompt, { system: spec.system, effort: 'medium', numPredict: 3072, feature: 'reason:consolidate-memory', chatFn: (o) => p.chat({ ...o, feature: 'reason:consolidate-memory' }), providerName: p.name }); }
   catch (e) { log('[consolidate] model error:', e.message); process.exit(1); }
   if (!text) { log('[consolidate] empty response; aborting.'); process.exit(1); }
   const outPath = writeConsolidation(text, spec);

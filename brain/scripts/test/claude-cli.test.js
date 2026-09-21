@@ -200,3 +200,23 @@ test('resolveClaudeBin: agenticos.json claude.bin wins while it is an executable
     assert.equal(cli.resolveClaudeBin({ lookup: () => '/from/path/claude' }), '/from/path/claude', 'configs written before Plan 4 lack the key');
   } finally { process.env.AOS_CONFIG = saved; }
 });
+
+test('buildArgs: a valid effort becomes --effort right after --model; anything else is left off', () => {
+  const withEffort = cli.buildArgs({ prompt: 'p', model: 'claude-opus-5', system: '', maxBudgetUsd: 0.5, effort: 'high' });
+  assert.deepEqual(withEffort.slice(0, 6), ['-p', 'p', '--model', 'claude-opus-5', '--effort', 'high']);
+  for (const bad of [undefined, null, '', 'max', 'MEDIUM', 0]) {
+    assert.ok(!cli.buildArgs({ prompt: 'p', model: 'haiku', system: '', maxBudgetUsd: 0.01, effort: bad }).includes('--effort'), `effort=${String(bad)}`);
+  }
+  assert.deepEqual(cli.EFFORTS, ['low', 'medium', 'high']);
+});
+
+test('claudeCall forwards effort to the spawn', async () => {
+  const calls = [];
+  await cli.claudeCall({ prompt: 'q', model: 'claude-opus-5', maxBudgetUsd: 0.5, effort: 'medium', feature: 'reason:ask', bin: '/x/claude', spawnFn: fakeSpawn({ stdout: OK_REPLY }, calls) });
+  const i = calls[0].args.indexOf('--effort');
+  assert.ok(i > 0);
+  assert.equal(calls[0].args[i + 1], 'medium');
+  const rows = fs.readFileSync(SPEND_PATH, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.equal(rows[0].feature, 'reason:ask');
+  assert.equal(rows[0].model, 'claude-opus-5');
+});

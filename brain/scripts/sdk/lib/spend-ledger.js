@@ -3,6 +3,7 @@
  * spend-ledger.js — the provider layer's shared money + error primitives.
  *   ProviderUnavailable  typed error every provider throws instead of a bare string
  *   recordSpend/spendToday  append-only USD ledger at brain/_index/provider-spend.jsonl
+ *   reasonSpendToday        the reasoner role's share of today (feature reason:*), for its own cap
  * Lives apart from provider.js so claude-cli.js can ledger without a require cycle.
  */
 const fs = require('fs');
@@ -51,24 +52,36 @@ function recordSpend({ feature, provider, model, usd, inputTokens, outputTokens,
   return row;
 }
 
+/** The two metered families that carry their own daily cap and so never count against the hook cap. */
+const HOOK_EXCLUDE = /^(duty|reason):/;
+const REASON_ROWS = /^reason:/;
+
 /**
  * USD spent on the local calendar day of `now` (default: now) by the rows the hook cap
  * (`claude.perDayUsd`) governs. Rows whose `feature` matches `exclude` are skipped — by
- * default the persona's `duty:*` runs, which the persona layer gates separately against
- * `persona.perDayUsd` (up to $2 each would otherwise blow the $0.50 hook cap on the first
- * duty of the day). The Obsidian Chat tab's `chat` rows stay counted. `exclude: null`
+ * default the persona's `duty:*` runs (gated by `persona.perDayUsd`) and the reasoner's
+ * `reason:*` calls (gated by `reasoner.perDayUsd`): either family would otherwise blow the
+ * $0.50 hook cap on its first call of the day. The Obsidian Chat tab's legacy `chat` rows stay
+ * counted. `include` keeps only matching rows (applied before `exclude`); `exclude: null`
  * sums every row.
  */
-function spendToday(now = new Date(), { exclude = /^duty:/ } = {}) {
+function spendToday(now = new Date(), { exclude = HOOK_EXCLUDE, include = null } = {}) {
   const day = localDay(now);
   let sum = 0;
   for (const r of readRows()) {
     const t = new Date(r.ts);
     if (Number.isNaN(t.getTime()) || localDay(t) !== day) continue;
-    if (exclude && exclude.test(String(r.feature || ''))) continue;
+    const feature = String(r.feature || '');
+    if (include && !include.test(feature)) continue;
+    if (exclude && exclude.test(feature)) continue;
     sum += Number(r.usd) || 0;
   }
   return Math.round(sum * 1e6) / 1e6;
 }
 
-module.exports = { ProviderUnavailable, recordSpend, spendToday, SPEND_PATH };
+/** Today's reasoner spend: the rows the reasoner cap (`reasoner.perDayUsd`) governs. */
+function reasonSpendToday(now = new Date()) {
+  return spendToday(now, { include: REASON_ROWS, exclude: null });
+}
+
+module.exports = { ProviderUnavailable, recordSpend, spendToday, reasonSpendToday, SPEND_PATH, HOOK_EXCLUDE, REASON_ROWS };

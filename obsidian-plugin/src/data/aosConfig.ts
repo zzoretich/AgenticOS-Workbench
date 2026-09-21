@@ -21,6 +21,7 @@ export interface AgenticosJson {
   provider?: ProviderMode;
   // bin: the absolute `claude` path aos init/upgrade resolved (contract §2, Task 0); absent in configs written before Plan 4.
   claude?: { model?: string; perCallUsd?: number; perDayUsd?: number; bin?: string };
+  reasoner?: { model?: string; perCallUsd?: number; perDayUsd?: number; effort?: string };
   ollama?: { host?: string; port?: number };
   telemetry?: { enabled?: boolean; redact?: boolean; retentionDays?: number };
   updates?: { check?: boolean; intervalHours?: number };
@@ -38,6 +39,8 @@ export interface VaultConfig {
   scan: { fileMapBudget: number; embedBudget: number; fileMapBudgetUnderClaude: number; insightsUnderClaude: boolean; autoSweepOrphans: boolean };
   provider: ProviderMode;
   claude: { model: string; perCallUsd: number; perDayUsd: number };
+  // The reasoner role: a Claude model with its own caps (reason:* ledger rows), used by the Chat tab.
+  reasoner: { model: string; perCallUsd: number; perDayUsd: number; effort: string };
   ollama: { host: string; port: number };
   telemetry: { enabled: boolean; redact: boolean; retentionDays: number };
   updates: { check: boolean; intervalHours: number };
@@ -67,6 +70,7 @@ export const VAULT_CONFIG_DEFAULTS: VaultConfig = {
   scan: { fileMapBudget: 40, embedBudget: 40, fileMapBudgetUnderClaude: 0, insightsUnderClaude: false, autoSweepOrphans: false },
   provider: "auto",
   claude: { model: "haiku", perCallUsd: 0.05, perDayUsd: 0.5 },
+  reasoner: { model: "claude-opus-5", perCallUsd: 0.5, perDayUsd: 5.0, effort: "medium" },
   ollama: { host: "127.0.0.1", port: 11434 },
   telemetry: { enabled: true, redact: true, retentionDays: 30 },
   updates: { check: true, intervalHours: 24 },

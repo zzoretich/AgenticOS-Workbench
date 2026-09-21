@@ -1,4 +1,4 @@
-// claudeAsk.ts — the Chat tab under the `claude` provider. Two spawns per question:
+// claudeAsk.ts — the Chat tab's headless Claude path (the reasoner role). Two spawns per question:
 //   1. node <vault>/brain/scripts/sdk/recall-cli.js <question>   → recall hits (best-effort, 15 s)
 //   2. claude -p <prompt> … the exact headless recipe from brain/scripts/sdk/lib/claude-cli.js
 //      (--tools "" --setting-sources "" --strict-mcp-config --no-session-persistence
@@ -6,7 +6,8 @@
 //      env AOS_HEADLESS=1 and CLAUDECODE unset so the user's hooks never re-enter.
 // Returns the same AskHandle shape as askSpawner.runAsk so ChatTab treats both alike.
 // Each answered call appends the contract §3 spend row to brain/_index/provider-spend.jsonl
-// (feature "chat") so `aos status` and the daily cap account for chat spend too.
+// (feature "reason:chat" by default: the reasoner cap's family) so `aos status` and the daily
+// caps account for chat spend too. chatRoute() decides between this path and askSpawner.
 import { spawn as nodeSpawn, ChildProcess, SpawnOptions } from "child_process";
 import * as fs from "fs";
 import * as os from "os";
@@ -19,8 +20,10 @@ export interface ClaudeAskOptions {
   node: string;          // Plugin.nodeBin()
   claudeBin: string;     // Plugin.claudeBin()
   question: string;
-  model: string;         // readVaultConfig().claude.model
-  maxBudgetUsd: number;  // readVaultConfig().claude.perCallUsd
+  model: string;         // readVaultConfig().reasoner.model
+  maxBudgetUsd: number;  // readVaultConfig().reasoner.perCallUsd
+  effort?: string;       // readVaultConfig().reasoner.effort → --effort (low|medium|high; anything else is left off)
+  feature?: string;      // ledger row feature, default "reason:chat"
   timeoutMs?: number;        // default 120 s
   recallTimeoutMs?: number;  // default 15 s
 }
@@ -45,10 +48,26 @@ export function composePrompt(question: string, recallContext: string): string {
   return ctx ? `CONTEXT (recall hits from the vault):\n${ctx}\n\nQUESTION: ${question}` : `QUESTION: ${question}`;
 }
 
-export function buildClaudeArgs(o: { prompt: string; model: string; maxBudgetUsd: number }): string[] {
+export const EFFORTS = ["low", "medium", "high"];
+export const CHAT_FEATURE = "reason:chat";
+
+/**
+ * Which spawner answers a Chat question. The reasoner is a Claude model, so headless Claude is
+ * the route whenever the scripts' last probe found a login (the cache both resolvers share in
+ * provider-state.json) or the global provider is claude; a reachable Ollama alone means the
+ * script path, which falls back to the workhorse. No state at all is "none".
+ */
+export function chatRoute(state: ProviderState | null): "claude" | "local" | "none" {
+  if (!state || state.name === "none") return "none";
+  if (state.name === "claude" || state.claude?.loggedIn === true) return "claude";
+  return "local";
+}
+
+export function buildClaudeArgs(o: { prompt: string; model: string; maxBudgetUsd: number; effort?: string }): string[] {
   return [
     "-p", o.prompt,
     "--model", o.model,
+    ...(o.effort && EFFORTS.includes(o.effort) ? ["--effort", o.effort] : []),
     "--tools", "",
     "--setting-sources", "",
     "--strict-mcp-config",
@@ -149,7 +168,7 @@ export function runClaudeAsk(opts: ClaudeAskOptions, deps: ClaudeAskDeps = DEFAU
     let child: ChildProcess;
     try {
       child = deps.spawn(opts.claudeBin,
-        buildClaudeArgs({ prompt: composePrompt(opts.question, context), model: opts.model, maxBudgetUsd: opts.maxBudgetUsd }),
+        buildClaudeArgs({ prompt: composePrompt(opts.question, context), model: opts.model, maxBudgetUsd: opts.maxBudgetUsd, effort: opts.effort }),
         { cwd: opts.vault, env: headlessEnv(process.env), windowsHide: true });
     } catch (e) {
       return fail(e instanceof Error ? e.message : String(e));
@@ -169,7 +188,7 @@ export function runClaudeAsk(opts: ClaudeAskOptions, deps: ClaudeAskDeps = DEFAU
       if (!parsed) return;
       try {
         deps.appendFileSync(path.join(opts.vault, SPEND_LEDGER_PATH), JSON.stringify({
-          ts: new Date().toISOString(), feature: "chat", provider: "claude", model: opts.model,
+          ts: new Date().toISOString(), feature: opts.feature ?? CHAT_FEATURE, provider: "claude", model: opts.model,
           usd: parsed.usd, inputTokens: parsed.inputTokens, outputTokens: parsed.outputTokens, ms: elapsedMs,
         }) + "\n");
       } catch { /* ledger is best-effort */ }

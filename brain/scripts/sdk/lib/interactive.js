@@ -40,15 +40,26 @@ function readWriteFile(file) {
   return fs.readFileSync(file === '-' ? 0 : file, 'utf8');
 }
 
-/** The provider for --local; a `none` provider is an error the CLI reports on stderr. */
-async function localProvider(feature) {
-  const p = await require('./provider.js').getProvider(feature);
-  if (p.name === 'none') {
-    const e = new Error(`no model provider (${p.reason}); run without --local for the in-session path`);
+/**
+ * The provider for --local; a `none` provider is an error the CLI reports on stderr.
+ * With `{ role: 'reasoner' }` the reasoner's provider (headless Claude) is returned; when that is
+ * unavailable and the global provider is Ollama, the Ollama provider comes back instead with
+ * `degraded` set to the reason, and reason() then sends it the workhorse request.
+ */
+async function localProvider(feature, { role } = {}) {
+  const prov = require('./provider.js');
+  const p = role ? await prov.getProviderForRole(role, feature) : await prov.getProvider(feature);
+  if (p.name !== 'none') return p;
+  if (role && require('./models.js').providerFor(role) === 'claude') {
+    const g = await prov.getProvider(feature);
+    if (g.name === 'ollama') return { ...g, degraded: p.reason };
+    const e = new Error(`no model provider for the ${role} (${p.reason}) and none for the workhorse fallback (${g.reason}); run without --local for the in-session path`);
     e.code = 'PROVIDER_NONE';
     throw e;
   }
-  return p;
+  const e = new Error(`no model provider (${p.reason}); run without --local for the in-session path`);
+  e.code = 'PROVIDER_NONE';
+  throw e;
 }
 
 module.exports = { parseMode, renderContextBlock, printContext, readWriteFile, localProvider };
