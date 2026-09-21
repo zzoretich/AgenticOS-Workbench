@@ -10,8 +10,8 @@
  * `auto` (the default): Ollama ping (2 s, cached 60 s) → claude if the binary resolves and a
  * login probe succeeds (cached 24 h) → none. A claude provider whose day is over budget
  * resolves to none with reason 'daily-cap' — "budget" is claude.perDayUsd against hook spend
- * only: spendToday() skips the persona's duty:* rows (persona.perDayUsd) and the reasoner's
- * reason:* rows (reasoner.perDayUsd).
+ * only: spendToday() skips the persona's duty:* rows (persona.perDayUsd), the reasoner's
+ * reason:* rows (reasoner.perDayUsd) and prompt routines' routine:* rows (routines.perDayUsd).
  *
  * Roles (models.js) can override the chain: getProviderForRole('reasoner') always resolves the
  * claude provider — built with reasoner.model, reasoner.perCallUsd and reasoner.perDayUsd — even
@@ -29,7 +29,7 @@ const ollama = require('./ollama.js');
 const embedModule = require('./embed.js');
 const claudeCli = require('./claude-cli.js');
 const { role, providerFor, thinkFor } = require('./models.js');
-const { ProviderUnavailable, recordSpend, spendToday, reasonSpendToday, SPEND_PATH } = require('./spend-ledger.js');
+const { ProviderUnavailable, recordSpend, spendToday, reasonSpendToday, routineSpendToday, SPEND_PATH } = require('./spend-ledger.js');
 
 const STATE_PATH = path.join(PATHS.INDEX, 'provider-state.json');
 const OLLAMA_TTL_MS = 60_000;
@@ -219,5 +219,5 @@ function resetProviderCache() { memo = null; roleMemo.clear(); }
 
 module.exports = {
   resolveProvider, getProvider, resolveProviderForRole, getProviderForRole, resetProviderCache, STATE_PATH,
-  ProviderUnavailable, recordSpend, spendToday, reasonSpendToday, SPEND_PATH,
+  ProviderUnavailable, recordSpend, spendToday, reasonSpendToday, routineSpendToday, SPEND_PATH,
 };

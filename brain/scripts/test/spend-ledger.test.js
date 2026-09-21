@@ -8,7 +8,7 @@ const path = require('path');
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'spend-'));
 fs.mkdirSync(path.join(TMP, 'brain', '_index'), { recursive: true });
 process.env.BRAIN_VAULT = TMP;
-const { ProviderUnavailable, recordSpend, spendToday, reasonSpendToday, SPEND_PATH } = require('../sdk/lib/spend-ledger.js');
+const { ProviderUnavailable, recordSpend, spendToday, reasonSpendToday, routineSpendToday, SPEND_PATH } = require('../sdk/lib/spend-ledger.js');
 
 beforeEach(() => { try { fs.unlinkSync(SPEND_PATH); } catch {} });
 
@@ -76,4 +76,19 @@ test('reason:* rows are the reasoner cap\'s and never the hook cap\'s; reasonSpe
   assert.equal(reasonSpendToday(), 0.65, 'today\'s reason:* rows only');
   assert.equal(spendToday(new Date(), { include: /^duty:/, exclude: null }), 1.1, 'include keeps one family');
   assert.equal(spendToday(new Date(), { exclude: null }), 1.76);
+});
+
+test('routine:* rows are the routines cap\'s and never the hook cap\'s; routineSpendToday sums only them', () => {
+  const now = new Date().toISOString();
+  const yesterday = new Date(Date.now() - 36 * 3600 * 1000).toISOString();
+  fs.writeFileSync(SPEND_PATH,
+    JSON.stringify({ ts: now, feature: 'routine:morning-brief', provider: 'claude', model: 'haiku', usd: 0.3 }) + '\n' +
+    JSON.stringify({ ts: now, feature: 'routine:digest', provider: 'claude', model: 'haiku', usd: 0.2 }) + '\n' +
+    JSON.stringify({ ts: yesterday, feature: 'routine:digest', provider: 'claude', model: 'haiku', usd: 2 }) + '\n' +
+    JSON.stringify({ ts: now, feature: 'duty:sitrep', provider: 'claude', model: 'haiku', usd: 1.1 }) + '\n' +
+    JSON.stringify({ ts: now, feature: 'reason:ask', provider: 'claude', model: 'claude-opus-5', usd: 0.4 }) + '\n' +
+    JSON.stringify({ ts: now, feature: 'auto-wrap', provider: 'claude', model: 'haiku', usd: 0.01 }) + '\n');
+  assert.equal(spendToday(), 0.01, 'the hook cap sees none of the three metered families');
+  assert.equal(routineSpendToday(), 0.5, 'today\'s routine:* rows only');
+  assert.equal(reasonSpendToday(), 0.4, 'reason rows unaffected');
 });

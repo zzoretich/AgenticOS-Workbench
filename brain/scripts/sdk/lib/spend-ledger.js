@@ -4,6 +4,7 @@
  *   ProviderUnavailable  typed error every provider throws instead of a bare string
  *   recordSpend/spendToday  append-only USD ledger at brain/_index/provider-spend.jsonl
  *   reasonSpendToday        the reasoner role's share of today (feature reason:*), for its own cap
+ *   routineSpendToday       the prompt routines' share of today (feature routine:*), for routines.perDayUsd
  * Lives apart from provider.js so claude-cli.js can ledger without a require cycle.
  */
 const fs = require('fs');
@@ -52,16 +53,18 @@ function recordSpend({ feature, provider, model, usd, inputTokens, outputTokens,
   return row;
 }
 
-/** The two metered families that carry their own daily cap and so never count against the hook cap. */
-const HOOK_EXCLUDE = /^(duty|reason):/;
+/** The three metered families that carry their own daily cap and so never count against the hook cap. */
+const HOOK_EXCLUDE = /^(duty|reason|routine):/;
 const REASON_ROWS = /^reason:/;
+const ROUTINE_ROWS = /^routine:/;
 
 /**
  * USD spent on the local calendar day of `now` (default: now) by the rows the hook cap
  * (`claude.perDayUsd`) governs. Rows whose `feature` matches `exclude` are skipped — by
- * default the persona's `duty:*` runs (gated by `persona.perDayUsd`) and the reasoner's
- * `reason:*` calls (gated by `reasoner.perDayUsd`): either family would otherwise blow the
- * $0.50 hook cap on its first call of the day. The Obsidian Chat tab's legacy `chat` rows stay
+ * default the persona's `duty:*` runs (gated by `persona.perDayUsd`), the reasoner's
+ * `reason:*` calls (gated by `reasoner.perDayUsd`) and prompt routines' `routine:*` runs
+ * (gated by `routines.perDayUsd`): any of them would otherwise blow the $0.50 hook cap on
+ * its first call of the day. The Obsidian Chat tab's legacy `chat` rows stay
  * counted. `include` keeps only matching rows (applied before `exclude`); `exclude: null`
  * sums every row.
  */
@@ -84,4 +87,9 @@ function reasonSpendToday(now = new Date()) {
   return spendToday(now, { include: REASON_ROWS, exclude: null });
 }
 
-module.exports = { ProviderUnavailable, recordSpend, spendToday, reasonSpendToday, SPEND_PATH, HOOK_EXCLUDE, REASON_ROWS };
+/** Today's prompt-routine spend: the rows `routines.perDayUsd` governs. */
+function routineSpendToday(now = new Date()) {
+  return spendToday(now, { include: ROUTINE_ROWS, exclude: null });
+}
+
+module.exports = { ProviderUnavailable, recordSpend, spendToday, reasonSpendToday, routineSpendToday, SPEND_PATH, HOOK_EXCLUDE, REASON_ROWS, ROUTINE_ROWS };
