@@ -254,3 +254,72 @@ test('getProviderForRole: Ollama-served roles share getProvider\'s promise; the 
   resetProviderCache();
   assert.notEqual(getProviderForRole('reasoner', 'ask'), r1);
 });
+
+// ── codex: the third leg of the auto chain, joined only when Codex is a configured host ──────────
+const codexOn = () => fs.writeFileSync(CONFIG, JSON.stringify({ hosts: { codex: { enabled: true } } }));
+
+test('auto: no Ollama, no claude, Codex unconfigured → none / no-provider and the codex probe never runs', async () => {
+  const p = await resolveProvider({ mode: 'auto', deps: { ping: async () => false, resolveClaudeBin: () => null, loginProbe: never, resolveCodexBin: never, codexLoginProbe: never } });
+  assert.equal(p.name, 'none');
+  assert.equal(p.reason, 'no-provider');
+});
+
+test('auto: no claude, Codex configured and logged in → codex provider; chat goes through codexCall with the codex budget', async () => {
+  codexOn();
+  const calls = [];
+  const fakeCall = async (o) => { calls.push(o); return { text: 'plain', structured: { ok: 1 }, usd: 0.001, usage: {}, ms: 3, model: 'gpt-5' }; };
+  let probeOpts;
+  const p = await resolveProvider({ mode: 'auto', deps: {
+    ping: async () => false, resolveClaudeBin: () => null, loginProbe: never,
+    resolveCodexBin: () => '/x/codex', codexLoginProbe: async (o) => { probeOpts = o; return true; }, codexCall: fakeCall,
+  } });
+  assert.equal(p.name, 'codex');
+  assert.equal(p.reason, 'codex-logged-in');
+  assert.equal(p.model, null, 'no codex.model → the user\'s Codex default');
+  assert.deepEqual(p.capabilities, { chat: true, embed: false, structured: true });
+  assert.equal(probeOpts.timeoutMs, 10000);
+  const out = await p.chat({ system: 'sys', prompt: 'hi', format: 'json', feature: 'auto-wrap', think: 'xhigh' });
+  assert.equal(out, '{"ok":1}');
+  assert.deepEqual(calls[0].schema, { type: 'object' });
+  assert.equal(calls[0].model, null);
+  assert.equal(calls[0].effort, 'xhigh');
+  assert.equal(calls[0].feature, 'auto-wrap');
+  await assert.rejects(() => p.embed(['x']), (e) => e.code === 'PROVIDER_NONE' && e.provider === 'codex');
+  const st = JSON.parse(fs.readFileSync(STATE_PATH, 'utf8'));
+  assert.equal(st.name, 'codex');
+  assert.equal(st.codex.loggedIn, true);
+  assert.equal(st.codex.bin, '/x/codex');
+});
+
+test('auto: claude present but not logged in, Codex configured but not logged in → none / codex-not-logged-in (cached 24h)', async () => {
+  codexOn();
+  const p = await resolveProvider({ mode: 'auto', deps: { ping: async () => false, resolveClaudeBin: () => '/x/claude', loginProbe: async () => false, resolveCodexBin: () => '/x/codex', codexLoginProbe: async () => false } });
+  assert.equal(p.name, 'none');
+  assert.equal(p.reason, 'codex-not-logged-in');
+  let probes = 0;
+  const again = await resolveProvider({ mode: 'auto', deps: { ping: async () => false, resolveClaudeBin: () => '/x/claude', loginProbe: async () => false, resolveCodexBin: () => { probes++; return '/x'; }, codexLoginProbe: async () => { probes++; return true; } } });
+  assert.equal(probes, 0, 'fresh codex state → no probe');
+  assert.equal(again.name, 'none');
+});
+
+test('auto: Codex configured but no codex binary → the claude reason survives; logged-in claude still wins over codex', async () => {
+  codexOn();
+  const p = await resolveProvider({ mode: 'auto', deps: { ping: async () => false, resolveClaudeBin: () => '/x/claude', loginProbe: async () => false, resolveCodexBin: () => null, codexLoginProbe: never } });
+  assert.equal(p.reason, 'claude-not-logged-in');
+  try { fs.unlinkSync(STATE_PATH); } catch {} // drop the cached "not logged in" verdict from the call above
+  const c = await resolveProvider({ mode: 'auto', deps: { ping: async () => false, resolveClaudeBin: () => '/x/claude', loginProbe: async () => true, resolveCodexBin: never, codexLoginProbe: never } });
+  assert.equal(c.name, 'claude');
+});
+
+test('forced codex: skips Ollama and claude, honours the codex daily cap with its own cap key', async () => {
+  fs.writeFileSync(CONFIG, JSON.stringify({ codex: { perDayUsd: 0.2 } }));
+  const p = await resolveProvider({ mode: 'codex', deps: { ping: never, resolveClaudeBin: never, loginProbe: never, resolveCodexBin: () => '/x/codex', codexLoginProbe: async () => true } });
+  assert.equal(p.name, 'codex');
+  assert.equal(p.reason, 'forced');
+  recordSpend({ feature: 'hook', provider: 'codex', model: 'gpt-5', usd: 0.2, inputTokens: 1, outputTokens: 1, ms: 1 });
+  await assert.rejects(() => p.chat({ prompt: 'x' }), (e) => e.code === 'PROVIDER_CAP' && e.provider === 'codex' && /codex\.perDayUsd/.test(e.message));
+  for (const f of [STATE_PATH]) { try { fs.unlinkSync(f); } catch {} }
+  const capped = await resolveProvider({ mode: 'codex', deps: { ping: never, resolveClaudeBin: never, loginProbe: never, resolveCodexBin: () => '/x/codex', codexLoginProbe: async () => true } });
+  assert.equal(capped.name, 'none');
+  assert.equal(capped.reason, 'daily-cap');
+});

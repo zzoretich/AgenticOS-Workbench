@@ -71,3 +71,25 @@ test('a Codex payload (tool_input / tool_response as JSON strings, apply_patch) 
   assert.match(res.results[0].output_summary, /Updated the following files/);
   fs.writeFileSync(CONFIG, JSON.stringify({ provider: 'none' }));
 });
+
+test('SessionStart records the host and the model the payload names; SessionEnd carries them into the summary', () => {
+  fs.writeFileSync(CONFIG, JSON.stringify({ provider: 'none' }));
+  const env = { ...process.env, AOS_VAULT: TMP, AOS_CONFIG: path.join(TMP, 'none.json'), AOS_HOST: 'codex' };
+  const start = spawnSync(process.execPath, [SCRIPT], { input: JSON.stringify({ hook_event_name: 'SessionStart', session_id: 'cx-m', model: 'gpt-5-mini', source: 'startup' }), encoding: 'utf8', env });
+  assert.equal(start.status, 0, start.stderr);
+  const header = JSON.parse(fs.readFileSync(LIVE('cx-m'), 'utf8').split('\n')[0]);
+  assert.equal(header.host, 'codex');
+  assert.equal(header.model, 'gpt-5-mini');
+  const end = spawnSync(process.execPath, [SCRIPT], { input: JSON.stringify({ hook_event_name: 'SessionEnd', session_id: 'cx-m', reason: 'other' }), encoding: 'utf8', env });
+  assert.equal(end.status, 0, end.stderr);
+  const runs = fs.readFileSync(path.join(TMP, 'brain', '_index', 'agent-runs', 'runs.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  const rec = runs.find((r) => r.session_id === 'cx-m');
+  assert.equal(rec.host, 'codex');
+  assert.equal(rec.model, 'gpt-5-mini');
+  // a Claude Code session has no model in its payload
+  const c = spawnSync(process.execPath, [SCRIPT], { input: JSON.stringify({ hook_event_name: 'SessionStart', session_id: 'cc-m' }), encoding: 'utf8', env: { ...env, AOS_HOST: '' } });
+  assert.equal(c.status, 0);
+  const h2 = JSON.parse(fs.readFileSync(LIVE('cc-m'), 'utf8').split('\n')[0]);
+  assert.equal(h2.host, 'claude');
+  assert.equal(h2.model, null);
+});

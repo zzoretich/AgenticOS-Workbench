@@ -3,9 +3,9 @@
 /**
  * aos.js — AgenticOS Workbench installer and maintenance CLI. Zero dependencies (node: builtins only).
  *
- *   aos init [--vault <dir>] [--provider auto|ollama|claude|none] [--no-obsidian] [--terminal] [--cost] [--budget <usd>]
+ *   aos init [--vault <dir>] [--provider auto|ollama|claude|codex|none] [--no-obsidian] [--terminal] [--cost] [--budget <usd>]
  *            [--persona-json <file>] [--from-local <repo-dir>] [--dry-run] [--yes]
- *   aos doctor · aos status · aos provider [auto|ollama|claude|none]
+ *   aos doctor · aos status · aos provider [auto|ollama|claude|codex|none]
  *   aos upgrade [--from-local <repo-dir>] [--no-obsidian] · aos uninstall [--keep-vault] [--yes]
  *   aos persona [rename <name> | on | off] [--persona-json <file>] [--yes] · aos cost [enable [--budget <usd>] [--yes] | disable]
  *   aos terminal install
@@ -32,13 +32,13 @@ const MARKETPLACE = 'agenticos-workbench';
 const PLUGIN_ID = `agenticos@${MARKETPLACE}`;
 const OBSIDIAN_PLUGIN_ID = 'agentic-os';
 const DEFAULT_VAULT = path.join(os.homedir(), 'AgenticOS');
-const PROVIDERS = ['auto', 'ollama', 'claude', 'none'];
+const PROVIDERS = ['auto', 'ollama', 'claude', 'codex', 'none'];
 const RUNTIME_SCRIPTS = { 'scan-vault': 'scan-vault.js', 'build-brain-md': 'build-brain-md.js', recall: 'sdk/recall-cli.js' };
 
 const USAGE = `usage:
-  aos init [--vault <dir>] [--provider auto|ollama|claude|none] [--no-obsidian] [--terminal] [--cost] [--budget <usd>]
+  aos init [--vault <dir>] [--provider auto|ollama|claude|codex|none] [--no-obsidian] [--terminal] [--cost] [--budget <usd>]
            [--persona-json <file>] [--from-local <repo-dir>] [--dry-run] [--yes]
-  aos doctor | status | provider [auto|ollama|claude|none]
+  aos doctor | status | provider [auto|ollama|claude|codex|none]
   aos upgrade [--from-local <repo-dir>] [--no-obsidian]
   aos uninstall [--keep-vault] [--yes]
   aos persona [rename <name> | on | off] [--persona-json <file>] [--yes]

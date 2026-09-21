@@ -3,7 +3,8 @@
  * models.js — single source of truth for the model roles.
  * Roles: workhorse (background hooks/jobs, Ollama), reasoner (deep Q&A / reflection,
  * headless Claude), embedder (vector recall, Ollama), claude (the hook fallback when
- * Ollama is away). Callers ask for a role, never a tag, and `providerFor(role)` says
+ * Ollama is away), codex (the hook fallback when Claude is away too and Codex is a
+ * configured host). Callers ask for a role, never a tag, and `providerFor(role)` says
  * which provider serves it — provider.js routes on that.
  *
  * Tag precedence per role: env override → config key → DEFAULTS below.
@@ -11,6 +12,7 @@
  *   reasoner   BRAIN_REASONER  →  reasoner.model in agenticos.json  (default claude-opus-5)
  *   embedder   BRAIN_EMBEDDER     (default qwen3-embedding:0.6b)
  *   claude     AOS_CLAUDE_MODEL → claude.model                      (default haiku)
+ *   codex      AOS_CODEX_MODEL  → codex.model                       (default null = the user's Codex default)
  * Env is read lazily on every call.
  */
 
@@ -21,6 +23,8 @@ const DEFAULTS = {
   reasoner:  { tag: 'claude-opus-5', env: 'BRAIN_REASONER', cfgKey: 'reasoner', keepAlive: null, effort: true, numCtxCap: null, provider: 'claude' },
   embedder:  { tag: 'qwen3-embedding:0.6b', env: 'BRAIN_EMBEDDER', cfgKey: null, keepAlive: -1, effort: false, numCtxCap: null, provider: 'ollama' },
   claude:    { tag: 'haiku', env: 'AOS_CLAUDE_MODEL', cfgKey: 'claude', keepAlive: null, effort: false, numCtxCap: null, provider: 'claude' },
+  // A null tag means "pass no -m": codex exec then uses whatever model the user's Codex config selects.
+  codex:     { tag: null, env: 'AOS_CODEX_MODEL', cfgKey: 'codex', keepAlive: null, effort: false, numCtxCap: null, provider: 'codex' },
 };
 
 const EFFORTS = ['low', 'medium', 'high'];
@@ -31,7 +35,7 @@ function readConfig(cfg) {
   try { return require('../../lib/config.js').loadConfig(); } catch { return {}; }
 }
 
-/** Which provider serves a role: 'ollama' for workhorse/embedder, 'claude' for reasoner/claude. */
+/** Which provider serves a role: 'ollama' for workhorse/embedder, 'claude' for reasoner/claude, 'codex' for codex. */
 function providerFor(name) {
   const d = DEFAULTS[name];
   if (!d) throw new Error('unknown model role: ' + name);

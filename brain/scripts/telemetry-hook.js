@@ -24,6 +24,7 @@ const { PATHS } = require('./lib/hook-entry.js').hookEntry();
 const fs = require('fs');
 const path = require('path');
 const { RUNS_DIR, LIVE_DIR, SUMMARY_LOG } = require('./sdk/lib/telemetry.js');
+const { currentHost } = require('./lib/host.js');
 
 const TRUNC = 300;
 const { loadConfig } = require('./lib/config.js');
@@ -65,7 +66,7 @@ function toolEvent(input) {
   return t;
 }
 
-function ensureHeader(sessionId) {
+function ensureHeader(sessionId, extra = {}) {
   const lf = liveFileFor(sessionId);
   if (fs.existsSync(lf)) return lf;
   fs.mkdirSync(LIVE_DIR, { recursive: true });
@@ -76,6 +77,9 @@ function ensureHeader(sessionId) {
     started_at: new Date().toISOString(),
     pid: process.pid,
     session_id: sessionId,
+    host: currentHost(),
+    // Codex's hook payload names the model on every event; Claude Code's does not. Costing reads it back.
+    model: typeof extra.model === 'string' && extra.model ? extra.model : null,
   };
   try { fs.writeFileSync(lf, JSON.stringify(header) + '\n'); } catch (_) {}
   return lf;
@@ -135,6 +139,8 @@ function endRun(sessionId, reason) {
     tool_count: toolCount,
     subagents: Array.from(subagents),
     end_reason: reason || null,
+    host: header.host || 'claude',
+    model: header.model || null,
   };
 
   const dayDir = path.join(RUNS_DIR, startedAt.toISOString().slice(0, 10));
@@ -159,7 +165,7 @@ process.stdin.on('end', () => {
 
     switch (event) {
       case 'SessionStart':
-        ensureHeader(sessionId);
+        ensureHeader(sessionId, { model: input.model });
         break;
       case 'PreToolUse':
         appendEvent(sessionId, {

@@ -2,6 +2,8 @@
 /**
  * auto-cost.js — costs sessions and patches their cost_usd into runs.jsonl so the
  * Mission Control Cost panel reflects real token usage without anyone running /cost.
+ * Claude Code sessions go through the Python analyzer; Codex sessions (AOS_HOST=codex, the
+ * hook host) are priced in-process from the rollout's token_count events (codex-pricing.js).
  *
  * Two modes:
  *   (hook)      SessionEnd hook — reads the hook payload on stdin and costs the
@@ -31,9 +33,12 @@ const { execFileSync, spawn } = require('child_process');
 const { PATHS } = require('./lib/paths.js');   // execution amendment 2026-09-15 (A13): the file's only path source after this task
 const { withReport } = require('./lib/pipeline-report.js');
 const { loadConfig } = require('./lib/config.js');
+const host = require('./lib/host.js');
+const { readTranscriptFile } = require('./lib/transcript.js');
+const { priceUsd } = require('./sdk/lib/codex-pricing.js');
 
 const ANALYZER = path.join(PATHS.SCRIPTS, 'cost', 'analyze_transcript.py');   // installed by `aos cost enable`
-const COST_SYNC = path.join(PATHS.SCRIPTS, 'cost-sync.js');
+const COST_SYNC = path.join(__dirname, 'cost-sync.js');   // a sibling of this file in the checkout and in the vendored copy alike
 const SNAPSHOTS = path.join(PATHS.INDEX, 'cost', 'snapshots');
 const RUNS = path.join(PATHS.AGENT_RUNS, 'runs.jsonl');
 const PROJECTS = PATHS.PROJECTS;
@@ -97,6 +102,46 @@ function costTranscript(transcript, sessionId) {
   }
 }
 
+/** The model recorded for a session in runs.jsonl (telemetry-hook writes it from the Codex hook payload). */
+function runModelFor(sessionId, runsFile = RUNS) {
+  if (!sessionId) return null;
+  let lines = [];
+  try { lines = fs.readFileSync(runsFile, 'utf8').split('\n'); } catch { return null; }
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (!lines[i].trim()) continue;
+    let r; try { r = JSON.parse(lines[i]); } catch { continue; }
+    if ((r.session_id === sessionId || r.id === `sess-${sessionId}`) && typeof r.model === 'string' && r.model) return r.model;
+  }
+  return null;
+}
+
+/**
+ * Cost one Codex rollout in-process: the last token_count event is the session total, priced with
+ * codex-pricing.js, written as a snapshot the same cost-sync path patches into runs.jsonl.
+ * Statuses: 'ok' | 'no-transcript' | 'no-usage' (a rollout without a token_count event) | 'analyzer-failed'.
+ */
+function costCodexRollout(transcript, sessionId, { model = null, snapshotsDir = SNAPSHOTS, syncFn } = {}) {
+  if (!transcript || !fs.existsSync(transcript)) return { status: 'no-transcript' };
+  const parsed = readTranscriptFile(transcript, { format: 'codex' });
+  if (!parsed.usage) return { status: 'no-usage' };
+  const u = parsed.usage;
+  const usd = priceUsd(model, u);
+  const report = {
+    schema: 1, source: 'codex-rollout', transcript, generated: new Date().toISOString(), model: model || null,
+    totals: { cost_usd: usd, tokens: u.totalTokens, input_tokens: u.inputTokens, cached_input_tokens: u.cachedInputTokens, output_tokens: u.outputTokens },
+  };
+  const out = path.join(snapshotsDir, `codex-${sessionId || Date.now()}.json`);
+  try {
+    fs.mkdirSync(snapshotsDir, { recursive: true });
+    fs.writeFileSync(out, JSON.stringify(report, null, 2));
+    (syncFn || ((file) => execFileSync(process.execPath, [COST_SYNC, '--report', file], { timeout: 15000, stdio: ['ignore', 'ignore', 'pipe'] })))(out);
+    return { status: 'ok', usd, snapshot: out };
+  } catch (e) {
+    const stderr = String((e && e.stderr) || '').trim().split('\n').slice(-3).join(' | ');
+    return { status: 'analyzer-failed', detail: stderr || (e && e.message) || 'unknown failure' };
+  }
+}
+
 /** Cost every run lacking a cost that still has a transcript in ANY project dir. */
 function backfill(report) {
   if (!costEnabled()) { process.stdout.write('[auto-cost] cost module disabled — run `aos cost enable`\n'); if (report) report.disable('cost disabled'); return; }
@@ -123,13 +168,16 @@ function backfill(report) {
 
 /** Foreground worker: resolve the transcript (payload path first, then any
  *  projects/<slug>/ dir) and cost it under the 'auto-cost' ledger name. */
-async function costOne(sessionId, transcriptArg) {
+async function costOne(sessionId, transcriptArg, hostName = host.currentHost()) {
   await withReport('auto-cost', async (report) => {
     if (!costEnabled()) { report.disable('cost disabled'); return; }
+    report.host = hostName;
     const transcript = (transcriptArg && fs.existsSync(transcriptArg))
       ? transcriptArg
-      : findTranscript(sessionId);
-    const { status, detail } = costTranscript(transcript, sessionId);
+      : (hostName === 'codex' ? host.findTranscript('codex', sessionId) : findTranscript(sessionId));
+    const { status, detail } = hostName === 'codex'
+      ? costCodexRollout(transcript, sessionId, { model: runModelFor(sessionId) })
+      : costTranscript(transcript, sessionId);
     const sid = sessionId || 'unknown session';
     report.counts.costed = status === 'ok' ? 1 : 0;
     if (status === 'ok') return;
@@ -137,11 +185,11 @@ async function costOne(sessionId, transcriptArg) {
     // A session with no transcript has nothing to cost — record it as skipped
     // and finish clean. Treating it as an error queued a permanent "auto-cost
     // failed" entry for sessions that were never costable in the first place.
-    if (status === 'no-transcript') {
+    if (status === 'no-transcript' || status === 'no-usage') {
       // counts is Record<string, number> on the reader side (the plugin's
       // PipelineEntry) — the human-readable reason goes to stdout, not the ledger.
       report.counts.skipped = 1;
-      process.stdout.write(`[auto-cost] no transcript for ${sid} — nothing to cost\n`);
+      process.stdout.write(`[auto-cost] ${status === 'no-usage' ? 'no token usage in the rollout' : 'no transcript'} for ${sid} — nothing to cost\n`);
       return;
     }
     throw new Error(`${status} for ${sid}${detail ? `: ${detail}` : ''}`);
@@ -179,4 +227,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { findTranscript, costTranscript, costOne };
+module.exports = { findTranscript, costTranscript, costCodexRollout, runModelFor, costOne };
