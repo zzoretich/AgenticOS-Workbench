@@ -106,10 +106,10 @@ async function main() {
   if (!spec) { log('[reflect] no daily notes in window; nothing to reflect on.'); return; }
   if (mode === 'context') { printContext({ feature: 'reflect-week', system: spec.system, context: spec.prompt, format: REFLECTION_FORMAT }); return; }
 
-  const p = await localProvider('reflect-week');
-  log(`[reflect] week=${spec.week} notes=${spec.notes} days=${weeks * 7} — calling ${p.name}…`);
+  const p = await localProvider('reason:reflect-week', { role: 'reasoner' });
+  log(`[reflect] week=${spec.week} notes=${spec.notes} days=${weeks * 7} — calling ${p.name}${p.degraded ? ` (reasoner unavailable: ${p.degraded}; workhorse)` : ''}…`);
   let text;
-  try { text = await reason(spec.prompt, { system: spec.system, effort: 'medium', numPredict: 3072, chatFn: (o) => p.chat({ ...o, feature: 'reflect-week' }), noFallback: p.name !== 'ollama' }); }
+  try { text = await reason(spec.prompt, { system: spec.system, effort: 'medium', numPredict: 3072, feature: 'reason:reflect-week', chatFn: (o) => p.chat({ ...o, feature: 'reason:reflect-week' }), providerName: p.name }); }
   catch (e) { log('[reflect] model error:', e.message); process.exit(1); }
   if (!text) { log('[reflect] empty response; aborting.'); process.exit(1); }
   const outPath = writeReflection(text, spec);
