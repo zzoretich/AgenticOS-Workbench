@@ -47,3 +47,27 @@ test('telemetry.enabled=false writes nothing', () => {
   assert.equal(fire('r4'), null);
   fs.writeFileSync(CONFIG, JSON.stringify({ provider: 'none' }));
 });
+
+test('a Codex payload (tool_input / tool_response as JSON strings, apply_patch) is recorded like a Claude one', () => {
+  fs.writeFileSync(CONFIG, JSON.stringify({ provider: 'none', telemetry: { redact: false } }));
+  const payload = {
+    hook_event_name: 'PostToolUse', session_id: 'cx1', tool_name: 'apply_patch',
+    tool_input: JSON.stringify({ command: '*** Begin Patch\n*** Add File: note.txt\n+hello\n*** End Patch' }),
+    tool_response: 'Exit code: 0\nSuccess. Updated the following files:\nA note.txt\n',
+    tool_use_id: 'exec-1', model: 'gpt-x', permission_mode: 'bypassPermissions',
+  };
+  const env = { ...process.env, AOS_VAULT: TMP, AOS_CONFIG: path.join(TMP, 'none.json'), AOS_HOST: 'codex' };
+  delete env.BRAIN_AGENT_REDACT;
+  const r = spawnSync(process.execPath, [SCRIPT], { input: JSON.stringify(payload), encoding: 'utf8', env });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout, '', 'PostToolUse prints nothing on either host');
+  const events = fs.readFileSync(LIVE('cx1'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  const use = events.find((e) => e.type === 'tool_use_batch');
+  assert.equal(use.tools[0].name, 'apply_patch');
+  assert.match(use.tools[0].input_summary, /Add File: note\.txt/);
+  assert.equal(use.tools[0].input_length, JSON.stringify(JSON.parse(payload.tool_input)).length);
+  const res = events.find((e) => e.type === 'tool_result_batch');
+  assert.equal(res.results[0].is_error, false);
+  assert.match(res.results[0].output_summary, /Updated the following files/);
+  fs.writeFileSync(CONFIG, JSON.stringify({ provider: 'none' }));
+});

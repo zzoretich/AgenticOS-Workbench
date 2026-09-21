@@ -147,5 +147,5 @@ function projectSlug(absDir) { return String(absDir).replace(/[^A-Za-z0-9]/g, '-
 
 module.exports = {
   VAULT, PATHS, dailyNotePath, dailyNoteLayout, dailyNoteLayoutFor, listDailyNotes, formatLayout, MONTHS, DEFAULT_LAYOUT,
-  projectSlug, detectVault, looksLikeVault, claudeConfigDir, configFile, VaultNotFound,
+  projectSlug, detectVault, looksLikeVault, claudeConfigDir, configFile, readUserConfig, VaultNotFound,
 };

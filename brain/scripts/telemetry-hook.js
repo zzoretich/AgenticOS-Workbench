@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 /**
- * telemetry-hook.js — feeds the agent-runs telemetry stream from Claude Code's
- * hooks. Wire the SAME script to multiple events in settings.json; it branches
- * on `hook_event_name` from the stdin payload.
+ * telemetry-hook.js — feeds the agent-runs telemetry stream from the host's hooks
+ * (Claude Code or Codex CLI). Wire the SAME script to multiple events; it branches
+ * on `hook_event_name` from the stdin payload. Codex serialises tool_input and
+ * tool_response as JSON strings where Claude Code passes objects; both are accepted.
  *
  *   SessionStart  -> open live/<id>.ndjson with a run_start header
  *   PreToolUse    -> append a tool_use_batch event
@@ -36,6 +37,12 @@ function truncate(s, n = TRUNC) {
   if (s == null) return null;
   const str = typeof s === 'string' ? s : JSON.stringify(s);
   return str.length > n ? str.slice(0, n) + '…' : str;
+}
+
+/** Codex hook payloads carry tool_input / tool_response as JSON-encoded strings. */
+function fromJsonString(v) {
+  if (typeof v !== 'string') return v;
+  try { const p = JSON.parse(v); return p && typeof p === 'object' ? p : v; } catch { return v; }
 }
 
 function liveFileFor(sessionId) {
@@ -144,6 +151,8 @@ process.stdin.on('data', (c) => (raw += c));
 process.stdin.on('end', () => {
   try {
     const input = JSON.parse(raw || '{}');
+    input.tool_input = fromJsonString(input.tool_input);
+    input.tool_response = fromJsonString(input.tool_response);
     const sessionId = input.session_id || input.sessionId || 'unknown';
     const event = input.hook_event_name || input.hookEventName || '';
     if (TELEMETRY.enabled === false) { process.exit(0); }
