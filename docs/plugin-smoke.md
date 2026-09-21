@@ -44,6 +44,17 @@ Run before tagging a release, on a vault created by `aos init` (not the develope
 - [ ] `▶` on a `command` routine (e.g. `argv: [node, brain/scripts/scan-vault.js, --quiet]`) runs it: `brain/_index/routines.json` gains `lastTrigger: "manual"` and the last column updates within a second.
 - [ ] With `routines.externalLabels: ["<a launchd label you have>"]` in `brain/config.json`, "OUTSIDE THE RUNTIME" lists it read-only with its cadence; the Obsidian Git backup timer appears when that plugin has a timer on; neither row has actions.
 
+## Codex host
+
+Run on a machine with the `codex` CLI logged in, after `aos init --host codex` (or `--host both`).
+
+- [ ] `aos doctor` shows `ok codex login`, `ok codex hooks 5 of 5 events`, `ok codex MCP declared`, `ok codex skills 19 generated`; with `--host codex` alone no `claude` row appears and the vault's health has no "CLAUDE.md is missing" error.
+- [ ] In `codex`, `/hooks` lists the five AgenticOS entries; trust them. A new session's first prompt receives `<brain-context>`, and `<agenticos-conventions>` is present at session start (ask *what conventions apply here?*).
+- [ ] `$wrap`, `$remember` and `$recall` are offered as skills; `$recall <topic>` calls `mcp__agenticos__recall` without an approval prompt in a workspace-write sandbox.
+- [ ] After a turn, `brain/_index/agent-runs/live/sess-<id>.ndjson` holds `tool_use_batch` rows with the Codex tool names (`Bash`, `apply_patch`, `mcp__agenticos__…`); the Stop hook produces no Codex error notice.
+- [ ] With cost enabled, closing the thread (or `aos auto-cost --cost-one <session-id>` with `AOS_HOST=codex`) patches a `cost_source: "codex-rollout"` row into `runs.jsonl`; the HUD Runs tab shows it.
+- [ ] `aos uninstall --host codex` removes the entries from `hooks.json` (the file itself only when nothing else was in it), `codex mcp list` no longer shows `agenticos`, and `~/.agents/skills/` keeps only skills you wrote yourself.
+
 ## Chat (per provider)
 
 - [ ] `none`: the Chat rail button is absent; `Open Workbench: Chat` command shows the "no provider — run `aos provider`" hint.

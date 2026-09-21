@@ -58,3 +58,16 @@ test('thinkFor: workhorse is always false; reasoner takes the dial, config defau
   assert.equal(thinkFor('reasoner', undefined, { reasoner: { effort: 'LOW' } }), 'low');
   assert.deepEqual(EFFORTS, ['low', 'medium', 'high']);
 });
+
+test('codex role: null tag by default (no -m), AOS_CODEX_MODEL and codex.model override, served by the codex provider', () => {
+  clearEnv();
+  delete process.env.AOS_CODEX_MODEL;
+  assert.equal(role('codex', NO_CFG).tag, null);
+  assert.equal(role('codex', NO_CFG).provider, 'codex');
+  assert.equal(providerFor('codex'), 'codex');
+  assert.equal(role('codex', { codex: { model: 'gpt-5-mini' } }).tag, 'gpt-5-mini');
+  process.env.AOS_CODEX_MODEL = 'gpt-5';
+  assert.equal(role('codex', { codex: { model: 'gpt-5-mini' } }).tag, 'gpt-5');
+  delete process.env.AOS_CODEX_MODEL;
+  assert.equal(thinkFor('codex', 'high', NO_CFG), false);
+});

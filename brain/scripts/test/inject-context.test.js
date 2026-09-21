@@ -37,3 +37,28 @@ test('second turn of the same session injects nothing', () => {
   assert.equal(r.status, 0);
   assert.equal(r.stdout, '');
 });
+
+test('a Codex rollout with a user turn already in it counts as a started session: nothing injected', () => {
+  const sid = `cx-${process.pid}`;
+  try { fs.unlinkSync(markerPath(`.injected-${sid}`)); } catch {}
+  const r = spawnSync(process.execPath, [SCRIPT], {
+    input: JSON.stringify({ session_id: sid, transcript_path: path.join(__dirname, 'fixtures', 'codex-rollout.jsonl'), hook_event_name: 'UserPromptSubmit' }),
+    encoding: 'utf8',
+    env: { ...process.env, AOS_VAULT: TMP, AOS_CONFIG: path.join(TMP, 'none.json'), AOS_HOST: 'codex' },
+  });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout, '');
+  assert.ok(fs.existsSync(markerPath(`.injected-${sid}`)));
+});
+
+test('an empty Codex rollout path injects on the first prompt like Claude does', () => {
+  const sid = `cx0-${process.pid}`;
+  try { fs.unlinkSync(markerPath(`.injected-${sid}`)); } catch {}
+  const r = spawnSync(process.execPath, [SCRIPT], {
+    input: JSON.stringify({ session_id: sid, transcript_path: path.join(TMP, 'no-such-rollout.jsonl') }),
+    encoding: 'utf8',
+    env: { ...process.env, AOS_VAULT: TMP, AOS_CONFIG: path.join(TMP, 'none.json'), AOS_HOST: 'codex' },
+  });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /<brain-context>/);
+});

@@ -1,10 +1,16 @@
 'use strict';
 /**
- * hook-entry.js — common prologue for every Claude Code hook script.
+ * hook-entry.js — common prologue for every hook script, whichever host fires it.
  * Must be the FIRST require in a hook file (before anything that pulls in paths.js).
  *   - AOS_HEADLESS=1  → exit 0: we are inside a headless AgenticOS worker; never re-enter the hooks.
- *   - no vault        → exit 0 with one stderr line: a hook must never fail a Claude session.
+ *   - no vault        → exit 0 with one stderr line: a hook must never fail a session.
+ * finishStop() is the matching epilogue for Stop hooks: Codex requires JSON on stdout there
+ * (plain text is rejected), Claude Code accepts silence, so it prints `{}` only under Codex.
  */
+function finishStop() {
+  if (require('./host.js').currentHost() === 'codex') process.stdout.write('{}');
+}
+
 function hookEntry() {
   if (process.env.AOS_HEADLESS === '1') process.exit(0);
   try {
@@ -17,4 +23,4 @@ function hookEntry() {
     throw e;
   }
 }
-module.exports = { hookEntry };
+module.exports = { hookEntry, finishStop };

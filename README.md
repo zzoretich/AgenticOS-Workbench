@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <strong>A second brain for Claude Code, and an Obsidian HUD that renders it.</strong><br />
+  <strong>A second brain for Claude Code and Codex CLI, and an Obsidian HUD that renders it.</strong><br />
   Persistent memory · recall · session capture · a named Chief of Staff · a live monitor of it all.
 </p>
 
@@ -11,7 +11,7 @@
   <a href="https://github.com/zzoretich/AgenticOS-Workbench/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/zzoretich/AgenticOS-Workbench/ci.yml?branch=main&amp;style=flat-square&amp;labelColor=0d1117&amp;label=ci" alt="CI status" /></a>
   <img src="https://img.shields.io/badge/node-%E2%89%A5%2020-3fb950?style=flat-square&amp;labelColor=0d1117" alt="Node 20 or newer" />
   <img src="https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Linux-58a6ff?style=flat-square&amp;labelColor=0d1117" alt="macOS and Linux" />
-  <img src="https://img.shields.io/badge/models-Claude%20Code%20alone%20%C2%B7%20Ollama%20optional-bc8cff?style=flat-square&amp;labelColor=0d1117" alt="Works with Claude Code alone; Ollama optional" />
+  <img src="https://img.shields.io/badge/hosts-Claude%20Code%20%C2%B7%20Codex%20CLI%20%C2%B7%20Ollama%20optional-bc8cff?style=flat-square&amp;labelColor=0d1117" alt="Works with Claude Code or Codex CLI alone; Ollama optional" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-e6edf3?style=flat-square&amp;labelColor=0d1117" alt="MIT" /></a>
 </p>
 
@@ -28,9 +28,9 @@
 
 <p align="center"><img src="docs/assets/divider.svg" width="960" alt="" /></p>
 
-Claude Code forgets everything between sessions. AgenticOS Workbench gives it a vault it can read from on every prompt and write back to at the end of every session, then puts an Obsidian dashboard on top so you can see what it remembers, what ran, and what it cost.
+Claude Code and Codex CLI forget everything between sessions. AgenticOS Workbench gives them a vault they can read from on every prompt and write back to at the end of every session, then puts an Obsidian dashboard on top so you can see what they remember, what ran, and what it cost.
 
-It works with **Claude Code alone**. If a local **Ollama** is running, background work switches to it automatically. Nothing about you ships in this repository, and background work only ever goes through your local Ollama or your own Claude Code login, never a third-party service.
+It works with **Claude Code alone**, with **Codex CLI alone**, or with both sharing one vault. If a local **Ollama** is running, background work switches to it automatically. Nothing about you ships in this repository, and background work only ever goes through your local Ollama or your own Claude Code or Codex login, never a third-party service.
 
 <a name="what-you-get"></a>
 ## <img src="docs/assets/icon-brain.svg" width="36" align="top" alt="" /> What you get
@@ -55,7 +55,7 @@ npm ci --ignore-scripts
 npm run setup                          # interactive installer (= node cli/aos.js init)
 ```
 
-Then add the one line the installer prints to `~/.claude/CLAUDE.md`, open the new vault in Obsidian, and start a `claude` session. The whole path takes under ten minutes; the details are in [Installation](#installation).
+Then add the one line the installer prints to `~/.claude/CLAUDE.md` (Claude Code) or trust the hook entries once under `/hooks` (Codex), open the new vault in Obsidian, and start a `claude` or `codex` session. The whole path takes under ten minutes; the details are in [Installation](#installation).
 
 <a name="prerequisites"></a>
 ## <img src="docs/assets/icon-prereq.svg" width="36" align="top" alt="" /> Prerequisites
@@ -65,7 +65,7 @@ Then add the one line the installer prints to `~/.claude/CLAUDE.md`, open the ne
 | **macOS or Linux** | required | Windows is not supported in v1: the launcher is POSIX `sh`, scheduling uses launchd on macOS and cron on Linux. |
 | **Node.js 20 or newer** | required | `node -v` prints `v20` or later. CI runs on 20 and 22. |
 | **git** | required | On macOS it arrives with the Command Line Tools; accept the install dialog if one appears. |
-| **Claude Code, logged in** | required | `claude --version` works and `claude auth status` reports a login. Background work runs through the same CLI, so there is nothing else to configure. |
+| **Claude Code and/or Codex CLI, logged in** | one required | `claude auth status` reports a login, or `codex login status` does (or both). `aos init` wires every host it finds; `--host claude\|codex\|both` picks. Background work runs through the same CLI, so there is nothing else to configure. |
 | **Obsidian** | optional | Renders the HUD. Skip it with `--no-obsidian`; everything else still works. |
 | **Ollama** | optional | Auto-detected on `127.0.0.1:11434`. When present, background summaries and embeddings run locally and cost nothing. |
 | **python3 3.9 or newer** | optional | Only for the cost module (`--cost` at install, or `aos cost enable` later). Standard library only. |
@@ -95,17 +95,17 @@ npm run setup
 
 `aos init` asks for a vault directory (default `~/AgenticOS`), then walks through nine steps and prints a checklist at the end:
 
-1. **Preflight** — Node ≥ 20, `claude` on PATH and logged in, Obsidian detected (optional), python3 ≥ 3.9 (only with `--cost`), Ollama reachable (informational).
+1. **Preflight** — Node ≥ 20, at least one host CLI (`claude`, `codex`) on PATH and logged in, Obsidian detected (optional), python3 ≥ 3.9 (only with `--cost`), Ollama reachable (informational).
 2. **Seed the vault** — the template files, a `brain/config.json` with the shipped defaults, and Obsidian's daily-notes settings. Existing files are kept.
 3. **Vendor the runtime** — the scripts, the `aos` subcommands, the persona templates and the schedule and cost sources into `<vault>/brain/scripts`, plus a symlink at `~/.local/bin/aos`.
-4. **Write `~/.claude/agenticos.json`** — the vault path, the node and `claude` binaries it resolved, the provider (`auto`), spend caps, telemetry and feature flags. Honours `CLAUDE_CONFIG_DIR`.
-5. **Install the Claude Code plugin** — hooks, the MCP server, slash commands and skills, from this repository's marketplace.
+4. **Write `~/.claude/agenticos.json`** — the vault path, the node, `claude` and `codex` binaries it resolved, the enabled hosts, the provider (`auto`), spend caps, telemetry and feature flags. Honours `CLAUDE_CONFIG_DIR`.
+5. **Wire the hosts** — Claude Code: the plugin (hooks, the MCP server, slash commands and skills) from this repository's marketplace. Codex CLI: five hook entries in `~/.codex/hooks.json`, `codex mcp add agenticos`, and the 15 commands plus 6 skills generated as Codex skills under `~/.agents/skills/` (`$wrap`, `$remember`, …).
 6. **Copy the Obsidian bundle** — into `<vault>/.obsidian/plugins/agentic-os/`, building it from the checkout when needed.
 7. **The Chief of Staff interview** — name your agent (say, *Atlas*), how it addresses you, its voice, what it should watch, the model and effort for background duties, and whether to schedule the daily duties.
 8. **First scan** — compiles `BRAIN.md`, builds the recall index.
-9. **Checklist** — every file written, the line to add to your `CLAUDE.md`, and how to open the vault.
+9. **Checklist** — every file written, the line to add to your `CLAUDE.md` or the `/hooks` entries to trust in Codex, and how to open the vault.
 
-Useful flags: `--vault <dir>` · `--provider auto|ollama|claude|none` · `--no-obsidian` · `--terminal` · `--cost [--budget <usd>]` · `--persona-json <file>` (answer the interview from a file; use it wherever stdin is not a terminal) · `--yes` (accept defaults, no prompts) · `--dry-run` (print the numbered plan, write nothing). Working from a checkout? `npm run setup -- --from-local .` installs the plugin from your clone instead of GitHub. A misspelled flag is a usage error, so a typo never starts a real install.
+Useful flags: `--vault <dir>` · `--host auto|claude|codex|both` · `--provider auto|ollama|claude|codex|none` · `--no-obsidian` · `--terminal` · `--cost [--budget <usd>]` · `--persona-json <file>` (answer the interview from a file; use it wherever stdin is not a terminal) · `--yes` (accept defaults, no prompts) · `--dry-run` (print the numbered plan, write nothing). Working from a checkout? `npm run setup -- --from-local .` installs the plugin from your clone instead of GitHub. A misspelled flag is a usage error, so a typo never starts a real install.
 
 ### 3. Put `aos` on your PATH and check the install
 
@@ -121,6 +121,10 @@ The installer never edits your `CLAUDE.md`. Add the line it printed — it looks
 ```
 @/path/to/AgenticOS/AGENTICOS.md
 ```
+
+### 4b. Wire Codex CLI to the vault
+
+Nothing to paste: Codex's `AGENTS.md` has no include syntax, so a SessionStart hook injects `AGENTICOS.md` at every session start (and again after compaction). Codex quarantines new hooks until you have seen them once: open `codex`, run `/hooks`, and trust the AgenticOS entries. They stay trusted across `aos upgrade` because every entry runs the vault's own launcher at a fixed path. Slash commands are skills there: `$wrap`, `$remember`, `$brain`, and so on, with the same words as under Claude Code. Add Codex to an existing install with `aos init --host both`; remove just that wiring with `aos uninstall --host codex`.
 
 ### 5. Open the HUD
 
@@ -182,19 +186,19 @@ Say `sitrep` for a one-action briefing on where your work stands, and `review pe
 
 | Command | Does |
 |---|---|
-| `aos doctor` | Checks Node, the Claude login, `agenticos.json`, the vault layout, the plugin, the MCP handshake, the Obsidian bundle, Ollama and python3. Exit 1 on any failure. |
+| `aos doctor` | Checks Node, `agenticos.json`, the vault layout, the MCP handshake, the Obsidian bundle, Ollama and python3, plus one block per enabled host: the Claude login and plugin, or the Codex login, hook entries, MCP registration and generated skills. Exit 1 on any failure. |
 | `aos status` | The resolved provider and why, today's spend against the caps, and the pipeline ledger. |
-| `aos provider auto\|ollama\|claude\|none` | Force a provider or go back to `auto`. |
-| `aos upgrade` | Updates the plugin, re-vendors the runtime and bundle, adds new config keys (your values win). Never touches memory, notes or persona. |
+| `aos provider auto\|ollama\|claude\|codex\|none` | Force a provider or go back to `auto`. |
+| `aos upgrade` | Updates the plugin, re-vendors the runtime and bundle, re-wires the Codex host when it is enabled, adds new config keys (your values win). Never touches memory, notes or persona. |
 | `aos persona` · `aos persona on\|off\|rename <name>` | Re-run the interview, flip the kill switch, or rename your agent. |
 | `aos cost enable [--budget <usd>]` · `aos cost disable` | Opt in or out of session costing. |
 | `aos routines list\|sync\|run <slug>\|enable <slug>\|disable <slug>\|next` | The recurring actions in `brain/routines/`: list with cadence, next fire and health; render and load the OS schedules; run one now; flip one on or off. |
 | `aos terminal install` | Builds the native module for the HUD's terminal tab. |
-| `aos uninstall [--keep-vault]` | Removes the plugin, the schedules, the symlink and `agenticos.json`. The vault is deleted only if you type its path back. |
+| `aos uninstall [--keep-vault]` · `aos uninstall --host codex` | Removes the plugin, the Codex hook entries, MCP registration and generated skills, the schedules, the symlink and `agenticos.json`. The vault is deleted only if you type its path back. `--host claude\|codex` unwires one host and keeps everything else. |
 
 Every runtime script is also reachable as `aos <name>` — `aos scan-vault`, `aos recall "<query>"`, `aos build-brain-md`, and so on.
 
-**Inside Claude Code**
+**Inside a session** (Claude Code: `/name` · Codex CLI: `$name`)
 
 | Command | Does |
 |---|---|
@@ -207,7 +211,7 @@ Every runtime script is also reachable as `aos <name>` — `aos scan-vault`, `ao
 | `/cost` · `/aos` | Cost completed sessions from their transcripts (cost module only); maintenance from inside a session — doctor, status, provider, persona. |
 | `/routines [list\|sync\|run <slug>\|enable\|disable\|next]` | The same verbs as `aos routines`, from inside a session. |
 
-Skills answer to plain phrases: *sitrep* (or `/agenticos:persona-sitrep`), *review persona flags* (`/agenticos:persona-flag-closer`), plus `recall`, `wrap`, `feedback-review` and `cost`.
+Skills answer to plain phrases: *sitrep* (or `/agenticos:persona-sitrep`), *review persona flags* (`/agenticos:persona-flag-closer`), plus `recall`, `wrap`, `feedback-review` and `cost`. Under Codex every one of these is a skill named the same way (`$persona-sitrep`, `$recall`, …) and the MCP tools are `mcp__agenticos__<tool>`.
 
 ### Staying up to date
 
@@ -251,22 +255,26 @@ aos update-check                  # check right now
 ```mermaid
 flowchart LR
   CC["Claude Code session"] -- "hooks, via aos" --> RT["vault/brain/scripts"]
+  CX["Codex CLI session"] -- "hooks, via aos" --> RT
   RT --> V[("Your vault<br/>memory · daily notes · _index")]
   V -- "agenticos MCP server" --> CC
+  V -- "agenticos MCP server" --> CX
   V --> HUD["Obsidian · Agentic OS HUD"]
   RT -. "provider: auto" .-> OL["Ollama (local)"]
   RT -. "provider: auto" .-> HC["headless Claude, capped"]
+  RT -. "provider: auto" .-> HX["headless Codex, capped"]
 ```
 
-- **Hooks.** The Claude Code plugin registers hooks for session start, every prompt, every tool use, stop and session end. Each one runs `aos <script>` inside your vault: inject context, update working memory, stream telemetry, write the heartbeat, cost the session, wrap it, rescan.
-- **The vault** is an ordinary folder that is both an Obsidian vault and Claude Code's second brain. `AGENTICOS.md` documents the layout and the three-file rule: `MEMORY.md` is the index, `brain/memory/<type>/` holds the content, `brain/_index/BRAIN.md` is the compiled bootstrap injected on the first turn.
-- **Providers.** `auto` picks Ollama when it answers, otherwise headless Claude (`claude -p --model haiku`, capped per call and per day, every call ledgered), otherwise `none`. Under `none` nothing calls a model in the background; summaries are heuristic and `/wrap` extracts memories inside your own session through the `wrap_session` tool. Install Ollama later and `auto` switches over on its own. One role is the exception: the **reasoner** behind `/ask-brain --local`, `/reflect-week`, `/consolidate-memory` and the HUD's Chat tab is a Claude model (`reasoner.model`, default `claude-opus-5`, with its own per-call and per-day caps) whatever `auto` resolved, and falls back to the local workhorse when Claude is unavailable.
+- **Hosts.** A session runs under Claude Code, Codex CLI, or either of two on one vault. The runtime is the same; only the wiring differs: Claude Code loads the plugin, Codex loads the hook entries, MCP registration and skills that `aos init --host codex` writes into its own config. A hook learns which host fired it from one environment variable, and one transcript reader understands both CLIs' session logs.
+- **Hooks.** Both hosts fire hooks for session start, every prompt, every tool use, stop and session end. Each one runs `aos <script>` inside your vault: inject context, update working memory, stream telemetry, write the heartbeat, cost the session, wrap it, rescan. Under Codex the conventions file is injected at every session start too, since `AGENTS.md` cannot include it.
+- **The vault** is an ordinary folder that is both an Obsidian vault and the agent's second brain. `AGENTICOS.md` documents the layout and the three-file rule: `MEMORY.md` is the index, `brain/memory/<type>/` holds the content, `brain/_index/BRAIN.md` is the compiled bootstrap injected on the first turn.
+- **Providers.** `auto` picks Ollama when it answers, otherwise headless Claude (`claude -p --model haiku`, capped per call and per day, every call ledgered), otherwise headless Codex when Codex is a wired host (`codex exec`, read-only, hooks off, spend estimated from its token counts), otherwise `none`. Under `none` nothing calls a model in the background; summaries are heuristic and `/wrap` extracts memories inside your own session through the `wrap_session` tool. Install Ollama later and `auto` switches over on its own. One role is the exception: the **reasoner** behind `/ask-brain --local`, `/reflect-week`, `/consolidate-memory` and the HUD's Chat tab is a Claude model (`reasoner.model`, default `claude-opus-5`, with its own per-call and per-day caps) whatever `auto` resolved, and falls back to the local workhorse when Claude is unavailable.
 - **The HUD** reads the same files: the pipeline ledger, live agent runs, the memory graph, provider state, spend, and your agent's identity and flags.
 
 <a name="privacy"></a>
 ## <img src="docs/assets/icon-privacy.svg" width="36" align="top" alt="" /> Privacy
 
-- Your vault stays on your machine. Background calls go to your local Ollama or to your own Claude login; the cost analyzer runs with `--no-api`.
+- Your vault stays on your machine. Background calls go to your local Ollama or to your own Claude or Codex login; the cost analyzer runs with `--no-api`.
 - Telemetry redaction is on by default.
 - This repository ships machinery, not content: the Chief of Staff's identity, state and playbook are generated for you at install. A privacy gate (`npm run gate`) runs in CI against a fixed term list so nothing personal can land here.
 
@@ -275,8 +283,8 @@ flowchart LR
 
 ```
 brain/scripts      the runtime that gets vendored into your vault (hooks, collectors, recall, MCP server, persona)
-cli                the installer and the aos subcommands (persona, schedule, routines, cost) + an install rehearsal
-plugin             the Claude Code plugin: hooks.json, .mcp.json, bin/aos, 15 commands, 6 skills
+cli                the installer and the aos subcommands (persona, schedule, routines, cost, the Codex host) + two install rehearsals
+plugin             the Claude Code plugin: hooks.json, .mcp.json, bin/aos, 15 commands, 6 skills (also the source of the generated Codex skills)
 obsidian-plugin    the Agentic OS HUD (TypeScript, esbuild)
 vault-template     the seed vault (AGENTICOS.md, MEMORY.md, brain/ incl. the three duty routines, persona templates)
 extras             the launchd schedule template, the cost analyzer, optional Ollama helpers
@@ -292,6 +300,7 @@ npm test                 # every suite: tools + cli, brain/scripts, obsidian-plu
 npm run gate             # the privacy gate — fails on any forbidden term
 cd extras/cost && python3 -m unittest      # the cost analyzer's tests
 sh cli/rehearsal/first-run.sh              # a complete install in a temp HOME with a fake claude (what CI runs)
+sh cli/rehearsal/codex-host.sh             # the same for a Codex-only machine: fake codex, hooks run for real, doctor, uninstall
 npm run build -w obsidian-plugin           # rebuild the HUD bundle
 node tools/brand-assets.js                 # regenerate the brand assets under docs/assets
 ```
@@ -302,11 +311,12 @@ node tools/brand-assets.js                 # regenerate the brand assets under d
 ## <img src="docs/assets/icon-uninstall.svg" width="36" align="top" alt="" /> Uninstall
 
 ```sh
-aos uninstall --keep-vault     # remove the plugin, schedules, symlink and agenticos.json; keep the vault
+aos uninstall --keep-vault     # remove the plugin, the Codex wiring, schedules, symlink and agenticos.json; keep the vault
 aos uninstall                  # additionally delete the vault, after you type its path back
+aos uninstall --host codex     # unwire only the Codex host (hooks, MCP registration, generated skills); keep everything else
 ```
 
-`~/.claude` is left exactly as it was. The vault is never deleted when it is your home directory or a Claude config directory.
+`~/.claude` and `~/.codex` are left exactly as they were (a `hooks.json` that held only our entries is removed; one with your own entries keeps them). The vault is never deleted when it is your home directory or a Claude config directory.
 
 <a name="docs"></a>
 ## <img src="docs/assets/icon-docs.svg" width="36" align="top" alt="" /> Docs

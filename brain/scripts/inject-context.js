@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 /**
  * UserPromptSubmit hook — injects BRAIN.md + SESSION.md on the first user turn of a session.
- * Uses a per-session marker file under the OS temp dir (lib/markers.js) for idempotency. Claude Code pipes hook input as JSON to stdin.
+ * Uses a per-session marker file under the OS temp dir (lib/markers.js) for idempotency. Both hosts pipe hook input as JSON to stdin.
  */
 
 const { PATHS, dailyNotePath } = require('./lib/hook-entry.js').hookEntry();
 const fs = require('fs');
 const path = require('path');
 const { markerPath } = require('./lib/markers.js');
+const { readTranscriptFile } = require('./lib/transcript.js');
 
 const VAULT = PATHS.VAULT;
 const BRAIN = PATHS.BRAIN_MD;
@@ -35,16 +36,9 @@ process.stdin.on('end', () => {
     const marker = markerPath(`.injected-${sessionId}`);
     if (fs.existsSync(marker)) process.exit(0);
 
-    // Secondary safety: count user turns in transcript JSONL if available
+    // Secondary safety: count user turns in the transcript (either host's format) if available
     if (transcriptPath && fs.existsSync(transcriptPath)) {
-      const lines = fs.readFileSync(transcriptPath, 'utf8').split('\n').filter(Boolean);
-      let userTurns = 0;
-      for (const line of lines) {
-        try {
-          const entry = JSON.parse(line);
-          if (entry.type === 'user' || entry.role === 'user') userTurns++;
-        } catch (_) {}
-      }
+      const userTurns = readTranscriptFile(transcriptPath).userTurns;
       if (userTurns > 0) {
         fs.writeFileSync(marker, String(Date.now()));
         process.exit(0);

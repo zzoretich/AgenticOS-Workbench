@@ -5,10 +5,14 @@
  *
  *   ollama  → config.ollama.{host,port}, default 127.0.0.1:11434 (chat + embed)
  *   claude  → headless `claude -p --model <cfg>` via claude-cli.js (chat only; capped + ledgered)
+ *   codex   → headless `codex exec` via codex-cli.js (chat only; capped + ledgered, spend estimated)
  *   none    → chat/embed throw ProviderUnavailable('PROVIDER_NONE'); callers fall back to heuristics
  *
  * `auto` (the default): Ollama ping (2 s, cached 60 s) → claude if the binary resolves and a
- * login probe succeeds (cached 24 h) → none. A claude provider whose day is over budget
+ * login probe succeeds (cached 24 h) → codex, but only when Codex is a configured host
+ * (hosts.codex.enabled, or a recorded codex.bin) and `codex login status` says logged in (cached
+ * 24 h) → none. Both CLIs share the hook cap: codex.perDayUsd governs codex.* spend the same way
+ * claude.perDayUsd governs claude.* spend, against the same hook ledger sum. A provider whose day is over budget
  * resolves to none with reason 'daily-cap' — "budget" is claude.perDayUsd against hook spend
  * only: spendToday() skips the persona's duty:* rows (persona.perDayUsd), the reasoner's
  * reason:* rows (reasoner.perDayUsd) and prompt routines' routine:* rows (routines.perDayUsd).
@@ -28,6 +32,7 @@ const { loadConfig } = require('../../lib/config.js');
 const ollama = require('./ollama.js');
 const embedModule = require('./embed.js');
 const claudeCli = require('./claude-cli.js');
+const codexCli = require('./codex-cli.js');
 const { role, providerFor, thinkFor } = require('./models.js');
 const { ProviderUnavailable, recordSpend, spendToday, reasonSpendToday, routineSpendToday, SPEND_PATH } = require('./spend-ledger.js');
 
@@ -116,6 +121,67 @@ function makeClaude(reason, budget, deps = {}) {
   };
 }
 
+/** The Codex hook budget: codex.* keys, the same hook ledger sum, its own cap key in the error. */
+function codexBudget(cfg, deps = {}) {
+  const c = cfg.codex || {};
+  return {
+    model: role('codex', cfg).tag, perCallUsd: Number(c.perCallUsd) || 0.05, perDayUsd: Number(c.perDayUsd) || 0.5,
+    spent: deps.spendToday || spendToday, capKey: 'codex.perDayUsd', label: 'daily hook cap', effort: undefined,
+  };
+}
+
+/** Codex joins the auto chain only when `aos init --host codex` wired it (or a codex.bin was recorded). */
+function codexConfigured(cfg) {
+  const h = cfg.hosts && cfg.hosts.codex;
+  return !!((h && h.enabled) || (cfg.codex && cfg.codex.bin));
+}
+
+function makeCodex(reason, budget, deps = {}) {
+  const call = deps.codexCall || codexCli.codexCall;
+  return {
+    name: 'codex', reason, model: budget.model,
+    capabilities: { chat: true, embed: false, structured: true },
+    async chat(opts = {}) {
+      if (budget.spent() >= budget.perDayUsd) {
+        throw new ProviderUnavailable('PROVIDER_CAP', `${budget.label} of ${budget.perDayUsd} USD reached (${budget.capKey})`, 'codex');
+      }
+      const schema = opts.schema || (opts.format === 'json' ? { type: 'object' } : undefined);
+      const effort = codexCli.EFFORTS.includes(opts.think) ? opts.think : budget.effort;
+      const r = await call({
+        system: opts.system || '', prompt: messagesToPrompt(opts), schema,
+        model: budget.model, effort,
+        timeoutMs: opts.timeoutMs || 120000, feature: opts.feature || 'unknown',
+      });
+      if (schema && r.structured != null) return JSON.stringify(r.structured);
+      return r.text;
+    },
+    embed: () => Promise.reject(new ProviderUnavailable('PROVIDER_NONE', 'the codex provider has no embeddings', 'codex')),
+    ping: async () => true,
+  };
+}
+
+/** Is headless Codex usable? Binary + `codex login status`, cached 24 h in state.codex. Mutates state. */
+async function resolveCodexLogin(state, now, iso, deps) {
+  const resolveBin = deps.resolveCodexBin || codexCli.resolveCodexBin;
+  const probe = deps.codexLoginProbe || codexCli.loginProbe;
+  if (isFresh(state.codex, CLAUDE_TTL_MS, now)) {
+    return { loggedIn: !!state.codex.loggedIn, bin: state.codex.bin || null };
+  }
+  const bin = resolveBin();
+  const loggedIn = bin ? await probe({ bin, timeoutMs: deps.probeTimeoutMs || 10_000 }) : false;
+  state.codex = { loggedIn, checkedAt: iso, bin };
+  return { loggedIn, bin };
+}
+
+/** The codex leg of the chain: login → cap → provider, else none with the reason that fits. */
+async function resolveCodex(state, now, iso, cfg, deps, okReason, fallbackReason) {
+  const { loggedIn, bin } = await resolveCodexLogin(state, now, iso, deps);
+  if (!loggedIn) return makeNone(bin ? 'codex-not-logged-in' : fallbackReason);
+  const budget = codexBudget(cfg, deps);
+  if (budget.spent() >= budget.perDayUsd) return makeNone('daily-cap');
+  return makeCodex(okReason, budget, deps);
+}
+
 function makeNone(reason) {
   const refuse = () => Promise.reject(new ProviderUnavailable('PROVIDER_NONE', `no model provider (${reason})`, 'none'));
   return {
@@ -155,6 +221,7 @@ async function resolveProvider({ mode, feature = 'unknown', deps = {} } = {}) {
   let chosen;
   if (m === 'ollama') chosen = makeOllama('forced', cfg);
   else if (m === 'none') chosen = makeNone('forced');
+  else if (m === 'codex') chosen = await resolveCodex(state, now, iso, cfg, deps, 'forced', 'no-provider');
   else {
     let ollamaOk = false;
     if (m === 'auto') {
@@ -167,9 +234,14 @@ async function resolveProvider({ mode, feature = 'unknown', deps = {} } = {}) {
     if (ollamaOk) chosen = makeOllama('ollama-reachable', cfg);
     else {
       const { loggedIn, bin } = await resolveClaudeLogin(state, now, iso, deps);
-      if (!loggedIn) chosen = makeNone(bin ? 'claude-not-logged-in' : 'no-provider');
-      else if (budget.spent() >= budget.perDayUsd) chosen = makeNone('daily-cap');
-      else chosen = makeClaude(m === 'claude' ? 'forced' : 'claude-logged-in', budget, deps);
+      const claudeReason = bin ? 'claude-not-logged-in' : 'no-provider';
+      if (loggedIn) {
+        chosen = budget.spent() >= budget.perDayUsd ? makeNone('daily-cap') : makeClaude(m === 'claude' ? 'forced' : 'claude-logged-in', budget, deps);
+      } else if (m === 'auto' && codexConfigured(cfg)) {
+        chosen = await resolveCodex(state, now, iso, cfg, deps, 'codex-logged-in', claudeReason);
+      } else {
+        chosen = makeNone(claudeReason);
+      }
     }
   }
   state.checkedAt = iso;

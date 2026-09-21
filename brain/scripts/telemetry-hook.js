@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 /**
- * telemetry-hook.js — feeds the agent-runs telemetry stream from Claude Code's
- * hooks. Wire the SAME script to multiple events in settings.json; it branches
- * on `hook_event_name` from the stdin payload.
+ * telemetry-hook.js — feeds the agent-runs telemetry stream from the host's hooks
+ * (Claude Code or Codex CLI). Wire the SAME script to multiple events; it branches
+ * on `hook_event_name` from the stdin payload. Codex serialises tool_input and
+ * tool_response as JSON strings where Claude Code passes objects; both are accepted.
  *
  *   SessionStart  -> open live/<id>.ndjson with a run_start header
  *   PreToolUse    -> append a tool_use_batch event
@@ -23,6 +24,7 @@ const { PATHS } = require('./lib/hook-entry.js').hookEntry();
 const fs = require('fs');
 const path = require('path');
 const { RUNS_DIR, LIVE_DIR, SUMMARY_LOG } = require('./sdk/lib/telemetry.js');
+const { currentHost } = require('./lib/host.js');
 
 const TRUNC = 300;
 const { loadConfig } = require('./lib/config.js');
@@ -36,6 +38,12 @@ function truncate(s, n = TRUNC) {
   if (s == null) return null;
   const str = typeof s === 'string' ? s : JSON.stringify(s);
   return str.length > n ? str.slice(0, n) + '…' : str;
+}
+
+/** Codex hook payloads carry tool_input / tool_response as JSON-encoded strings. */
+function fromJsonString(v) {
+  if (typeof v !== 'string') return v;
+  try { const p = JSON.parse(v); return p && typeof p === 'object' ? p : v; } catch { return v; }
 }
 
 function liveFileFor(sessionId) {
@@ -58,7 +66,7 @@ function toolEvent(input) {
   return t;
 }
 
-function ensureHeader(sessionId) {
+function ensureHeader(sessionId, extra = {}) {
   const lf = liveFileFor(sessionId);
   if (fs.existsSync(lf)) return lf;
   fs.mkdirSync(LIVE_DIR, { recursive: true });
@@ -69,6 +77,9 @@ function ensureHeader(sessionId) {
     started_at: new Date().toISOString(),
     pid: process.pid,
     session_id: sessionId,
+    host: currentHost(),
+    // Codex's hook payload names the model on every event; Claude Code's does not. Costing reads it back.
+    model: typeof extra.model === 'string' && extra.model ? extra.model : null,
   };
   try { fs.writeFileSync(lf, JSON.stringify(header) + '\n'); } catch (_) {}
   return lf;
@@ -128,6 +139,8 @@ function endRun(sessionId, reason) {
     tool_count: toolCount,
     subagents: Array.from(subagents),
     end_reason: reason || null,
+    host: header.host || 'claude',
+    model: header.model || null,
   };
 
   const dayDir = path.join(RUNS_DIR, startedAt.toISOString().slice(0, 10));
@@ -144,13 +157,15 @@ process.stdin.on('data', (c) => (raw += c));
 process.stdin.on('end', () => {
   try {
     const input = JSON.parse(raw || '{}');
+    input.tool_input = fromJsonString(input.tool_input);
+    input.tool_response = fromJsonString(input.tool_response);
     const sessionId = input.session_id || input.sessionId || 'unknown';
     const event = input.hook_event_name || input.hookEventName || '';
     if (TELEMETRY.enabled === false) { process.exit(0); }
 
     switch (event) {
       case 'SessionStart':
-        ensureHeader(sessionId);
+        ensureHeader(sessionId, { model: input.model });
         break;
       case 'PreToolUse':
         appendEvent(sessionId, {

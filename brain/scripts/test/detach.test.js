@@ -3,7 +3,7 @@ const { test, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 const { respawnDetached } = require('../lib/detach.js');
 
-beforeEach(() => { delete process.env.CLAUDE_PROJECT_DIR; delete process.env.AOS_DETACHED; });
+beforeEach(() => { delete process.env.CLAUDE_PROJECT_DIR; delete process.env.AOS_HOST; delete process.env.AOS_DETACHED; });
 
 test('outside a hook (no CLAUDE_PROJECT_DIR) it does nothing and returns false', () => {
   let spawned = 0;
@@ -28,4 +28,13 @@ test('the detached child (AOS_DETACHED=1) runs inline', () => {
   process.env.CLAUDE_PROJECT_DIR = '/tmp/project';
   process.env.AOS_DETACHED = '1';
   assert.equal(respawnDetached([], () => { throw new Error('must not spawn'); }), false);
+});
+
+test('a Codex hook (AOS_HOST=codex, no CLAUDE_PROJECT_DIR) respawns detached too', () => {
+  process.env.AOS_HOST = 'codex';
+  const calls = [];
+  assert.equal(respawnDetached(['--quiet'], (cmd, args, opts) => { calls.push(opts); return { unref() {} }; }), true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].env.AOS_HOST, 'codex');
+  assert.equal(calls[0].env.AOS_DETACHED, '1');
 });

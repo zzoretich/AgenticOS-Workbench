@@ -11,6 +11,8 @@
  */
 
 const { PATHS, dailyNotePath } = require('./lib/hook-entry.js').hookEntry();
+const { finishStop } = require('./lib/hook-entry.js');
+const { parseEntries } = require('./lib/transcript.js');
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
@@ -104,7 +106,7 @@ function readStdinAndRun() {
       const input = JSON.parse(raw || '{}');
       const transcriptPath = input.transcript_path || input.transcriptPath || '';
       const transcript = loadTranscript(transcriptPath);
-      const turnCount = transcript.filter(t => t.type === 'user' || t.role === 'user').length;
+      const turnCount = parseEntries(transcript).userTurns;
 
       const now = new Date().toLocaleString('en-US', { hour12: false });
       writeLastActive(now, turnCount); // fast: marker only
@@ -121,6 +123,7 @@ function readStdinAndRun() {
         child.unref();
       }
     } catch (_) {}
+    finishStop();
     process.exit(0);
   });
 }
@@ -258,11 +261,10 @@ function extractTextContent(content) {
 const MAX_SUMMARY_INPUT = 12000;
 function conversationTail(transcript) {
   const msgs = [];
-  for (const t of transcript) {
-    const role = t.type || t.role;
-    if (role !== 'user' && role !== 'assistant') continue;
-    if (t.isMeta) continue;
-    const text = extractTextContent(t.message?.content || t.content || '').trim();
+  for (const t of parseEntries(transcript).turns) {
+    const role = t.role;
+    if (t.meta) continue;
+    const text = String(t.text || '').trim();
     if (!text) continue; // tool_result-only user entries flatten to ''
     if (/^<(command-name|command-message|local-command)/.test(text)) continue;
     msgs.push(`${role}: ${text.slice(0, 500)}`);

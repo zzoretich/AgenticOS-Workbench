@@ -241,7 +241,7 @@ process.stdout.write(`[heartbeat-writer] ${Object.keys(state).length} agents · 
 
 if (require.main === module) {
   // Hook mode (Stop / SessionEnd): hand the work to a detached child and return now.
-  if (require('./lib/detach.js').respawnDetached()) process.exit(0);
+  if (require('./lib/detach.js').respawnDetached()) { require('./lib/hook-entry.js').finishStop(); process.exit(0); }
   withReport('heartbeat-writer', async (report) => { await main(report); })
     .catch(() => { /* best-effort: never fail the hook */ });
 }

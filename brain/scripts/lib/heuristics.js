@@ -5,8 +5,8 @@
  */
 const fs = require('fs');
 const path = require('path');
+const { readTurns } = require('./transcript.js');
 
-const FILE_TOOLS = new Set(['Edit', 'Write', 'Read', 'MultiEdit', 'NotebookEdit']);
 const HEAD_CHARS = 4000;
 const EXT_LABEL = {
   '.js': 'JavaScript', '.mjs': 'JavaScript', '.cjs': 'JavaScript', '.ts': 'TypeScript', '.tsx': 'TypeScript',
@@ -14,44 +14,22 @@ const EXT_LABEL = {
   '.html': 'HTML', '.yml': 'YAML', '.yaml': 'YAML', '.toml': 'TOML', '.rb': 'Ruby', '.go': 'Go', '.rs': 'Rust',
 };
 
-function textOf(content) {
-  if (typeof content === 'string') return content;
-  if (Array.isArray(content)) return content.map((c) => (typeof c === 'string' ? c : (c && c.text) || '')).join(' ');
-  if (content && typeof content === 'object') return content.text || '';
-  return '';
-}
-
-function parseJsonl(text) {
-  const out = [];
-  for (const line of String(text || '').split('\n')) {
-    if (!line.trim()) continue;
-    try { out.push(JSON.parse(line)); } catch { /* not a JSON line */ }
-  }
-  return out;
-}
-
-/** Key Context bullets from a raw JSONL transcript: last prompts, files touched, slash commands. */
+/** Key Context bullets from a raw JSONL transcript (either host): last prompts, files touched, slash commands. */
 function workingMemoryFromTranscript(transcriptText, { maxPrompts = 6, maxFiles = 8 } = {}) {
   const prompts = [];
   const files = [];
   const commands = [];
-  for (const e of parseJsonl(transcriptText)) {
-    const role = e.type || e.role;
-    const content = (e.message && e.message.content) ?? e.content ?? '';
-    if (role === 'user') {
-      if (e.isMeta) continue;
-      const text = textOf(content).trim();
-      const cmd = text.match(/^<command-name>(\/[^<\s]+)<\/command-name>/);
-      if (cmd) { if (!commands.includes(cmd[1])) commands.push(cmd[1]); continue; }
-      if (!text || /^<(command-message|local-command)/.test(text)) continue;
-      prompts.push(text.replace(/\s+/g, ' ').slice(0, 120));
-    } else if (role === 'assistant' && Array.isArray(content)) {
-      for (const b of content) {
-        if (b && b.type === 'tool_use' && FILE_TOOLS.has(b.name) && b.input && typeof b.input.file_path === 'string') {
-          if (!files.includes(b.input.file_path)) files.push(b.input.file_path);
-        }
-      }
-    }
+  const parsed = readTurns(transcriptText);
+  for (const t of parsed.turns) {
+    if (t.role !== 'user' || t.meta) continue;
+    const text = String(t.text || '').trim();
+    const cmd = text.match(/^<command-name>(\/[^<\s]+)<\/command-name>/);
+    if (cmd) { if (!commands.includes(cmd[1])) commands.push(cmd[1]); continue; }
+    if (!text || /^<(command-message|local-command)/.test(text)) continue;
+    prompts.push(text.replace(/\s+/g, ' ').slice(0, 120));
+  }
+  for (const u of parsed.toolUses) {
+    if ((u.kind === 'edit' || u.kind === 'read') && u.filePath && !files.includes(u.filePath)) files.push(u.filePath);
   }
   const keyContext = prompts.slice(-maxPrompts).map((p) => `Asked: ${p}`);
   const touched = files.slice(-maxFiles);
