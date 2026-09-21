@@ -256,7 +256,7 @@ async function doctor() {
   if (vault) {
     const need = ['brain/_index', 'brain/memory', 'brain/scripts/package.json', 'brain/scripts/node_modules/@modelcontextprotocol/sdk',
       'brain/scripts/bin/aos', 'brain/scripts/cli/aos.js', 'brain/scripts/cli/persona-cmd.js', 'brain/scripts/cli/schedule.js',
-      'brain/scripts/persona/interview.js', 'brain/scripts/persona/templates/identity.template.md', 'brain/scripts/extras/schedule/cron.tmpl',
+      'brain/scripts/persona/interview.js', 'brain/scripts/persona/templates/identity.template.md', 'brain/scripts/extras/schedule/launchd/routine.plist.tmpl',
       'MEMORY.md', 'AGENTICOS.md'];
     const missing = need.filter((r) => !exists(path.join(vault, r)));
     add('vault layout', missing.length === 0, missing.length ? `${vault} missing: ${missing.join(', ')}` : vault);
@@ -818,10 +818,12 @@ async function upgrade(flags) {
   return 0;
 }
 
-/** The three duty schedules (com.agenticos.monitor|reflect|sitrep plists; crontab lines tagged "# com.agenticos.<duty>") —
- *  one implementation, cli/schedule.js. com.agenticos.ollama (Plan 2, extras/ollama) is never matched there either. */
+/** Every routine schedule (com.agenticos.<slug> plists; crontab lines tagged "# com.agenticos.<slug>"), the three
+ *  legacy duty labels included — one implementation, cli/schedule.js. com.agenticos.ollama (Plan 2, extras/ollama)
+ *  is never matched there either. */
 function removeSchedules() {
-  const { removed } = require('./schedule.js').removeSchedules({});
+  const cfg = readJson(configPath());
+  const { removed } = require('./schedule.js').removeSchedules({ vault: cfg && cfg.vault });
   for (const r of removed) out.log(`removed ${r}`);
   return removed;
 }

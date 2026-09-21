@@ -1,33 +1,50 @@
 'use strict';
 /**
- * schedule.js — renders and installs the Chief of Staff duty schedules.
- *   macOS: ~/Library/LaunchAgents/com.agenticos.<duty>.plist, loaded with launchctl
- *   Linux: crontab lines ending in "# com.agenticos.<duty>" (merged; never touches other lines).
- *   `aos uninstall` (Plan 3, delegating to removeSchedules below) removes exactly the three duty
- *   schedules — the com.agenticos.monitor|reflect|sitrep plists and the crontab lines tagged
- *   "# com.agenticos.<duty>"; the optional com.agenticos.ollama supervisor from extras/ollama
- *   (Plan 2, installed by hand) is left alone. The duty plists are deleted on every platform
- *   (only launchctl is darwin-only) so the uninstall test passes on the ubuntu CI runner too.
- * Templates: extras/schedule/launchd/*.plist.tmpl and extras/schedule/cron.tmpl — resolved
- * relative to this file, so the checkout (cli/../extras/schedule) and the vendored copy
- * (<vault>/brain/scripts/cli/../extras/schedule, installed by `aos init`) both work.
- * Zero dependencies. Every external call is injectable for tests.
+ * schedule.js — renders and installs one OS schedule per enabled routine (<vault>/brain/routines/<slug>.md).
+ *   macOS: ~/Library/LaunchAgents/com.agenticos.<slug>.plist, loaded with launchctl
+ *   Linux: crontab lines ending in "# com.agenticos.<slug>" (merged; never touches other lines).
+ * Every schedule runs `run-routine.js <slug>` (brain/scripts/routines/), which delegates duties to
+ * persona/run-duty.sh, so the three Chief of Staff duties keep their labels and their contract.
+ *
+ * What counts as "ours": the slugs of the current routine files, the slugs recorded by the previous
+ * sync in brain/_index/routines.json, and the three legacy duty labels from before routines existed —
+ * so a deleted routine's plist or cron line is still cleaned up, and `aos uninstall` still removes the
+ * pre-migration plists. Anything else in LaunchAgents or the crontab — the optional com.agenticos.ollama
+ * supervisor from extras/ollama included — is never matched.
+ *
+ * Template: extras/schedule/launchd/routine.plist.tmpl — resolved relative to this file, so the checkout
+ * (cli/../extras/schedule) and the vendored copy (<vault>/brain/scripts/cli/../extras/schedule) both work;
+ * the routine store resolves the same way. Zero dependencies. Every external call is injectable for tests.
  */
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
-const DUTIES = ['monitor', 'reflect', 'sitrep'];
 const CRON_TAG = '# com.agenticos.';
-// execution amendment 2026-09-15 (A30): match exactly the three duty labels (Plan 3's DUTY_CRON_RE), so a hand-added
-// "# com.agenticos.<other>" crontab line is never stripped and com.agenticos.ollama can never match.
-const CRON_LINE_RE = /# com\.agenticos\.(monitor|reflect|sitrep)(\s|$)/;
 const TEMPLATES_DIR = path.join(__dirname, '..', 'extras', 'schedule');
+/** Duty labels installed before routines existed (static per-duty plists): still removed by uninstall. */
+const LEGACY_DUTIES = ['monitor', 'reflect', 'sitrep'];
+const RUNNER_REL = 'brain/scripts/routines/run-routine.js';
 
-function launchdLabel(duty) { return `com.agenticos.${duty}`; }
+function loadStore() {
+  for (const p of [path.join(__dirname, '..', 'lib', 'routines-store.js'), path.join(__dirname, '..', 'brain', 'scripts', 'lib', 'routines-store.js')]) {
+    if (fs.existsSync(p)) return require(p);
+  }
+  throw new Error('routines-store.js not found beside cli/schedule.js');
+}
+function loadCron() {
+  for (const p of [path.join(__dirname, '..', 'lib', 'cron.js'), path.join(__dirname, '..', 'brain', 'scripts', 'lib', 'cron.js')]) {
+    if (fs.existsSync(p)) return require(p);
+  }
+  throw new Error('cron.js not found beside cli/schedule.js');
+}
+
+function launchdLabel(slug) { return `com.agenticos.${slug}`; }
 function defaultLaunchAgentsDir() { return path.join(os.homedir(), 'Library', 'LaunchAgents'); }
 function defaultWarn(message) { process.stderr.write(`schedule: ${message}\n`); }
+function routinesDir(vault) { return path.join(vault, 'brain', 'routines'); }
+function stateFileFor(vault) { return path.join(vault, 'brain', '_index', 'routines.json'); }
 
 function renderTemplate(text, vars) {
   return text.replace(/\{\{([A-Z_]+)\}\}/g, (m, k) => (Object.prototype.hasOwnProperty.call(vars, k) ? String(vars[k]) : m));
@@ -49,15 +66,46 @@ function scheduleVars({ vault, configDir, node, logDir, model, effort, agentName
   };
 }
 
-function renderLaunchd(duty, vars, templatesDir = TEMPLATES_DIR) {
+/** Every routine file in the vault (valid or not); `installable` is the subset the scheduler acts on. */
+function listRoutines({ vault, store = loadStore() }) {
+  return store.list({ dir: routinesDir(vault) });
+}
+function installable(routines) { return routines.filter(r => r.enabled && (!r.errors || r.errors.length === 0)); }
+
+/** The launchd calendar array for one routine, as plist XML lines (indented to sit inside the template's <array>). */
+function calendarXml(routine, cron = loadCron()) {
+  return cron.toLaunchd(routine.schedule).map((e) => {
+    const keys = ['Month', 'Day', 'Weekday', 'Hour', 'Minute'].filter(k => e[k] !== undefined);
+    return `    <dict>${keys.map(k => `<key>${k}</key><integer>${e[k]}</integer>`).join('')}</dict>`;
+  }).join('\n');
+}
+
+function renderLaunchd(routine, vars, templatesDir = TEMPLATES_DIR) {
   const escaped = Object.fromEntries(Object.entries(vars).map(([k, v]) => [k, xmlEscape(v)]));   // execution amendment 2026-09-15 (A30)
-  return renderTemplate(fs.readFileSync(path.join(templatesDir, 'launchd', `${launchdLabel(duty)}.plist.tmpl`), 'utf8'), escaped);
+  const tmpl = fs.readFileSync(path.join(templatesDir, 'launchd', 'routine.plist.tmpl'), 'utf8');
+  return renderTemplate(tmpl, { ...escaped, LABEL: xmlEscape(launchdLabel(routine.slug)), SLUG: xmlEscape(routine.slug), CALENDAR: calendarXml(routine) });
 }
-function renderCron(vars, templatesDir = TEMPLATES_DIR) {
-  return renderTemplate(fs.readFileSync(path.join(templatesDir, 'cron.tmpl'), 'utf8'), vars);
+
+/** One crontab line per routine, each ending in "# com.agenticos.<slug>". The sh -c wrapper lets AOS_NODE be a bare
+ *  `node` (resolved through the PATH set on the line) or an absolute path recorded by `aos init`. */
+function cronLine(routine, vars) {
+  const env = `AOS_CONFIG=${vars.AOS_CONFIG} AOS_VAULT=${vars.VAULT} AOS_NODE=${vars.NODE} PERSONA_NAME=${vars.AGENT_NAME} PERSONA_MODEL=${vars.MODEL} PERSONA_EFFORT=${vars.EFFORT} PERSONA_LOG_DIR=${vars.LOG_DIR} PATH=${vars.HOME}/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin`;
+  const cmd = `/bin/sh -c 'exec "$AOS_NODE" "$0" "$@"' ${vars.VAULT}/${RUNNER_REL} ${routine.slug}`;
+  return `${String(routine.schedule).trim().replace(/\s+/g, ' ')} ${env} ${cmd} >> ${vars.LOG_DIR}/cron-${routine.slug}.log 2>&1 ${CRON_TAG}${routine.slug}`;
 }
-function stripAgenticosCron(text) {
-  return String(text || '').split('\n').filter(l => !CRON_LINE_RE.test(l)).join('\n').replace(/\n+$/, '');   // execution amendment 2026-09-15 (A30)
+function renderCron(routines, vars) {
+  const lines = installable(routines).map(r => cronLine(r, vars));
+  return lines.length ? lines.join('\n') + '\n' : '';
+}
+
+function tagRe(slugs) {
+  const alt = [...new Set(slugs)].map(s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+  return alt ? new RegExp(`# com\\.agenticos\\.(${alt})(\\s|$)`) : /$^/;
+}
+/** Drops only the lines tagged with one of `slugs`; every other line (foreign, com.agenticos.ollama) is kept. */
+function stripAgenticosCron(text, slugs) {
+  const re = tagRe(slugs);
+  return String(text || '').split('\n').filter(l => !re.test(l)).join('\n').replace(/\n+$/, '');
 }
 
 // execution amendment 2026-09-15 (A56): a failed `crontab -l` is NOT the same as "no crontab" — only ENOENT
@@ -83,22 +131,51 @@ function writeCrontabWith(exec, text) {
   exec('crontab', ['-'], { input: text.endsWith('\n') ? text : `${text}\n`, stdio: ['pipe', 'ignore', 'ignore'] });
 }
 
-function installSchedules({ platform = process.platform, vars, templatesDir = TEMPLATES_DIR,
-  launchAgentsDir = defaultLaunchAgentsDir(), exec = execFileSync, readCrontab, writeCrontab, warn = defaultWarn } = {}) {
+/** The slug set this scheduler owns: current files ∪ last sync ∪ the legacy duties. */
+function knownSlugs({ routines = [], state = null } = {}) {
+  return [...new Set([...routines.map(r => r.slug), ...Object.keys((state && state.synced) || {}), ...LEGACY_DUTIES])];
+}
+function readStateSafe(store, file) { try { return store.readState({ file }); } catch { return { schema: 1, routines: {}, synced: {}, syncedAt: null }; } }
+
+/**
+ * Renders and (re)loads one schedule per installable routine, removes the schedules of routines that are now
+ * disabled, invalid or gone, and records { synced: { slug: fingerprint }, syncedAt } in routines.json.
+ * `routines` may be injected (tests); by default they are read from vars.VAULT.
+ */
+function installSchedules({ platform = process.platform, vars, routines, store = loadStore(), templatesDir = TEMPLATES_DIR,
+  launchAgentsDir = defaultLaunchAgentsDir(), stateFile, exec = execFileSync, readCrontab, writeCrontab, warn = defaultWarn, now = () => new Date() } = {}) {
   fs.mkdirSync(vars.LOG_DIR, { recursive: true });
+  const all = routines || listRoutines({ vault: vars.VAULT, store });
+  const active = installable(all);
+  const file = stateFile || stateFileFor(vars.VAULT);
+  const state = readStateSafe(store, file);
+  const stale = knownSlugs({ routines: all, state }).filter(s => !active.some(r => r.slug === s));
+  const record = () => {
+    state.synced = Object.fromEntries(active.map(r => [r.slug, store.fingerprint(r)]));
+    state.syncedAt = now().toISOString();
+    try { store.writeState(state, { file }); } catch (e) { warn(`could not record the sync in ${file}: ${e.message}`); }
+  };
   if (platform === 'darwin') {
     fs.mkdirSync(launchAgentsDir, { recursive: true });
-    const written = []; const warnings = [];
-    for (const duty of DUTIES) {
-      const file = path.join(launchAgentsDir, `${launchdLabel(duty)}.plist`);
-      fs.writeFileSync(file, renderLaunchd(duty, vars, templatesDir));
-      try { exec('launchctl', ['unload', file], { stdio: 'ignore' }); } catch { /* not loaded yet */ }
+    const written = []; const removed = []; const warnings = [];
+    for (const r of active) {
+      const plist = path.join(launchAgentsDir, `${launchdLabel(r.slug)}.plist`);
+      fs.writeFileSync(plist, renderLaunchd(r, vars, templatesDir));
+      try { exec('launchctl', ['unload', plist], { stdio: 'ignore' }); } catch { /* not loaded yet */ }
       // execution amendment 2026-09-15 (A30): a failing load is reported, never thrown — it must not abort `aos init` step 8.
-      try { exec('launchctl', ['load', file], { stdio: 'ignore' }); }
-      catch (e) { const m = `launchctl load ${file}: ${e && e.message ? e.message : e}`; warnings.push(m); warn(m); }
-      written.push(file);
+      try { exec('launchctl', ['load', plist], { stdio: 'ignore' }); }
+      catch (e) { const m = `launchctl load ${plist}: ${e && e.message ? e.message : e}`; warnings.push(m); warn(m); }
+      written.push(plist);
     }
-    return { platform, written, labels: DUTIES.map(launchdLabel), warnings };
+    for (const s of stale) {
+      const plist = path.join(launchAgentsDir, `${launchdLabel(s)}.plist`);
+      if (!fs.existsSync(plist)) continue;
+      try { exec('launchctl', ['unload', plist], { stdio: 'ignore' }); } catch { /* already unloaded */ }
+      fs.unlinkSync(plist);
+      removed.push(plist);
+    }
+    record();
+    return { platform, written, removed, labels: active.map(r => launchdLabel(r.slug)), warnings };
   }
   if (platform === 'linux') {
     const warnings = [];
@@ -110,39 +187,49 @@ function installSchedules({ platform = process.platform, vars, templatesDir = TE
       // signal "unreadable"); only the default seam, going through the real crontab binary via exec, can be unreadable.
       const r = readCrontabResult(exec);
       if (r.unreadable) {
-        const m = `crontab -l failed (${r.message}) — crontab left untouched; install the duty lines by hand`;
+        const m = `crontab -l failed (${r.message}) — crontab left untouched; install the routine lines by hand`;
         warnings.push(m); warn(m);
-        return { platform, written: [], labels: [], warnings };
+        return { platform, written: [], removed: [], labels: [], warnings };
       }
       current = r.text;
     }
     const write = writeCrontab || ((t) => writeCrontabWith(exec, t));
-    const kept = stripAgenticosCron(current);
+    const kept = stripAgenticosCron(current, knownSlugs({ routines: all, state }));
     // execution amendment 2026-09-15 (A57): a failing `crontab -` is reported, never thrown — it must not abort
     // `aos init` step 8 (darwin's launchctl load failure is already handled the same way, above).
     try {
-      write(`${kept ? `${kept}\n` : ''}${renderCron(vars, templatesDir).trim()}\n`);
+      const lines = renderCron(all, vars).trim();
+      write(`${kept ? `${kept}\n` : ''}${lines ? `${lines}\n` : ''}`);
     } catch (e) {
       const m = `crontab - failed (${e && e.message ? e.message : e})`;
       warnings.push(m); warn(m);
-      return { platform, written: [], labels: [], warnings };
+      return { platform, written: [], removed: [], labels: [], warnings };
     }
-    return { platform, written: ['crontab'], labels: DUTIES.map(d => `${CRON_TAG}${d}`), warnings };
+    record();
+    return { platform, written: ['crontab'], removed: stale.filter(s => tagRe([s]).test(current)).map(s => `${CRON_TAG}${s}`), labels: active.map(r => `${CRON_TAG}${r.slug}`), warnings };
   }
-  return { platform, written: [], labels: [], unsupported: true, warnings: [] };
+  return { platform, written: [], removed: [], labels: [], unsupported: true, warnings: [] };
 }
 
-function removeSchedules({ platform = process.platform, launchAgentsDir = defaultLaunchAgentsDir(), exec = execFileSync, readCrontab, writeCrontab, warn = defaultWarn } = {}) {
+/** Removes every schedule this scheduler owns (files, last sync, legacy duties) and clears the sync record. */
+function removeSchedules({ platform = process.platform, vault, store = null, launchAgentsDir = defaultLaunchAgentsDir(), stateFile,
+  exec = execFileSync, readCrontab, writeCrontab, warn = defaultWarn } = {}) {
   const removed = []; const warnings = [];
-  // The three duty plists go on every platform (Plan 3's uninstall test seeds them under $HOME on
-  // ubuntu too; a stray plist on Linux is harmless to delete). Only launchctl is darwin-specific.
-  // Anything else in launchAgentsDir — com.agenticos.ollama included — is never matched.
-  for (const duty of DUTIES) {
-    const file = path.join(launchAgentsDir, `${launchdLabel(duty)}.plist`);
-    if (!fs.existsSync(file)) continue;
-    if (platform === 'darwin') { try { exec('launchctl', ['unload', file], { stdio: 'ignore' }); } catch { /* already unloaded */ } }
-    fs.unlinkSync(file);
-    removed.push(file);
+  let st = null; let routines = [];
+  const file = stateFile || (vault ? stateFileFor(vault) : null);
+  if (vault) {
+    try { store = store || loadStore(); routines = listRoutines({ vault, store }); st = readStateSafe(store, file); } catch { /* no store beside us: legacy labels only */ }
+  }
+  const slugs = knownSlugs({ routines, state: st });
+  // Plists go on every platform (Plan 3's uninstall test seeds them under $HOME on ubuntu too; a stray plist on
+  // Linux is harmless to delete). Only launchctl is darwin-specific. Anything else in launchAgentsDir — the
+  // com.agenticos.ollama supervisor included — is never matched.
+  for (const s of slugs) {
+    const plist = path.join(launchAgentsDir, `${launchdLabel(s)}.plist`);
+    if (!fs.existsSync(plist)) continue;
+    if (platform === 'darwin') { try { exec('launchctl', ['unload', plist], { stdio: 'ignore' }); } catch { /* already unloaded */ } }
+    fs.unlinkSync(plist);
+    removed.push(plist);
   }
   if (platform === 'linux') {
     let current;
@@ -159,21 +246,29 @@ function removeSchedules({ platform = process.platform, launchAgentsDir = defaul
       }
       current = r.text;
     }
-    if (CRON_LINE_RE.test(current)) {   // execution amendment 2026-09-15 (A30)
+    if (tagRe(slugs).test(current)) {
       const write = writeCrontab || ((t) => writeCrontabWith(exec, t));
       // execution amendment 2026-09-15 (A57): a failing `crontab -` is reported, never thrown — `aos uninstall`
       // must finish its teardown even when the crontab write fails.
-      try { write(`${stripAgenticosCron(current)}\n`); removed.push('crontab'); }
+      try { write(`${stripAgenticosCron(current, slugs)}\n`); removed.push('crontab'); }
       catch (e) { const m = `crontab - failed (${e && e.message ? e.message : e})`; warnings.push(m); warn(m); }
     }
   }
+  if (st && store && file) { st.synced = {}; st.syncedAt = null; try { store.writeState(st, { file }); } catch { /* best effort */ } }
   return { platform, removed, warnings };
 }
 
-function isInstalled({ platform = process.platform, launchAgentsDir = defaultLaunchAgentsDir(), exec = execFileSync, readCrontab } = {}) {
-  if (platform === 'darwin') return DUTIES.some(d => fs.existsSync(path.join(launchAgentsDir, `${launchdLabel(d)}.plist`)));
-  if (platform === 'linux') return CRON_LINE_RE.test((readCrontab || (() => readCrontabWith(exec)))());   // execution amendment 2026-09-15 (A30)
+function isInstalled({ platform = process.platform, vault, launchAgentsDir = defaultLaunchAgentsDir(), stateFile, exec = execFileSync, readCrontab } = {}) {
+  let routines = []; let st = null;
+  if (vault) { try { const store = loadStore(); routines = listRoutines({ vault, store }); st = readStateSafe(store, stateFile || stateFileFor(vault)); } catch { /* legacy only */ } }
+  const slugs = knownSlugs({ routines, state: st });
+  if (platform === 'darwin') return slugs.some(s => fs.existsSync(path.join(launchAgentsDir, `${launchdLabel(s)}.plist`)));
+  if (platform === 'linux') return tagRe(slugs).test((readCrontab || (() => readCrontabWith(exec)))() || '');
   return false;
 }
 
-module.exports = { DUTIES, CRON_TAG, CRON_LINE_RE, TEMPLATES_DIR, launchdLabel, renderTemplate, xmlEscape, scheduleVars, renderLaunchd, renderCron, stripAgenticosCron, installSchedules, removeSchedules, isInstalled };
+module.exports = {
+  CRON_TAG, TEMPLATES_DIR, LEGACY_DUTIES, RUNNER_REL, launchdLabel, renderTemplate, xmlEscape, scheduleVars,
+  listRoutines, installable, calendarXml, renderLaunchd, renderCron, cronLine, stripAgenticosCron, knownSlugs,
+  installSchedules, removeSchedules, isInstalled,
+};

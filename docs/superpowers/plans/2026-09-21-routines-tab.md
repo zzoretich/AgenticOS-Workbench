@@ -8,7 +8,8 @@ Spec: `docs/superpowers/specs/2026-09-21-routines-tab-design.md` · Branch: `fea
 - No network and no real `launchctl`/`crontab`/`claude` in tests; every spawn is injected.
 - `persona/run-duty.sh` is not modified. The three duty labels `com.agenticos.<duty>`
   survive migration unchanged (`launchctl list | grep com.agenticos` prints the same three).
-- `git grep -n 'monitor|reflect|sitrep' cli/schedule.js` prints nothing when done.
+- `git grep -nE 'monitor|reflect|sitrep' cli/schedule.js` matches only the `LEGACY_DUTIES` constant (the
+  pre-migration labels `aos uninstall` must still remove) when done.
 - The plugin command count becomes 15 (`/routines`); `cli/plugin-commands.test.js` and the
   README layout line change together.
 - No absolute home paths; `npm run gate` clean; one commit per task; no session trailers.
@@ -70,7 +71,7 @@ Spec: `docs/superpowers/specs/2026-09-21-routines-tab-design.md` · Branch: `fea
 - [ ] `routine.plist.tmpl`; delete the four static templates.
 - [ ] `cli/schedule.js` rewritten; `cli/schedule.test.js` rewritten (generic template, disabled/deleted cleanup, foreign + `ollama` lines untouched, fingerprint recorded).
 - [ ] `cli/persona-cmd.js` call sites.
-- [ ] `git grep -nE 'monitor|reflect|sitrep' cli/schedule.js` prints nothing.
+- [x] `git grep -nE 'monitor|reflect|sitrep' cli/schedule.js` matches only `LEGACY_DUTIES`.
 - [ ] Commit: `feat(schedule): render one plist per routine file`.
 
 ### Task 4 — CLI verb, migration, seed

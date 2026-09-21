@@ -39,8 +39,8 @@ test('vendorRuntime copies cli/ (no tests, fixtures, rehearsal), the persona tem
   assert.equal(r.status, 0, r.stderr);
   const S = (rel) => path.join(w.vault, 'brain', 'scripts', rel);
   for (const rel of ['cli/aos.js', 'cli/persona-cmd.js', 'cli/schedule.js', 'persona/interview.js', 'persona/templates/identity.template.md',
-    'persona/templates/duties/monitor.md', 'persona/templates/proposals/README.md', 'extras/schedule/cron.tmpl',
-    'extras/schedule/launchd/com.agenticos.monitor.plist.tmpl', 'extras/cost/analyze_transcript.py', 'extras/cost/pricing.json']) {
+    'persona/templates/duties/monitor.md', 'persona/templates/proposals/README.md', 'extras/schedule/launchd/routine.plist.tmpl',
+    'extras/cost/analyze_transcript.py', 'extras/cost/pricing.json']) {
     assert.ok(fs.existsSync(S(rel)), `vendored ${rel}`);
   }
   for (const rel of ['cli/aos.test.js', 'cli/persona-cmd.test.js', 'cli/schedule.test.js', 'cli/fixtures', 'cli/rehearsal', 'extras/cost/test_analyze_transcript.py', 'test']) {

@@ -2,12 +2,14 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>com.agenticos.monitor</string>
+  <key>Label</key><string>{{LABEL}}</string>
   <key>ProgramArguments</key>
   <array>
     <string>/bin/sh</string>
-    <string>{{VAULT}}/brain/scripts/persona/run-duty.sh</string>
-    <string>monitor</string>
+    <string>-c</string>
+    <string>exec "$AOS_NODE" "$0" "$@"</string>
+    <string>{{VAULT}}/brain/scripts/routines/run-routine.js</string>
+    <string>{{SLUG}}</string>
   </array>
   <key>EnvironmentVariables</key>
   <dict>
@@ -23,10 +25,10 @@
   </dict>
   <key>StartCalendarInterval</key>
   <array>
-    <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>0</integer></dict>
+{{CALENDAR}}
   </array>
-  <key>StandardOutPath</key><string>{{LOG_DIR}}/launchd-monitor.log</string>
-  <key>StandardErrorPath</key><string>{{LOG_DIR}}/launchd-monitor-error.log</string>
+  <key>StandardOutPath</key><string>{{LOG_DIR}}/launchd-{{SLUG}}.log</string>
+  <key>StandardErrorPath</key><string>{{LOG_DIR}}/launchd-{{SLUG}}-error.log</string>
   <key>RunAtLoad</key><false/>
 </dict>
 </plist>
