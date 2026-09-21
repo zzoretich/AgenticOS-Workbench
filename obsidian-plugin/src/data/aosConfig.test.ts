@@ -32,6 +32,8 @@ test("defaults mirror config.default.json", () => {
   assert.equal(VAULT_CONFIG_DEFAULTS.cost.enabled, false);
   assert.equal(VAULT_CONFIG_DEFAULTS.cost.monthlyBudget, null);
   assert.equal(VAULT_CONFIG_DEFAULTS.claude.model, "haiku");
+  assert.equal(VAULT_CONFIG_DEFAULTS.reasoner.model, "claude-opus-5");
+  assert.equal(VAULT_CONFIG_DEFAULTS.reasoner.perCallUsd, 0.5);
   assert.equal(VAULT_CONFIG_DEFAULTS.persona.enabled, true);
   assert.equal(VAULT_CONFIG_DEFAULTS.persona.perDutyUsd, 2);
   assert.equal(VAULT_CONFIG_DEFAULTS.persona.perDayUsd, 6); // contract §1: persona caps ship in config.default.json

@@ -1,50 +1,69 @@
 'use strict';
 /**
- * models.js — single source of truth for the local three-role model stack.
- * Roles: workhorse (background hooks/jobs), reasoner (deep Q&A / coding),
- * embedder (vector recall). Callers ask for a role, never a tag.
+ * models.js — single source of truth for the model roles.
+ * Roles: workhorse (background hooks/jobs, Ollama), reasoner (deep Q&A / reflection,
+ * headless Claude), embedder (vector recall, Ollama), claude (the hook fallback when
+ * Ollama is away). Callers ask for a role, never a tag, and `providerFor(role)` says
+ * which provider serves it — provider.js routes on that.
  *
- * Env overrides (read lazily on every call):
- *   BRAIN_MODEL           workhorse tag   (default qwen3.5:4b)
- *   BRAIN_REASONER        reasoner tag    (default gpt-oss:20b)
- *   BRAIN_REASONER_EFFORT '0' disables the effort dial (set when the reasoner
- *                         is a model without think-level support, e.g. gemma4:12b)
- *   BRAIN_EMBEDDER        embedder tag    (default qwen3-embedding:0.6b)
- *
- * Stack C fallback = BRAIN_REASONER=gemma4:12b BRAIN_REASONER_EFFORT=0, or
- * change the DEFAULTS.reasoner entry below.
+ * Tag precedence per role: env override → config key → DEFAULTS below.
+ *   workhorse  BRAIN_MODEL        (default qwen3.5:9b)
+ *   reasoner   BRAIN_REASONER  →  reasoner.model in agenticos.json  (default claude-opus-5)
+ *   embedder   BRAIN_EMBEDDER     (default qwen3-embedding:0.6b)
+ *   claude     AOS_CLAUDE_MODEL → claude.model                      (default haiku)
+ * Env is read lazily on every call.
  */
 
 const DEFAULTS = {
-  workhorse: { tag: 'qwen3.5:4b', env: 'BRAIN_MODEL', keepAlive: -1, effort: false, numCtxCap: 32768, provider: 'ollama' },
-  reasoner:  { tag: 'gpt-oss:20b', env: 'BRAIN_REASONER', keepAlive: '10m', effort: true, numCtxCap: 16384, provider: 'ollama' },
-  embedder:  { tag: 'qwen3-embedding:0.6b', env: 'BRAIN_EMBEDDER', keepAlive: -1, effort: false, numCtxCap: null, provider: 'ollama' },
-  // Headless Claude Code role; the tag is a Claude model alias. agenticos.json `claude.model`
-  // overrides it through provider.js; the env var is the equivalent for one-off runs.
-  claude:    { tag: 'haiku', env: 'AOS_CLAUDE_MODEL', keepAlive: null, effort: false, numCtxCap: null, provider: 'claude' },
+  workhorse: { tag: 'qwen3.5:9b', env: 'BRAIN_MODEL', cfgKey: null, keepAlive: -1, effort: false, numCtxCap: 32768, provider: 'ollama' },
+  // The reasoner is a Claude model id (pinned, not the floating `opus` alias). keepAlive and
+  // numCtxCap are Ollama concepts and stay null; `effort` maps onto `claude -p --effort`.
+  reasoner:  { tag: 'claude-opus-5', env: 'BRAIN_REASONER', cfgKey: 'reasoner', keepAlive: null, effort: true, numCtxCap: null, provider: 'claude' },
+  embedder:  { tag: 'qwen3-embedding:0.6b', env: 'BRAIN_EMBEDDER', cfgKey: null, keepAlive: -1, effort: false, numCtxCap: null, provider: 'ollama' },
+  claude:    { tag: 'haiku', env: 'AOS_CLAUDE_MODEL', cfgKey: 'claude', keepAlive: null, effort: false, numCtxCap: null, provider: 'claude' },
 };
 
-/** Which provider serves a role: 'ollama' for the three local roles, 'claude' for claude. */
+const EFFORTS = ['low', 'medium', 'high'];
+
+/** Merged config, or {} when no vault resolves (plain-node tests, extras run outside a vault). */
+function readConfig(cfg) {
+  if (cfg) return cfg;
+  try { return require('../../lib/config.js').loadConfig(); } catch { return {}; }
+}
+
+/** Which provider serves a role: 'ollama' for workhorse/embedder, 'claude' for reasoner/claude. */
 function providerFor(name) {
   const d = DEFAULTS[name];
   if (!d) throw new Error('unknown model role: ' + name);
   return d.provider;
 }
 
-function role(name) {
+/**
+ * role(name, cfg?) — { role, tag, keepAlive, effort, numCtxCap, provider }. `cfg` is the merged
+ * config (loaded when omitted); only roles with a cfgKey consult it.
+ */
+function role(name, cfg) {
   const d = DEFAULTS[name];
   if (!d) throw new Error('unknown model role: ' + name);
-  const effort = name === 'reasoner' && process.env.BRAIN_REASONER_EFFORT === '0' ? false : d.effort;
-  return { role: name, tag: process.env[d.env] || d.tag, keepAlive: d.keepAlive, effort, numCtxCap: d.numCtxCap };
+  let tag = process.env[d.env];
+  if (!tag && d.cfgKey) {
+    const block = readConfig(cfg)[d.cfgKey];
+    if (block && typeof block.model === 'string' && block.model.trim()) tag = block.model.trim();
+  }
+  return { role: name, tag: tag || d.tag, keepAlive: d.keepAlive, effort: d.effort, numCtxCap: d.numCtxCap, provider: d.provider };
 }
 
-// think value for a chat call: workhorse is hard-false (hybrid thinking model
-// burns its budget otherwise — standing feedback rule); effort-capable
-// reasoners take 'low'|'medium'|'high' (default medium); everything else false.
-function thinkFor(name, effort) {
+// Effort for a call: the workhorse is hard-false (a hybrid thinking model burns its budget
+// otherwise — standing feedback rule); the reasoner takes 'low'|'medium'|'high', defaulting
+// to reasoner.effort in config, then 'medium'; everything else false.
+function thinkFor(name, effort, cfg) {
   if (name === 'workhorse') return false;
-  const r = role(name);
-  return r.effort ? (effort || 'medium') : false;
+  const r = role(name, cfg);
+  if (!r.effort) return false;
+  if (EFFORTS.includes(effort)) return effort;
+  const block = readConfig(cfg).reasoner;
+  const fromCfg = block && String(block.effort || '').toLowerCase();
+  return EFFORTS.includes(fromCfg) ? fromCfg : 'medium';
 }
 
-module.exports = { role, thinkFor, providerFor };
+module.exports = { role, thinkFor, providerFor, EFFORTS };

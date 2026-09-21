@@ -1,7 +1,7 @@
 'use strict';
 /**
  * ollama.js — local LLM chat helper.
- * Talks to Ollama's /api/chat. Default model qwen3.5:4b (override via BRAIN_MODEL).
+ * Talks to Ollama's /api/chat. Default model is the workhorse role (qwen3.5:9b; override via BRAIN_MODEL).
  * Strips qwen's <think>…</think> reasoning blocks from the returned content.
  */
 const http = require('http');
@@ -46,7 +46,7 @@ function sizeContextWindow(promptChars, numPredict) {
 /**
  * buildChatBody(opts) -> the exact /api/chat request body. Pure — exported for
  * tests. think passes through unchanged (false for qwen think-off, or an
- * effort string 'low'|'medium'|'high' for gpt-oss). keepAlive (when given)
+ * effort string 'low'|'medium'|'high' for a model with a think dial). keepAlive (when given)
  * becomes keep_alive so callers control residency per role.
  */
 function buildChatBody(opts = {}) {

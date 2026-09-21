@@ -8,7 +8,7 @@ const path = require('path');
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'spend-'));
 fs.mkdirSync(path.join(TMP, 'brain', '_index'), { recursive: true });
 process.env.BRAIN_VAULT = TMP;
-const { ProviderUnavailable, recordSpend, spendToday, SPEND_PATH } = require('../sdk/lib/spend-ledger.js');
+const { ProviderUnavailable, recordSpend, spendToday, reasonSpendToday, SPEND_PATH } = require('../sdk/lib/spend-ledger.js');
 
 beforeEach(() => { try { fs.unlinkSync(SPEND_PATH); } catch {} });
 
@@ -61,4 +61,19 @@ test('spendToday skips duty:* rows (persona cap) but counts chat and hook rows (
   assert.equal(spendToday(), 0.03, 'duty rows never count against claude.perDayUsd');
   assert.equal(spendToday(new Date(), { exclude: null }), 1.78, 'exclude:null sums every row');
   assert.equal(spendToday(new Date(), { exclude: /^(duty:|chat$)/ }), 0.01, 'a custom exclude pattern is honored');
+});
+
+test('reason:* rows are the reasoner cap\'s and never the hook cap\'s; reasonSpendToday sums only them', () => {
+  const now = new Date().toISOString();
+  const yesterday = new Date(Date.now() - 36 * 3600 * 1000).toISOString();
+  fs.writeFileSync(SPEND_PATH,
+    JSON.stringify({ ts: now, feature: 'reason:ask', provider: 'claude', model: 'claude-opus-5', usd: 0.4 }) + '\n' +
+    JSON.stringify({ ts: now, feature: 'reason:chat', provider: 'claude', model: 'claude-opus-5', usd: 0.25 }) + '\n' +
+    JSON.stringify({ ts: yesterday, feature: 'reason:ask', provider: 'claude', model: 'claude-opus-5', usd: 3 }) + '\n' +
+    JSON.stringify({ ts: now, feature: 'duty:sitrep', provider: 'claude', model: 'haiku', usd: 1.1 }) + '\n' +
+    JSON.stringify({ ts: now, feature: 'auto-wrap', provider: 'claude', model: 'haiku', usd: 0.01 }) + '\n');
+  assert.equal(spendToday(), 0.01, 'the hook cap sees neither reason:* nor duty:* rows');
+  assert.equal(reasonSpendToday(), 0.65, 'today\'s reason:* rows only');
+  assert.equal(spendToday(new Date(), { include: /^duty:/, exclude: null }), 1.1, 'include keeps one family');
+  assert.equal(spendToday(new Date(), { exclude: null }), 1.76);
 });

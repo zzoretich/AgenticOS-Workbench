@@ -8,7 +8,7 @@ test('parses clean JSON directly', () => {
 });
 
 test('parses JSON with raw newlines and tabs inside string literals', () => {
-  // qwen3.5:4b emits multi-line "body" values with literal control characters,
+  // the qwen3.5 workhorse emits multi-line "body" values with literal control characters,
   // which strict JSON.parse rejects ("Bad control character in string literal").
   const raw = '{"title": "x",\n "body": "line one\nline two\ttabbed"}';
   const obj = parseAgentJson(raw);

@@ -142,3 +142,8 @@ test('each script refuses --local with provider none (exit 1, reason on stderr)'
     assert.match(r.stderr, /no model provider/, s);
   }
 });
+
+test('localProvider with role reasoner: provider none refuses and names the reasoner and the missing fallback', async () => {
+  await assert.rejects(() => localProvider('reason:ask', { role: 'reasoner' }),
+    (e) => e.code === 'PROVIDER_NONE' && /reasoner/.test(e.message) && /fallback/.test(e.message));
+});

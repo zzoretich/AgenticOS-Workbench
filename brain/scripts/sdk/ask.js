@@ -115,7 +115,7 @@ async function main() {
   const { system } = await buildAskPrompt(question);
   if (mode === 'context') { printContext({ feature: 'ask', system, context: question, format: ASK_FORMAT }); return; }
 
-  const p = await localProvider('ask');
+  const p = await localProvider('reason:ask', { role: 'reasoner' });
   let run = null;
   try {
     run = telemetry.startRun({ script: 'ask', prompt: `len=${question.length}` });
@@ -124,8 +124,8 @@ async function main() {
   }
   try {
     const answer = await reason(question, {
-      system, effort: 'medium', numPredict: 1024,
-      chatFn: (o) => p.chat({ ...o, feature: 'ask' }), noFallback: p.name !== 'ollama',
+      system, effort: 'medium', numPredict: 1024, feature: 'reason:ask',
+      chatFn: (o) => p.chat({ ...o, feature: 'reason:ask' }), providerName: p.name,
     });
     try { await telemetry.endRun(run, { status: 'ok', reply: `len=${answer ? answer.length : 0}` }); } catch { /* fail-soft */ }
     process.stdout.write((answer || '(no answer)') + '\n');

@@ -4,8 +4,16 @@
  * (structured JSON), classify, reason. All helpers accept an injectable chatFn for
  * offline testing; the default chat goes through sdk/lib/provider.js, so the same
  * code runs on Ollama, headless Claude, or throws ProviderUnavailable with no model.
+ * summarize/extract/classify are workhorse calls (the global provider); reason() is the
+ * reasoner role's (getProviderForRole: headless Claude), with the workhorse as its fallback.
  */
 const chat = (opts) => require('./provider.js').getProvider(opts.feature).then((p) => p.chat(opts));
+const reasonerChat = (opts) => require('./provider.js').getProviderForRole('reasoner', opts.feature).then((p) => p.chat(opts));
+/** The workhorse as a fallback chat, or null when the global provider is not Ollama (nothing local to fall back to). */
+async function workhorseFallback(feature) {
+  const g = await require('./provider.js').getProvider(feature);
+  return g.name === 'ollama' ? (o) => g.chat(o) : null;
+}
 const { parseAgentJson } = require('./json-extract.js');
 const { role, thinkFor } = require('./models.js');
 
@@ -49,7 +57,7 @@ function chunkText(text, maxChars = DEFAULT_MAX_CHARS) {
 
 async function callWithRetry(chatFn, args) {
   let reply = await chatFn(args);
-  if (!reply || !String(reply).trim()) reply = await chatFn(args); // qwen3.5:4b sometimes returns empty
+  if (!reply || !String(reply).trim()) reply = await chatFn(args); // the workhorse sometimes returns empty
   if (!reply || !String(reply).trim()) throw new QwenEmptyError();
   return String(reply).trim();
 }
@@ -142,32 +150,47 @@ async function classify(text, opts = {}) {
 }
 
 /**
- * reason(prompt, opts) — deep Q&A / coding via the reasoner role.
- * Falls back to the workhorse when the reasoner call fails (Ollama down,
- * model missing, mid-generation crash) so interactive commands degrade
- * instead of dying. Set opts.noFallback to propagate the error instead.
+ * reason(prompt, opts) — deep Q&A / reflection via the reasoner role (a Claude model through
+ * getProviderForRole). `think` carries the effort dial; the claude provider turns it into
+ * `--effort`. Falls back to the workhorse on the global provider when the reasoner call fails
+ * (not logged in, daily cap, timeout) and that provider is Ollama, so interactive commands
+ * degrade instead of dying. Set opts.noFallback to propagate the error instead.
+ *
+ * opts.chatFn / opts.fallbackChatFn inject the two chats; opts.providerName says which provider
+ * chatFn belongs to — a non-claude provider cannot serve a Claude model id, so it is sent the
+ * workhorse request straight away. opts.feature labels the ledger row (reason:<caller>).
  */
 async function reason(prompt, opts = {}) {
-  const chatFn = opts.chatFn || chat;
+  const feature = opts.feature || 'reason:unknown';
+  const chatFn = opts.chatFn || reasonerChat;
+  const providerName = opts.chatFn ? (opts.providerName || 'claude') : null;
   const r = role('reasoner');
-  const args = {
+  const w = role('workhorse');
+  const base = {
     system: opts.system,
     prompt: String(prompt || ''),
-    model: r.tag,
-    think: thinkFor('reasoner', opts.effort),
-    keepAlive: r.keepAlive,
     numPredict: opts.numPredict || 2048,
-    numCtx: opts.numCtx || r.numCtxCap || undefined,
     timeoutMs: opts.timeoutMs || 300000,
+    feature,
     ...(opts.format ? { format: opts.format } : {}),
   };
+  const reasonerArgs = { ...base, model: r.tag, think: thinkFor('reasoner', opts.effort) };
+  // A workhorse request in full: think off, resident, auto-sized context — never a stale
+  // think/keepAlive/numCtx left over from the reasoner attempt.
+  const workhorseArgs = { ...base, model: w.tag, think: false, keepAlive: w.keepAlive, numCtx: opts.numCtx || undefined };
+  const fallback = async () => {
+    if (opts.fallbackChatFn) return opts.fallbackChatFn;
+    return workhorseFallback(feature);
+  };
+  if (providerName === 'ollama') return callWithRetry(chatFn, workhorseArgs);
   try {
-    return await callWithRetry(chatFn, args);
+    return await callWithRetry(chatFn, reasonerArgs);
   } catch (err) {
     if (opts.noFallback) throw err;
-    process.stderr.write(`[reason] reasoner (${r.tag}) unavailable — falling back to workhorse: ${err.message}\n`);
-    const w = role('workhorse');
-    return callWithRetry(chatFn, { ...args, model: w.tag, think: false, keepAlive: w.keepAlive, numCtx: undefined });
+    const fb = await fallback();
+    if (!fb) throw err;
+    process.stderr.write(`[reason] reasoner (${r.tag}) unavailable — falling back to the workhorse (${w.tag}): ${err.message}\n`);
+    return callWithRetry(fb, workhorseArgs);
   }
 }
 

@@ -30,7 +30,7 @@ Start a timer.
 
 ## 2. Ollama auto-switch (criterion 2)
 `aos status` only reads the cached `brain/_index/provider-state.json` and never probes; `aos scan-vault --quiet` resolves the provider and rewrites that file, so run it before every status check below.
-- [ ] Install Ollama (ollama.com), then pull the three default tags — `ollama pull qwen3.5:4b && ollama pull gpt-oss:20b && ollama pull qwen3-embedding:0.6b` (workhorse, reasoner, embedder; `brain/scripts/sdk/lib/models.js` is the source of truth if they change) — and keep `ollama serve` running.
+- [ ] Install Ollama (ollama.com), then pull the two default tags — `ollama pull qwen3.5:9b && ollama pull qwen3-embedding:0.6b` (workhorse, embedder; `brain/scripts/sdk/lib/models.js` is the source of truth if they change) — and keep `ollama serve` running. The reasoner is a Claude model and needs only the Claude login.
 - [ ] Without editing any file: `aos scan-vault --quiet && aos status` shows provider `ollama`.
 - [ ] End a Claude Code session; within a minute `~/AgenticOS/brain/_index/pipelines.json` shows `auto-wrap` with `"provider": "ollama"` and status `ok`.
 - [ ] Stop Ollama; after 60 s, `aos scan-vault --quiet && aos status` shows `claude` (or `none` if not logged in).
@@ -65,7 +65,7 @@ Start a timer.
 
 ## 7. Obsidian smoke under each provider
 - [ ] With Ollama running: Pulse, Spaces, Memory, Runs, Chat (answers), Term (shows "Terminal unavailable" unless `--terminal` was used) all render.
-- [ ] With Ollama stopped and Claude logged in: Chat's header names the provider — `headless claude (haiku, capped)` — and each answer shows a per-message cost.
+- [ ] With Claude logged in (Ollama running or not): Chat's header names the reasoner — `claude (claude-opus-5, capped)` — each answer shows a per-message cost, and `aos status` counts it on the `(reasoner)` line.
 - [ ] `aos provider none`: Chat tab hidden with the hint; nothing red.
 
 Result: ______ (pass / fail with the failing box numbers). Tester: ______ Date: ______

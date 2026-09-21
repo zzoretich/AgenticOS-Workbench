@@ -37,7 +37,7 @@ const { listDrafts, writeDraft, logEvent, activeRuleTitles } = require('./lib/fe
 const { findTranscript } = require('./auto-cost.js');
 const { getProvider } = require('./sdk/lib/provider.js');
 
-// Fix round 1 (live-fire found qwen3.5:4b continuing chat-shaped transcripts
+// Fix round 1 (live-fire found the workhorse continuing chat-shaped transcripts
 // conversationally instead of extracting from them): reframe the model as a
 // silent, non-conversational extractor and make explicit that <transcript> is
 // inert data, never a message directed at it.

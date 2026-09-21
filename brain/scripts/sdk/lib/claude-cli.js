@@ -58,9 +58,14 @@ function resolveClaudeBin(opts = {}) {
   return null;
 }
 
-function buildArgs({ prompt, model, system, schema, maxBudgetUsd }) {
-  const args = ['-p', String(prompt ?? ''), '--model', String(model), '--tools', '', '--setting-sources', '',
-    '--strict-mcp-config', '--no-session-persistence', '--system-prompt', String(system ?? '')];
+const EFFORTS = ['low', 'medium', 'high'];
+
+/** `effort` (low|medium|high) becomes `--effort`; anything else is left off so the CLI default applies. */
+function buildArgs({ prompt, model, system, schema, maxBudgetUsd, effort }) {
+  const args = ['-p', String(prompt ?? ''), '--model', String(model)];
+  if (EFFORTS.includes(effort)) args.push('--effort', effort);
+  args.push('--tools', '', '--setting-sources', '',
+    '--strict-mcp-config', '--no-session-persistence', '--system-prompt', String(system ?? ''));
   if (schema) args.push('--json-schema', JSON.stringify(schema));
   args.push('--max-budget-usd', String(maxBudgetUsd), '--output-format', 'json');
   return args;
@@ -110,11 +115,11 @@ function runClaude({ bin, args, cwd, timeoutMs, spawnFn }) {
  */
 async function claudeCall({
   system = '', prompt, schema, model = 'haiku', maxBudgetUsd = 0.05, timeoutMs = 120000,
-  cwd = PATHS.VAULT, feature = 'unknown', bin, spawnFn,
+  cwd = PATHS.VAULT, feature = 'unknown', bin, spawnFn, effort,
 } = {}) {
   const exe = bin || resolveClaudeBin();
   if (!exe) throw new ProviderUnavailable('PROVIDER_UNREACHABLE', 'claude CLI not found on PATH or in ~/.local/bin', 'claude');
-  const args = buildArgs({ prompt, model, system, schema, maxBudgetUsd });
+  const args = buildArgs({ prompt, model, system, schema, maxBudgetUsd, effort });
   const { code, stdout, stderr, ms } = await runClaude({ bin: exe, args, cwd, timeoutMs, spawnFn: spawnFn || spawn });
   let parsed = null;
   try { parsed = JSON.parse(stdout); } catch { parsed = null; }
@@ -166,4 +171,4 @@ async function loginProbe(opts = {}) {
   } catch { return false; }
 }
 
-module.exports = { resolveClaudeBin, loginProbe, claudeCall, buildArgs, headlessEnv, NOT_LOGGED_IN };
+module.exports = { resolveClaudeBin, loginProbe, claudeCall, buildArgs, headlessEnv, NOT_LOGGED_IN, EFFORTS };

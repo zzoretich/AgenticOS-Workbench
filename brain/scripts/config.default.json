@@ -10,6 +10,7 @@
   "scan": { "fileMapBudget": 40, "embedBudget": 40, "fileMapBudgetUnderClaude": 0, "insightsUnderClaude": false, "autoSweepOrphans": false },
   "provider": "auto",
   "claude": { "model": "haiku", "perCallUsd": 0.05, "perDayUsd": 0.5 },
+  "reasoner": { "model": "claude-opus-5", "perCallUsd": 0.5, "perDayUsd": 5.0, "effort": "medium" },
   "ollama": { "host": "127.0.0.1", "port": 11434 },
   "telemetry": { "enabled": true, "redact": true, "retentionDays": 30 },
   "updates": { "check": true, "intervalHours": 24 },

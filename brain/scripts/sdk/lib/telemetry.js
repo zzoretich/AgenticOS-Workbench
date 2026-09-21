@@ -7,7 +7,7 @@
  *   3. Stream events to brain/_index/agent-runs/live/<id>.ndjson while running,
  *      delete on endRun.
  *
- * Used directly by the sdk/ CLI entry points (ask.js, reason.js, local-code.js,
+ * Used directly by the sdk/ CLI entry points (ask.js, reflect-week.js, consolidate-memory.js,
  * standup.js, compress.js) and by heartbeat-writer.js; telemetry-hook.js drives
  * the same on-disk shape from Claude Code's native hooks instead of this module.
  *
