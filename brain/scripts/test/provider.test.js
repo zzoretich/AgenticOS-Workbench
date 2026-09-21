@@ -165,3 +165,92 @@ test('models.js knows the claude role and maps roles to providers', () => {
   assert.equal(providerFor('workhorse'), 'ollama');
   assert.equal(providerFor('embedder'), 'ollama');
 });
+
+// ---- per-role routing (the reasoner is a Claude model whatever the global provider says) ----
+const { resolveProviderForRole, getProviderForRole, reasonSpendToday } = provider;
+const loggedIn = { resolveClaudeBin: () => '/x/claude', loginProbe: async () => true };
+
+test('reasoner: resolves claude with reasoner.model and caps while Ollama is up; the state file keeps naming the global provider', async () => {
+  fs.writeFileSync(CONFIG, JSON.stringify({ provider: 'auto', reasoner: { model: 'claude-sonnet-5', perCallUsd: 0.75, perDayUsd: 9, effort: 'high' } }));
+  const g = await resolveProvider({ mode: 'auto', deps: { ping: async () => true, ...loggedIn } });
+  assert.equal(g.name, 'ollama');
+  const calls = [];
+  const fakeCall = async (o) => { calls.push(o); return { text: 'deep', structured: null, usd: 0.2, usage: {}, ms: 1 }; };
+  const p = await resolveProviderForRole({ role: 'reasoner', deps: { ping: never, ...loggedIn, claudeCall: fakeCall } });
+  assert.equal(p.name, 'claude');
+  assert.equal(p.reason, 'role:reasoner');
+  assert.equal(p.model, 'claude-sonnet-5');
+  assert.equal(await p.chat({ system: 's', prompt: 'why?', feature: 'reason:ask' }), 'deep');
+  assert.equal(calls[0].model, 'claude-sonnet-5');
+  assert.equal(calls[0].maxBudgetUsd, 0.75);
+  assert.equal(calls[0].effort, 'high', 'reasoner.effort is the default dial');
+  assert.equal(calls[0].feature, 'reason:ask');
+  await p.chat({ prompt: 'x', think: 'low' });
+  assert.equal(calls[1].effort, 'low', 'the caller\'s think level wins over the config default');
+  const st = JSON.parse(fs.readFileSync(STATE_PATH, 'utf8'));
+  assert.equal(st.name, 'ollama', 'a role resolution never rewrites the global name');
+  assert.equal(st.claude.loggedIn, true, 'but the login probe cache is shared');
+});
+
+test('reasoner: defaults are claude-opus-5 at 0.5/5 with medium effort', async () => {
+  const calls = [];
+  const fakeCall = async (o) => { calls.push(o); return { text: 'ok', structured: null, usd: 0, usage: {}, ms: 1 }; };
+  const p = await resolveProviderForRole({ role: 'reasoner', deps: { ...loggedIn, claudeCall: fakeCall } });
+  await p.chat({ prompt: 'x' });
+  assert.equal(p.model, 'claude-opus-5');
+  assert.equal(calls[0].model, 'claude-opus-5');
+  assert.equal(calls[0].maxBudgetUsd, 0.5);
+  assert.equal(calls[0].effort, 'medium');
+});
+
+test('reasoner: provider none disables it; not logged in → none; no binary → none', async () => {
+  fs.writeFileSync(CONFIG, JSON.stringify({ provider: 'none' }));
+  let p = await resolveProviderForRole({ role: 'reasoner', deps: { resolveClaudeBin: never, loginProbe: never } });
+  assert.equal(p.name, 'none'); assert.equal(p.reason, 'forced');
+  fs.writeFileSync(CONFIG, JSON.stringify({ provider: 'ollama' }));
+  p = await resolveProviderForRole({ role: 'reasoner', deps: { resolveClaudeBin: () => '/x', loginProbe: async () => false } });
+  assert.equal(p.name, 'none'); assert.equal(p.reason, 'claude-not-logged-in');
+  try { fs.unlinkSync(STATE_PATH); } catch {}
+  p = await resolveProviderForRole({ role: 'reasoner', deps: { resolveClaudeBin: () => null, loginProbe: never } });
+  assert.equal(p.name, 'none'); assert.equal(p.reason, 'no-provider');
+  await assert.rejects(() => p.chat({ prompt: 'x' }), (e) => e.code === 'PROVIDER_NONE');
+});
+
+test('reasoner cap: reason:* spend at or over reasoner.perDayUsd → none / reasoner-daily-cap; hook and duty rows do not count', async () => {
+  fs.writeFileSync(CONFIG, JSON.stringify({ reasoner: { perDayUsd: 1 } }));
+  recordSpend({ feature: 'session-summary', provider: 'claude', model: 'haiku', usd: 0.49, inputTokens: 1, outputTokens: 1, ms: 1 });
+  recordSpend({ feature: 'duty:monitor', provider: 'claude', model: 'haiku', usd: 1.9, inputTokens: 1, outputTokens: 1, ms: 1 });
+  let p = await resolveProviderForRole({ role: 'reasoner', deps: { ...loggedIn, claudeCall: async () => ({ text: 'ok', structured: null, usd: 0, usage: {}, ms: 1 }) } });
+  assert.equal(p.name, 'claude');
+  assert.equal(await p.chat({ prompt: 'x' }), 'ok');
+  recordSpend({ feature: 'reason:ask', provider: 'claude', model: 'claude-opus-5', usd: 1, inputTokens: 1, outputTokens: 1, ms: 1 });
+  assert.equal(reasonSpendToday(), 1);
+  await assert.rejects(() => p.chat({ prompt: 'x' }), (e) => e.code === 'PROVIDER_CAP' && /reasoner\.perDayUsd/.test(e.message));
+  p = await resolveProviderForRole({ role: 'reasoner', deps: loggedIn });
+  assert.equal(p.name, 'none'); assert.equal(p.reason, 'reasoner-daily-cap');
+  // and the hook cap is untouched by that reason:* row
+  const hook = await resolveProvider({ mode: 'claude', deps: { ...loggedIn, claudeCall: never } });
+  assert.equal(hook.name, 'claude');
+  assert.equal(spendToday(), 0.49);
+});
+
+test('hook provider: reason:* rows never trip claude.perDayUsd, and its PROVIDER_CAP names claude.perDayUsd', async () => {
+  recordSpend({ feature: 'reason:reflect-week', provider: 'claude', model: 'claude-opus-5', usd: 4, inputTokens: 1, outputTokens: 1, ms: 1 });
+  const p = await resolveProvider({ mode: 'claude', deps: { ...loggedIn, claudeCall: never } });
+  assert.equal(p.name, 'claude');
+  spent();
+  await assert.rejects(() => p.chat({ prompt: 'x' }), (e) => e.code === 'PROVIDER_CAP' && /claude\.perDayUsd/.test(e.message));
+});
+
+test('getProviderForRole: Ollama-served roles share getProvider\'s promise; the reasoner is memoized separately', async () => {
+  fs.writeFileSync(CONFIG, JSON.stringify({ provider: 'ollama' }));
+  const w = getProviderForRole('workhorse', 'auto-wrap');
+  assert.equal(w, getProvider('auto-wrap'));
+  assert.equal((await w).name, 'ollama');
+  const r1 = getProviderForRole('reasoner', 'ask');
+  const r2 = getProviderForRole('reasoner', 'reflect-week');
+  assert.equal(r1, r2);
+  assert.notEqual(r1, w);
+  resetProviderCache();
+  assert.notEqual(getProviderForRole('reasoner', 'ask'), r1);
+});
