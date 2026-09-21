@@ -1,0 +1,106 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import * as fs from "fs";
+import * as path from "path";
+import {
+  routineFromFile, routineToFile, validateRoutine, parseRoutineFrontmatter, fingerprint, parseState, health, buildRows,
+  schedulesOutOfDate, emptyState, Routine,
+} from "./routines";
+
+// The runtime's fixtures: both parsers must agree on every one of them.
+const FIXTURES = path.resolve(__dirname, "../../../brain/scripts/test/fixtures/routines");
+const fixture = (slug: string) => routineFromFile(slug, fs.readFileSync(path.join(FIXTURES, `${slug}.md`), "utf8"));
+
+test("every runtime fixture parses to the same verdict as routines-store.js", () => {
+  assert.deepEqual(fixture("monitor").errors, []);
+  assert.deepEqual(fixture("morning-brief").errors, []);
+  assert.deepEqual(fixture("scan-refresh").errors, []);
+  assert.match(fixture("bad-cron").errors[0], /^schedule: hour/);
+  assert.match(fixture("bad-kind").errors[0], /^kind must be one of/);
+  assert.match(fixture("missing-argv").errors[0], /argv/);
+  const b = fixture("morning-brief");
+  assert.equal(b.kind, "prompt");
+  assert.equal(b.budgetUsd, 0.5);
+  assert.equal(b.timeoutSec, 600);
+  assert.deepEqual(b.tags, ["brief", "two words"]);
+  assert.match(b.body, /^Read today's daily note/);
+  assert.deepEqual(fixture("scan-refresh").argv, ["node", "brain/scripts/scan-vault.js", "--quiet"]);
+  assert.equal(fixture("monitor").guarded, true);
+});
+
+test("routineToFile round-trips every valid fixture and is a fixed point", () => {
+  for (const slug of ["monitor", "morning-brief", "scan-refresh"]) {
+    const r = fixture(slug);
+    const { errors, ...rest } = r;
+    void errors;
+    const text = routineToFile(rest);
+    const again = routineFromFile(slug, text);
+    const strip = (x: Routine) => { const { errors: e, ...y } = x; void e; return y; };
+    assert.deepEqual(strip(again), strip(r), slug);
+    assert.equal(routineToFile(strip(again)), text, `${slug} fixed point`);
+  }
+});
+
+test("serializer quoting matches the runtime byte for byte", () => {
+  const text = routineToFile({ slug: "s", schema: 1, name: 'Needs "quotes": yes', kind: "command", schedule: "0 9 * * *", enabled: true,
+    argv: ["sh", "-c", 'echo "hi, there"'], tags: ["true", "plain"], body: "" });
+  assert.deepEqual(text.split("\n").slice(0, 9), [
+    "---", "schema: 1", 'name: "Needs \\"quotes\\": yes"', "kind: command", 'schedule: "0 9 * * *"', "enabled: true",
+    'argv: [sh, "-c", "echo \\"hi, there\\""]', 'tags: ["true", plain]', "---",
+  ]);
+  const back = routineFromFile("s", text);
+  assert.deepEqual(back.argv, ["sh", "-c", 'echo "hi, there"']);
+  assert.equal(back.name, 'Needs "quotes": yes');
+});
+
+test("validateRoutine: kind rules and the slug rule", () => {
+  const base = { slug: "ok-slug", schema: 1, name: "x", kind: "prompt", schedule: "0 9 * * *", enabled: true, body: "hi" } as Partial<Routine>;
+  assert.deepEqual(validateRoutine(base), []);
+  assert.match(validateRoutine({ ...base, body: "" }).join(), /needs a body/);
+  assert.match(validateRoutine({ ...base, kind: "command" }).join(), /argv/);
+  assert.match(validateRoutine({ ...base, schedule: "0 9 1 * 1" }).join(), /both be restricted/);
+  assert.match(validateRoutine({ ...base, slug: "A" }).join(), /slug/);
+  assert.match(validateRoutine({ ...base, effort: "max" }).join(), /effort/);
+});
+
+test("parseRoutineFrontmatter: leading blank lines are layout, unterminated block is no block", () => {
+  assert.equal(parseRoutineFrontmatter("---\nname: x\n---\n\nbody\n").body, "body\n");
+  assert.equal(parseRoutineFrontmatter("---\nname: x\n").hasFrontmatter, false);
+});
+
+test("state, fingerprint and health mirror the runtime", () => {
+  assert.deepEqual(parseState(null), emptyState());
+  assert.deepEqual(parseState("{nope").routines, {});
+  const st = parseState(JSON.stringify({ schema: 1, routines: { a: { lastRunAt: "2026-09-20T13:00:00.000Z", lastExit: 0, failStreak: 0 } }, synced: { a: "duty|0 13 * * *|on" }, syncedAt: "x" }));
+  assert.equal(st.routines.a.lastExit, 0);
+  assert.equal(fingerprint({ kind: "duty", schedule: "0  13 * * *", enabled: true }), "duty|0 13 * * *|on");
+  const r: Routine = { slug: "a", kind: "duty", schedule: "0 13 * * *", enabled: true, body: "", errors: [] };
+  const now = new Date(2026, 8, 21, 14, 0);
+  assert.equal(health({ ...r, enabled: false }, null, now), "off");
+  assert.equal(health({ ...r, errors: ["x"] }, null, now), "invalid");
+  assert.equal(health(r, null, now, { synced: "duty|0 12 * * *|on" }), "stale");
+  assert.equal(health(r, { lastRunAt: null, lastExit: 1, lastCostUsd: null, lastDurationMs: null, failStreak: 1, lastTrigger: null, lastError: "x" }, now), "failed");
+  const ranYesterday = { lastRunAt: new Date(2026, 8, 20, 13, 0).toISOString(), lastExit: 0, lastCostUsd: null, lastDurationMs: null, failStreak: 0, lastTrigger: null, lastError: null };
+  assert.equal(health(r, ranYesterday, now), "missed");
+  assert.equal(health(r, { ...ranYesterday, lastRunAt: new Date(2026, 8, 21, 13, 0).toISOString() }, now), "ok");
+  assert.equal(health(r, null, now), "ok");
+});
+
+test("buildRows and schedulesOutOfDate", () => {
+  const a: Routine = { slug: "a", kind: "duty", schedule: "0 13 * * *", enabled: true, body: "", errors: [] };
+  const b: Routine = { slug: "b", kind: "command", schedule: "0 9 * * *", enabled: false, argv: ["true"], body: "", errors: [] };
+  const bad: Routine = { slug: "bad", kind: "prompt", schedule: "x", enabled: true, body: "y", errors: ["schedule: x"] };
+  const now = new Date(2026, 8, 21, 14, 0);
+  const st = { ...emptyState(), synced: { a: "duty|0 13 * * *|on", gone: "command|0 1 * * *|on" }, syncedAt: now.toISOString() };
+  const rows = buildRows([a, b, bad], st, now);
+  assert.equal(rows[0].cadence, "Every day at 13:00");
+  assert.equal(rows[0].next.length, 3);
+  assert.equal(rows[0].next[0].getDate(), 22);
+  assert.equal(rows[0].health, "ok");
+  assert.equal(rows[1].health, "off");
+  assert.deepEqual(rows[1].next, []);
+  assert.equal(rows[2].health, "invalid");
+  assert.equal(rows[2].cadence, "x");
+  assert.deepEqual(schedulesOutOfDate([a, b, bad], st), ["gone"], "only the synced slug with no file");
+  assert.deepEqual(schedulesOutOfDate([{ ...a, schedule: "0 14 * * *" }, { ...b, enabled: true }], st), ["a", "b", "gone"]);
+});

@@ -77,7 +77,7 @@ test('profile example, READMEs, daily-note template', () => {
 });
 
 test('AGENTICOS.md sections and .obsidian seeds', () => {
-  assert.deepEqual(h2s(read('AGENTICOS.md')), ['Memory System (3-file rule)', 'Capture vocabulary', 'Conventions', 'Providers']);
+  assert.deepEqual(h2s(read('AGENTICOS.md')), ['Memory System (3-file rule)', 'Capture vocabulary', 'Conventions', 'Providers', 'Routines']);
   assert.deepEqual(JSON.parse(read('.obsidian/app.json')), {});
   assert.deepEqual(JSON.parse(read('.obsidian/appearance.json')), { theme: 'obsidian' });
   assert.deepEqual(JSON.parse(read('.obsidian/community-plugins.json')), ['agentic-os']);
@@ -93,4 +93,20 @@ test('_gitignore carries the spec rules and is stored without the dot', () => {
     assert.ok(g.split('\n').includes(line), `missing rule ${line}`);
   }
   assert.ok(!fs.existsSync(path.join(T, '.gitignore')));
+});
+
+test('brain/routines seeds the three duty routines (valid, guarded, enabled) and a README', () => {
+  const store = require('../brain/scripts/lib/routines-store.js');
+  const all = store.list({ dir: path.join(T, 'brain', 'routines') });
+  assert.deepEqual(all.map((r) => r.slug), ['monitor', 'reflect', 'sitrep']);
+  for (const r of all) {
+    assert.deepEqual(r.errors, [], r.slug);
+    assert.equal(r.kind, 'duty', r.slug);
+    assert.equal(r.guarded, true, r.slug);
+    assert.equal(r.enabled, true, r.slug);
+    assert.match(r.body, new RegExp(`persona/duties/${r.slug}\\.md`), `${r.slug}: body points at its duty prompt`);
+  }
+  // The cadences the static plists carried before routines existed — a migrated vault keeps its times.
+  assert.deepEqual(all.map((r) => r.schedule), ['0 13 * * *', '0 18 * * 0', '45 7 * * 1-5']);
+  assert.match(read('brain/routines/README.md'), /^# /);
 });

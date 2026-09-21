@@ -82,7 +82,8 @@ case "$NAME" in
   record-spend) SCRIPT=persona/record-spend.js ;;
   interview) SCRIPT=persona/interview.js ;;
   run-duty) exec sh "$VAULT/brain/scripts/persona/run-duty.sh" "$@" ;;
-  doctor|status|upgrade|uninstall|persona|cost|terminal|provider|update-check|update-status|update-notice) SCRIPT=cli/aos.js; set -- "$NAME" "$@" ;;
+  run-routine) SCRIPT=routines/run-routine.js ;;
+  doctor|status|upgrade|uninstall|persona|cost|routines|terminal|provider|update-check|update-status|update-notice) SCRIPT=cli/aos.js; set -- "$NAME" "$@" ;;
   "") echo "usage: aos <name> [args...]" >&2; exit 64 ;;
   *) echo "aos: unknown script $NAME" >&2; exit 64 ;;
 esac

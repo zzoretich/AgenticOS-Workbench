@@ -85,7 +85,7 @@ export default class AgenticOSPlugin extends Plugin {
 
     // commands
     this.addCommand({ id: "open-workbench",       name: "Open Workbench",        callback: () => { void this.activate(VIEW_TYPE_WORKBENCH); } });
-    for (const t of ["spaces", "memory", "runs", "chat", "term"] as const) {
+    for (const t of ["spaces", "memory", "runs", "routines", "chat", "term"] as const) {
       this.addCommand({ id: `open-workbench-${t}`, name: `Open Workbench: ${t[0].toUpperCase()}${t.slice(1)}`,
         callback: () => { void this.openWorkbenchTab(t); } });
     }
@@ -457,12 +457,13 @@ export default class AgenticOSPlugin extends Plugin {
 
   /** Spawn a brain script detached (Fix Queue / Pulse actions). Best-effort;
    *  UI feedback comes from the pipelines ledger, not the exit code. */
-  runBrainScript(relScript: string, args: string[] = [], onDone?: () => void): void {
+  runBrainScript(relScript: string, args: string[] = [], onDone?: () => void, opts: { env?: Record<string, string> } = {}): void {
     try {
       const base = this.vaultRoot();
       const script = path.join(base, relScript);
       if (!fs.existsSync(script)) { new Notice(`script missing: ${relScript}`); return; }
-      const child = spawn(this.nodeBin(), [script, ...args], { cwd: base, stdio: "ignore", detached: true });
+      // opts.env: the Routines tab pins AOS_VAULT/AOS_CONFIG so the runtime resolves the same vault and config dir the HUD shows.
+      const child = spawn(this.nodeBin(), [script, ...args], { cwd: base, stdio: "ignore", detached: true, env: opts.env ? { ...process.env, ...opts.env } : process.env });
       child.unref();
       child.on("error", (e) => { console.warn("[agentic-os] runBrainScript failed:", e); new Notice(`spawn failed: ${relScript}`); });
       if (onDone) child.on("close", onDone);

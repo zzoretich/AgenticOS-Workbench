@@ -15,6 +15,7 @@
  *   - feedback_rules  — return every active feedback rule
  *   - snapshot_read   — return the latest scanner snapshot JSON
  *   - brief_read      — read the current morning brief, if any
+ *   - routine_list    — every routine (brain/routines/*.md) with its cadence, next fire times, last run and health
  *   - recall          — hybrid (BM25 + vector when available), recency-boosted recall
  *   - wrap_session    — the ONLY write tool: apply an in-session extraction (memories, SESSION.md, drafts)
  */
@@ -202,6 +203,20 @@ server.registerTool(
     const b = brain.readBrief();
     if (!b) return textResult('No morning brief found (checked brain/_index/brief.md and AOS_BRIEF_PATH).');
     return textResult(`# Brief (${b.path}, ${b.ageHours}h old)\n\n${b.content}`);
+  }
+);
+
+server.registerTool(
+  'routine_list',
+  {
+    title: 'List the recurring routines',
+    description: 'Every routine file under brain/routines/ (kind duty|prompt|command, cron schedule, enabled) with its human cadence, the next three fire times (ISO, local clock), the last run (exit, cost, duration, trigger, failure streak) from brain/_index/routines.json, and a health word: ok | off | stale (file changed since `aos routines sync`) | failed | missed | invalid. Read-only; `aos routines <verb>` or the HUD Routines tab change them.',
+    inputSchema: {},
+  },
+  async () => {
+    const store = require('../lib/routines-store.js');
+    const routines = store.overview();
+    return jsonResult({ schema: 1, count: routines.length, routines });
   }
 );
 

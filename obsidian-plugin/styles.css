@@ -1776,3 +1776,38 @@
    share the free space — the tag stays beside the folder name and the byte figure stays flush right,
    on tagged and untagged rows alike. */
 .aos-disk-scope { font-size: 0.75em; margin-left: 0.4em; margin-right: auto; letter-spacing: 0.04em; text-transform: uppercase; }
+
+/* ── ROUTINES (Workbench tab) ──────────────────────────────────────────── */
+
+.aos-rt-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+.aos-rt-title { color: var(--aos-amber); font-family: var(--aos-mono); font-size: 11px; letter-spacing: 1px; }
+.aos-rt-count { font-size: 11px; }
+.aos-rt-actions { margin-left: auto; display: flex; gap: 6px; }
+.aos-rt-actions .aos-ws-action { margin-left: 0; }
+.aos-rt-banner { color: var(--aos-amber); border: 1px solid var(--aos-amber); padding: 4px 10px; margin-bottom: 8px; font-size: 11.5px; }
+.aos-rt-table { max-height: none; margin-bottom: 12px; }
+.aos-rt-subhead { font-family: var(--aos-mono); font-size: 10px; letter-spacing: 1px; margin: 4px 0 6px; }
+.aos-rt-row { gap: 10px; }
+.aos-rt-row.is-off { opacity: 0.6; }
+.aos-rt-name { flex: 1 1 140px; min-width: 0; color: var(--aos-text); }
+.aos-rt-slug { font-size: 10px; }
+.aos-rt-cadence { flex: 1 1 140px; min-width: 0; }
+.aos-rt-next { flex: 0 0 110px; font-family: var(--aos-mono); font-size: 10.5px; }
+.aos-rt-last { flex: 0 0 150px; font-size: 10.5px; }
+.aos-rt-rowactions { display: flex; gap: 8px; }
+.aos-pulse-chip.is-off, .aos-pulse-chip.is-invalid, .aos-pulse-chip.is-missed { border: 1px solid; }
+.aos-pulse-chip.is-off { color: var(--aos-dim); border-color: var(--aos-border); }
+.aos-pulse-chip.is-missed { color: var(--aos-amber); border-color: var(--aos-amber); }
+.aos-pulse-chip.is-invalid { color: var(--aos-rose); border-color: var(--aos-rose); }
+.aos-wb-drawer.is-open:has(.aos-rt-editor) { width: 340px; }
+.aos-rt-editor .aos-rt-field { margin-bottom: 8px; }
+.aos-rt-editor label { display: block; color: var(--aos-dim); font-size: 10px; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 2px; }
+.aos-rt-input { width: 100%; background: var(--aos-bg); color: var(--aos-text); border: 1px solid var(--aos-border); font-family: var(--aos-mono); font-size: 11.5px; padding: 3px 6px; }
+.aos-rt-input:focus { border-color: var(--aos-cyan); outline: none; }
+.aos-rt-argv, .aos-rt-body { resize: vertical; }
+.aos-rt-preview { font-family: var(--aos-mono); font-size: 10.5px; white-space: pre; margin: -4px 0 8px; }
+.aos-rt-preview.is-error { color: var(--aos-rose); }
+.aos-rt-guard { color: var(--aos-amber); font-size: 11px; margin-bottom: 8px; }
+.aos-rt-note { font-size: 11px; margin-bottom: 8px; }
+.aos-rt-errors { color: var(--aos-rose); font-size: 11px; min-height: 14px; margin-bottom: 4px; }
+.aos-confirm-modal p { color: var(--aos-text); }

@@ -6,9 +6,9 @@ const path = require('path');
 
 const DIR = path.resolve(__dirname, '..', 'plugin', 'commands');
 const EXPECTED = ['remember', 'feedback', 'pattern', 'project', 'wrap', 'brain', 'scan', 'ask-brain', 'reflect-week',
-  'consolidate-memory', 'compress', 'standup', 'cost', 'aos'];
+  'consolidate-memory', 'compress', 'standup', 'cost', 'aos', 'routines'];
 
-test('exactly the 14 contract commands exist', () => {
+test('exactly the 15 contract commands exist', () => {
   assert.deepEqual(fs.readdirSync(DIR).filter((f) => f.endsWith('.md')).map((f) => f.slice(0, -3)).sort(), [...EXPECTED].sort());
 });
 
@@ -25,7 +25,7 @@ test('every command has frontmatter with description and allowed-tools, and no a
 });
 
 test('script-driven commands name the launcher and its fallback', () => {
-  for (const name of ['wrap', 'scan', 'ask-brain', 'reflect-week', 'consolidate-memory', 'compress', 'standup', 'cost', 'aos', 'project']) {
+  for (const name of ['wrap', 'scan', 'ask-brain', 'reflect-week', 'consolidate-memory', 'compress', 'standup', 'cost', 'aos', 'project', 'routines']) {
     const text = fs.readFileSync(path.join(DIR, `${name}.md`), 'utf8');
     assert.match(text, /`aos [a-z-]+/, `${name}: aos call`);
     assert.match(text, /\$\{CLAUDE_PLUGIN_ROOT\}\/bin\/aos/, `${name}: fallback`);

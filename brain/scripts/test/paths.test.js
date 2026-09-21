@@ -31,6 +31,8 @@ test('BRAIN_VAULT is honored as a legacy alias', () => {
   assert.equal(p.VAULT, b);
   assert.equal(p.PATHS.INDEX, path.join(b, 'brain', '_index'));
   assert.equal(p.PATHS.PERSONA, path.join(b, 'persona'));
+  assert.equal(p.PATHS.ROUTINES, path.join(b, 'brain', 'routines'));
+  assert.equal(p.PATHS.ROUTINES_STATE, path.join(b, 'brain', '_index', 'routines.json'));
 });
 
 test('agenticos.json supplies vault and claudeConfigDir when no env is set', () => {

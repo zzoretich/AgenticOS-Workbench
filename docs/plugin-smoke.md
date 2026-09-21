@@ -35,6 +35,15 @@ Run before tagging a release, on a vault created by `aos init` (not the develope
 - [ ] Memory graph renders; daily notes under the configured `dailyNote.layout` classify as `session` nodes.
 - [ ] Runs tab updates within a second of a new line appended to `agent-runs/runs.jsonl` (bus `runs-appended`).
 
+## Routines
+
+- [ ] The Routines rail button lists every `brain/routines/*.md` with cadence, next fire (local clock), last run and a health chip; the three seeded duties show `guarded` under their slug.
+- [ ] `+ new` → the drawer form: an invalid cron shows the runtime's error in red under the field; a valid one shows the cadence and the next three fire times; `create` writes `brain/routines/<slug>.md` and spawns `aos routines sync` (notice `▶ aos.js routines sync`); the row appears without a reload.
+- [ ] Editing a seeded duty's schedule opens the "Guarded routine" confirm; Cancel writes nothing; "Write anyway" writes and the chip reads `stale` until the sync lands, then `ok`.
+- [ ] `on`/`off` on a row rewrites only `enabled:` (the body is untouched) and re-applies; a disabled row dims and its next fire reads `—`.
+- [ ] `▶` on a `command` routine (e.g. `argv: [node, brain/scripts/scan-vault.js, --quiet]`) runs it: `brain/_index/routines.json` gains `lastTrigger: "manual"` and the last column updates within a second.
+- [ ] With `routines.externalLabels: ["<a launchd label you have>"]` in `brain/config.json`, "OUTSIDE THE RUNTIME" lists it read-only with its cadence; the Obsidian Git backup timer appears when that plugin has a timer on; neither row has actions.
+
 ## Chat (per provider)
 
 - [ ] `none`: the Chat rail button is absent; `Open Workbench: Chat` command shows the "no provider — run `aos provider`" hint.

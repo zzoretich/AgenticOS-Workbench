@@ -43,6 +43,7 @@ const USAGE = `usage:
   aos uninstall [--keep-vault] [--yes]
   aos persona [rename <name> | on | off] [--persona-json <file>] [--yes]
   aos cost [enable [--budget <usd>] [--yes] | disable]
+  aos routines [list [--json] | sync | run <slug> [--dry-run] | enable <slug> | disable <slug> | next [<slug>]]
   aos update-status [--statusline | --snooze <N>d|<N>h | --off]
   aos update-check [--quiet]
   aos terminal install`;
@@ -256,8 +257,8 @@ async function doctor() {
   if (vault) {
     const need = ['brain/_index', 'brain/memory', 'brain/scripts/package.json', 'brain/scripts/node_modules/@modelcontextprotocol/sdk',
       'brain/scripts/bin/aos', 'brain/scripts/cli/aos.js', 'brain/scripts/cli/persona-cmd.js', 'brain/scripts/cli/schedule.js',
-      'brain/scripts/persona/interview.js', 'brain/scripts/persona/templates/identity.template.md', 'brain/scripts/extras/schedule/cron.tmpl',
-      'MEMORY.md', 'AGENTICOS.md'];
+      'brain/scripts/persona/interview.js', 'brain/scripts/persona/templates/identity.template.md', 'brain/scripts/extras/schedule/launchd/routine.plist.tmpl',
+      'brain/scripts/routines/run-routine.js', 'brain/scripts/cli/routines.js', 'brain/routines', 'MEMORY.md', 'AGENTICOS.md'];
     const missing = need.filter((r) => !exists(path.join(vault, r)));
     add('vault layout', missing.length === 0, missing.length ? `${vault} missing: ${missing.join(', ')}` : vault);
     add('node in config', exists(cfg.node), cfg.node);
@@ -273,6 +274,14 @@ async function doctor() {
     } catch (e) { add('MCP server answers', false, e.message); }
   }
   if (vault) add('obsidian plugin', exists(path.join(vault, '.obsidian', 'plugins', OBSIDIAN_PLUGIN_ID, 'main.js')), `${vault}/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/main.js`, 'warn');
+  if (vault && isDir(path.join(vault, 'brain', 'routines'))) {
+    // One row for the routines: anything failed, missed, invalid or out of sync with the installed schedules is a warn.
+    try {
+      const rows = require('./routines.js').rows({ vault });
+      const bad = rows.filter((r) => ['failed', 'missed', 'stale', 'invalid'].includes(r.health));
+      add('routines', bad.length === 0, rows.length === 0 ? 'none defined' : bad.length ? bad.map((r) => `${r.slug} ${r.health}`).join(', ') + ' — run aos routines list' : `${rows.filter((r) => r.enabled).length} enabled of ${rows.length}`, 'warn');
+    } catch (e) { add('routines', false, e.message, 'warn'); }
+  }
   if (vault) {
     const u = require('./update-check.js');
     const st = u.readState(vault);
@@ -305,13 +314,16 @@ async function doctor() {
 // ── status ────────────────────────────────────────────────────────────────────
 // Contract §3 spendToday semantics: ledger rows whose `feature` starts with `duty:` belong to the persona
 // (Plan 5's record-spend.js; gated by persona.perDayUsd), rows starting with `reason:` belong to the
-// reasoner role (gated by reasoner.perDayUsd); every other row is a background hook call (gated by
+// reasoner role (gated by reasoner.perDayUsd), rows starting with `routine:` belong to prompt routines
+// (gated by routines.perDayUsd); every other row is a background hook call (gated by
 // claude.perDayUsd — spendToday in spend-ledger.js excludes both families the same way). One line per cap.
 const DUTY_FEATURE = /^duty:/;
 const REASON_FEATURE = /^reason:/;
+const ROUTINE_FEATURE = /^routine:/;
 const isDutyFeature = (feature) => DUTY_FEATURE.test(feature);
 const isReasonFeature = (feature) => REASON_FEATURE.test(feature);
-const isHookFeature = (feature) => !DUTY_FEATURE.test(feature) && !REASON_FEATURE.test(feature);
+const isRoutineFeature = (feature) => ROUTINE_FEATURE.test(feature);
+const isHookFeature = (feature) => !DUTY_FEATURE.test(feature) && !REASON_FEATURE.test(feature) && !ROUTINE_FEATURE.test(feature);
 /** Today's provider-spend.jsonl rows (local calendar day) that carry a numeric usd; [] when the ledger is absent. */
 function spendRowsToday(file) {
   let raw = '';
@@ -339,6 +351,7 @@ function status() {
   const hookCap = num(cfg.claude, 'perDayUsd') ?? num(vaultCfg.claude, 'perDayUsd') ?? 0.5;
   const dutyCap = num(cfg.persona, 'perDayUsd') ?? num(vaultCfg.persona, 'perDayUsd') ?? 6;
   const reasonCap = num(cfg.reasoner, 'perDayUsd') ?? num(vaultCfg.reasoner, 'perDayUsd') ?? 5;
+  const routineCap = num(cfg.routines, 'perDayUsd') ?? num(vaultCfg.routines, 'perDayUsd') ?? 6;
   const str = (obj, key) => (obj && typeof obj[key] === 'string' && obj[key].trim() ? obj[key].trim() : undefined);
   // The reasoner role (sdk/lib/models.js): BRAIN_REASONER, then reasoner.model by config precedence, then the default.
   const reasonerModel = (process.env.BRAIN_REASONER || '').trim() || str(cfg.reasoner, 'model') || str(vaultCfg.reasoner, 'model') || 'claude-opus-5';
@@ -352,6 +365,7 @@ function status() {
   out.log(`spend      today (hooks) $${sumUsd(spend, isHookFeature).toFixed(4)} / cap $${hookCap}`);
   out.log(`spend      today (duties) $${sumUsd(spend, isDutyFeature).toFixed(4)} / cap $${dutyCap}`);
   out.log(`spend      today (reasoner) $${sumUsd(spend, isReasonFeature).toFixed(4)} / cap $${reasonCap}`);
+  out.log(`spend      today (routines) $${sumUsd(spend, isRoutineFeature).toFixed(4)} / cap $${routineCap}`);
   // Ledger shape (lib/pipeline-report.js): { version: 1, pipelines: { <name>: { lastRun: {…} | null, history: [] } } }.
   const ledger = readJson(path.join(idx, 'pipelines.json'), {}) || {};
   const rows = Object.entries(ledger.pipelines || {}).map(([name, st]) => [name, (st && st.lastRun) || null]);
@@ -765,6 +779,38 @@ async function init(flags) {
 }
 
 // ── upgrade / uninstall / terminal / persona / cost ───────────────────────────
+/** Upgrade: the three duties become routine files the first time brain/routines/ is absent (spec D10), and any
+ *  installed schedule — legacy per-duty plists included — is re-rendered from the routine files so the old
+ *  plists cannot fire a duty twice. A vault that already has brain/routines/ is the owner's; only the sync runs. */
+function migrateRoutines(ctx) {
+  const { repo, vault } = ctx;
+  const S = require('./schedule.js');
+  const dir = path.join(vault, 'brain', 'routines');
+  const seed = path.join(repo, 'vault-template', 'brain', 'routines');
+  if (!isDir(dir) && isDir(seed)) {
+    copyTree(seed, dir, { written: ctx.written });
+    out.log(`   seeded brain/routines/ (${fs.readdirSync(seed).filter((f) => f.endsWith('.md') && f !== 'README.md').map((f) => f.slice(0, -3)).join(', ')})`);
+  }
+  const platform = process.platform;
+  if (!S.isInstalled({ platform, vault })) { out.log('   no schedules installed; nothing to re-render (aos routines sync installs them)'); return; }
+  const { scheduleVarsFor } = require('./routines.js');
+  const cfg = readJson(configPath()) || {};
+  const vars = scheduleVarsFor({ vault, configDir: configDir(), node: cfg.node || process.execPath, cfg });
+  const r = S.installSchedules({ vars, platform, warn: (m) => out.warn(m) });
+  out.log(`   schedules re-rendered: ${r.labels.join(', ') || 'none'}${r.removed.length ? ` (removed ${r.removed.map((x) => path.basename(x)).join(', ')})` : ''}`);
+}
+
+/** `aos routines <verb>` — cli/routines.js. */
+async function routines(sub, flags) {
+  const R = require('./routines.js');
+  try {
+    return await R.main([...sub, ...(flags.json ? ['--json'] : []), ...(flags.dryRun ? ['--dry-run'] : [])], { io: console });
+  } catch (e) {
+    if (e instanceof R.UsageError) throw new UsageError(e.message);
+    throw e;
+  }
+}
+
 async function upgrade(flags) {
   const cfg = loadConfigOrThrow();
   const vault = cfg.vault;
@@ -781,6 +827,7 @@ async function upgrade(flags) {
   const ctx = { flags, repo, vault, written, act, dry: false, yes: true, version };
   out.log(`upgrading ${vault} from ${repo} (v${version})`);
   await act('re-vendor brain/scripts (force) and reinstall its dependencies', () => vendorRuntime(ctx, { force: true }));
+  await act('seed brain/routines/ and re-render the installed schedules', () => migrateRoutines(ctx));
   await act(`migrate ${configPath()} keys (version → ${version})`, () => {
     const next = buildUserConfig(cfg, { vault, version, bin });
     writeJson(configPath(), next);
@@ -818,10 +865,12 @@ async function upgrade(flags) {
   return 0;
 }
 
-/** The three duty schedules (com.agenticos.monitor|reflect|sitrep plists; crontab lines tagged "# com.agenticos.<duty>") —
- *  one implementation, cli/schedule.js. com.agenticos.ollama (Plan 2, extras/ollama) is never matched there either. */
+/** Every routine schedule (com.agenticos.<slug> plists; crontab lines tagged "# com.agenticos.<slug>"), the three
+ *  legacy duty labels included — one implementation, cli/schedule.js. com.agenticos.ollama (Plan 2, extras/ollama)
+ *  is never matched there either. */
 function removeSchedules() {
-  const { removed } = require('./schedule.js').removeSchedules({});
+  const cfg = readJson(configPath());
+  const { removed } = require('./schedule.js').removeSchedules({ vault: cfg && cfg.vault });
   for (const r of removed) out.log(`removed ${r}`);
   return removed;
 }
@@ -898,7 +947,7 @@ function updateNotice() {
 
 // ── args and main ─────────────────────────────────────────────────────────────
 const VALUE_FLAGS = new Set(['vault', 'provider', 'persona-json', 'from-local', 'budget', 'snooze']);
-const BOOL_FLAGS = new Set(['dry-run', 'yes', 'terminal', 'cost', 'keep-vault', 'statusline', 'off', 'quiet']);
+const BOOL_FLAGS = new Set(['dry-run', 'yes', 'terminal', 'cost', 'keep-vault', 'statusline', 'off', 'quiet', 'json']);
 const NEGATABLE_FLAGS = new Set(['obsidian']);
 function camel(s) { return s.replace(/-([a-z])/g, (_, c) => c.toUpperCase()); }
 /** `--flag`, `--no-flag`, `--flag value`, `--flag=value`; unknown flags are a usage error (a typo must never start a real install). */
@@ -937,7 +986,7 @@ function parseArgs(argv) {
 async function main(argv) {
   const { cmd, sub, flags } = parseArgs(argv);
   // --dry-run is an init-only preview (contract §4.3); on a mutating command it must be a loud error, never a silent no-op.
-  if (flags.dryRun && cmd !== 'init') throw new UsageError('--dry-run is only supported by `aos init`');
+  if (flags.dryRun && cmd !== 'init' && cmd !== 'routines') throw new UsageError('--dry-run is only supported by `aos init` and `aos routines run`');
   switch (cmd) {
     case 'init': return init(flags);
     case 'upgrade': return upgrade(flags);
@@ -945,6 +994,7 @@ async function main(argv) {
     case 'terminal': return terminal(sub);
     case 'persona': return persona(sub, flags);
     case 'cost': return cost(sub, flags);
+    case 'routines': return routines(sub, flags);
     case 'doctor': return doctor();
     case 'status': return status();
     case 'provider': return provider(sub[0]);
