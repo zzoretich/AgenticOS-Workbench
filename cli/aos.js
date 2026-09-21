@@ -811,16 +811,33 @@ async function routines(sub, flags) {
   }
 }
 
+/** The launcher execs <vault>/brain/scripts/cli/aos.js — the copy vendored by the PREVIOUS upgrade — so an upgrade
+ *  step that is new in the release being installed would only run on the second `aos upgrade`. upgrade() therefore
+ *  re-execs the CLI that ships with the source it re-vendors from: this returns that file when it is not the one
+ *  running (null when it is, or when the source has no cli/aos.js — an unpacked bundle). */
+function upgradeReexecTarget(repo, self = __filename) {
+  const target = path.join(path.resolve(repo), 'cli', 'aos.js');
+  if (!exists(target) || path.resolve(target) === path.resolve(self)) return null;
+  return target;
+}
+
 async function upgrade(flags) {
   const cfg = loadConfigOrThrow();
   const vault = cfg.vault;
   const bin = claudeBin(cfg);
   const clone = path.join(configDir(), 'plugins', 'marketplaces', MARKETPLACE);
-  if (!flags.fromLocal && bin && isDir(clone)) {
+  const reexeced = process.env.AOS_UPGRADE_REEXEC === '1';
+  if (!flags.fromLocal && bin && isDir(clone) && !reexeced) {
     run(bin, ['plugin', 'marketplace', 'update', MARKETPLACE], { allowFail: true });
     run(bin, ['plugin', 'update', PLUGIN_ID], { allowFail: true });
   }
   const repo = repoRoot(flags);
+  const target = reexeced ? null : upgradeReexecTarget(repo);
+  if (target) {
+    out.log(`upgrade: running the checkout's cli/aos.js (${target}) — the vendored copy is the one being replaced`);
+    const r = run(process.execPath, [target, ...process.argv.slice(2)], { env: { AOS_UPGRADE_REEXEC: '1' }, allowFail: true });
+    return typeof r.status === 'number' ? r.status : 1;
+  }
   const version = productVersion(repo);
   const written = [];
   const act = async (what, fn) => { out.log(`- ${what}`); await fn(); };
@@ -1021,7 +1038,7 @@ module.exports = {
   run, which, claudeBin, npmBin, claudeLoggedIn, installedPlugin, python3Version, python3Ok, obsidianDetected, httpProbe, ollamaEndpoint, ollamaProbeSkipped, ask,
   runScript, scriptPath, mcpProbe, spendRowsToday, spendToday, isDutyFeature, isHookFeature, loadConfigOrThrow,
   doctor, status, provider, main,
-  init, repoRoot, productVersion, copyTree, assertVaultOk, dailyNotesJson, buildUserConfig, linkLauncher, vendorRuntime,
+  init, repoRoot, productVersion, upgradeReexecTarget, copyTree, assertVaultOk, dailyNotesJson, buildUserConfig, linkLauncher, vendorRuntime,
   installPlugin, download, obsidianBundle, terminalInstall, personaInterview, checklist,
   upgrade, uninstall, removeSchedules, terminal, persona, cost, updateCheck, updateStatus, updateNotice,
   PROVIDERS, PLUGIN_ID, MARKETPLACE, REPO_SLUG, OBSIDIAN_PLUGIN_ID, DEFAULT_VAULT, RUNTIME_SCRIPTS, USAGE,
