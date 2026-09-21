@@ -41,7 +41,8 @@ It works with **Claude Code alone**. If a local **Ollama** is running, backgroun
 | <img src="docs/assets/icon-recall.svg" width="48" alt="" /> | **Recall.** Hybrid search over memories, patterns and daily notes, exposed to Claude Code as the `agenticos` MCP server (`recall`, `memory_search`, `session_recall`, `feedback_rules`, …). |
 | <img src="docs/assets/icon-session.svg" width="48" alt="" /> | **Session capture.** Daily notes, working-memory summaries, telemetry with redaction on by default, and a pipeline ledger that shows what ran and when. |
 | <img src="docs/assets/icon-staff.svg" width="48" alt="" /> | **A Chief of Staff.** A named agent you interview once. Its identity rides along on every prompt; three scheduled duties (monitor, reflect, sitrep) keep the vault tidy and file proposals for anything that needs your sign-off. Kill switch included. |
-| <img src="docs/assets/icon-hud.svg" width="48" alt="" /> | **The Agentic OS HUD.** An Obsidian plugin: a Pulse row of pipeline LEDs, live agent runs, a memory graph, a fix queue, an optional chat tab and an optional embedded terminal. |
+| <img src="docs/assets/icon-session.svg" width="48" alt="" /> | **Routines.** Recurring actions as files — `brain/routines/<slug>.md` with a cron schedule and a kind (a persona duty, a headless Claude prompt, or a command). One `aos routines sync` renders the launchd or cron schedules; the HUD tab shows next fire, last run and health, and edits the same files. |
+| <img src="docs/assets/icon-hud.svg" width="48" alt="" /> | **The Agentic OS HUD.** An Obsidian plugin: a Pulse row of pipeline LEDs, live agent runs, a memory graph, a fix queue, a routines tab, an optional chat tab and an optional embedded terminal. |
 | <img src="docs/assets/icon-cost.svg" width="48" alt="" /> | **Cost, opt-in.** A python analyzer that costs every session from its transcript, with a monthly budget in the HUD. Off unless you turn it on. |
 
 <a name="quick-start"></a>
@@ -187,6 +188,7 @@ Say `sitrep` for a one-action briefing on where your work stands, and `review pe
 | `aos upgrade` | Updates the plugin, re-vendors the runtime and bundle, adds new config keys (your values win). Never touches memory, notes or persona. |
 | `aos persona` · `aos persona on\|off\|rename <name>` | Re-run the interview, flip the kill switch, or rename your agent. |
 | `aos cost enable [--budget <usd>]` · `aos cost disable` | Opt in or out of session costing. |
+| `aos routines list\|sync\|run <slug>\|enable <slug>\|disable <slug>\|next` | The recurring actions in `brain/routines/`: list with cadence, next fire and health; render and load the OS schedules; run one now; flip one on or off. |
 | `aos terminal install` | Builds the native module for the HUD's terminal tab. |
 | `aos uninstall [--keep-vault]` | Removes the plugin, the schedules, the symlink and `agenticos.json`. The vault is deleted only if you type its path back. |
 
@@ -203,6 +205,7 @@ Every runtime script is also reachable as `aos <name>` — `aos scan-vault`, `ao
 | `/ask-brain <question>` | Assemble the relevant memories and answer from them. |
 | `/standup` · `/reflect-week` · `/consolidate-memory` · `/compress` | A Did/Doing/Blockers standup, a weekly reflection, a memory-merge draft, a distillate of a large file. The context is assembled locally; Claude answers in your own session. |
 | `/cost` · `/aos` | Cost completed sessions from their transcripts (cost module only); maintenance from inside a session — doctor, status, provider, persona. |
+| `/routines [list\|sync\|run <slug>\|enable\|disable\|next]` | The same verbs as `aos routines`, from inside a session. |
 
 Skills answer to plain phrases: *sitrep* (or `/agenticos:persona-sitrep`), *review persona flags* (`/agenticos:persona-flag-closer`), plus `recall`, `wrap`, `feedback-review` and `cost`.
 
@@ -272,11 +275,11 @@ flowchart LR
 
 ```
 brain/scripts      the runtime that gets vendored into your vault (hooks, collectors, recall, MCP server, persona)
-cli                the installer and the aos subcommands (persona, schedule, cost) + an install rehearsal
-plugin             the Claude Code plugin: hooks.json, .mcp.json, bin/aos, 14 commands, 6 skills
+cli                the installer and the aos subcommands (persona, schedule, routines, cost) + an install rehearsal
+plugin             the Claude Code plugin: hooks.json, .mcp.json, bin/aos, 15 commands, 6 skills
 obsidian-plugin    the Agentic OS HUD (TypeScript, esbuild)
-vault-template     the seed vault (AGENTICOS.md, MEMORY.md, brain/, persona templates)
-extras             schedule templates (launchd, cron), the cost analyzer, optional Ollama helpers
+vault-template     the seed vault (AGENTICOS.md, MEMORY.md, brain/ incl. the three duty routines, persona templates)
+extras             the launchd schedule template, the cost analyzer, optional Ollama helpers
 tools              export-from-vault, the privacy gate, and the brand-asset generator behind docs/assets
 docs               install, chief of staff, cost, the Obsidian smoke checklist, the release acceptance runbook
 ```
@@ -311,7 +314,7 @@ aos uninstall                  # additionally delete the vault, after you type i
 | | |
 |---|---|
 | [docs/install.md](docs/install.md) | Every installer step and flag, providers and spend caps, the orphan sweep, daily-note layout. |
-| [docs/chief-of-staff.md](docs/chief-of-staff.md) | The interview, the persona layout, duties and schedules, proposals, the kill switch, caps. |
+| [docs/chief-of-staff.md](docs/chief-of-staff.md) | The interview, the persona layout, duties as routine files and their schedules, proposals, the kill switch, caps. |
 | [docs/cost.md](docs/cost.md) | The cost module: enabling it, what it records, the budget, CI. |
 | [docs/plugin-smoke.md](docs/plugin-smoke.md) | The HUD's manual smoke checklist. |
 | [docs/acceptance.md](docs/acceptance.md) | The release acceptance runbook, run on a fresh macOS account. |
