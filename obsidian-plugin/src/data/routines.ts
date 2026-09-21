@@ -35,7 +35,6 @@ export interface Routine {
   tags?: string[];
   body: string;
   errors: string[];
-  [extra: string]: unknown;
 }
 
 export interface RoutineStateEntry {
