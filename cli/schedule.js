@@ -40,6 +40,14 @@ function loadCron() {
   throw new Error('cron.js not found beside cli/schedule.js');
 }
 
+/** Default exec: execFileSync, with AOS_LAUNCHCTL_BIN / AOS_CRONTAB_BIN as test seams that replace the binary
+ *  (the CLI test sandbox points them at logging fakes so no test ever loads a plist into the real launchd or
+ *  rewrites a real crontab). Unset in normal use. */
+function defaultExec(cmd, args, opts) {
+  const bin = cmd === 'launchctl' ? process.env.AOS_LAUNCHCTL_BIN : cmd === 'crontab' ? process.env.AOS_CRONTAB_BIN : null;
+  return execFileSync(bin || cmd, args, opts);
+}
+
 function launchdLabel(slug) { return `com.agenticos.${slug}`; }
 function defaultLaunchAgentsDir() { return path.join(os.homedir(), 'Library', 'LaunchAgents'); }
 function defaultWarn(message) { process.stderr.write(`schedule: ${message}\n`); }
@@ -143,7 +151,7 @@ function readStateSafe(store, file) { try { return store.readState({ file }); } 
  * `routines` may be injected (tests); by default they are read from vars.VAULT.
  */
 function installSchedules({ platform = process.platform, vars, routines, store = loadStore(), templatesDir = TEMPLATES_DIR,
-  launchAgentsDir = defaultLaunchAgentsDir(), stateFile, exec = execFileSync, readCrontab, writeCrontab, warn = defaultWarn, now = () => new Date() } = {}) {
+  launchAgentsDir = defaultLaunchAgentsDir(), stateFile, exec = defaultExec, readCrontab, writeCrontab, warn = defaultWarn, now = () => new Date() } = {}) {
   fs.mkdirSync(vars.LOG_DIR, { recursive: true });
   const all = routines || listRoutines({ vault: vars.VAULT, store });
   const active = installable(all);
@@ -213,7 +221,7 @@ function installSchedules({ platform = process.platform, vars, routines, store =
 
 /** Removes every schedule this scheduler owns (files, last sync, legacy duties) and clears the sync record. */
 function removeSchedules({ platform = process.platform, vault, store = null, launchAgentsDir = defaultLaunchAgentsDir(), stateFile,
-  exec = execFileSync, readCrontab, writeCrontab, warn = defaultWarn } = {}) {
+  exec = defaultExec, readCrontab, writeCrontab, warn = defaultWarn } = {}) {
   const removed = []; const warnings = [];
   let st = null; let routines = [];
   const file = stateFile || (vault ? stateFileFor(vault) : null);
@@ -258,7 +266,7 @@ function removeSchedules({ platform = process.platform, vault, store = null, lau
   return { platform, removed, warnings };
 }
 
-function isInstalled({ platform = process.platform, vault, launchAgentsDir = defaultLaunchAgentsDir(), stateFile, exec = execFileSync, readCrontab } = {}) {
+function isInstalled({ platform = process.platform, vault, launchAgentsDir = defaultLaunchAgentsDir(), stateFile, exec = defaultExec, readCrontab } = {}) {
   let routines = []; let st = null;
   if (vault) { try { const store = loadStore(); routines = listRoutines({ vault, store }); st = readStateSafe(store, stateFile || stateFileFor(vault)); } catch { /* legacy only */ } }
   const slugs = knownSlugs({ routines, state: st });

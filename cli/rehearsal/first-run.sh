@@ -24,7 +24,8 @@ for f in MEMORY.md AGENTICOS.md .gitignore brain/config.json brain/_index/SESSIO
     brain/_index/MOC-reference.md brain/_index/MOC-projects.md brain/_index/MOC-patterns.md brain/_index/scanner-config.json \
     brain/memory/user/profile.md brain/patterns/README.md templates/daily-note.md templates/meeting-note.md \
     templates/decision-record.md templates/project-note.md .obsidian/daily-notes.json \
-    brain/scripts/package.json brain/scripts/bin/aos brain/scripts/cli/aos.js \
+    brain/routines/monitor.md brain/routines/reflect.md brain/routines/sitrep.md \
+    brain/scripts/package.json brain/scripts/bin/aos brain/scripts/cli/aos.js brain/scripts/routines/run-routine.js \
     brain/scripts/node_modules/@modelcontextprotocol/sdk/package.json; do
   [ -e "$VAULT/$f" ] || { echo "missing $f"; exit 1; }
 done
@@ -39,6 +40,10 @@ AOS_DETACHED=1 sh "$AOS" build-brain-md
 [ -f "$VAULT/brain/_index/snapshot.json" ]
 [ -f "$VAULT/brain/_index/recall-index.json" ]
 grep -q '^## Who' "$VAULT/brain/_index/BRAIN.md"
+
+echo "== routines through the launcher (fixture persona says schedule: false — list and next only)"
+sh "$AOS" routines list | grep -q '^monitor .*duty .*on .*Every day at 13:00'
+sh "$AOS" routines next sitrep | grep -q '^sitrep: Weekdays at 07:45'
 
 echo "== MCP recall over stdio"
 node "$ROOT/cli/rehearsal/mcp-call.js" recall '{"query":"workbench vault profile"}' | grep -q 'brain/memory/user/profile.md'

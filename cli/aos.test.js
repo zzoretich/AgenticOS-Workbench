@@ -184,8 +184,9 @@ test('init into a temp vault: seed set, vendored runtime, agenticos.json, plugin
     'brain/memory/user/profile.md', 'brain/memory/feedback/README.md', 'brain/memory/projects/README.md', 'brain/memory/reference/README.md',
     'brain/patterns/README.md', 'templates/daily-note.md', 'templates/meeting-note.md', 'templates/decision-record.md', 'templates/project-note.md',
     '.obsidian/app.json', '.obsidian/community-plugins.json', '.obsidian/daily-notes.json',
+    'brain/routines/README.md', 'brain/routines/monitor.md', 'brain/routines/reflect.md', 'brain/routines/sitrep.md',
     'brain/scripts/package.json', 'brain/scripts/config.default.json', 'brain/scripts/lib/paths.js', 'brain/scripts/sdk/mcp-server.js',
-    'brain/scripts/cli/aos.js', 'brain/scripts/bin/aos', 'brain/scripts/node_modules']) {
+    'brain/scripts/cli/aos.js', 'brain/scripts/cli/routines.js', 'brain/scripts/routines/run-routine.js', 'brain/scripts/bin/aos', 'brain/scripts/node_modules']) {
     assert.ok(fs.existsSync(path.join(v, rel)), `missing ${rel}`);
   }
   assert.ok(!fs.existsSync(path.join(v, '_gitignore')));
@@ -564,6 +565,53 @@ test('upgrade re-vendors the runtime, migrates config, keeps memory', () => {
   assert.equal(vc.scan.fileMapBudget, 7);
   assert.equal(vc.scan.embedBudget, 40);
   assert.match(r.stdout, /Memory, notes and persona were not touched/);
+});
+
+test('upgrade seeds brain/routines/ once and re-renders installed legacy duty plists through run-routine.js', () => {
+  const sb = initialized();
+  fs.rmSync(path.join(sb.vault, 'brain', 'routines'), { recursive: true, force: true });   // a vault from before routines existed
+  const agents = path.join(sb.home, 'Library', 'LaunchAgents');
+  fs.mkdirSync(agents, { recursive: true });
+  for (const f of ['com.agenticos.monitor.plist', 'com.agenticos.sitrep.plist', 'com.agenticos.ollama.plist']) fs.writeFileSync(path.join(agents, f), '<plist/>\n');
+  // Fakes for the two OS schedulers (cli/schedule.js AOS_*_BIN seams): nothing here may touch the real launchd or crontab.
+  const launchLog = path.join(sb.dir, 'launchctl.log');
+  const fakeLaunchctl = path.join(sb.dir, 'fake-launchctl');
+  fs.writeFileSync(fakeLaunchctl, `#!/bin/sh\necho "$@" >> ${JSON.stringify(launchLog)}\n`, { mode: 0o755 });
+  const fakeCrontab = path.join(sb.dir, 'fake-crontab');
+  fs.writeFileSync(fakeCrontab, '#!/bin/sh\n[ "$1" = "-l" ] && { echo "no crontab for test" >&2; exit 1; }\ncat > /dev/null\n', { mode: 0o755 });
+  const env = { AOS_LAUNCHCTL_BIN: fakeLaunchctl, AOS_CRONTAB_BIN: fakeCrontab };
+
+  const r = aos(sb, ['upgrade', '--no-obsidian', '--from-local', ROOT], env);
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  assert.match(r.stdout, /seeded brain\/routines\/ \(monitor, reflect, sitrep\)/);
+  const store = require('../brain/scripts/lib/routines-store.js');
+  const dir = path.join(sb.vault, 'brain', 'routines');
+  assert.deepEqual(store.list({ dir }).map((x) => [x.slug, x.kind, x.guarded, x.errors.length]), [['monitor', 'duty', true, 0], ['reflect', 'duty', true, 0], ['sitrep', 'duty', true, 0]]);
+  assert.ok(fs.existsSync(path.join(dir, 'README.md')));
+  if (process.platform === 'darwin') {
+    assert.match(r.stdout, /schedules re-rendered: com\.agenticos\.monitor, com\.agenticos\.reflect, com\.agenticos\.sitrep/);
+    for (const d of ['monitor', 'reflect', 'sitrep']) {
+      assert.match(fs.readFileSync(path.join(agents, `com.agenticos.${d}.plist`), 'utf8'), /run-routine\.js/, `${d} plist rendered from the routine file`);
+    }
+    assert.equal(fs.readFileSync(path.join(agents, 'com.agenticos.ollama.plist'), 'utf8'), '<plist/>\n', 'the Ollama supervisor is untouched');
+    assert.equal(fs.readFileSync(launchLog, 'utf8').split('\n').filter((l) => l.startsWith('load ')).length, 3);
+    const st = store.readState({ file: path.join(sb.vault, 'brain', '_index', 'routines.json') });
+    assert.deepEqual(Object.keys(st.synced).sort(), ['monitor', 'reflect', 'sitrep']);
+  } else {
+    assert.match(r.stdout, /no schedules installed/);
+  }
+
+  // Second upgrade: brain/routines/ is the owner's now — a deleted routine is not re-seeded, and its schedule goes.
+  fs.unlinkSync(path.join(dir, 'reflect.md'));
+  fs.writeFileSync(launchLog, '');
+  const again = aos(sb, ['upgrade', '--no-obsidian', '--from-local', ROOT], env);
+  assert.equal(again.status, 0, again.stderr + again.stdout);
+  assert.ok(!/seeded brain\/routines/.test(again.stdout), 'seeded only once');
+  assert.ok(!fs.existsSync(path.join(dir, 'reflect.md')), 'the owner\'s deletion sticks');
+  if (process.platform === 'darwin') {
+    assert.match(again.stdout, /schedules re-rendered: com\.agenticos\.monitor, com\.agenticos\.sitrep \(removed com\.agenticos\.reflect\.plist\)/);
+    assert.ok(!fs.existsSync(path.join(agents, 'com.agenticos.reflect.plist')));
+  }
 });
 
 test('uninstall --keep-vault removes config, plugin, launcher link, duty schedules; keeps the vault and the Ollama supervisor', () => {

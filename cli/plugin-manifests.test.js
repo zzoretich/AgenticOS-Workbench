@@ -66,7 +66,9 @@ test('bin/aos dispatches every hook and CLI name the manifests reference', () =>
   for (const name of referenced) {
     assert.match(shim, new RegExp(`(^|[|(])\\s*${name}[)|]`, 'm'), `bin/aos does not dispatch ${name}`);
   }
-  for (const name of ['update-check', 'update-status', 'update-notice']) {
+  for (const name of ['update-check', 'update-status', 'update-notice', 'routines']) {
     assert.match(shim, new RegExp(`[|(]${name}[|)]`), `bin/aos does not route ${name} to cli/aos.js`);
   }
+  // The two routine entrypoints the HUD and /routines reach by name: the runner (a runtime script) and the verb (cli/aos.js).
+  assert.match(shim, /^\s*run-routine\) SCRIPT=routines\/run-routine\.js/m, 'bin/aos does not dispatch run-routine');
 });

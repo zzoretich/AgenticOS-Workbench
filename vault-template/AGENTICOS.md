@@ -13,7 +13,7 @@
 Working memory: `brain/_index/SESSION.md` (≤400 tokens; reset by `/wrap`). Patterns: `brain/patterns/`. Reflections: `brain/reflections/`. Daily notes: `dailyNote.layout` in `brain/config.json` (default `<year>/<year>-<month>-<Month>/<date>.md`). Dashboard caches: `brain/_index/` — written only by scripts.
 
 How it runs (automatic, via the `agenticos` Claude Code plugin):
-- **First prompt** — the `UserPromptSubmit` hook injects `BRAIN.md` + `SESSION.md` as `<brain-context>` (plus a `<persona>` block when `persona/IDENTITY.md` exists and `persona/DISABLED` does not). The `agenticos` MCP server exposes `recall`, `memory_search`, `memory_read`, `memory_list`, `pattern_list`, `session_list`, `session_recall`, `feedback_rules`, `snapshot_read`, `brief_read`, and the one write tool `wrap_session`.
+- **First prompt** — the `UserPromptSubmit` hook injects `BRAIN.md` + `SESSION.md` as `<brain-context>` (plus a `<persona>` block when `persona/IDENTITY.md` exists and `persona/DISABLED` does not). The `agenticos` MCP server exposes `recall`, `memory_search`, `memory_read`, `memory_list`, `pattern_list`, `session_list`, `session_recall`, `feedback_rules`, `snapshot_read`, `brief_read`, `routine_list`, and the one write tool `wrap_session`.
 - **During** — a `Stop` hook writes the last-active marker and, every ~5 turns, a working-memory summary into `BRAIN.md` `## Last Session` (model-written when a provider is available, heuristic otherwise).
 - **Session end** — telemetry finalizes under `brain/_index/agent-runs/`; `auto-wrap` extracts memories when a provider is available (otherwise `SESSION.md` shows "not wrapped — run /wrap"); `scan-vault` refreshes the dashboard caches and the recall index.
 
@@ -26,6 +26,7 @@ How it runs (automatic, via the `agenticos` Claude Code plugin):
 - `/ask-brain <q>` · `/standup` · `/reflect-week` · `/consolidate-memory` · `/compress <file>` — a script assembles the context, you answer or write it in-session (pass `--local` to let the local provider do it)
 - `/cost` — session costing (only after `aos cost enable`)
 - `/aos doctor|status|provider|persona` — maintenance
+- `/routines [list|sync|run <slug>|enable <slug>|disable <slug>|next]` — the recurring actions (see Routines)
 
 ## Conventions
 
@@ -38,3 +39,7 @@ How it runs (automatic, via the `agenticos` Claude Code plugin):
 ## Providers
 
 `provider` in `agenticos.json` (`aos provider <mode>`): `auto` (default) picks `ollama` when `127.0.0.1:11434` answers, else `claude` (headless `claude -p --model haiku`, capped per call and per day, ledgered in `brain/_index/provider-spend.jsonl`), else `none`. Under `none`, background summaries are heuristic, session-end extraction is skipped, and `/wrap` does the extraction in-session. The Obsidian plugin never calls a model. `aos status` shows the resolved provider, today's spend (hook calls against `claude.perDayUsd`, persona duties against `persona.perDayUsd`), and the pipeline ledger.
+
+## Routines
+
+A recurring action is a file: `brain/routines/<slug>.md` — frontmatter (`schedule:` a five-field cron expression, `kind: duty | prompt | command`, `enabled:`, caps) plus a body (the prompt for `prompt`, a note otherwise). The three Chief of Staff duties ship as `kind: duty` routines with `guarded: true` (the persona contract covers them: confirm before changing their schedule or prompt). `aos routines list | sync | run <slug> | enable <slug> | disable <slug> | next [<slug>]` — also `/routines <verb>` inside Claude Code and the HUD's Routines tab, which edits the same files. `sync` renders one launchd plist (macOS) or crontab line (Linux) per enabled routine, every one running through `brain/scripts/routines/run-routine.js`; last runs, exit codes, cost and failure streaks live in `brain/_index/routines.json`. Prompt routines are capped by `routines.perRunUsd` and `routines.perDayUsd` (ledgered as `routine:<slug>`); duties keep the persona caps.
