@@ -304,11 +304,14 @@ async function doctor() {
 
 // ── status ────────────────────────────────────────────────────────────────────
 // Contract §3 spendToday semantics: ledger rows whose `feature` starts with `duty:` belong to the persona
-// (Plan 5's record-spend.js; gated by persona.perDayUsd); every other row is a background hook call
-// (gated by claude.perDayUsd — Plan 2's spendToday excludes duty rows the same way). One line per cap.
+// (Plan 5's record-spend.js; gated by persona.perDayUsd), rows starting with `reason:` belong to the
+// reasoner role (gated by reasoner.perDayUsd); every other row is a background hook call (gated by
+// claude.perDayUsd — spendToday in spend-ledger.js excludes both families the same way). One line per cap.
 const DUTY_FEATURE = /^duty:/;
+const REASON_FEATURE = /^reason:/;
 const isDutyFeature = (feature) => DUTY_FEATURE.test(feature);
-const isHookFeature = (feature) => !DUTY_FEATURE.test(feature);
+const isReasonFeature = (feature) => REASON_FEATURE.test(feature);
+const isHookFeature = (feature) => !DUTY_FEATURE.test(feature) && !REASON_FEATURE.test(feature);
 /** Today's provider-spend.jsonl rows (local calendar day) that carry a numeric usd; [] when the ledger is absent. */
 function spendRowsToday(file) {
   let raw = '';
@@ -335,13 +338,20 @@ function status() {
   const num = (obj, key) => (obj && typeof obj[key] === 'number' ? obj[key] : undefined);
   const hookCap = num(cfg.claude, 'perDayUsd') ?? num(vaultCfg.claude, 'perDayUsd') ?? 0.5;
   const dutyCap = num(cfg.persona, 'perDayUsd') ?? num(vaultCfg.persona, 'perDayUsd') ?? 6;
-  const spend = spendRowsToday(path.join(idx, 'provider-spend.jsonl')); // the ledger is read once, summed twice
+  const reasonCap = num(cfg.reasoner, 'perDayUsd') ?? num(vaultCfg.reasoner, 'perDayUsd') ?? 5;
+  const str = (obj, key) => (obj && typeof obj[key] === 'string' && obj[key].trim() ? obj[key].trim() : undefined);
+  // The reasoner role (sdk/lib/models.js): BRAIN_REASONER, then reasoner.model by config precedence, then the default.
+  const reasonerModel = (process.env.BRAIN_REASONER || '').trim() || str(cfg.reasoner, 'model') || str(vaultCfg.reasoner, 'model') || 'claude-opus-5';
+  const reasonerEffort = str(cfg.reasoner, 'effort') || str(vaultCfg.reasoner, 'effort') || 'medium';
+  const spend = spendRowsToday(path.join(idx, 'provider-spend.jsonl')); // the ledger is read once, summed three times
   out.log(`vault      ${cfg.vault}`);
   out.log(`provider   mode=${cfg.provider || 'auto'} resolved=${state ? `${state.name} (${state.reason}, ${state.checkedAt})` : 'never resolved'}`);
   const claudeState = (state && state.claude) || {};
   out.log(`claude     bin=${claudeState.bin || claudeBin(cfg) || 'not found'} login=${typeof claudeState.loggedIn === 'boolean' ? claudeState.loggedIn : 'unprobed'}`);
+  out.log(`reasoner   model=${reasonerModel} provider=claude effort=${reasonerEffort}`);
   out.log(`spend      today (hooks) $${sumUsd(spend, isHookFeature).toFixed(4)} / cap $${hookCap}`);
   out.log(`spend      today (duties) $${sumUsd(spend, isDutyFeature).toFixed(4)} / cap $${dutyCap}`);
+  out.log(`spend      today (reasoner) $${sumUsd(spend, isReasonFeature).toFixed(4)} / cap $${reasonCap}`);
   // Ledger shape (lib/pipeline-report.js): { version: 1, pipelines: { <name>: { lastRun: {…} | null, history: [] } } }.
   const ledger = readJson(path.join(idx, 'pipelines.json'), {}) || {};
   const rows = Object.entries(ledger.pipelines || {}).map(([name, st]) => [name, (st && st.lastRun) || null]);
