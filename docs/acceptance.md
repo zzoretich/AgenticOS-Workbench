@@ -65,7 +65,7 @@ Start a timer.
 
 ## 7. Obsidian smoke under each provider
 - [ ] With Ollama running: Pulse, Spaces, Memory, Runs, Chat (answers), Term (shows "Terminal unavailable" unless `--terminal` was used) all render.
-- [ ] With Ollama stopped and Claude logged in: Chat's header names the provider — `headless claude (haiku, capped)` — and each answer shows a per-message cost.
+- [ ] With Claude logged in (Ollama running or not): Chat's header names the reasoner — `claude (claude-opus-5, capped)` — each answer shows a per-message cost, and `aos status` counts it on the `(reasoner)` line.
 - [ ] `aos provider none`: Chat tab hidden with the hint; nothing red.
 
 Result: ______ (pass / fail with the failing box numbers). Tester: ______ Date: ______
