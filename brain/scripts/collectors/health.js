@@ -33,8 +33,10 @@ function collectHealth(snapshot) {
   const rt = snapshot.runtime;
   const gsd = snapshot.gsd;
 
-  // Config integrity
-  if (cfg.claudeMd?.missing) add('error', 'config', 'CLAUDE.md is missing');
+  // Config integrity. CLAUDE.md is Claude Code's instruction file: on a Codex-only install (agenticos.json
+  // hosts.claude.enabled === false) its absence is expected, not an error.
+  const claudeHost = (() => { try { const h = require('../lib/config.js').loadConfig().hosts; return !h || !h.claude || h.claude.enabled !== false; } catch { return true; } })();
+  if (claudeHost && cfg.claudeMd?.missing) add('error', 'config', 'CLAUDE.md is missing');
   if (cfg.memoryMd?.missing) add('error', 'config', 'MEMORY.md is missing');
   if (cfg.stray?.length) add('warn', 'config', `Stray files: ${cfg.stray.join(', ')}`);
 

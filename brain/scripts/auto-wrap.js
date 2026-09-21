@@ -35,6 +35,8 @@ const { appendTrail, revertedSlugs } = require('./lib/promote-log.js');
 const { runCorrectionStage, prefilterCorrections, needsReviewCandidate } = require('./lib/correction-detector.js');
 const { listDrafts, writeDraft, logEvent, activeRuleTitles } = require('./lib/feedback-drafts.js');
 const { findTranscript } = require('./auto-cost.js');
+const host = require('./lib/host.js');
+const { readTranscriptFile, flattenTurns } = require('./lib/transcript.js');
 const { getProvider } = require('./sdk/lib/provider.js');
 
 // Fix round 1 (live-fire found the workhorse continuing chat-shaped transcripts
@@ -433,21 +435,10 @@ function extractTextContent(content) {
   return '';
 }
 
-/** Flattens a Claude Code JSONL transcript into plain "role: text" lines. */
+/** Flattens a session transcript (either host's JSONL) into plain "role: text" lines. */
 function loadTranscriptText(transcriptPath) {
   if (!transcriptPath || !fs.existsSync(transcriptPath)) return '';
-  try {
-    const lines = fs.readFileSync(transcriptPath, 'utf8').split('\n').filter(Boolean);
-    const out = [];
-    for (const line of lines) {
-      let entry;
-      try { entry = JSON.parse(line); } catch { continue; }
-      const role = entry.type || entry.role || 'unknown';
-      const content = extractTextContent(entry.message?.content || entry.content || '');
-      if (content) out.push(`${role}: ${content}`);
-    }
-    return out.join('\n');
-  } catch { return ''; }
+  try { return flattenTurns(readTranscriptFile(transcriptPath)); } catch { return ''; }
 }
 
 // After a reboot the local server can take ~60s to come back, and every pipeline that
@@ -584,7 +575,10 @@ function readStdinAndSpawn() {
       const input = JSON.parse(raw || '{}');
       const sessionId = input.session_id || input.sessionId || '';
       let transcriptPath = input.transcript_path || input.transcriptPath || '';
-      if (!transcriptPath && sessionId) transcriptPath = findTranscript(sessionId) || '';
+      if (!transcriptPath && sessionId) {
+        const h = host.currentHost();
+        transcriptPath = (h === 'codex' ? host.findTranscript('codex', sessionId) : findTranscript(sessionId)) || '';
+      }
 
       const child = spawn(process.execPath, [__filename], {
         detached: true,

@@ -138,8 +138,8 @@ export class AgenticOSSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Provider")
       .setDesc(state
-        ? `${state.name} (${state.reason}) — checked ${state.checkedAt}. Change it with \`aos provider <auto|ollama|claude|none>\`; the scripts write brain/_index/provider-state.json.`
-        : "No provider state yet — run any Claude Code session (hooks write brain/_index/provider-state.json) or `aos provider`.")
+        ? `${state.name} (${state.reason}) — checked ${state.checkedAt}. Change it with \`aos provider <auto|ollama|claude|codex|none>\`; the scripts write brain/_index/provider-state.json.`
+        : "No provider state yet — run any Claude Code or Codex session (hooks write brain/_index/provider-state.json) or `aos provider`.")
       .addExtraButton((b) => b.setIcon("refresh-cw").setTooltip("Re-read provider state").onClick(() => this.display()));
 
     new Setting(containerEl)

@@ -10,7 +10,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 
-export type ProviderName = "ollama" | "claude" | "none";
+export type ProviderName = "ollama" | "claude" | "codex" | "none";
 export type ProviderMode = ProviderName | "auto";
 
 export interface AgenticosJson {
@@ -21,6 +21,10 @@ export interface AgenticosJson {
   provider?: ProviderMode;
   // bin: the absolute `claude` path aos init/upgrade resolved (contract §2, Task 0); absent in configs written before Plan 4.
   claude?: { model?: string; perCallUsd?: number; perDayUsd?: number; bin?: string };
+  // The codex provider (design D9): model null = the user's own Codex default; caps over the same hook ledger.
+  codex?: { model?: string | null; perCallUsd?: number; perDayUsd?: number; bin?: string };
+  // The hosts a session may run under (design D1); absent in configs written before hosts existed (Claude-only).
+  hosts?: { claude?: { enabled?: boolean; configDir?: string; bin?: string }; codex?: { enabled?: boolean; home?: string; bin?: string } };
   reasoner?: { model?: string; perCallUsd?: number; perDayUsd?: number; effort?: string };
   ollama?: { host?: string; port?: number };
   telemetry?: { enabled?: boolean; redact?: boolean; retentionDays?: number };
@@ -40,6 +44,7 @@ export interface VaultConfig {
   scan: { fileMapBudget: number; embedBudget: number; fileMapBudgetUnderClaude: number; insightsUnderClaude: boolean; autoSweepOrphans: boolean };
   provider: ProviderMode;
   claude: { model: string; perCallUsd: number; perDayUsd: number };
+  codex: { model: string | null; perCallUsd: number; perDayUsd: number };
   // The reasoner role: a Claude model with its own caps (reason:* ledger rows), used by the Chat tab.
   reasoner: { model: string; perCallUsd: number; perDayUsd: number; effort: string };
   ollama: { host: string; port: number };
@@ -59,6 +64,7 @@ export interface ProviderState {
   // bin is `null` in the file whenever provider.js probed and found no CLI (contract §3), so the
   // type must admit null as well as absence; every reader guards with a truthiness check.
   claude?: { loggedIn: boolean; checkedAt: string; bin?: string | null };
+  codex?: { loggedIn: boolean; checkedAt: string; bin?: string | null };
 }
 
 export const VAULT_CONFIG_DEFAULTS: VaultConfig = {
@@ -73,6 +79,7 @@ export const VAULT_CONFIG_DEFAULTS: VaultConfig = {
   scan: { fileMapBudget: 40, embedBudget: 40, fileMapBudgetUnderClaude: 0, insightsUnderClaude: false, autoSweepOrphans: false },
   provider: "auto",
   claude: { model: "haiku", perCallUsd: 0.05, perDayUsd: 0.5 },
+  codex: { model: null, perCallUsd: 0.05, perDayUsd: 0.5 },
   reasoner: { model: "claude-opus-5", perCallUsd: 0.5, perDayUsd: 5.0, effort: "medium" },
   ollama: { host: "127.0.0.1", port: 11434 },
   telemetry: { enabled: true, redact: true, retentionDays: 30 },

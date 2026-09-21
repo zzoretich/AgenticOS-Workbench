@@ -32,6 +32,12 @@ const server = new McpServer(
   { capabilities: { tools: {} } }
 );
 
+// Tool annotations (MCP spec). Codex CLI elicits approval for any MCP tool inside a sandboxed
+// session unless the tool advertises readOnlyHint; Claude Code ignores them. wrap_session is
+// the one write tool: it only ever appends under the vault, never destroys.
+const READ_ONLY = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
+const WRITES_VAULT = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
+
 function textResult(text) {
   return { content: [{ type: 'text', text: String(text) }] };
 }
@@ -43,6 +49,7 @@ server.registerTool(
   'memory_search',
   {
     title: 'Search brain memory',
+    annotations: READ_ONLY,
     description: 'Fuzzy search across brain/memory/** and brain/patterns/** for a keyword. Returns matching files with snippets.',
     inputSchema: { query: z.string().describe('Keyword or phrase to search for') },
   },
@@ -57,6 +64,7 @@ server.registerTool(
   'memory_read',
   {
     title: 'Read a memory or pattern file',
+    annotations: READ_ONLY,
     description: 'Read the full content of a memory/pattern file by path, e.g. "brain/memory/feedback/gsd-boundary.md". Only paths under the vault are allowed.',
     inputSchema: { path: z.string().describe('Relative vault path under brain/') },
   },
@@ -71,6 +79,7 @@ server.registerTool(
   'memory_list',
   {
     title: 'List all memories grouped by type',
+    annotations: READ_ONLY,
     description: 'Returns every memory under brain/memory/** with type, name, path, and frontmatter.',
     inputSchema: {},
   },
@@ -88,6 +97,7 @@ server.registerTool(
   'pattern_list',
   {
     title: 'List decision patterns',
+    annotations: READ_ONLY,
     description: 'Returns every pattern under brain/patterns/** with name, path, and frontmatter.',
     inputSchema: {},
   },
@@ -101,6 +111,7 @@ server.registerTool(
   'session_list',
   {
     title: 'List recent session logs',
+    annotations: READ_ONLY,
     description: 'Return the N most-recent session log dates (YYYY-MM-DD). Default 20.',
     inputSchema: { limit: z.number().int().positive().optional().describe('Max sessions to return') },
   },
@@ -114,6 +125,7 @@ server.registerTool(
   'session_recall',
   {
     title: 'Read a specific session log',
+    annotations: READ_ONLY,
     description: 'Read a session log by date (YYYY-MM-DD).',
     inputSchema: { date: z.string().describe('YYYY-MM-DD') },
   },
@@ -128,6 +140,7 @@ server.registerTool(
   'feedback_rules',
   {
     title: 'List all feedback rules',
+    annotations: READ_ONLY,
     description: 'Return every active feedback/correction rule with its full content.',
     inputSchema: {},
   },
@@ -144,6 +157,7 @@ server.registerTool(
   'snapshot_read',
   {
     title: 'Read latest vault snapshot',
+    annotations: READ_ONLY,
     description: 'Return the latest scanner snapshot (system pulse, capabilities, health, etc). Summarized object — omit `full` to keep it small.',
     inputSchema: { full: z.boolean().optional().describe('Include full snapshot JSON (large)') },
   },
@@ -173,6 +187,7 @@ server.registerTool(
   'recall',
   {
     title: 'Ranked recall over the whole vault',
+    annotations: READ_ONLY,
     description: 'Hybrid (BM25 + vector RRF when the embed index exists), recency-boosted search across brain/memory, brain/patterns, daily notes, and persona/journal. Use for "when did I…" / "what did we decide…" questions before any Bash grep. Returns ranked hits with path, snippet, score, and an age flag (e.g. "stale: 74d").',
     inputSchema: {
       query: z.string().describe('What to recall — 2-5 keywords work best'),
@@ -196,6 +211,7 @@ server.registerTool(
   'brief_read',
   {
     title: 'Read the current morning brief',
+    annotations: READ_ONLY,
     description: 'Return the current morning brief (brain/_index/brief.md, or the file named by AOS_BRIEF_PATH) with its age in hours.',
     inputSchema: {},
   },
@@ -210,6 +226,7 @@ server.registerTool(
   'routine_list',
   {
     title: 'List the recurring routines',
+    annotations: READ_ONLY,
     description: 'Every routine file under brain/routines/ (kind duty|prompt|command, cron schedule, enabled) with its human cadence, the next three fire times (ISO, local clock), the last run (exit, cost, duration, trigger, failure streak) from brain/_index/routines.json, and a health word: ok | off | stale (file changed since `aos routines sync`) | failed | missed | invalid. Read-only; `aos routines <verb>` or the HUD Routines tab change them.',
     inputSchema: {},
   },
@@ -230,6 +247,7 @@ server.registerTool(
   'wrap_session',
   {
     title: 'Write session knowledge into the vault',
+    annotations: WRITES_VAULT,
     description: 'The only write tool. Applies an extraction exactly as auto-wrap would: candidates pass the noise gate and ' +
       'become memories (+ MEMORY.md lines + promote trail), facts/decisions/feedback fill SESSION.md "Key Context This Session", ' +
       'threads fill "Open Threads", corrections become draft feedback rules under brain/memory/feedback/_drafts/. ' +
