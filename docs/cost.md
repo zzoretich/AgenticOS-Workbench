@@ -1,8 +1,10 @@
 # Cost module
 
-Opt-in. Costs every Claude Code session from its transcript and shows month-to-date spend in the
-Pulse COST row and the COST DETAIL drawer section of the HUD. Needs python3 3.9+ (stdlib only);
-nothing leaves your machine — the session-end hook runs the analyzer with `--no-api`.
+Opt-in. Costs every Claude Code session from its transcript (the Python analyzer) and every Codex
+session from the token counts in its rollout (priced in Node from a rate table; an estimate, since
+Codex never reports dollars), and shows month-to-date spend in the Pulse COST row and the COST DETAIL
+drawer section of the HUD. Needs python3 3.9+ (stdlib only); nothing leaves your machine — the
+session-end hook runs the analyzer with `--no-api`.
 
 ## Enable / disable
 
@@ -20,7 +22,10 @@ anything but a positive number is rejected. `cost.enabled` lives in `agenticos.j
 
 - At SessionEnd, `auto-cost.js` finds the session transcript under `<configDir>/projects/*/`,
   runs the analyzer, and patches `cost_usd` into `brain/_index/agent-runs/runs.jsonl`. Snapshots
-  land in `brain/_index/cost/snapshots/` (gitignored).
+  land in `brain/_index/cost/snapshots/` (gitignored). For a Codex session (the hook fired with
+  `AOS_HOST=codex`) the rollout under `<codex home>/sessions/` is priced in-process instead and
+  patched with `cost_source: "codex-rollout"`; the model comes from the run record, the rates from
+  `brain/scripts/sdk/lib/codex-pricing.js`.
 - `node brain/scripts/auto-cost.js --backfill` costs every past session that still has a transcript.
 - The Pulse COST row and the cost Fix Queue cards render only when cost is enabled and
   `cost.monthlyBudget` is set (a null budget hides them).
