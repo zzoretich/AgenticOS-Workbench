@@ -94,4 +94,47 @@ with the spec is fixed in the spec before task 1.
 
 ## Spike results
 
-_(filled in after task 0)_
+Run on 2026-09-21 against codex-cli 0.144.5 in a throwaway `CODEX_HOME`, eleven `codex exec`
+sessions, hooks trusted with `--dangerously-bypass-hook-trust`. Task 0 is complete.
+
+**Events.** Under `codex exec`, `SessionStart` (`source: "startup"`), `UserPromptSubmit`,
+`PostToolUse` and `Stop` fire; `SessionEnd` does **not** fire when exec exits (the docs say it
+fires on thread close, archive, or 30 min idle). Not verified in the TUI.
+
+**Payloads** match the spec: `session_id`, `turn_id`, `transcript_path` (always populated, the
+rollout file), `cwd`, `hook_event_name`, `model`, `permission_mode` (`bypassPermissions` under
+exec). `UserPromptSubmit` carries `prompt`; `Stop` carries `stop_hook_active` and
+`last_assistant_message`. Two differences from Claude Code: `tool_input` and `tool_response` are
+**JSON-encoded strings**, not objects, and the shell tool is reported as `tool_name: "Bash"`
+(Claude's name), a file edit as `"apply_patch"`, an MCP call as `"mcp__agenticos__memory_list"`.
+
+**Output contracts.** Plain stdout from `SessionStart` lands in the transcript as a developer
+message and the model can quote it. A `Stop` hook printing nothing, `{}`, or plain text was
+accepted with exit 0 and no warning in 0.144.5; the spec keeps `{}` because the docs call plain
+text invalid. `-c features.hooks=false` suppressed every hook.
+
+**MCP.** With the server registered in `config.toml`, every tool call was rejected with
+`user cancelled MCP tool call` under the `read-only` and `workspace-write` sandboxes and
+succeeded only under `danger-full-access`. `default_tools_approval_mode` (via `-c` or in the
+file) did not change this. Adding MCP tool annotations (`readOnlyHint: true`) to the server
+fixed it: the call succeeded under `workspace-write` and `PostToolUse` fired for it. This is
+decision D12 in the spec and is already implemented in `brain/scripts/sdk/mcp-server.js`.
+`codex mcp add` has no approval flags; none are needed. Twice an MCP server process outlived
+its exec session; the server itself exits immediately on stdin EOF when tested directly.
+
+**Transcript.** `code_mode_host` is on by default, so tool calls in the rollout are
+`response_item/custom_tool_call` named `exec` wrapping a JavaScript snippet; no classic
+`function_call` records appeared even with the feature disabled. The reliable tool signals are
+the `event_msg` records: `patch_apply_end` (`changes` keyed by absolute path with
+`type: add|update|delete`), `mcp_tool_call_end` (`invocation.server`, `invocation.tool`),
+`exec_command_end`, and `token_count` (`info.total_token_usage`, `info.last_token_usage` with
+`input_tokens`, `cached_input_tokens`, `output_tokens`, `reasoning_output_tokens`,
+`total_tokens`). Messages are `response_item/message` with `role` `user`, `assistant` or
+`developer` (skip `developer`, it is injected context). `session_meta` has `id`, `cwd`,
+`originator`, `cli_version`, `source`, `model_provider`; the model name is in the hook payload
+and `turn_context`.
+
+**Headless.** `codex exec` with an open non-TTY stdin blocks on "Reading additional input from
+stdin" forever. The provider must feed the prompt on stdin and close it; any probe must spawn with
+stdin ignored. `--json` emits `thread.started`, `turn.started`, `item.*`, `turn.completed`
+(`usage`), and the bypass flag adds two `error` items that are warnings, not failures.
