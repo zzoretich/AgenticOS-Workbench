@@ -2,7 +2,7 @@ import { MarkdownRenderer, Component, EventRef } from "obsidian";
 import type AgenticOSPlugin from "../../main";
 import type { WorkbenchView } from "./WorkbenchView";
 import { runAsk, isAskBusy, AskHandle, AskResult } from "../data/askSpawner";
-import { runClaudeAsk } from "../data/claudeAsk";
+import { runClaudeAsk, chatRoute, CHAT_FEATURE } from "../data/claudeAsk";
 import { readProviderState, readVaultConfig } from "../data/aosConfig";
 
 // PORT of the old Assistant view's module-level constants (~7-8) — verbatim.
@@ -127,6 +127,11 @@ export class ChatTab {
     return readProviderState(this.plugin.vaultRoot())?.name ?? "none";
   }
 
+  /** A question is a reasoner call: headless Claude when a login is known, else the script path (data/claudeAsk.ts chatRoute). */
+  private route(): "claude" | "local" | "none" {
+    return chatRoute(readProviderState(this.plugin.vaultRoot()));
+  }
+
   // PORT of the old Assistant view's loadHistory (~74). Adaptation: this.app → this.plugin.app.
   private async loadHistory(): Promise<void> {
     try {
@@ -195,7 +200,8 @@ export class ChatTab {
     const up = this.plugin.hb.getStatus().up;
     status.addClass(up ? "aos-pill-cyan" : "aos-pill-dim");
     status.textContent = up ? "live tail" : "idle";
-    header.createSpan({ cls: "aos-dim aos-asst-mode", text: provider === "claude" ? " · headless claude (haiku, capped)" : " · local ask.js" });
+    const reasonerModel = readVaultConfig(this.plugin.vaultRoot(), this.plugin.claudeConfigDir()).reasoner.model;
+    header.createSpan({ cls: "aos-dim aos-asst-mode", text: this.route() === "claude" ? ` · claude (${reasonerModel}, capped)` : " · local ask.js" });
 
     // history log
     const log = host.createDiv({ cls: "aos-asst-log" });
@@ -350,8 +356,8 @@ export class ChatTab {
     const vaultRoot = this.plugin.vaultRoot();
     const node = this.plugin.nodeBin();
     const cfg = readVaultConfig(vaultRoot, this.plugin.claudeConfigDir());
-    const handle = this.providerName() === "claude"
-      ? runClaudeAsk({ vault: vaultRoot, node, question: q, claudeBin: this.plugin.claudeBin(), model: cfg.claude.model, maxBudgetUsd: cfg.claude.perCallUsd })
+    const handle = this.route() === "claude"
+      ? runClaudeAsk({ vault: vaultRoot, node, question: q, claudeBin: this.plugin.claudeBin(), model: cfg.reasoner.model, maxBudgetUsd: cfg.reasoner.perCallUsd, effort: cfg.reasoner.effort, feature: CHAT_FEATURE })
       : runAsk({ vault: vaultRoot, node, question: q });
 
     this.liveTurn = {

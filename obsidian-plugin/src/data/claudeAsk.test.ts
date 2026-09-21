@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import type { ChildProcess } from "node:child_process";
-import { runClaudeAsk, buildClaudeArgs, composePrompt, parseClaudeJson, headlessEnv, resolveClaudeBin, ClaudeAskDeps } from "./claudeAsk";
+import { runClaudeAsk, buildClaudeArgs, composePrompt, parseClaudeJson, headlessEnv, resolveClaudeBin, chatRoute, ClaudeAskDeps } from "./claudeAsk";
 
 function fakeChild(stdout: string, code = 0, stderr = ""): ChildProcess {
   const child = new EventEmitter() as EventEmitter & { stdout: EventEmitter; stderr: EventEmitter; kill: () => boolean };
@@ -70,10 +70,32 @@ test("runClaudeAsk: recall context first, then the exact headless recipe; usd su
   assert.equal(r.usd, 0.0034);
   assert.equal(r.runId, null);
   const row = JSON.parse(h.ledger[0]);
-  assert.equal(row.feature, "chat");
+  assert.equal(row.feature, "reason:chat", "chat is a reasoner call: its rows belong to the reasoner cap");
   assert.equal(row.provider, "claude");
   assert.equal(row.usd, 0.0034);
   assert.equal(row.inputTokens, 1505);
+  assert.ok(!c.args.includes("--effort"), "no effort given → no flag");
+});
+
+test("effort and feature: a valid effort becomes --effort after --model; the feature labels the ledger row", async () => {
+  const h = harness([fakeChild(""), fakeChild(CLAUDE_JSON)]);
+  await runClaudeAsk({ ...OPTS, model: "claude-opus-5", maxBudgetUsd: 0.5, effort: "high", feature: "reason:chat" }, h.deps).result;
+  const c = h.calls[1];
+  assert.deepEqual(c.args.slice(2, 6), ["--model", "claude-opus-5", "--effort", "high"]);
+  assert.equal(JSON.parse(h.ledger[0]).model, "claude-opus-5");
+  for (const bad of ["max", "", undefined]) {
+    assert.ok(!buildClaudeArgs({ prompt: "p", model: "m", maxBudgetUsd: 1, effort: bad }).includes("--effort"), `effort=${String(bad)}`);
+  }
+});
+
+test("chatRoute: claude when the scripts saw a login or resolved claude; local for Ollama alone; none otherwise", () => {
+  const base = { checkedAt: "", reason: "" };
+  assert.equal(chatRoute(null), "none");
+  assert.equal(chatRoute({ ...base, name: "none" }), "none");
+  assert.equal(chatRoute({ ...base, name: "ollama" }), "local");
+  assert.equal(chatRoute({ ...base, name: "ollama", claude: { loggedIn: false, checkedAt: "" } }), "local");
+  assert.equal(chatRoute({ ...base, name: "ollama", claude: { loggedIn: true, checkedAt: "" } }), "claude", "Ollama up but the reasoner is a Claude model");
+  assert.equal(chatRoute({ ...base, name: "claude" }), "claude");
 });
 
 test("a failed recall still asks, with no CONTEXT block", async () => {
@@ -121,7 +143,7 @@ test("a BILLED failure is ledgered anyway (contract §3, claude-cli.js:114) and 
   assert.equal(r.error, "Budget exceeded");
   assert.equal(h.ledger.length, 1, "the spend happened, so the daily cap must see it");
   const row = JSON.parse(h.ledger[0]);
-  assert.equal(row.feature, "chat");
+  assert.equal(row.feature, "reason:chat");
   assert.equal(row.provider, "claude");
   assert.equal(row.usd, 0.05);
   assert.equal(row.inputTokens, 900);
