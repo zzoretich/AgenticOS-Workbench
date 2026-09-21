@@ -29,11 +29,11 @@ async function withClient(fn, extraEnv) {
   try { return await fn(client); } finally { await client.close(); }
 }
 
-test('the server lists wrap_session next to the ten read tools', async () => {
+test('the server lists wrap_session next to the eleven read tools', async () => {
   await withClient(async (client) => {
     const names = (await client.listTools()).tools.map((t) => t.name).sort();
     assert.deepEqual(names, ['brief_read', 'feedback_rules', 'memory_list', 'memory_read', 'memory_search', 'pattern_list',
-      'recall', 'session_list', 'session_recall', 'snapshot_read', 'wrap_session']);
+      'recall', 'routine_list', 'session_list', 'session_recall', 'snapshot_read', 'wrap_session']);
   });
 });
 
@@ -86,6 +86,6 @@ test('wrap_session refuses under AOS_HEADLESS=1 without exiting the server', asy
     assert.match(res.content[0].text, /AOS_HEADLESS/);
     const names = (await client.listTools()).tools.map((t) => t.name).sort();
     assert.deepEqual(names, ['brief_read', 'feedback_rules', 'memory_list', 'memory_read', 'memory_search', 'pattern_list',
-      'recall', 'session_list', 'session_recall', 'snapshot_read', 'wrap_session']);
+      'recall', 'routine_list', 'session_list', 'session_recall', 'snapshot_read', 'wrap_session']);
   }, { AOS_HEADLESS: '1' });
 });

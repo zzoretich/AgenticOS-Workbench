@@ -227,9 +227,28 @@ function health(routine, entry, now = new Date(), { missedGraceMs = 15 * 60_000,
   return 'ok';
 }
 
+/** The reader-side view shared by `aos routines list`, the MCP tool, doctor and the HUD: every routine with its
+ *  state entry, the next three fire times (ISO) and the health word. Invalid files are included (health "invalid"). */
+function overview({ dir = defaultDir(), file = defaultStateFile(), now = new Date() } = {}) {
+  const state = readState({ file });
+  return list({ dir }).map((r) => {
+    const entry = state.routines[r.slug] || null;
+    const valid = r.errors.length === 0;
+    const nextRuns = valid && r.enabled ? cron.next(r.schedule, now, 3) : [];
+    return {
+      slug: r.slug, name: r.name, kind: r.kind, schedule: r.schedule, enabled: !!r.enabled, guarded: !!r.guarded,
+      cadence: valid ? cron.describe(r.schedule) : String(r.schedule || ''),
+      errors: r.errors,
+      next: nextRuns.map(d => d.toISOString()),
+      last: entry && entry.lastRunAt ? { at: entry.lastRunAt, exit: entry.lastExit, usd: entry.lastCostUsd, ms: entry.lastDurationMs, trigger: entry.lastTrigger, failStreak: entry.failStreak || 0, error: entry.lastError || null } : null,
+      health: health(r, entry, now, { synced: state.synced[r.slug], syncedAt: state.syncedAt }),
+    };
+  });
+}
+
 module.exports = {
   SLUG_RE, KINDS, EFFORTS, STATE_SCHEMA,
   parseFrontmatter, serializeFrontmatter, parseFlowArray,
   validate, fromFile, toFile, list, read, write, fingerprint,
-  readState, writeState, patchState, health,
+  readState, writeState, patchState, health, overview,
 };

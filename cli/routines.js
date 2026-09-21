@@ -51,23 +51,9 @@ function scheduleVarsFor({ vault, configDir, node, cfg }) {
 function routinesDir(vault) { return path.join(vault, 'brain', 'routines'); }
 function stateFile(vault) { return path.join(vault, 'brain', '_index', 'routines.json'); }
 
-/** Reader-side rows shared by `list`, the MCP tool and doctor: routine + state + computed next/health. */
+/** Reader-side rows (lib/routines-store.js overview): routine + state + computed next/health. */
 function rows({ vault, now = new Date() }) {
-  const S = store(); const C = cron();
-  const state = S.readState({ file: stateFile(vault) });
-  return S.list({ dir: routinesDir(vault) }).map((r) => {
-    const entry = state.routines[r.slug] || null;
-    const valid = r.errors.length === 0;
-    const nextRuns = valid && r.enabled ? C.next(r.schedule, now, 3) : [];
-    return {
-      slug: r.slug, name: r.name, kind: r.kind, schedule: r.schedule, enabled: !!r.enabled, guarded: !!r.guarded,
-      cadence: valid ? C.describe(r.schedule) : String(r.schedule || ''),
-      errors: r.errors,
-      next: nextRuns.map(d => d.toISOString()),
-      last: entry ? { at: entry.lastRunAt, exit: entry.lastExit, usd: entry.lastCostUsd, ms: entry.lastDurationMs, trigger: entry.lastTrigger, failStreak: entry.failStreak || 0, error: entry.lastError || null } : null,
-      health: S.health(r, entry, now, { synced: state.synced[r.slug], syncedAt: state.syncedAt }),
-    };
-  });
+  return store().overview({ dir: routinesDir(vault), file: stateFile(vault), now });
 }
 
 function pad(n) { return String(n).padStart(2, '0'); }
