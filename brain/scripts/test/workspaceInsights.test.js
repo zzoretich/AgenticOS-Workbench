@@ -36,11 +36,11 @@ test('generateInsight fills insight + next from a stubbed chat fn', async () => 
   const entry = { name: 'X', status: 'active', summary: '', objectives: [], subprojects: [], next: { text: null, source: 'derived' }, lastEvent: { ageDays: 0 } };
   const res = await generateInsight(entry, {
     chatFn: async () => 'INSIGHT: All good.\nNEXT: Ship it.',
-    model: 'qwen3.5:4b',
+    model: 'qwen3.5:9b',
   });
   assert.equal(res.insight.status, 'ok');
   assert.equal(res.insight.text, 'All good.');
-  assert.equal(res.insight.model, 'qwen3.5:4b');
+  assert.equal(res.insight.model, 'qwen3.5:9b');
   assert.equal(res.next.text, 'Ship it.');
   assert.equal(res.next.source, 'ai');
 });

@@ -32,7 +32,7 @@ test('isRetryable: model and logic failures are NOT spooled', () => {
   assert.equal(q.isRetryable(err('no JSON object found in reply')), false);
   assert.equal(q.isRetryable(err('Bad control character in string literal')), false);
   // A missing model tag needs a human to pull it, not another attempt.
-  assert.equal(q.isRetryable(err('ollama HTTP 404: model "qwen3.5:4b" not found')), false);
+  assert.equal(q.isRetryable(err('ollama HTTP 404: model "qwen3.5:9b" not found')), false);
   assert.equal(q.isRetryable(null), false);
 });
 

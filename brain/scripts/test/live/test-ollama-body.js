@@ -15,7 +15,7 @@ assert.strictEqual(b1.options.num_ctx, sizeContextWindow(5, 64));
 assert.ok(!('keep_alive' in b1), 'keep_alive absent unless requested');
 assert.ok(!('format' in b1), 'format absent unless requested');
 
-// think passthrough accepts effort strings (gpt-oss dial)
+// think passthrough accepts effort strings (a think dial)
 const b2 = buildChatBody({ prompt: 'q', think: 'high' });
 assert.strictEqual(b2.think, 'high');
 
