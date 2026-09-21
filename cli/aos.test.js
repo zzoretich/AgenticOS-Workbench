@@ -614,6 +614,32 @@ test('upgrade seeds brain/routines/ once and re-renders installed legacy duty pl
   }
 });
 
+test('upgradeReexecTarget: the checkout\'s own CLI runs in place; any other copy re-execs it; no CLI → null', () => {
+  const { upgradeReexecTarget } = require('./aos.js');
+  assert.equal(upgradeReexecTarget(ROOT, AOS), null);
+  assert.equal(upgradeReexecTarget(ROOT, path.join(os.tmpdir(), 'vault', 'brain', 'scripts', 'cli', 'aos.js')), AOS);
+  assert.equal(upgradeReexecTarget(fs.mkdtempSync(path.join(os.tmpdir(), 'no-cli-')), AOS), null);
+});
+
+test('aos upgrade run through the vendored CLI re-execs the checkout\'s cli/aos.js once, so a new upgrade step runs the first time', () => {
+  const sb = initialized();
+  const vendored = path.join(sb.vault, 'brain', 'scripts', 'cli', 'aos.js');
+  // Simulate the vault's copy being one release behind: it lacks the routines migration and prints a marker instead.
+  fs.writeFileSync(vendored, fs.readFileSync(vendored, 'utf8').replace("await act('seed brain/routines/ and re-render the installed schedules', () => migrateRoutines(ctx));", "out.log('STALE-VENDORED-UPGRADE');"));
+  fs.rmSync(path.join(sb.vault, 'brain', 'routines'), { recursive: true, force: true });
+  const r = spawnSync(process.execPath, [vendored, 'upgrade', '--no-obsidian', '--from-local', ROOT], { encoding: 'utf8', env: sb.env, cwd: ROOT });
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  assert.match(r.stdout, /upgrade: running the checkout's cli\/aos\.js/);
+  assert.ok(!r.stdout.includes('STALE-VENDORED-UPGRADE'), 'the stale copy never reaches its own upgrade body');
+  assert.match(r.stdout, /seeded brain\/routines\/ \(monitor, reflect, sitrep\)/, 'the new step ran on the first upgrade');
+  assert.equal((r.stdout.match(/upgrading /g) || []).length, 1, 'exactly one upgrade runs (no loop)');
+  assert.ok(!fs.readFileSync(vendored, 'utf8').includes('STALE-VENDORED-UPGRADE'), 're-vendored on the way');
+  // Run directly from the checkout: no re-exec line.
+  const direct = aos(sb, ['upgrade', '--no-obsidian', '--from-local', ROOT]);
+  assert.equal(direct.status, 0, direct.stderr);
+  assert.ok(!/running the checkout/.test(direct.stdout));
+});
+
 test('uninstall --keep-vault removes config, plugin, launcher link, duty schedules; keeps the vault and the Ollama supervisor', () => {
   const sb = initialized();
   // Schedules live under $HOME (sandboxed): two of Plan 5's duty labels plus Plan 2's Ollama supervisor label.
