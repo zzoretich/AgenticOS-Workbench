@@ -84,11 +84,15 @@ working tree for you to review. Env: `PERSONA_MODEL`, `PERSONA_EFFORT`, `PERSONA
 `PERSONA_NAME` is set by the schedules (plists and cron lines) so that `aos persona rename` has
 something to re-render; the runner takes the name from `IDENTITY.md` and never reads it.
 
-Schedules are rendered from `extras/schedule/` into `~/Library/LaunchAgents/com.agenticos.<duty>.plist`
-(macOS) or crontab lines ending in `# com.agenticos.<duty>` (Linux). `aos uninstall` removes the
-three duty schedules (the `com.agenticos.monitor|reflect|sitrep` plists / the crontab lines tagged
-`# com.agenticos.<duty>`); the optional `com.agenticos.ollama` supervisor from `extras/ollama` is
-left alone. A failed `launchctl load` is reported as a warning and never aborts `aos init` or
+Each duty is a routine file, `brain/routines/<duty>.md` (`kind: duty`, `guarded: true`, a five-field
+cron `schedule:`). Its schedule is rendered from that file through `extras/schedule/launchd/routine.plist.tmpl`
+into `~/Library/LaunchAgents/com.agenticos.<duty>.plist` (macOS) or a crontab line ending in
+`# com.agenticos.<duty>` (Linux); every schedule runs `brain/scripts/routines/run-routine.js`, which
+hands a duty to `run-duty.sh` unchanged. Change a cadence by editing the file — the HUD's Routines
+tab asks for confirmation on a guarded duty — and running `aos routines sync`; `aos routines list`
+shows the next fire time and the last result. `aos uninstall` removes every routine schedule (the
+pre-routines `com.agenticos.monitor|reflect|sitrep` plists included); the optional
+`com.agenticos.ollama` supervisor from `extras/ollama` is left alone. A failed `launchctl load` is reported as a warning and never aborts `aos init` or
 `aos persona`. Limits: the plist renderer XML-escapes the values it substitutes, but cron lines
 carry them unquoted — on Linux the vault path and the agent name may contain no spaces and no
 shell-special characters (`& ; $ ' " %` — `%` is cron's command terminator); launchd escapes them, cron does not. On both platforms
@@ -110,7 +114,7 @@ cannot be used by duties at all. Windows: not supported; run duties by hand.
 
 ## Proposals
 
-Guarded files (IDENTITY.md, duties, persona scripts, schedules, anything outside `persona/`)
+Guarded files (IDENTITY.md, duties and their routine files — `guarded: true`, which the Routines tab confirms before changing — persona scripts, schedules, anything outside `persona/`)
 change only through `persona/proposals/YYYY-MM-DD-<slug>.md` with a `recheck` recipe and a
 premise table; approval applies the change exactly as written and re-runs the recipe expecting
 the finding to be gone. See `persona/proposals/README.md` in your vault.

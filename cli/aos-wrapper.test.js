@@ -122,13 +122,14 @@ test('every contract name maps to a script path under brain/scripts', () => {
     'regen-insight': 'regen-workspace-insight.js', 'cost-budget': 'cost-budget.js', recall: 'sdk/recall-cli.js',
     'feedback-apply': 'feedback-apply.js',
     'sitrep-state': 'persona/sitrep-state.js', 'record-spend': 'persona/record-spend.js', interview: 'persona/interview.js',
+    'run-routine': 'routines/run-routine.js',
   };
   for (const [name, script] of Object.entries(expected)) {
     assert.ok(src.includes(`${name}) SCRIPT=${script} ;;`), `missing map entry ${name} → ${script}`);
   }
   // run-duty is a POSIX sh script (contract §4.1): exec'd with sh, never with node; args pass through.
   assert.ok(src.includes('run-duty) exec sh "$VAULT/brain/scripts/persona/run-duty.sh" "$@" ;;'), 'run-duty exec with sh');
-  assert.ok(src.includes('doctor|status|upgrade|uninstall|persona|cost|terminal|provider|update-check|update-status|update-notice) SCRIPT=cli/aos.js'), 'maintenance names reach cli/aos.js');
+  assert.ok(src.includes('doctor|status|upgrade|uninstall|persona|cost|routines|terminal|provider|update-check|update-status|update-notice) SCRIPT=cli/aos.js'), 'maintenance names reach cli/aos.js');
 });
 
 test('run-duty is exec\'d with sh and receives AOS_VAULT/AOS_CONFIG plus its args', () => {

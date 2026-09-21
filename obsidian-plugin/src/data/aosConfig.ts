@@ -27,6 +27,7 @@ export interface AgenticosJson {
   updates?: { check?: boolean; intervalHours?: number };
   cost?: { enabled?: boolean; monthlyBudget?: number | null };
   persona?: { enabled?: boolean };
+  routines?: { enabled?: boolean; perRunUsd?: number; perDayUsd?: number; tools?: string; externalLabels?: string[] };
 }
 
 export interface OrchestratorEntry { nickname?: string; trigger?: string; match?: string }
@@ -46,6 +47,8 @@ export interface VaultConfig {
   updates: { check: boolean; intervalHours: number };
   cost: { enabled: boolean; monthlyBudget: number | null };
   persona: { enabled: boolean; perDutyUsd: number; perDayUsd: number };
+  // Routines (brain/routines/*.md): caps for the prompt kind and the launchd labels the Routines tab lists read-only.
+  routines: { enabled: boolean; perRunUsd: number; perDayUsd: number; tools: string; externalLabels: string[] };
 }
 
 export interface ProviderState {
@@ -76,6 +79,7 @@ export const VAULT_CONFIG_DEFAULTS: VaultConfig = {
   updates: { check: true, intervalHours: 24 },
   cost: { enabled: false, monthlyBudget: null },
   persona: { enabled: true, perDutyUsd: 2.0, perDayUsd: 6.0 },
+  routines: { enabled: true, perRunUsd: 2.0, perDayUsd: 6.0, tools: "Read,Glob,Grep", externalLabels: [] },
 };
 
 export const PROVIDER_STATE_PATH = "brain/_index/provider-state.json";

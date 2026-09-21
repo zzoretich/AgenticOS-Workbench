@@ -66,6 +66,8 @@ const PATHS = {
   SNAPSHOT_JSON: path.join(VAULT, 'brain', '_index', 'snapshot.json'),
   MEMORY_INDEX: path.join(VAULT, 'MEMORY.md'),
   PERSONA: path.join(VAULT, 'persona'),
+  ROUTINES: path.join(VAULT, 'brain', 'routines'),
+  ROUTINES_STATE: path.join(VAULT, 'brain', '_index', 'routines.json'),
 };
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
