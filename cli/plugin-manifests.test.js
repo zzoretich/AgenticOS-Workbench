@@ -45,6 +45,22 @@ test('hooks.json wires exactly the contract events, in order, through bin/aos', 
   assert.ok(!JSON.stringify(h).includes('bash -c'));
 });
 
+test('the Codex hook table (cli/codex-host.js) carries every hooks.json command plus inject-conventions, under the 3 s SessionEnd cap', () => {
+  const h = read('plugin/hooks/hooks.json').hooks;
+  const { HOOKS } = require('./codex-host.js');
+  assert.deepEqual(HOOKS.map(([ev]) => ev), Object.keys(h));
+  for (const [event, cmds] of HOOKS) {
+    const claude = h[event].flatMap((g) => g.hooks.map((x) => HOOK_RE.exec(x.command)).map((m) => m[1] + m[2]));
+    const codex = cmds.map(([name]) => name);
+    const extra = codex.filter((n) => !claude.includes(n));
+    assert.deepEqual(extra, event === 'SessionStart' ? ['inject-conventions'] : [], `${event}: codex-only commands`);
+    assert.deepEqual(claude.filter((n) => !codex.includes(n)), [], `${event}: commands missing on codex`);
+    for (const [, timeout] of cmds) assert.equal(timeout, event === 'SessionEnd' ? 3 : 10);
+  }
+  const shim = fs.readFileSync(path.join(ROOT, 'plugin', 'bin', 'aos'), 'utf8');
+  assert.match(shim, /^\s*inject-conventions\) SCRIPT=inject-conventions\.js/m);
+});
+
 test('.mcp.json declares the agenticos stdio server through bin/aos', () => {
   const m = read('plugin/.mcp.json');
   assert.deepEqual(m, { agenticos: { type: 'stdio', command: 'sh', args: ['${CLAUDE_PLUGIN_ROOT}/bin/aos', 'mcp-server'] } });

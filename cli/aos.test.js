@@ -31,6 +31,9 @@ function sandbox() {
     OLLAMA_PORT: '1',
     // …and once init has written agenticos.json (config outranks env) the probe is skipped outright.
     AOS_SKIP_OLLAMA_PROBE: '1',
+    // The developer's real codex CLI must never be detected: these tests are the Claude-only install. The Codex host
+    // tests below override this with AOS_CODEX_BIN (the fake) and a sandboxed CODEX_HOME.
+    AOS_NO_CODEX: '1',
   };
   delete env.AOS_VAULT; delete env.BRAIN_VAULT; delete env.AOS_CONFIG; delete env.CLAUDE_PROJECT_DIR;
   return { dir, home, cfg, vault: path.join(dir, 'vault'), env, log: (f) => { try { return fs.readFileSync(env[f], 'utf8'); } catch { return ''; } } };
@@ -199,7 +202,9 @@ test('init into a temp vault: seed set, vendored runtime, agenticos.json, plugin
   assert.deepEqual(readJson(path.join(v, '.obsidian', 'daily-notes.json')), { folder: String(new Date().getFullYear()), format: 'YYYY-MM-DD' });
 
   const cfg = readJson(path.join(sb.cfg, 'agenticos.json'));
-  assert.deepEqual(Object.keys(cfg), ['version', 'vault', 'node', 'claudeConfigDir', 'provider', 'claude', 'ollama', 'telemetry', 'cost', 'persona']);
+  assert.deepEqual(Object.keys(cfg), ['version', 'vault', 'node', 'claudeConfigDir', 'provider', 'claude', 'ollama', 'telemetry', 'cost', 'persona', 'hosts']);
+  // Design D1: a Claude-only install records exactly that; the Codex home is remembered for a later --host codex.
+  assert.deepEqual(cfg.hosts, { claude: { enabled: true, configDir: sb.cfg, bin: FAKE_CLAUDE }, codex: { enabled: false, home: path.join(sb.home, '.codex') } });
   assert.equal(cfg.vault, v);
   assert.equal(cfg.node, process.execPath);
   assert.equal(cfg.claudeConfigDir, sb.cfg);
@@ -768,4 +773,131 @@ test('init and upgrade refuse an unparseable brain/config.json instead of replac
   assert.equal(up.status, 1, up.stdout);
   assert.match(up.stderr, /refusing to touch unparseable .*config\.json/);
   assert.equal(fs.readFileSync(cfgFile, 'utf8'), corrupt, 'upgrade never merges defaults over a file it could not read');
+});
+
+// ── Codex host (design D1/D3/D4): --host both, the partial uninstall, and the upgrade re-wire ──────────
+const FAKE_CODEX = path.join(ROOT, 'cli', 'fixtures', 'fake-codex.sh');
+/** The Claude-only sandbox plus a fake codex and a sandboxed Codex home (AOS_NO_CODEX lifted). */
+function twoHostSandbox() {
+  const sb = sandbox();
+  delete sb.env.AOS_NO_CODEX;
+  sb.codexHome = path.join(sb.dir, 'codex');
+  fs.mkdirSync(sb.codexHome, { recursive: true });
+  Object.assign(sb.env, { AOS_CODEX_BIN: FAKE_CODEX, CODEX_HOME: sb.codexHome, FAKE_CODEX_LOG: path.join(sb.dir, 'codex.log'), FAKE_CODEX_STATE: path.join(sb.dir, 'codex-mcp.state') });
+  return sb;
+}
+
+test('init --host both wires the plugin and the Codex host; uninstall --host codex removes only the Codex wiring; upgrade re-wires it', () => {
+  const sb = twoHostSandbox();
+  const skills = path.join(sb.home, '.agents', 'skills');
+  const hooks = path.join(sb.codexHome, 'hooks.json');
+  const r = aos(sb, ['init', '--host', 'both', '--vault', sb.vault, '--no-obsidian', '--provider', 'none', '--yes']);
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  assert.match(r.stdout, /preflight: hosts claude\+codex/);
+  assert.match(r.stdout, /hooks written · MCP added · skills 19 generated/);
+  assert.match(r.stdout, /run \/hooks, and trust the AgenticOS entries once/);
+  assert.match(r.stdout, /use \$wrap at the end/);
+  const cfgPath = path.join(sb.cfg, 'agenticos.json');
+  const cfg = readJson(cfgPath);
+  assert.deepEqual(cfg.hosts, {
+    claude: { enabled: true, configDir: sb.cfg, bin: FAKE_CLAUDE },
+    codex: { enabled: true, home: sb.codexHome, bin: FAKE_CODEX },
+  });
+  assert.match(sb.log('FAKE_CLAUDE_LOG'), /^plugin install agenticos@agenticos-workbench$/m);
+  assert.match(sb.log('FAKE_CODEX_LOG'), new RegExp(`^mcp add agenticos --env AOS_CONFIG=${cfgPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} -- sh ${path.join(sb.vault, 'brain', 'scripts', 'bin', 'aos').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} mcp-server$`, 'm'));
+  const doc = readJson(hooks);
+  assert.deepEqual(Object.keys(doc.hooks), ['SessionStart', 'UserPromptSubmit', 'PostToolUse', 'Stop', 'SessionEnd']);
+  assert.match(doc.hooks.Stop[0].hooks[0].command, new RegExp(`^env AOS_HOST=codex AOS_CONFIG='${cfgPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}' sh '.*bin/aos' update-session$`));
+  assert.ok(fs.existsSync(path.join(skills, 'wrap', 'SKILL.md')));
+  assert.ok(fs.existsSync(path.join(sb.vault, 'brain', 'scripts', 'plugin', 'commands', 'wrap.md')), 'plugin/commands is vendored for the generator');
+  assert.ok(fs.existsSync(path.join(sb.vault, 'brain', 'scripts', 'plugin', 'skills', 'recall', 'SKILL.md')), 'plugin/skills is vendored for the generator');
+
+  // doctor: both hosts' rows
+  const dr = aos(sb, ['doctor'], { FAKE_PLUGIN_PATH: path.join(ROOT, 'plugin') });
+  assert.equal(dr.status, 0, dr.stdout + dr.stderr);
+  assert.match(dr.stdout, /ok\s+claude login/);
+  assert.match(dr.stdout, /ok\s+plugin installed/);
+  assert.match(dr.stdout, /ok\s+codex login/);
+  assert.match(dr.stdout, /ok\s+codex hooks\s+5 of 5 events/);
+  assert.match(dr.stdout, /ok\s+codex MCP declared/);
+  assert.match(dr.stdout, /ok\s+codex skills\s+19 generated/);
+  const st = aos(sb, ['status']);
+  assert.match(st.stdout, /^hosts\s+claude, codex$/m);
+  assert.match(st.stdout, /^codex\s+bin=/m);
+
+  // partial uninstall: the Codex wiring goes, the plugin, config, launcher and vault stay
+  const part = aos(sb, ['uninstall', '--host', 'codex', '--yes']);
+  assert.equal(part.status, 0, part.stderr + part.stdout);
+  assert.match(part.stdout, /codex host removed: hooks deleted \(5 entries\) · MCP removed · 19 skills deleted/);
+  assert.match(part.stdout, /hosts now: claude$/m);
+  assert.ok(!fs.existsSync(hooks));
+  assert.ok(!fs.existsSync(path.join(skills, 'wrap')));
+  assert.equal(readJson(cfgPath).hosts.codex.enabled, false);
+  assert.equal(readJson(cfgPath).hosts.claude.enabled, true);
+  assert.ok(fs.existsSync(cfgPath));
+  assert.ok(fs.existsSync(path.join(sb.home, '.local', 'bin', 'aos')));
+  assert.doesNotMatch(sb.log('FAKE_CLAUDE_LOG'), /plugin uninstall/);
+  assert.match(sb.log('FAKE_CODEX_LOG'), /^mcp remove agenticos$/m);
+
+  // upgrade with the Codex host off does not re-wire; re-enabling through init does, and upgrade then keeps it wired
+  const up1 = aos(sb, ['upgrade', '--no-obsidian', '--from-local', ROOT]);
+  assert.equal(up1.status, 0, up1.stderr + up1.stdout);
+  assert.doesNotMatch(up1.stdout, /re-wire the Codex host/);
+  assert.ok(!fs.existsSync(hooks));
+  const again = aos(sb, ['init', '--host', 'both', '--vault', sb.vault, '--no-obsidian', '--yes']);
+  assert.equal(again.status, 0, again.stderr + again.stdout);
+  assert.ok(fs.existsSync(hooks));
+  fs.rmSync(path.join(skills, 'remember'), { recursive: true, force: true });
+  const up2 = aos(sb, ['upgrade', '--no-obsidian', '--from-local', ROOT]);
+  assert.equal(up2.status, 0, up2.stderr + up2.stdout);
+  assert.match(up2.stdout, /re-wire the Codex host/);
+  assert.match(up2.stdout, /hooks unchanged · MCP present · skills 19 regenerated/);
+  assert.ok(fs.existsSync(path.join(skills, 'remember', 'SKILL.md')), 'a deleted generated skill comes back on upgrade');
+
+  // a full uninstall takes both hosts down
+  const full = aos(sb, ['uninstall', '--keep-vault', '--yes']);
+  assert.equal(full.status, 0, full.stderr + full.stdout);
+  assert.ok(!fs.existsSync(hooks));
+  assert.match(sb.log('FAKE_CLAUDE_LOG'), /^plugin uninstall agenticos@agenticos-workbench$/m);
+  assert.ok(!fs.existsSync(cfgPath));
+});
+
+test('init --host codex refuses without a codex CLI; --host auto picks whatever is installed and logged in', () => {
+  const sb = twoHostSandbox();
+  const none = aos(sb, ['init', '--host', 'codex', '--vault', sb.vault, '--no-obsidian', '--provider', 'none', '--yes'], { AOS_NO_CODEX: '1', AOS_CODEX_BIN: '' });
+  assert.equal(none.status, 1);
+  assert.match(none.stderr, /codex CLI not found/);
+  const out = aos(sb, ['init', '--host', 'codex', '--vault', sb.vault, '--no-obsidian', '--yes'], { FAKE_CODEX_LOGGED_OUT: '1' });
+  assert.equal(out.status, 1);
+  assert.match(out.stderr, /codex is not logged in/);
+  assert.equal(aos(sb, ['init', '--host', 'bogus', '--vault', sb.vault, '--yes']).status, 2);
+  // auto with both CLIs available → both
+  const auto = aos(sb, ['init', '--vault', sb.vault, '--no-obsidian', '--provider', 'none', '--yes']);
+  assert.equal(auto.status, 0, auto.stderr + auto.stdout);
+  assert.match(auto.stdout, /preflight: hosts claude\+codex/);
+  // auto with codex logged out → claude only, and the selection is remembered on a re-run
+  const sb2 = twoHostSandbox();
+  const claudeOnly = aos(sb2, ['init', '--vault', sb2.vault, '--no-obsidian', '--provider', 'none', '--yes'], { FAKE_CODEX_LOGGED_OUT: '1' });
+  assert.equal(claudeOnly.status, 0, claudeOnly.stderr + claudeOnly.stdout);
+  assert.match(claudeOnly.stdout, /preflight: hosts claude ·/);
+  assert.equal(readJson(path.join(sb2.cfg, 'agenticos.json')).hosts.codex.enabled, false);
+  const rerun = aos(sb2, ['init', '--vault', sb2.vault, '--no-obsidian', '--yes']);
+  assert.match(rerun.stdout, /preflight: hosts claude ·/, 'a re-run keeps the recorded selection even though codex is now logged in');
+});
+
+test('buildUserConfig migrates a pre-hosts config into a Claude-only hosts block and keeps a recorded Codex home', () => {
+  const { buildUserConfig } = require('./aos.js');
+  const old = { version: '0.3.0', vault: '/v', node: '/n', claudeConfigDir: '/c', provider: 'auto', claude: { model: 'haiku', bin: '/x/claude' } };
+  const next = buildUserConfig(old, { vault: '/v', version: '0.5.0', bin: '/x/claude' });
+  assert.equal(next.hosts.claude.enabled, true);
+  assert.equal(next.hosts.claude.bin, '/x/claude');
+  assert.equal(next.hosts.codex.enabled, false);
+  assert.ok(next.hosts.codex.home.endsWith('.codex'));
+  const kept = buildUserConfig({ ...old, hosts: { claude: { enabled: false }, codex: { enabled: true, home: '/ch', bin: '/x/codex' } } }, { vault: '/v', version: '0.5.0' });
+  assert.equal(kept.hosts.claude.enabled, false);
+  assert.deepEqual(kept.hosts.codex, { enabled: true, home: '/ch', bin: '/x/codex' });
+  const flipped = buildUserConfig(kept, { vault: '/v', version: '0.5.0', hosts: { claude: true, codex: false }, codexBin: null });
+  assert.equal(flipped.hosts.claude.enabled, true);
+  assert.equal(flipped.hosts.codex.enabled, false);
+  assert.ok(!('bin' in flipped.hosts.codex), 'a null codexBin clears the recorded path');
 });

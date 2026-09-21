@@ -11,6 +11,8 @@ mkdir -p "$HOME" "$CLAUDE_CONFIG_DIR"
 echo '{}' > "$CLAUDE_CONFIG_DIR/settings.json"
 BEFORE=$(ls -A "$CLAUDE_CONFIG_DIR" | sort)
 export AOS_CLAUDE_BIN="$ROOT/cli/fixtures/fake-claude.sh" FAKE_CLAUDE_LOG="$TMP/claude.log"
+# This is the Claude-only rehearsal: a codex CLI on the runner must not turn it into a two-host install.
+export AOS_NO_CODEX=1
 # FAKE_PLUGIN_PATH is NOT set yet: with it, fake-claude's `plugin list --json` reports the plugin as installed,
 # installPlugin() takes the "plugin already installed" branch, and the `plugin install` grep below would fail.
 unset AOS_VAULT BRAIN_VAULT AOS_CONFIG CLAUDE_PROJECT_DIR || true

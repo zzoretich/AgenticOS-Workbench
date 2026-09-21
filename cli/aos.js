@@ -3,10 +3,10 @@
 /**
  * aos.js — AgenticOS Workbench installer and maintenance CLI. Zero dependencies (node: builtins only).
  *
- *   aos init [--vault <dir>] [--provider auto|ollama|claude|codex|none] [--no-obsidian] [--terminal] [--cost] [--budget <usd>]
- *            [--persona-json <file>] [--from-local <repo-dir>] [--dry-run] [--yes]
+ *   aos init [--vault <dir>] [--host auto|claude|codex|both] [--provider auto|ollama|claude|codex|none] [--no-obsidian]
+ *            [--terminal] [--cost] [--budget <usd>] [--persona-json <file>] [--from-local <repo-dir>] [--dry-run] [--yes]
  *   aos doctor · aos status · aos provider [auto|ollama|claude|codex|none]
- *   aos upgrade [--from-local <repo-dir>] [--no-obsidian] · aos uninstall [--keep-vault] [--yes]
+ *   aos upgrade [--from-local <repo-dir>] [--no-obsidian] · aos uninstall [--host claude|codex] [--keep-vault] [--yes]
  *   aos persona [rename <name> | on | off] [--persona-json <file>] [--yes] · aos cost [enable [--budget <usd>] [--yes] | disable]
  *   aos terminal install
  *
@@ -16,7 +16,9 @@
  * Platforms: macOS and Linux. Windows is unsupported in v1.
  * Config file: $AOS_CONFIG when set (the launcher exports it), else <configDir>/agenticos.json — the same
  * rule as lib/paths.js configFile(), so every aos subcommand reads the file the hooks read.
- * Test seams (env): AOS_CONFIG, AOS_CLAUDE_BIN, AOS_NPM_BIN, AOS_SKIP_NPM=1, AOS_CONFIRM_DELETE=<vault path>,
+ * Hosts (design D1): a session runs under Claude Code, Codex CLI, or both; agenticos.json `hosts` says which. Claude Code is
+ * wired through its plugin (installPlugin), Codex through cli/codex-host.js (hooks.json, `codex mcp add`, generated skills).
+ * Test seams (env): AOS_CONFIG, AOS_CLAUDE_BIN, AOS_NO_CLAUDE=1, AOS_CODEX_BIN, AOS_NO_CODEX=1, AOS_NPM_BIN, AOS_SKIP_NPM=1, AOS_CONFIRM_DELETE=<vault path>,
  * AOS_SKIP_OLLAMA_PROBE=1, AOS_REPO_HINT=<repo-dir> (where cost-cmd.js looks for extras/cost before the checkout and the marketplace clone).
  */
 const fs = require('fs');
@@ -34,13 +36,15 @@ const OBSIDIAN_PLUGIN_ID = 'agentic-os';
 const DEFAULT_VAULT = path.join(os.homedir(), 'AgenticOS');
 const PROVIDERS = ['auto', 'ollama', 'claude', 'codex', 'none'];
 const RUNTIME_SCRIPTS = { 'scan-vault': 'scan-vault.js', 'build-brain-md': 'build-brain-md.js', recall: 'sdk/recall-cli.js' };
+const HOST_CHOICES = ['auto', 'claude', 'codex', 'both'];
+const CH = require('./codex-host.js');
 
 const USAGE = `usage:
-  aos init [--vault <dir>] [--provider auto|ollama|claude|codex|none] [--no-obsidian] [--terminal] [--cost] [--budget <usd>]
-           [--persona-json <file>] [--from-local <repo-dir>] [--dry-run] [--yes]
+  aos init [--vault <dir>] [--host auto|claude|codex|both] [--provider auto|ollama|claude|codex|none] [--no-obsidian]
+           [--terminal] [--cost] [--budget <usd>] [--persona-json <file>] [--from-local <repo-dir>] [--dry-run] [--yes]
   aos doctor | status | provider [auto|ollama|claude|codex|none]
   aos upgrade [--from-local <repo-dir>] [--no-obsidian]
-  aos uninstall [--keep-vault] [--yes]
+  aos uninstall [--host claude|codex] [--keep-vault] [--yes]
   aos persona [rename <name> | on | off] [--persona-json <file>] [--yes]
   aos cost [enable [--budget <usd>] [--yes] | disable]
   aos routines [list [--json] | sync | run <slug> [--dry-run] | enable <slug> | disable <slug> | next [<slug>]]
@@ -128,6 +132,7 @@ function recordedClaudeBin(cfg) {
  *  Callers that hold agenticos.json pass it; a recorded path that is gone falls through (doctor warns) and
  *  `aos upgrade` re-records whatever the chain finds. */
 function claudeBin(cfg) {
+  if (process.env.AOS_NO_CLAUDE === '1') return null;
   if (process.env.AOS_CLAUDE_BIN) return process.env.AOS_CLAUDE_BIN;
   const recorded = recordedClaudeBin(cfg);
   if (recorded) return recorded;
@@ -138,6 +143,32 @@ function npmBin() { return process.env.AOS_NPM_BIN || 'npm'; }
 function claudeLoggedIn(bin) {
   const j = safeParse(run(bin, ['auth', 'status', '--json'], { capture: true, allowFail: true }).stdout);
   return !!(j && j.loggedIn);
+}
+/** The `codex` CLI (cli/codex-host.js): AOS_CODEX_BIN → the recorded hosts.codex.bin → PATH → the usual locations → null. */
+function codexBin(cfg) { return CH.codexBin(cfg); }
+/** Which hosts an agenticos.json enables. A config written before hosts existed is a Claude-only install. */
+function hostsOf(cfg) {
+  const h = cfg && cfg.hosts;
+  if (!h || typeof h !== 'object') return { claude: true, codex: false };
+  return { claude: !!(h.claude && h.claude.enabled), codex: !!(h.codex && h.codex.enabled) };
+}
+/** --host claude|codex|both is explicit; auto keeps an existing selection, else takes whatever CLI is installed and logged in
+ *  (both when both are), else falls back to the Claude-only path so its own preflight message explains what is missing. */
+function resolveHosts(flags, cfg, { claudeAvail, codexAvail }) {
+  const want = flags.host || 'auto';
+  if (!HOST_CHOICES.includes(want)) throw new UsageError(`--host must be one of ${HOST_CHOICES.join('|')}`);
+  if (want === 'claude') return { claude: true, codex: false };
+  if (want === 'codex') return { claude: false, codex: true };
+  if (want === 'both') return { claude: true, codex: true };
+  if (cfg && cfg.hosts && typeof cfg.hosts === 'object') return hostsOf(cfg);
+  if (claudeAvail || codexAvail) return { claude: !!claudeAvail, codex: !!codexAvail };
+  return { claude: true, codex: false };
+}
+/** The commands/ and skills/ the Codex skills are generated from: the vendored copy, else the checkout's plugin/. */
+function pluginSourceDir(vault, repo) {
+  const vendored = scriptPath(vault, 'plugin');
+  if (isDir(path.join(vendored, 'commands'))) return vendored;
+  return repo ? path.join(repo, 'plugin') : vendored;
 }
 function installedPlugin(bin) {
   const arr = safeParse(run(bin, ['plugin', 'list', '--json'], { capture: true, allowFail: true }).stdout);
@@ -242,11 +273,14 @@ async function doctor() {
   const add = (name, ok, detail, level = 'fail') => checks.push({ name, ok, detail, level });
   add('node >= 20', nodeMajor() >= 20, `v${process.versions.node}`);
   const cfg = readJson(configPath());
-  const bin = claudeBin(cfg);
-  add('claude CLI', !!bin, bin || 'not found on PATH or in ~/.local/bin');
-  if (bin) add('claude login', claudeLoggedIn(bin), 'claude auth status --json');
-  const recorded = cfg && cfg.claude && cfg.claude.bin;
-  if (recorded && !isExecutable(recorded)) add('claude.bin', false, `${recorded} is not an executable file — run aos upgrade to re-resolve it`, 'warn');
+  const hosts = hostsOf(cfg);
+  const bin = hosts.claude ? claudeBin(cfg) : null;
+  if (hosts.claude) {
+    add('claude CLI', !!bin, bin || 'not found on PATH or in ~/.local/bin');
+    if (bin) add('claude login', claudeLoggedIn(bin), 'claude auth status --json');
+    const recorded = cfg && cfg.claude && cfg.claude.bin;
+    if (recorded && !isExecutable(recorded)) add('claude.bin', false, `${recorded} is not an executable file — run aos upgrade to re-resolve it`, 'warn');
+  }
   add('agenticos.json', !!(cfg && cfg.vault && cfg.node), cfg ? configPath() : `${configPath()} missing — run aos init`);
   const vault = cfg && cfg.vault;
   // AOS_VAULT/BRAIN_VAULT outrank agenticos.json for every hook and the MCP server (brain/scripts/lib/paths.js), and
@@ -263,15 +297,27 @@ async function doctor() {
     add('vault layout', missing.length === 0, missing.length ? `${vault} missing: ${missing.join(', ')}` : vault);
     add('node in config', exists(cfg.node), cfg.node);
   }
-  const plugin = bin ? installedPlugin(bin) : null;
-  add('plugin installed', !!plugin, plugin ? `${plugin.id} at ${plugin.installPath}` : `run: claude plugin install ${PLUGIN_ID}`);
-  const mcpJson = plugin ? readJson(path.join(plugin.installPath, '.mcp.json')) : null;
-  add('MCP declared', !!(mcpJson && mcpJson.agenticos), plugin ? path.join(plugin.installPath, '.mcp.json') : 'plugin not installed');
+  if (hosts.claude) {
+    const plugin = bin ? installedPlugin(bin) : null;
+    add('plugin installed', !!plugin, plugin ? `${plugin.id} at ${plugin.installPath}` : `run: claude plugin install ${PLUGIN_ID}`);
+    const mcpJson = plugin ? readJson(path.join(plugin.installPath, '.mcp.json')) : null;
+    add('MCP declared', !!(mcpJson && mcpJson.agenticos), plugin ? path.join(plugin.installPath, '.mcp.json') : 'plugin not installed');
+  }
   if (vault && exists(scriptPath(vault, 'bin/aos'))) {
     try {
       const r = await mcpProbe({ vault });
       add('MCP server answers', r.serverName === 'agenticos', `serverInfo.name=${r.serverName || '(none)'}`);
     } catch (e) { add('MCP server answers', false, e.message); }
+  }
+  if (hosts.codex) {
+    const cx = CH.codexHostStatus({ cfg, launcher: vault ? scriptPath(vault, 'bin/aos') : null, run });
+    add('codex CLI', !!cx.bin, cx.bin || 'not found on PATH or in the usual install locations');
+    if (cx.bin) add('codex login', cx.loggedIn, 'codex login status');
+    add('codex hooks', cx.hookEvents === cx.hookEventsTotal,
+      `${cx.hookEvents} of ${cx.hookEventsTotal} events in ${cx.hooksFile}${cx.hookEvents < cx.hookEventsTotal ? ' — run: aos init --host codex' : ' (trust them once under /hooks in codex)'}`);
+    if (cx.bin) add('codex MCP declared', cx.mcp, cx.mcp ? 'codex mcp get agenticos names the vault launcher' : 'run: aos init --host codex');
+    add('codex skills', cx.skills > 0, `${cx.skills} generated under ${cx.skillsDir}${cx.skills ? '' : ' — run: aos init --host codex'}`);
+    if (cx.memories) add('codex memories', true, 'Codex\'s built-in memories are on (separate from the vault; aos never touches them)', 'info');
   }
   if (vault) add('obsidian plugin', exists(path.join(vault, '.obsidian', 'plugins', OBSIDIAN_PLUGIN_ID, 'main.js')), `${vault}/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/main.js`, 'warn');
   if (vault && isDir(path.join(vault, 'brain', 'routines'))) {
@@ -360,7 +406,13 @@ function status() {
   out.log(`vault      ${cfg.vault}`);
   out.log(`provider   mode=${cfg.provider || 'auto'} resolved=${state ? `${state.name} (${state.reason}, ${state.checkedAt})` : 'never resolved'}`);
   const claudeState = (state && state.claude) || {};
-  out.log(`claude     bin=${claudeState.bin || claudeBin(cfg) || 'not found'} login=${typeof claudeState.loggedIn === 'boolean' ? claudeState.loggedIn : 'unprobed'}`);
+  const hosts = hostsOf(cfg);
+  out.log(`hosts      ${[hosts.claude && 'claude', hosts.codex && 'codex'].filter(Boolean).join(', ') || 'none'}`);
+  if (hosts.claude) out.log(`claude     bin=${claudeState.bin || claudeBin(cfg) || 'not found'} login=${typeof claudeState.loggedIn === 'boolean' ? claudeState.loggedIn : 'unprobed'}`);
+  if (hosts.codex) {
+    const codexState = (state && state.codex) || {};
+    out.log(`codex      bin=${codexState.bin || codexBin(cfg) || 'not found'} login=${typeof codexState.loggedIn === 'boolean' ? codexState.loggedIn : 'unprobed'} home=${CH.codexHome(cfg)}`);
+  }
   out.log(`reasoner   model=${reasonerModel} provider=claude effort=${reasonerEffort}`);
   out.log(`spend      today (hooks) $${sumUsd(spend, isHookFeature).toFixed(4)} / cap $${hookCap}`);
   out.log(`spend      today (duties) $${sumUsd(spend, isDutyFeature).toFixed(4)} / cap $${dutyCap}`);
@@ -435,6 +487,9 @@ function assertVaultOk(vault) {
   if (path.resolve(vault) === path.resolve(os.homedir())) throw new CheckFailed('refusing the home directory as a vault; pick a subdirectory such as ~/AgenticOS');
   if (path.parse(path.resolve(vault)).root === path.resolve(vault)) throw new CheckFailed('refusing a filesystem root as a vault');
   if (insideDir(configDir(), vault)) throw new CheckFailed(`refusing ${vault}: it contains the Claude config dir ${configDir()}`);
+  const cxHome = CH.codexHome(readJson(configPath()));
+  if (insideDir(vault, cxHome)) throw new CheckFailed(`refusing ${vault}: it is inside the Codex home ${cxHome}`);
+  if (insideDir(cxHome, vault)) throw new CheckFailed(`refusing ${vault}: it contains the Codex home ${cxHome}`);
 }
 
 /** Obsidian can express only a flat folder + file format; the year folder of the layout is the closest match (documented). */
@@ -443,7 +498,7 @@ function dailyNotesJson(layout) {
   return { folder: first.replace(/\{yyyy\}/g, String(new Date().getFullYear())), format: 'YYYY-MM-DD' };
 }
 
-function buildUserConfig(existing, { vault, provider, version, bin }) {
+function buildUserConfig(existing, { vault, provider, version, bin, hosts, codexBin: cxBin, codexHome: cxHome }) {
   const base = {
     version, vault, node: process.execPath, claudeConfigDir: configDir(), provider: 'auto',
     claude: { model: 'haiku', perCallUsd: 0.05, perDayUsd: 0.5 },
@@ -451,6 +506,8 @@ function buildUserConfig(existing, { vault, provider, version, bin }) {
     telemetry: { enabled: true, redact: true, retentionDays: 30 },
     cost: { enabled: false },
     persona: { enabled: true },
+    // Design D1: the hosts a session may run under. A config written before this key existed is a Claude-only install.
+    hosts: { claude: { enabled: true, configDir: configDir() }, codex: { enabled: false, home: CH.codexHome(existing) } },
   };
   const merged = deepMerge(base, existing || {});
   merged.version = version;
@@ -464,6 +521,14 @@ function buildUserConfig(existing, { vault, provider, version, bin }) {
     delete caps.bin;
     merged.claude = bin ? { ...caps, bin } : caps;
   }
+  if (hosts) {
+    merged.hosts.claude.enabled = !!hosts.claude;
+    merged.hosts.codex.enabled = !!hosts.codex;
+  }
+  merged.hosts.claude.configDir = configDir();
+  if (bin !== undefined) { if (bin) merged.hosts.claude.bin = bin; else delete merged.hosts.claude.bin; }
+  if (cxBin !== undefined) { if (cxBin) merged.hosts.codex.bin = cxBin; else delete merged.hosts.codex.bin; }
+  if (cxHome) merged.hosts.codex.home = cxHome;
   const ordered = {};
   for (const k of Object.keys(base)) ordered[k] = merged[k];
   for (const k of Object.keys(merged)) if (!(k in ordered)) ordered[k] = merged[k];
@@ -510,7 +575,9 @@ function vendorRuntime(ctx, { force = true } = {}) {
   fs.mkdirSync(path.join(dest, 'bin'), { recursive: true });
   fs.copyFileSync(path.join(repo, 'plugin', 'bin', 'aos'), path.join(dest, 'bin', 'aos'));
   fs.chmodSync(path.join(dest, 'bin', 'aos'), 0o755);
-  written.push('brain/scripts/ (runtime)', 'brain/scripts/cli/', 'brain/scripts/persona/templates/', 'brain/scripts/extras/', 'brain/scripts/bin/aos');
+  // Design D4: the commands and skills the Codex host generates its skills from, so `aos upgrade` never needs the marketplace clone.
+  for (const x of ['commands', 'skills']) copyTree(path.join(repo, 'plugin', x), path.join(dest, 'plugin', x), { force, written: [] });
+  written.push('brain/scripts/ (runtime)', 'brain/scripts/cli/', 'brain/scripts/persona/templates/', 'brain/scripts/extras/', 'brain/scripts/bin/aos', 'brain/scripts/plugin/');
   if (process.env.AOS_SKIP_NPM !== '1') {
     // Spec §9.2 step 4 / contract §4.3: a plain `npm install --omit=dev` in the vendored dir. No lockfile is
     // vendored (VENDOR_EXCLUDE drops one even when the checkout has it; the root workspace lockfile describes
@@ -663,13 +730,21 @@ function checklist(ctx) {
     out.log('done. Files written:');
     for (const w of written) out.log(`  ${path.isAbsolute(w) ? w : path.join(vault, w)}`);
   }
+  const hosts = ctx.hosts || { claude: true, codex: false };
+  const steps = [];
+  if (hosts.claude) {
+    steps.push(`Add this line to your CLAUDE.md (${path.join(configDir(), 'CLAUDE.md')}); the installer never edits it:\n       @${path.join(vault, 'AGENTICOS.md')}`);
+  }
+  if (hosts.codex) {
+    steps.push(`Open \`codex\`, run /hooks, and trust the AgenticOS entries once (${CH.hooksFile(readJson(configPath()))}); they only need re-trusting if the vault moves.`);
+  }
+  steps.push(`Open the vault in Obsidian: "Open folder as vault" → ${vault}, then enable "Agentic OS" under Settings → Community plugins.`);
+  steps.push(`Put ${path.join(os.homedir(), '.local', 'bin')} on your PATH, then run: aos doctor`);
+  if (hosts.claude) steps.push('Start a new `claude` session; the first prompt receives <brain-context>. Use /wrap at the end.');
+  if (hosts.codex) steps.push(`Start a new \`codex\` session; every SessionStart receives the conventions and the first prompt <brain-context>. Skills live under ${CH.skillsDir()} — use $wrap at the end.`);
   out.log('');
   out.log('Next steps:');
-  out.log(`  1. Add this line to your CLAUDE.md (${path.join(configDir(), 'CLAUDE.md')}); the installer never edits it:`);
-  out.log(`       @${path.join(vault, 'AGENTICOS.md')}`);
-  out.log(`  2. Open the vault in Obsidian: "Open folder as vault" → ${vault}, then enable "Agentic OS" under Settings → Community plugins.`);
-  out.log(`  3. Put ${path.join(os.homedir(), '.local', 'bin')} on your PATH, then run: aos doctor`);
-  out.log('  4. Start a new `claude` session; the first prompt receives <brain-context>. Use /wrap at the end.');
+  steps.forEach((s, i) => out.log(`  ${i + 1}. ${s}`));
 }
 
 async function init(flags) {
@@ -688,15 +763,31 @@ async function init(flags) {
   // 1. preflight
   if (nodeMajor() < 20) throw new CheckFailed(`Node 20 or newer is required (running v${process.versions.node})`);
   out.log(`preflight: node v${process.versions.node} · checkout ${repo} (v${version})`);
-  const bin = claudeBin(readJson(configPath()));
-  if (!bin) {
-    if (provider !== 'none') throw new CheckFailed('claude CLI not found — install Claude Code, or pass --provider none to skip the plugin steps');
-    out.warn('claude CLI not found; the plugin will not be installed (re-run init after installing Claude Code)');
-  } else if (!claudeLoggedIn(bin)) {
-    if (provider !== 'none') throw new CheckFailed('claude is not logged in — run `claude auth login` first');
-    out.warn('claude is not logged in; plugin install may fail');
+  const cfg0 = readJson(configPath());
+  const bin = claudeBin(cfg0);
+  const claudeOk = !!bin && claudeLoggedIn(bin);
+  const cxBin = codexBin(cfg0);
+  const codexOk = !!cxBin && CH.codexLoggedIn(cxBin, run);
+  const hosts = resolveHosts(flags, cfg0, { claudeAvail: claudeOk, codexAvail: codexOk });
+  ctx.hosts = hosts;
+  if (hosts.claude) {
+    if (!bin) {
+      if (provider !== 'none') throw new CheckFailed('claude CLI not found — install Claude Code, pass --host codex, or pass --provider none to skip the plugin steps');
+      out.warn('claude CLI not found; the plugin will not be installed (re-run init after installing Claude Code)');
+    } else if (!claudeOk) {
+      if (provider !== 'none') throw new CheckFailed('claude is not logged in — run `claude auth login` first');
+      out.warn('claude is not logged in; plugin install may fail');
+    }
   }
-  out.log(`preflight: claude ${bin ? bin : 'absent'} · obsidian ${obsidianDetected() ? 'detected' : 'not detected (optional)'}`);
+  if (hosts.codex) {
+    if (!cxBin) throw new CheckFailed('codex CLI not found — install Codex CLI, or drop --host codex');
+    if (!codexOk) {
+      if (provider !== 'none') throw new CheckFailed('codex is not logged in — run `codex login` first');
+      out.warn('codex is not logged in; the MCP registration may fail');
+    }
+  }
+  const hostLabel = [hosts.claude && 'claude', hosts.codex && 'codex'].filter(Boolean).join('+');
+  out.log(`preflight: hosts ${hostLabel} · claude ${bin ? bin : 'absent'} · codex ${cxBin ? cxBin : 'absent'} · obsidian ${obsidianDetected() ? 'detected' : 'not detected (optional)'}`);
   // execution amendment 2026-09-15 (A37): the analyzer ships from Plan 5 Task 1 on. --cost has one preflight (python3) and installs
   // the module through cost-cmd.js right after agenticos.json is written (step 5b) — no shipped/not-shipped branch any more.
   if (flags.cost) {
@@ -744,7 +835,7 @@ async function init(flags) {
   // 5. agenticos.json
   await act(`write ${configPath()}`, () => {
     const existing = readJson(configPath());
-    const next = buildUserConfig(existing, { vault, provider, version, bin });   // execution amendment 2026-09-15 (A15): `cost:` dropped, `bin` stays
+    const next = buildUserConfig(existing, { vault, provider, version, bin: hosts.claude ? bin : undefined, hosts, codexBin: hosts.codex ? cxBin : undefined, codexHome: hosts.codex ? CH.codexHome(existing) : undefined });   // execution amendment 2026-09-15 (A15): `cost:` dropped, `bin` stays
     writeJson(configPath(), next);
     written.push(configPath());
     noteClaudeBinChange(vault, existing && existing.claude && existing.claude.bin, next.claude.bin);
@@ -756,8 +847,14 @@ async function init(flags) {
     for (const f of cc.FILES) written.push(path.join('brain', 'scripts', 'cost', f));
   });
 
-  // 6. plugin
-  if (bin) await act(`register the ${MARKETPLACE} marketplace and install ${PLUGIN_ID}`, () => installPlugin(ctx, bin));
+  // 6. plugin (Claude Code host)
+  if (hosts.claude && bin) await act(`register the ${MARKETPLACE} marketplace and install ${PLUGIN_ID}`, () => installPlugin(ctx, bin));
+  // 6b. Codex host: hooks.json, MCP registration, generated skills (design D3/D4)
+  if (hosts.codex) await act('wire the Codex host: hooks.json, the agenticos MCP server, and the skills under ~/.agents/skills', () => {
+    const r = CH.installCodexHost({ cfg: readJson(configPath()), launcher: scriptPath(vault, 'bin/aos'), config: configPath(), pluginDir: pluginSourceDir(vault, repo), bin: cxBin, run, io: out });
+    written.push(r.hooksFile, ...r.skills.written.map((n) => path.join(r.skillsDir, n, 'SKILL.md')));
+    out.log(`   hooks ${r.hooksChanged ? 'written' : 'unchanged'} · MCP ${r.mcp} · skills ${r.skills.written.length} generated${r.skills.skipped.length ? `, ${r.skills.skipped.length} left alone (${r.skills.skipped.join(', ')})` : ''}`);
+  });
 
   // 7. obsidian bundle (+ optional terminal deps)
   if (flags.obsidian !== false) await obsidianBundle(ctx);
@@ -845,10 +942,16 @@ async function upgrade(flags) {
   out.log(`upgrading ${vault} from ${repo} (v${version})`);
   await act('re-vendor brain/scripts (force) and reinstall its dependencies', () => vendorRuntime(ctx, { force: true }));
   await act('seed brain/routines/ and re-render the installed schedules', () => migrateRoutines(ctx));
+  const hosts = hostsOf(cfg);
   await act(`migrate ${configPath()} keys (version → ${version})`, () => {
-    const next = buildUserConfig(cfg, { vault, version, bin });
+    const next = buildUserConfig(cfg, { vault, version, bin: hosts.claude ? bin : undefined, codexBin: hosts.codex ? codexBin(cfg) : undefined });
     writeJson(configPath(), next);
     noteClaudeBinChange(vault, cfg.claude && cfg.claude.bin, next.claude.bin);
+  });
+  if (hosts.codex) await act('re-wire the Codex host (hooks.json, MCP registration, regenerated skills)', () => {
+    const fresh = readJson(configPath());
+    const r = CH.installCodexHost({ cfg: fresh, launcher: scriptPath(vault, 'bin/aos'), config: configPath(), pluginDir: pluginSourceDir(vault, repo), bin: codexBin(fresh), run, io: out });
+    out.log(`   hooks ${r.hooksChanged ? 'rewritten' : 'unchanged'} · MCP ${r.mcp} · skills ${r.skills.written.length} regenerated`);
   });
   await act('add any new default keys to brain/config.json (user values win)', () => {
     const defaults = readJson(path.join(repo, 'brain', 'scripts', 'config.default.json'), {});
@@ -894,7 +997,31 @@ function removeSchedules() {
 
 async function uninstall(flags) {
   const cfg = readJson(configPath());
-  const bin = claudeBin(cfg);
+  const hosts = hostsOf(cfg);
+  if (flags.host) {
+    // Partial: unwire one host and keep everything else (vault, config, launcher, the other host).
+    if (!['claude', 'codex'].includes(flags.host)) throw new UsageError('uninstall --host takes claude or codex');
+    if (!cfg || !cfg.vault) throw new CheckFailed(`no ${configPath()} — nothing to unwire`);
+    if (flags.host === 'codex') {
+      const r = CH.removeCodexHost({ cfg, bin: codexBin(cfg), run, io: out });
+      out.log(`codex host removed: hooks ${r.hooksFileState} (${r.hooksRemoved} entries) · MCP ${r.mcp} · ${r.skills.length} skills deleted`);
+    } else {
+      const cbin = claudeBin(cfg);
+      if (cbin) for (const args of [['plugin', 'uninstall', PLUGIN_ID], ['plugin', 'marketplace', 'remove', MARKETPLACE]]) {
+        const r = run(cbin, args, { allowFail: true, capture: true });
+        if (r.status !== 0) out.warn(`claude ${args.join(' ')} failed (${(r.stderr || r.stdout).trim() || 'exit ' + r.status}); run it yourself`);
+      } else out.warn(`claude CLI not found; skipped: claude plugin uninstall ${PLUGIN_ID}`);
+    }
+    const next = buildUserConfig(cfg, { vault: cfg.vault, version: cfg.version, hosts: { claude: hosts.claude && flags.host !== 'claude', codex: hosts.codex && flags.host !== 'codex' } });
+    writeJson(configPath(), next);
+    out.log(`hosts now: ${[next.hosts.claude.enabled && 'claude', next.hosts.codex.enabled && 'codex'].filter(Boolean).join(', ') || 'none'}`);
+    return 0;
+  }
+  if (hosts.codex) {
+    const r = CH.removeCodexHost({ cfg, bin: codexBin(cfg), run, io: out });
+    out.log(`codex host removed: hooks ${r.hooksFileState} (${r.hooksRemoved} entries) · MCP ${r.mcp} · ${r.skills.length} skills deleted`);
+  }
+  const bin = hosts.claude ? claudeBin(cfg) : null;
   if (bin) {
     // Warn and continue (a teardown must finish), but never report a removal that did not happen.
     for (const args of [['plugin', 'uninstall', PLUGIN_ID], ['plugin', 'marketplace', 'remove', MARKETPLACE]]) {
@@ -902,7 +1029,7 @@ async function uninstall(flags) {
       if (r.status !== 0) out.warn(`claude ${args.join(' ')} failed (${(r.stderr || r.stdout).trim() || 'exit ' + r.status}); run it yourself`);
       else if (r.stdout.trim()) out.log(r.stdout.trim());
     }
-  } else {
+  } else if (hosts.claude) {
     out.warn(`claude CLI not found; skipped: claude plugin uninstall ${PLUGIN_ID} && claude plugin marketplace remove ${MARKETPLACE}`);
   }
   removeSchedules();
@@ -963,7 +1090,7 @@ function updateNotice() {
 }
 
 // ── args and main ─────────────────────────────────────────────────────────────
-const VALUE_FLAGS = new Set(['vault', 'provider', 'persona-json', 'from-local', 'budget', 'snooze']);
+const VALUE_FLAGS = new Set(['vault', 'provider', 'persona-json', 'from-local', 'budget', 'snooze', 'host']);
 const BOOL_FLAGS = new Set(['dry-run', 'yes', 'terminal', 'cost', 'keep-vault', 'statusline', 'off', 'quiet', 'json']);
 const NEGATABLE_FLAGS = new Set(['obsidian']);
 function camel(s) { return s.replace(/-([a-z])/g, (_, c) => c.toUpperCase()); }
@@ -1035,13 +1162,13 @@ if (require.main === module) {
 
 module.exports = {
   parseArgs, deepMerge, configDir, configPath, readJson, readJsonStrict, writeJson, exists, isDir, insideDir, localDay,
-  run, which, claudeBin, npmBin, claudeLoggedIn, installedPlugin, python3Version, python3Ok, obsidianDetected, httpProbe, ollamaEndpoint, ollamaProbeSkipped, ask,
+  run, which, claudeBin, codexBin, hostsOf, resolveHosts, pluginSourceDir, npmBin, claudeLoggedIn, installedPlugin, python3Version, python3Ok, obsidianDetected, httpProbe, ollamaEndpoint, ollamaProbeSkipped, ask,
   runScript, scriptPath, mcpProbe, spendRowsToday, spendToday, isDutyFeature, isHookFeature, loadConfigOrThrow,
   doctor, status, provider, main,
   init, repoRoot, productVersion, upgradeReexecTarget, copyTree, assertVaultOk, dailyNotesJson, buildUserConfig, linkLauncher, vendorRuntime,
   installPlugin, download, obsidianBundle, terminalInstall, personaInterview, checklist,
   upgrade, uninstall, removeSchedules, terminal, persona, cost, updateCheck, updateStatus, updateNotice,
-  PROVIDERS, PLUGIN_ID, MARKETPLACE, REPO_SLUG, OBSIDIAN_PLUGIN_ID, DEFAULT_VAULT, RUNTIME_SCRIPTS, USAGE,
+  PROVIDERS, HOST_CHOICES, PLUGIN_ID, MARKETPLACE, REPO_SLUG, OBSIDIAN_PLUGIN_ID, DEFAULT_VAULT, RUNTIME_SCRIPTS, USAGE,
   VALUE_FLAGS, BOOL_FLAGS, NEGATABLE_FLAGS,
   UsageError, CheckFailed, out,
 };
