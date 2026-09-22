@@ -227,12 +227,55 @@ function health(routine, entry, now = new Date(), { missedGraceMs = 15 * 60_000,
   return 'ok';
 }
 
+// ---------- duty log fallback (spec host-routines D1) ----------
+
+function defaultLogDir() { return path.join(require('./paths.js').PATHS.PERSONA, 'journal', 'logs'); }
+
+/** The last completed run persona/run-duty.sh recorded in duty-<slug>.log: the file's mtime is the run end, the last
+ *  line's `done (exit N)` the exit. Null when the log is absent, empty, or its last line is a `start` (in flight or crashed). */
+function dutyLogLast(slug, { logDir = defaultLogDir() } = {}) {
+  if (!SLUG_RE.test(String(slug))) return null;
+  const file = path.join(logDir, `duty-${slug}.log`);
+  let st;
+  try { st = fs.statSync(file); } catch { return null; }
+  if (!st.isFile() || !st.size) return null;
+  let fd;
+  try {
+    fd = fs.openSync(file, 'r');
+    const len = Math.min(st.size, 4096);
+    const buf = Buffer.alloc(len);
+    fs.readSync(fd, buf, 0, len, st.size - len);
+    const lines = buf.toString('utf8').replace(/\s+$/, '').split('\n');
+    const m = /duty=\S+ done \(exit (\d+)\)$/.exec(lines[lines.length - 1]);
+    return m ? { at: st.mtime.toISOString(), exit: Number(m[1]) } : null;
+  } catch { return null; } finally { if (fd !== undefined) fs.closeSync(fd); }
+}
+
+/** A duty's state entry, or one synthesized from its log when the log records a run the state file never saw (a run that
+ *  bypassed run-routine.js). A log end inside the recorded run's window (start + duration, a minute of slack) is that run. */
+function mergeDutyLog(routine, entry, { logDir } = {}) {
+  if (!routine || routine.kind !== 'duty') return entry;
+  const log = dutyLogLast(routine.slug, { logDir });
+  if (!log) return entry;
+  if (entry && entry.lastRunAt) {
+    const end = Date.parse(entry.lastRunAt) + (Number(entry.lastDurationMs) || 0) + 60_000;
+    if (Date.parse(log.at) <= end) return entry;
+  }
+  const prevStreak = entry && Number.isFinite(entry.failStreak) ? entry.failStreak : 0;
+  return {
+    ...(entry || {}),
+    lastRunAt: log.at, lastExit: log.exit, lastCostUsd: null, lastDurationMs: null,
+    failStreak: log.exit === 0 ? 0 : prevStreak + 1, lastTrigger: 'duty-log', lastError: log.exit === 0 ? null : `exit ${log.exit} (from the duty log)`,
+  };
+}
+
 /** The reader-side view shared by `aos routines list`, the MCP tool, doctor and the HUD: every routine with its
- *  state entry, the next three fire times (ISO) and the health word. Invalid files are included (health "invalid"). */
-function overview({ dir = defaultDir(), file = defaultStateFile(), now = new Date() } = {}) {
+ *  state entry, the next three fire times (ISO) and the health word. Invalid files are included (health "invalid").
+ *  A duty's entry is merged with persona/journal/logs/duty-<slug>.log first (mergeDutyLog; `logDir` overrides the location). */
+function overview({ dir = defaultDir(), file = defaultStateFile(), logDir, now = new Date() } = {}) {
   const state = readState({ file });
   return list({ dir }).map((r) => {
-    const entry = state.routines[r.slug] || null;
+    const entry = mergeDutyLog(r, state.routines[r.slug] || null, { logDir });
     const valid = r.errors.length === 0;
     const nextRuns = valid && r.enabled ? cron.next(r.schedule, now, 3) : [];
     return {
@@ -251,4 +294,5 @@ module.exports = {
   parseFrontmatter, serializeFrontmatter, parseFlowArray,
   validate, fromFile, toFile, list, read, write, fingerprint,
   readState, writeState, patchState, health, overview,
+  dutyLogLast, mergeDutyLog,
 };

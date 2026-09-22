@@ -5,6 +5,8 @@
 // the runtime's, so a file this module writes is a file run-routine.js reads — both sides are checked
 // against brain/scripts/test/fixtures/routines/*.
 import type { App } from "obsidian";
+import * as fs from "fs";
+import * as path from "path";
 import { describe, next, validateCron } from "./cron";
 
 export const ROUTINES_DIR = "brain/routines";
@@ -194,9 +196,53 @@ export function health(r: Routine, entry: RoutineStateEntry | null, now: Date, o
   return "ok";
 }
 
-export function buildRows(routines: Routine[], state: RoutinesState, now = new Date()): RoutineRow[] {
+// ── duty log fallback (spec host-routines D1; mirrors routines-store.js dutyLogLast/mergeDutyLog) ──
+
+export const DUTY_LOG_DIR = "persona/journal/logs";
+export interface DutyLogRun { at: string; exit: number }
+
+/** The tail of duty-<slug>.log plus the file's mtime → the last completed run, or null when the last line is a `start`. */
+export function parseDutyLogTail(tail: string, mtimeIso: string): DutyLogRun | null {
+  const lines = String(tail ?? "").replace(/\s+$/, "").split("\n");
+  const m = /duty=\S+ done \(exit (\d+)\)$/.exec(lines[lines.length - 1]);
+  return m ? { at: mtimeIso, exit: Number(m[1]) } : null;
+}
+
+/** Reads the last 4 KiB of <vault>/persona/journal/logs/duty-<slug>.log; null when absent, empty or unreadable. */
+export function readDutyLogLast(vaultRoot: string, slug: string): DutyLogRun | null {
+  if (!SLUG_RE.test(slug)) return null;
+  const file = path.join(vaultRoot, DUTY_LOG_DIR, `duty-${slug}.log`);
+  let fd: number | null = null;
+  try {
+    const st = fs.statSync(file);
+    if (!st.isFile() || !st.size) return null;
+    fd = fs.openSync(file, "r");
+    const len = Math.min(st.size, 4096);
+    const buf = Buffer.alloc(len);
+    fs.readSync(fd, buf, 0, len, st.size - len);
+    return parseDutyLogTail(buf.toString("utf8"), st.mtime.toISOString());
+  } catch { return null; } finally { if (fd !== null) fs.closeSync(fd); }
+}
+
+/** A duty's entry, or one synthesized from its log when the log's run end falls after the recorded run's window
+ *  (start + duration + a minute of slack): a run that bypassed run-routine.js, shown with trigger "duty-log". */
+export function mergeDutyLog(routine: Pick<Routine, "kind">, entry: RoutineStateEntry | null, log: DutyLogRun | null | undefined): RoutineStateEntry | null {
+  if (routine.kind !== "duty" || !log) return entry;
+  if (entry?.lastRunAt) {
+    const end = Date.parse(entry.lastRunAt) + (Number(entry.lastDurationMs) || 0) + 60_000;
+    if (Date.parse(log.at) <= end) return entry;
+  }
+  const prevStreak = entry && Number.isFinite(entry.failStreak) ? entry.failStreak : 0;
+  return {
+    ...(entry ?? {}),
+    lastRunAt: log.at, lastExit: log.exit, lastCostUsd: null, lastDurationMs: null,
+    failStreak: log.exit === 0 ? 0 : prevStreak + 1, lastTrigger: "duty-log", lastError: log.exit === 0 ? null : `exit ${log.exit} (from the duty log)`,
+  };
+}
+
+export function buildRows(routines: Routine[], state: RoutinesState, now = new Date(), dutyLogs: Record<string, DutyLogRun | null> = {}): RoutineRow[] {
   return routines.map((r) => {
-    const entry = state.routines[r.slug] ?? null;
+    const entry = mergeDutyLog(r, state.routines[r.slug] ?? null, dutyLogs[r.slug]);
     const valid = r.errors.length === 0;
     return {
       routine: r,
