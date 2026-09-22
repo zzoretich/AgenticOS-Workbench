@@ -4,12 +4,41 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { currentHost, isHookInvocation, hostDirs, findTranscript, codexHome } = require('../lib/host.js');
+const { currentHost, resolveHost, enabledHosts, isHookInvocation, hostDirs, findTranscript, codexHome } = require('../lib/host.js');
 
 test('currentHost is claude unless AOS_HOST=codex', () => {
   assert.equal(currentHost({}), 'claude');
   assert.equal(currentHost({ AOS_HOST: 'codex' }), 'codex');
   assert.equal(currentHost({ AOS_HOST: 'something-else' }), 'claude');
+});
+
+test('resolveHost: AOS_HOST wins, then the Claude env, then the transcript path, then a single enabled host, then claude (D1)', () => {
+  const both = { hosts: { claude: { enabled: true }, codex: { enabled: true } } };
+  const codexOnly = { hosts: { claude: { enabled: false }, codex: { enabled: true } } };
+  const claudeOnly = { hosts: { claude: { enabled: true }, codex: { enabled: false } } };
+  const rollout = { transcript_path: '/anywhere/rollout-2026-09-22T10-00-00-abc.jsonl' };
+  assert.deepEqual(resolveHost({ env: { AOS_HOST: 'codex' }, payload: null, userConfig: claudeOnly }), { host: 'codex', via: 'aos-host' });
+  assert.deepEqual(resolveHost({ env: { AOS_HOST: 'claude' }, payload: rollout, userConfig: codexOnly }), { host: 'claude', via: 'aos-host' });
+  assert.deepEqual(resolveHost({ env: { CLAUDE_PROJECT_DIR: '/p' }, payload: rollout, userConfig: codexOnly }), { host: 'claude', via: 'claude-env' });
+  assert.deepEqual(resolveHost({ env: { CLAUDECODE: '1' }, payload: null, userConfig: codexOnly }), { host: 'claude', via: 'claude-env' });
+  assert.deepEqual(resolveHost({ env: {}, payload: rollout, userConfig: both }), { host: 'codex', via: 'transcript' });
+  assert.deepEqual(resolveHost({ env: { CODEX_HOME: '/tmp/ch' }, payload: { transcriptPath: '/tmp/ch/archived_sessions/x.jsonl' }, userConfig: null }), { host: 'codex', via: 'transcript' });
+  assert.deepEqual(resolveHost({ env: { CLAUDE_CONFIG_DIR: '/tmp/cc' }, payload: { transcript_path: '/tmp/cc/projects/-slug/abc.jsonl' }, userConfig: codexOnly }), { host: 'claude', via: 'transcript' });
+  assert.deepEqual(resolveHost({ env: {}, payload: { transcript_path: '/elsewhere/abc.jsonl' }, userConfig: codexOnly }), { host: 'codex', via: 'config' });
+  assert.deepEqual(resolveHost({ env: {}, payload: null, userConfig: codexOnly }), { host: 'codex', via: 'config' });
+  assert.deepEqual(resolveHost({ env: {}, payload: null, userConfig: claudeOnly }), { host: 'claude', via: 'config' });
+  assert.deepEqual(resolveHost({ env: {}, payload: null, userConfig: both }), { host: 'claude', via: 'default' });
+  assert.deepEqual(resolveHost({ env: {}, payload: null, userConfig: { claudeConfigDir: '/x' } }), { host: 'claude', via: 'default' });
+  assert.deepEqual(resolveHost({ env: {}, payload: { transcript_path: 42 }, userConfig: null }), { host: 'claude', via: 'default' });
+  assert.equal(currentHost({}, rollout), 'codex');
+});
+
+test('enabledHosts reads hosts.<name>.enabled and treats a missing block as none', () => {
+  assert.deepEqual(enabledHosts(null), []);
+  assert.deepEqual(enabledHosts({}), []);
+  assert.deepEqual(enabledHosts({ hosts: { claude: { enabled: true }, codex: { enabled: true } } }), ['claude', 'codex']);
+  assert.deepEqual(enabledHosts({ hosts: { claude: {}, codex: { enabled: false } } }), ['claude']);
+  assert.deepEqual(enabledHosts({ hosts: { codex: { enabled: true } } }), ['codex']);
 });
 
 test('isHookInvocation recognises both hosts and nothing else', () => {

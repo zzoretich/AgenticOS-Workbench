@@ -2,6 +2,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { detectFormat, parseJsonl, readTurns, readTranscriptFile, flattenTurns, parseEntries } = require('../lib/transcript.js');
 
@@ -72,4 +73,29 @@ test('parseEntries tolerates garbage and a missing file', () => {
   assert.equal(parseEntries([null, 1, 'x', {}]).turns.length, 0);
   assert.equal(readTranscriptFile('/nonexistent/path.jsonl').format, 'claude');
   assert.equal(readTurns('not json\n{"type":"user","message":{"content":"hi"}}\n').userTurns, 1);
+});
+
+test('sessionModel: Claude assistant message.model, Codex turn_context / session_meta model, null otherwise (codex-parity D6)', () => {
+  const { sessionModel, sessionModelFile } = require('../lib/transcript.js');
+  const claude = [
+    { type: 'user', message: { role: 'user', content: 'hi' } },
+    { type: 'assistant', message: { role: 'assistant', model: 'claude-x-1', content: [{ type: 'text', text: 'hello' }] } },
+    { type: 'assistant', message: { role: 'assistant', model: 'claude-x-2', content: 'later' } },
+  ];
+  assert.equal(sessionModel(claude), 'claude-x-1');
+  assert.equal(sessionModel([{ type: 'user', message: { content: 'hi' } }]), null);
+  const codex = [
+    { type: 'session_meta', payload: { id: 's1', cwd: '/w' } },
+    { type: 'turn_context', payload: { cwd: '/w', model: 'gpt-5-codex' } },
+    { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'ok' }] } },
+  ];
+  assert.equal(sessionModel(codex), 'gpt-5-codex');
+  assert.equal(sessionModel([{ type: 'session_meta', payload: { id: 's1', model: 'gpt-meta' } }]), 'gpt-meta');
+  assert.equal(sessionModel([{ type: 'session_meta', payload: { id: 's1' } }]), null);
+  assert.equal(sessionModel(null), null);
+  const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'aos-model-')), 'x.jsonl');
+  fs.writeFileSync(f, claude.map((e) => JSON.stringify(e)).join('\n') + '\n');
+  assert.equal(sessionModelFile(f), 'claude-x-1');
+  assert.equal(sessionModelFile(path.join(path.dirname(f), 'missing.jsonl')), null);
+  assert.equal(sessionModelFile(''), null);
 });

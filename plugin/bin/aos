@@ -63,6 +63,7 @@ case "$NAME" in
   update-session) SCRIPT=update-session.js ;;
   telemetry-hook) SCRIPT=telemetry-hook.js ;;
   heartbeat-writer) SCRIPT=heartbeat-writer.js ;;
+  reconcile-sessions) SCRIPT=reconcile-sessions.js ;;
   auto-cost) SCRIPT=auto-cost.js ;;
   auto-wrap) SCRIPT=auto-wrap.js ;;
   scan-vault) SCRIPT=scan-vault.js ;;

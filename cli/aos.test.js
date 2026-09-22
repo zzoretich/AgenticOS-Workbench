@@ -807,7 +807,7 @@ test('init --host both wires the plugin and the Codex host; uninstall --host cod
     codex: { enabled: true, home: sb.codexHome, bin: FAKE_CODEX },
   });
   assert.match(sb.log('FAKE_CLAUDE_LOG'), /^plugin install agenticos@agenticos-workbench$/m);
-  assert.match(sb.log('FAKE_CODEX_LOG'), new RegExp(`^mcp add agenticos --env AOS_CONFIG=${cfgPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} -- sh ${path.join(sb.vault, 'brain', 'scripts', 'bin', 'aos').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} mcp-server$`, 'm'));
+  assert.match(sb.log('FAKE_CODEX_LOG'), new RegExp(`^mcp add agenticos --env AOS_CONFIG=${cfgPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} --env AOS_HOST=codex -- sh ${path.join(sb.vault, 'brain', 'scripts', 'bin', 'aos').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} mcp-server$`, 'm'));
   const doc = readJson(hooks);
   assert.deepEqual(Object.keys(doc.hooks), ['SessionStart', 'UserPromptSubmit', 'PostToolUse', 'Stop', 'SessionEnd']);
   assert.match(doc.hooks.Stop[0].hooks[0].command, new RegExp(`^env AOS_HOST=codex AOS_CONFIG='${cfgPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}' sh '.*bin/aos' update-session$`));

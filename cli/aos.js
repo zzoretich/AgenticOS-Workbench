@@ -316,9 +316,22 @@ async function doctor() {
     if (cx.bin) add('codex login', cx.loggedIn, 'codex login status');
     add('codex hooks', cx.hookEvents === cx.hookEventsTotal,
       `${cx.hookEvents} of ${cx.hookEventsTotal} events in ${cx.hooksFile}${cx.hookEvents < cx.hookEventsTotal ? ' — run: aos init --host codex' : ' (trust them once under /hooks in codex)'}`);
-    if (cx.bin) add('codex MCP declared', cx.mcp, cx.mcp ? 'codex mcp get agenticos names the vault launcher' : 'run: aos init --host codex');
+    if (cx.bin) add('codex MCP declared', cx.mcp === 'ok', cx.mcp === 'ok' ? 'codex mcp get agenticos names the vault launcher with AOS_HOST=codex'
+      : cx.mcp === 'stale' ? 'registered without AOS_HOST=codex (a 0.5.0 registration) — run: aos upgrade' : 'run: aos init --host codex');
     add('codex skills', cx.skills > 0, `${cx.skills} generated under ${cx.skillsDir}${cx.skills ? '' : ' — run: aos init --host codex'}`);
     if (cx.memories) add('codex memories', true, 'Codex\'s built-in memories are on (separate from the vault; aos never touches them)', 'info');
+  }
+  // Which CLI runs persona duties and prompt routines (codex-parity D4): claude when enabled and installed, else codex.
+  if (vault && exists(scriptPath(vault, 'lib/headless.js'))) {
+    try {
+      const H = require(scriptPath(vault, 'lib/headless.js'));
+      const vaultCfg = readJson(path.join(vault, 'brain', 'config.json'), {}) || {};
+      const merged = { ...vaultCfg, ...(cfg || {}), persona: { ...(vaultCfg.persona || {}), ...((cfg && cfg.persona) || {}) }, routines: { ...(vaultCfg.routines || {}), ...((cfg && cfg.routines) || {}) } };
+      for (const kind of ['persona', 'routines']) {
+        const r = H.resolveRunner({ cfg: merged, kind });
+        add(`${kind} runner`, !!r.host, r.host ? `${r.host} (${r.bin})${r.host === 'codex' ? ' (spend estimated from usage, no per-run cap)' : ''}` : `none (${r.reason}); install claude or codex, or set ${kind}.runner`, 'warn');
+      }
+    } catch (e) { add('runner', false, e.message, 'warn'); }
   }
   if (vault) add('obsidian plugin', exists(path.join(vault, '.obsidian', 'plugins', OBSIDIAN_PLUGIN_ID, 'main.js')), `${vault}/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/main.js`, 'warn');
   if (vault && isDir(path.join(vault, 'brain', 'routines'))) {

@@ -75,3 +75,41 @@ test('record-spend.js --check honours an explicit zero cap: exit 3 for perDayUsd
 
   fs.rmSync(vault, { recursive: true, force: true });
 });
+
+test('a codex --json event stream is recognised and priced as an estimate; claude output is untouched (codex-parity D5)', () => {
+  process.env.CODEX_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'rs-codex-home-'));
+  const { parseCodexEvents, rowFromCodex } = require('../persona/record-spend.js');
+  const stream = [
+    'stray line',
+    JSON.stringify({ type: 'thread.started', thread_id: 't' }),
+    JSON.stringify({ type: 'item.completed', item: { type: 'error', message: 'warn: bypass' } }),
+    JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 2000, cached_input_tokens: 500, output_tokens: 100, reasoning_output_tokens: 20 } }),
+  ].join('\n');
+  const ev = parseCodexEvents(stream);
+  assert.equal(ev.isCodex, true);
+  assert.deepEqual(ev.usage, { inputTokens: 2000, cachedInputTokens: 500, outputTokens: 100, reasoningOutputTokens: 20 });
+  assert.deepEqual(ev.errors, ['warn: bypass']);
+  assert.equal(parseCodexEvents('{"type":"result","total_cost_usd":0.1}').isCodex, false);
+  assert.equal(parseCodexEvents('').isCodex, false);
+  const row = rowFromCodex(stream, { feature: 'duty:tick', model: 'gpt-5', ms: 42 });
+  assert.equal(row.provider, 'codex');
+  assert.equal(row.feature, 'duty:tick');
+  assert.equal(row.model, 'gpt-5');
+  assert.equal(row.inputTokens, 2000);
+  assert.equal(row.outputTokens, 100);
+  assert.equal(row.ms, 42);
+  assert.ok(row.usd > 0 && row.usd < 0.1, `estimate in range: ${row.usd}`);
+  const none = rowFromCodex('{"type":"turn.failed"}', { feature: 'duty:x', model: null });
+  assert.equal(none.usd, 0);
+  assert.equal(none.inputTokens, 0);
+  // the CLI: --file with a codex stream appends a codex row
+  const vault = fs.mkdtempSync(path.join(os.tmpdir(), 'rs-codex-'));
+  fs.mkdirSync(path.join(vault, 'brain', '_index'), { recursive: true });
+  const f = path.join(vault, 'out.json');
+  fs.writeFileSync(f, stream);
+  const r = spawnSync(process.execPath, [path.join(__dirname, '..', 'persona', 'record-spend.js'), '--file', f, '--feature', 'duty:tick', '--model', 'gpt-5'], { encoding: 'utf8', env: { ...process.env, AOS_VAULT: vault, AOS_CONFIG: path.join(vault, 'none.json') } });
+  assert.equal(r.status, 0, r.stderr);
+  const written = JSON.parse(r.stdout.trim().split('\n').pop());
+  assert.equal(written.provider, 'codex');
+  assert.equal(written.inputTokens, 2000);
+});
