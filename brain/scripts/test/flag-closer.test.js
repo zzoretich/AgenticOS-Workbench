@@ -5,7 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const SCRIPTS = path.join(__dirname, '..', '..', '..', 'plugin', 'skills', 'persona-flag-closer', 'scripts');
-const { collect, defaultRoot, defaultLogDir } = require(path.join(SCRIPTS, 'collect.js'));
+const { collect, defaultRoot, defaultLogDir, KINDS } = require(path.join(SCRIPTS, 'collect.js'));
 const { recheck, runRecipe, gateAutoApply, loadConfig } = require(path.join(SCRIPTS, 'recheck.js'));   // loadConfig: execution amendment 2026-09-15 (A32)
 const { render } = require(path.join(SCRIPTS, 'render-digest.js'));
 
@@ -96,4 +96,19 @@ test('render escapes and titles the digest neutrally', () => {
   assert.match(html, /<title>Persona Flag Review<\/title>/);
   assert.match(html, /open flag/);
   assert.ok(!html.includes('{{'));
+});
+
+test('proposal kind: defaults to self, is read from frontmatter, an unknown value lints; the digest shows a Kind column', () => {
+  const v = vault();
+  const withKind = (slug, kind) => PROPOSAL('true').replace('slug: fix-thing', `slug: ${slug}`).replace('target:', `kind: ${kind}\ntarget:`);
+  fs.writeFileSync(path.join(v, 'persona', 'proposals', '2026-09-20-idea-two.md'), withKind('idea-two', 'product'));
+  fs.writeFileSync(path.join(v, 'persona', 'proposals', '2026-09-21-odd-three.md'), withKind('odd-three', 'meta'));
+  const out = collect(v);
+  assert.deepEqual(out.proposals.map(p => [p.slug, p.kind]), [['fix-thing', 'self'], ['idea-two', 'product'], ['odd-three', 'meta']]);
+  assert.deepEqual(out.proposals[0].lint, []);
+  assert.deepEqual(out.proposals[2].lint, ['unknown kind "meta" (self | vault | workflow | product)']);
+  assert.deepEqual(KINDS, ['self', 'vault', 'workflow', 'product']);
+  const html = render(recheck(out, v));
+  assert.match(html, /<th>Kind<\/th>/);
+  assert.match(html, /<td>product<\/td>/);
 });

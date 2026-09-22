@@ -33,7 +33,7 @@ test('mergeHooks writes the five events through the launcher with AOS_HOST=codex
   const doc = CH.mergeHooks(null, CTX);
   assert.deepEqual(Object.keys(doc.hooks), ['SessionStart', 'UserPromptSubmit', 'PostToolUse', 'Stop', 'SessionEnd']);
   const names = (ev) => doc.hooks[ev].flatMap((g) => g.hooks.map((h) => h.command.replace(/^env AOS_HOST=codex AOS_CONFIG='[^']*' sh '[^']*' /, '')));
-  assert.deepEqual(names('SessionStart'), ['telemetry-hook', 'update-notice', 'inject-conventions']);
+  assert.deepEqual(names('SessionStart'), ['telemetry-hook', 'update-notice', 'persona-watchdog', 'inject-conventions']);
   assert.deepEqual(names('UserPromptSubmit'), ['inject-context']);
   assert.deepEqual(names('PostToolUse'), ['telemetry-hook']);
   assert.deepEqual(names('Stop'), ['update-session', 'heartbeat-writer']);

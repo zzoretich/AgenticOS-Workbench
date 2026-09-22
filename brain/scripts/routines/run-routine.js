@@ -9,7 +9,8 @@
  *   duty     sh <vault>/brain/scripts/persona/run-duty.sh <slug>   (its own kill switch, caps, journal, contract)
  *   prompt   <claude> -p <body> --model … --effort … --allowedTools <routines.tools> --max-budget-usd …
  *            gated by routines.perDayUsd over today's routine:* ledger rows; the run is ledgered as routine:<slug>
- *   command  argv[0] argv.slice(1) — spawned directly (no shell), cwd = vault
+ *   command  argv[0] argv.slice(1) — spawned directly (no shell), cwd = vault; `{{NODE}}` in an argv entry expands to
+ *            this process.execPath and `{{VAULT}}` to the vault, so a template routine needs no per-machine rendering
  * Always: one entry in brain/_index/routines.json (lastRunAt, lastExit, lastCostUsd, lastDurationMs, failStreak,
  * lastTrigger, lastError), one pipelines.json row named routine:<slug>, and stdout/stderr appended to
  * <log dir>/routine-<slug>.log. The exit code mirrors the child's. A disabled routine (or routines.enabled=false)
@@ -71,6 +72,11 @@ function promptArgs(routine, cfg) {
     '--max-budget-usd', String(budget), '--output-format', 'json', '--strict-mcp-config', '--no-session-persistence'];
 }
 
+/** `{{NODE}}` → the running node, `{{VAULT}}` → the vault. Only these two; anything else is literal. */
+function expandArgv(a, deps) {
+  return String(a).split('{{NODE}}').join(deps.node || process.execPath).split('{{VAULT}}').join(deps.vault);
+}
+
 /** Plan the child process for a routine: { cmd, args, env, feature } — or { skip: reason }. */
 function plan(routine, cfg, deps) {
   const rc = cfg.routines || {};
@@ -87,7 +93,8 @@ function plan(routine, cfg, deps) {
     if (!bin) return { error: 'no claude binary found (set claude.bin in agenticos.json or install claude)' };
     return { cmd: bin, args: promptArgs(routine, cfg), env: headlessEnv(deps.env), feature: `routine:${routine.slug}` };
   }
-  return { cmd: routine.argv[0], args: routine.argv.slice(1), env: { ...deps.env }, feature: null };
+  const argv = routine.argv.map(a => expandArgv(a, deps));
+  return { cmd: argv[0], args: argv.slice(1), env: { ...deps.env }, feature: null };
 }
 
 /** Runs one routine end to end. Returns the exit code. */
@@ -166,4 +173,4 @@ function main(argv) {
 }
 
 if (require.main === module) main(process.argv.slice(2)).then((code) => process.exit(code), (e) => { process.stderr.write(`run-routine: ${e.message}\n`); process.exit(1); });
-module.exports = { runRoutine, plan, promptArgs, main, TRIGGERS };
+module.exports = { runRoutine, plan, promptArgs, expandArgv, main, TRIGGERS };

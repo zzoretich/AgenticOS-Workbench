@@ -20,6 +20,7 @@ function premiseSummary(ps) {
 function render(r) {
   const rows = r.proposals.map(p => `<tr>
     <td><code>${esc(p.slug)}</code><div class="sub">${esc(p.target)}</div></td>
+    <td>${esc(p.kind || 'self')}</td>
     <td>${esc(p.filed)}<div class="sub">${ageDays(p.filed)}d old</div></td>
     <td><span class="badge ${BADGE[p.verdict] || 'warn'}">${esc(p.verdict)}</span>${p.lint.length ? `<div class="sub">lint: ${esc(p.lint.join('; '))}</div>` : ''}</td>
     <td>${p.premises.length ? esc(premiseSummary(p.premises)) : '<span class="sub">none</span>'}</td>
@@ -47,7 +48,7 @@ pre{background:var(--card);border:1px solid var(--line);padding:.75rem;overflow-
 <h1>Persona Flag Review</h1>
 <p class="sub">Generated ${esc(r.generated)} · pending-set hash <code>${esc((r.pendingHash || '').slice(0, 12))}</code> · auto-apply whitelist: ${wl}</p>
 <h2>Pending proposals (${r.proposals.length})</h2>
-${r.proposals.length ? `<div style="overflow-x:auto"><table><tr><th>Proposal</th><th>Filed</th><th>Recheck verdict</th><th>Premises</th><th>Auto-apply</th></tr>${rows}</table></div>` : '<p class="sub">none</p>'}
+${r.proposals.length ? `<div style="overflow-x:auto"><table><tr><th>Proposal</th><th>Kind</th><th>Filed</th><th>Recheck verdict</th><th>Premises</th><th>Auto-apply</th></tr>${rows}</table></div>` : '<p class="sub">none</p>'}
 <h2>STATE.md flags (${r.flags.length})</h2><ul>${flags}</ul>
 <h2>New silent failures</h2>${logs}`;
 }
