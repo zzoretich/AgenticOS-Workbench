@@ -14,9 +14,9 @@ either transcript format; telemetry stamps `host`. Six holes remain between that
    `AOS_HOST`, so `wrap_session` called from a Codex session resolves the *Claude* transcript
    directory. Any `aos` verb or generated skill run from inside a Codex session is misread the
    same way. On a Codex-only machine the config already says which host exists, but nothing reads it.
-2. **Codex sessions are never finalized under `codex exec` or the desktop app.** The spike
-   showed `SessionEnd` does not fire on exec exit and fires late (thread close / 30 min idle) in the
-   TUI. Everything that runs at SessionEnd — telemetry summary, auto-cost, auto-wrap memory
+2. **Codex sessions are never finalized under `codex exec` or the desktop app.** The 0.144
+   spike showed `SessionEnd` does not fire on exec exit (0.155 does, verified 2026-09-22) and fires late
+   (thread close / 30 min idle) in the TUI. Everything that runs at SessionEnd — telemetry summary, auto-cost, auto-wrap memory
    extraction, `scan-vault` — silently never happens for those sessions; crashed runs are only
    *dropped* by the HUD orphan sweep, never wrapped.
 3. **Prompt routines and persona duties require the `claude` CLI.** `routines/run-routine.js`

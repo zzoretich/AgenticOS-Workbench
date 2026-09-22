@@ -45,7 +45,10 @@ Each task lands as one commit with its tests. Tests: `npm test` (root) — `node
 - [x] 4.1 README "Hosts": the three modes and what auto-detects what; runner note.
 - [x] 4.2 `docs/install.md` Codex-only walkthrough; `docs/plugin-smoke.md` reconcile + runner items;
       `vault-template/AGENTICOS.md` `runner` line; `vault-template/brain/routines/README.md`.
-- [ ] 4.3 Manual verification on the owner's machine (real `codex exec`, reconcile, runs.jsonl row).
+- [x] 4.3 Manual verification on the owner's machine (2026-09-22, codex-cli 0.155.1): `aos upgrade --from-local` re-registered the MCP
+      server with `AOS_HOST=codex` (doctor had shown it stale); three `codex exec` sessions with hooks on each ended with a
+      `host: "codex"` row in `runs.jsonl` with `cost_usd` and the model — 0.155 fires SessionEnd on exec exit, unlike the
+      0.144 spike; `reconcile-sessions --force` closed a dead Claude Code run (a killed session), costed and wrapped it.
 
 ## File structure
 

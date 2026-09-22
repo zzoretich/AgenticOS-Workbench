@@ -2,7 +2,8 @@
 /**
  * reconcile-sessions.js — finish the sessions that never got a SessionEnd (codex-parity D3).
  *
- * Codex fires SessionEnd late (thread close, or 30 minutes idle) and never under `codex exec`;
+ * Codex fires SessionEnd late in its TUI (thread close, or 30 minutes idle) and, on some versions, not at
+ * all under `codex exec` (0.144 did not, 0.155 does);
  * a Claude Code terminal can be killed. Either way a live run header stays behind under
  * brain/_index/agent-runs/live/ and everything that runs at SessionEnd — the telemetry summary,
  * auto-cost, auto-wrap's memory extraction — silently never happens. This hook runs on
