@@ -150,3 +150,85 @@ test('health: off, invalid, stale, failed, missed, ok', () => {
   assert.equal(store.health(r, { lastExit: 0, lastRunAt: new Date(2026, 8, 20, 13, 0).toISOString() }, new Date(2026, 8, 21, 13, 10)), 'ok', 'inside the grace window');
   assert.equal(store.health(r, null, now), 'ok', 'never run, never synced: nothing to miss yet');
 });
+
+// ---------- duty log fallback (spec host-routines D1) ----------
+
+function dutyWorld() {
+  const dir = tmpDir();
+  const logDir = path.join(dir, 'persona', 'journal', 'logs');
+  fs.mkdirSync(logDir, { recursive: true });
+  const rdir = path.join(dir, 'brain', 'routines');
+  store.write({ slug: 'monitor', schema: 1, name: 'Monitor', kind: 'duty', schedule: '0 13 * * *', enabled: true, guarded: true, body: '' }, { dir: rdir });
+  store.write({ slug: 'scan', schema: 1, name: 'Scan', kind: 'command', schedule: '0 13 * * *', enabled: true, argv: ['true'], body: '' }, { dir: rdir });
+  const file = path.join(dir, 'brain', '_index', 'routines.json');
+  const log = (slug, text, mtime) => {
+    const f = path.join(logDir, `duty-${slug}.log`);
+    fs.writeFileSync(f, text);
+    if (mtime) fs.utimesSync(f, mtime, mtime);
+    return f;
+  };
+  return { dir, rdir, logDir, file, log };
+}
+const T = (iso) => new Date(iso);
+
+test('dutyLogLast: mtime + the last "done (exit N)" line; start-only, empty, absent and odd slugs are null', () => {
+  const w = dutyWorld();
+  const done = T('2026-09-21T17:01:00Z');
+  w.log('monitor', '[stamp] duty=monitor model=haiku effort=medium budget=2 start\n{"result":"…"}\n[stamp] duty=monitor done (exit 0)\n', done);
+  assert.deepEqual(store.dutyLogLast('monitor', { logDir: w.logDir }), { at: done.toISOString(), exit: 0 });
+  w.log('monitor', '[stamp] duty=monitor done (exit 3)', done);
+  assert.deepEqual(store.dutyLogLast('monitor', { logDir: w.logDir }), { at: done.toISOString(), exit: 3 });
+  w.log('monitor', '[stamp] duty=monitor done (exit 0)\n[stamp] duty=monitor model=haiku start\n', done);
+  assert.equal(store.dutyLogLast('monitor', { logDir: w.logDir }), null);
+  w.log('monitor', '', done);
+  assert.equal(store.dutyLogLast('monitor', { logDir: w.logDir }), null);
+  assert.equal(store.dutyLogLast('sitrep', { logDir: w.logDir }), null);
+  assert.equal(store.dutyLogLast('../etc', { logDir: w.logDir }), null);
+  // A log longer than the 4 KiB tail window still finds the last line.
+  w.log('monitor', 'x'.repeat(10_000) + '\n[stamp] duty=monitor done (exit 0)\n', done);
+  assert.equal(store.dutyLogLast('monitor', { logDir: w.logDir }).exit, 0);
+});
+
+test('mergeDutyLog: a newer log run replaces the entry (trigger duty-log); the runner\'s own run keeps the entry', () => {
+  const w = dutyWorld();
+  const duty = { slug: 'monitor', kind: 'duty' };
+  // Runner recorded a 55 s run starting 15:49; the log's end (mtime) is inside that window → the entry wins.
+  const entry = { lastRunAt: '2026-09-21T19:49:12.000Z', lastExit: 0, lastCostUsd: 0.12, lastDurationMs: 55_000, failStreak: 0, lastTrigger: 'manual', lastError: null };
+  w.log('monitor', '[stamp] duty=monitor done (exit 0)', T('2026-09-21T19:50:07Z'));
+  assert.equal(store.mergeDutyLog(duty, entry, { logDir: w.logDir }), entry);
+  // A run three hours later that bypassed run-routine.js → synthesized entry, cost unknown.
+  w.log('monitor', '[stamp] duty=monitor done (exit 0)', T('2026-09-21T23:00:00Z'));
+  const merged = store.mergeDutyLog(duty, entry, { logDir: w.logDir });
+  assert.deepEqual(merged, { lastRunAt: '2026-09-21T23:00:00.000Z', lastExit: 0, lastCostUsd: null, lastDurationMs: null, failStreak: 0, lastTrigger: 'duty-log', lastError: null });
+  // A failed log run after a failed entry increments the streak; no entry at all still synthesizes.
+  w.log('monitor', '[stamp] duty=monitor done (exit 1)', T('2026-09-21T23:00:00Z'));
+  assert.equal(store.mergeDutyLog(duty, { ...entry, lastExit: 1, failStreak: 2 }, { logDir: w.logDir }).failStreak, 3);
+  const fresh = store.mergeDutyLog(duty, null, { logDir: w.logDir });
+  assert.equal(fresh.lastExit, 1); assert.equal(fresh.failStreak, 1); assert.match(fresh.lastError, /from the duty log/);
+  // An older log than the entry, a non-duty routine, or no log: the entry as it was.
+  w.log('monitor', '[stamp] duty=monitor done (exit 1)', T('2026-09-20T13:00:00Z'));
+  assert.equal(store.mergeDutyLog(duty, entry, { logDir: w.logDir }), entry);
+  assert.equal(store.mergeDutyLog({ slug: 'monitor', kind: 'command' }, entry, { logDir: w.logDir }), entry);
+  assert.equal(store.mergeDutyLog({ slug: 'sitrep', kind: 'duty' }, null, { logDir: w.logDir }), null);
+});
+
+test('overview: a duty run seen only in its log shows as its last run and clears "missed"', () => {
+  const w = dutyWorld();
+  const now = T('2026-09-21T23:00:00Z');
+  // Schedules applied yesterday, nothing recorded since: the 13:00 fire looks missed…
+  store.writeState({ routines: {}, synced: { monitor: 'duty|0 13 * * *|on', scan: 'command|0 13 * * *|on' }, syncedAt: '2026-09-20T20:00:00Z' }, { file: w.file });
+  let rows = store.overview({ dir: w.rdir, file: w.file, logDir: w.logDir, now });
+  assert.equal(rows.find(r => r.slug === 'monitor').health, 'missed');
+  assert.equal(rows.find(r => r.slug === 'monitor').last, null);
+  // …until the duty log says the 13:00 run happened (this machine's exact case).
+  w.log('monitor', '[stamp] duty=monitor done (exit 0)', T('2026-09-21T17:01:00Z'));
+  rows = store.overview({ dir: w.rdir, file: w.file, logDir: w.logDir, now });
+  const m = rows.find(r => r.slug === 'monitor');
+  assert.equal(m.health, 'ok');
+  assert.deepEqual(m.last, { at: '2026-09-21T17:01:00.000Z', exit: 0, usd: null, ms: null, trigger: 'duty-log', failStreak: 0, error: null });
+  // The command routine has no duty log and is still missed.
+  assert.equal(rows.find(r => r.slug === 'scan').health, 'missed');
+  // A failing log run reads as failed.
+  w.log('monitor', '[stamp] duty=monitor done (exit 2)', T('2026-09-21T17:01:00Z'));
+  assert.equal(store.overview({ dir: w.rdir, file: w.file, logDir: w.logDir, now }).find(r => r.slug === 'monitor').health, 'failed');
+});

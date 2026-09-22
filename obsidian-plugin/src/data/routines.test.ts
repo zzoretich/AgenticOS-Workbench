@@ -104,3 +104,54 @@ test("buildRows and schedulesOutOfDate", () => {
   assert.deepEqual(schedulesOutOfDate([a, b, bad], st), ["gone"], "only the synced slug with no file");
   assert.deepEqual(schedulesOutOfDate([{ ...a, schedule: "0 14 * * *" }, { ...b, enabled: true }], st), ["a", "b", "gone"]);
 });
+
+// ── duty log fallback (spec host-routines D1) — mirrors routines-store.js dutyLogLast/mergeDutyLog ──
+
+import { parseDutyLogTail, mergeDutyLog, readDutyLogLast, DUTY_LOG_DIR, RoutineStateEntry } from "./routines";
+import * as os from "os";
+
+test("parseDutyLogTail: the last 'done (exit N)' line; a trailing start line or empty tail is null", () => {
+  assert.deepEqual(parseDutyLogTail("[stamp] duty=monitor start\n{json}\n[stamp] duty=monitor done (exit 0)\n", "2026-09-21T17:01:00.000Z"), { at: "2026-09-21T17:01:00.000Z", exit: 0 });
+  assert.deepEqual(parseDutyLogTail("[stamp] duty=monitor done (exit 3)", "t"), { at: "t", exit: 3 });
+  assert.equal(parseDutyLogTail("[stamp] duty=monitor done (exit 0)\n[stamp] duty=monitor model=haiku start\n", "t"), null);
+  assert.equal(parseDutyLogTail("", "t"), null);
+});
+
+test("mergeDutyLog: same verdicts as the runtime — window keeps the entry, a later log run replaces it", () => {
+  const entry: RoutineStateEntry = { lastRunAt: "2026-09-21T19:49:12.000Z", lastExit: 0, lastCostUsd: 0.12, lastDurationMs: 55_000, failStreak: 0, lastTrigger: "manual", lastError: null };
+  const duty = { kind: "duty" };
+  assert.equal(mergeDutyLog(duty, entry, { at: "2026-09-21T19:50:07.000Z", exit: 0 }), entry);
+  assert.deepEqual(mergeDutyLog(duty, entry, { at: "2026-09-21T23:00:00.000Z", exit: 0 }),
+    { lastRunAt: "2026-09-21T23:00:00.000Z", lastExit: 0, lastCostUsd: null, lastDurationMs: null, failStreak: 0, lastTrigger: "duty-log", lastError: null });
+  assert.equal(mergeDutyLog(duty, { ...entry, lastExit: 1, failStreak: 2 }, { at: "2026-09-21T23:00:00.000Z", exit: 1 })?.failStreak, 3);
+  const fresh = mergeDutyLog(duty, null, { at: "2026-09-21T23:00:00.000Z", exit: 1 });
+  assert.equal(fresh?.failStreak, 1); assert.match(fresh?.lastError ?? "", /from the duty log/);
+  assert.equal(mergeDutyLog(duty, entry, { at: "2026-09-20T13:00:00.000Z", exit: 1 }), entry);
+  assert.equal(mergeDutyLog({ kind: "command" }, entry, { at: "2026-09-21T23:00:00.000Z", exit: 1 }), entry);
+  assert.equal(mergeDutyLog(duty, null, null), null);
+});
+
+test("buildRows with duty logs: a log-only run becomes the last run and clears 'missed'", () => {
+  const monitor = routineFromFile("monitor", "---\nschema: 1\nname: Monitor\nkind: duty\nschedule: \"0 13 * * *\"\nenabled: true\n---\n");
+  const state = { ...emptyState(), synced: { monitor: "duty|0 13 * * *|on" }, syncedAt: "2026-09-20T20:00:00Z" };
+  const now = new Date("2026-09-21T23:00:00Z");
+  assert.equal(buildRows([monitor], state, now)[0].health, "missed");
+  const row = buildRows([monitor], state, now, { monitor: { at: "2026-09-21T17:01:00.000Z", exit: 0 } })[0];
+  assert.equal(row.health, "ok");
+  assert.equal(row.last?.lastTrigger, "duty-log");
+  assert.equal(buildRows([monitor], state, now, { monitor: { at: "2026-09-21T17:01:00.000Z", exit: 2 } })[0].health, "failed");
+});
+
+test("readDutyLogLast: reads the vault log's tail and mtime; absent, empty or an odd slug is null", () => {
+  const vault = fs.mkdtempSync(path.join(os.tmpdir(), "aos-dl-"));
+  assert.equal(readDutyLogLast(vault, "monitor"), null);
+  const dir = path.join(vault, DUTY_LOG_DIR);
+  fs.mkdirSync(dir, { recursive: true });
+  const f = path.join(dir, "duty-monitor.log");
+  fs.writeFileSync(f, "x".repeat(10_000) + "\n[stamp] duty=monitor done (exit 0)\n");
+  const end = new Date("2026-09-21T17:01:00Z"); fs.utimesSync(f, end, end);
+  assert.deepEqual(readDutyLogLast(vault, "monitor"), { at: end.toISOString(), exit: 0 });
+  fs.writeFileSync(f, "");
+  assert.equal(readDutyLogLast(vault, "monitor"), null);
+  assert.equal(readDutyLogLast(vault, "../monitor"), null);
+});
