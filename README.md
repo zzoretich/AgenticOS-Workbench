@@ -177,7 +177,7 @@ The HUD on a demo vault: a user called Casey, an agent called Atlas, two workspa
 
 Run `claude` in any directory and ask it *what do you know about me?* The first prompt arrives with `<brain-context>` (and your agent's `<persona>`). When you are done, `/wrap` extracts memories into `<vault>/brain/memory/` and adds a line to `MEMORY.md`. In a later session, *use the agenticos recall tool to search for …* answers from your own notes.
 
-Say `sitrep` for a one-action briefing on where your work stands, and `review persona flags` to walk through anything your agent has flagged or proposed. A heartbeat watches the agent itself: a duty that misses its schedule becomes a flag in your next session and an OS notification, and every proposal outcome is kept in a ledger the agent reads before proposing again.
+Say `sitrep` for a one-action briefing on where your work stands, and `review persona flags` to walk through anything your agent has flagged or proposed. A heartbeat watches the agent itself: a duty that misses its schedule becomes a flag in your next session, an OS notification and a red pill in the HUD; an hourly tick (skipped when nothing changed, about a dollar a day at most) queues new corrections, failures and stalls for reflect; and every proposal outcome is kept in a ledger the agent reads before proposing again.
 
 <a name="everyday-commands"></a>
 ## <img src="docs/assets/icon-commands.svg" width="36" align="top" alt="" /> Everyday commands
@@ -287,7 +287,7 @@ brain/scripts      the runtime that gets vendored into your vault (hooks, collec
 cli                the installer and the aos subcommands (persona, schedule, routines, cost, the Codex host) + two install rehearsals
 plugin             the Claude Code plugin: hooks.json, .mcp.json, bin/aos, 15 commands, 6 skills (also the source of the generated Codex skills)
 obsidian-plugin    the Agentic OS HUD (TypeScript, esbuild)
-vault-template     the seed vault (AGENTICOS.md, MEMORY.md, brain/ incl. the three duty routines, persona templates incl. the heartbeat watchdog routine)
+vault-template     the seed vault (AGENTICOS.md, MEMORY.md, brain/ incl. the three duty routines, persona templates incl. the heartbeat watchdog and hourly tick routines)
 extras             the launchd schedule template, the cost analyzer, optional Ollama helpers
 tools              export-from-vault, the privacy gate, and the brand-asset generator behind docs/assets
 docs               install, chief of staff, cost, the Obsidian smoke checklist, the release acceptance runbook

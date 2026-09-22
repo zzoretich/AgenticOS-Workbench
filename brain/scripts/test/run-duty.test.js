@@ -221,3 +221,59 @@ test('watchdog kills the claude process itself on PERSONA_TIMEOUT; a non-executa
   assert.match(bad.stderr, /not executable/);
   assert.ok(!fs.existsSync(pidFile), 'a misconfigured PERSONA_CLAUDE_BIN must never launch anything');
 });
+
+// Spec 2026-09-22-persona-tick-design D3: the tick's helper (persona/tick.js) decides runner-side whether the model
+// runs at all. A `precheck` exit 3 skips the run with one log line and no journal entry — and exit 0, so run-routine.js
+// still records a run and the watchdog never mistakes an idle hour for a miss. `beat` runs only after the contract passes.
+test('tick helper: precheck skips an unchanged vault silently, beat runs after a met contract and not after a failed one', () => {
+  const s = sandbox();
+  fs.writeFileSync(path.join(s.vault, 'persona', 'duties', 'tick.md'), 'ascii fixture tick\n');
+  // A fake claude that journals the tick entry only when FAKE_JOURNAL is set (the sandbox fake hardcodes testduty).
+  const fake = path.join(s.vault, 'fake-tick-claude');
+  fs.writeFileSync(fake, [
+    '#!/bin/sh',
+    '[ -n "${FAKE_JOURNAL:-}" ] && { mkdir -p "$(dirname "$FAKE_JOURNAL")"; printf "\\n## 09:00 — duty: tick\\n- status: OK\\n" >> "$FAKE_JOURNAL"; }',
+    'echo "{\\"type\\":\\"result\\",\\"result\\":\\"done\\",\\"total_cost_usd\\":0.01,\\"usage\\":{\\"input_tokens\\":1,\\"output_tokens\\":1},\\"duration_ms\\":10}"',
+    '',
+  ].join('\n'), { mode: 0o755 });
+  const env = { ...s.env, PERSONA_CLAUDE_BIN: fake };
+  const tickState = () => JSON.parse(fs.readFileSync(path.join(s.vault, 'brain', '_index', 'persona-tick.json'), 'utf8'));
+  const log = () => fs.readFileSync(path.join(s.logDir, 'duty-tick.log'), 'utf8');
+
+  // 1. first run: a change by definition → the model runs, the contract passes, the beat is recorded
+  const r1 = run(['tick'], { ...env, FAKE_JOURNAL: s.journal });
+  assert.equal(r1.status, 0, r1.stderr);
+  assert.match(log(), /duty=tick done \(exit 0\)/);
+  assert.equal(tickState().beats, 1);
+  assert.equal(tickState().pending, null);
+  assert.equal(fs.readFileSync(s.journal, 'utf8').match(/duty: tick/g).length, 1);
+
+  // 2. nothing changed since the beat → skipped: exit 0, one log line, no new journal entry, no FAILED flag
+  const r2 = run(['tick'], { ...env, FAKE_JOURNAL: s.journal });
+  assert.equal(r2.status, 0, r2.stderr);
+  assert.match(log(), /duty=tick skipped: unchanged since the last beat/);
+  assert.equal((log().match(/ start$/mg) || []).length, 1, 'the model started once');
+  assert.equal(fs.readFileSync(s.journal, 'utf8').match(/duty: tick/g).length, 1, 'a skip writes no journal entry');
+  assert.equal(tickState().skipped, 1);
+  assert.ok(!fs.readFileSync(path.join(s.vault, 'persona', 'STATE.md'), 'utf8').includes('FAILED'));
+
+  // 3. a new feedback draft → the model runs but never journals → FAILED as usual, and the beat is NOT recorded
+  const draft = path.join(s.vault, 'brain', 'memory', 'feedback', '_drafts', 'r-1.md');
+  fs.mkdirSync(path.dirname(draft), { recursive: true });
+  fs.writeFileSync(draft, '# Rule\n');
+  const r3 = run(['tick'], env);
+  assert.equal(r3.status, 1);
+  assert.match(fs.readFileSync(s.journal, 'utf8'), /duty: tick\n- status: FAILED/);
+  assert.equal(tickState().beats, 1, 'no beat after a failed contract');
+  assert.ok(tickState().pending, 'the pending signature waits for a run that meets the contract');
+});
+
+test('tick helper: the budget and allowlist come from the env like any duty (run-routine.js sets them from the routine file)', () => {
+  const s = sandbox();
+  fs.writeFileSync(path.join(s.vault, 'persona', 'duties', 'tick.md'), 'ascii fixture tick\n');
+  const r = run(['tick', '--dry-run'], { ...s.env, PERSONA_MAX_USD: '0.05', PERSONA_TOOLS: 'Read,Glob,Grep,Bash(node tick.js:*)' });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /^--max-budget-usd\n0\.05$/m);
+  assert.match(r.stdout, /^--allowedTools\nRead,Glob,Grep,Bash\(node tick\.js:\*\)$/m);
+  assert.ok(!fs.existsSync(path.join(s.vault, 'brain', '_index', 'persona-tick.json')), 'dry-run runs no precheck');
+});

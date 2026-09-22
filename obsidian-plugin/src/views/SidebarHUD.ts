@@ -5,6 +5,7 @@ import { sparkline } from "../data/sparkline";
 import { loadStaff, StaffAgent } from "../data/staff";
 import { loadPipelines, pipelineStatuses, PipelineStatus, PIPELINES_PATH } from "../data/pipelines";
 import { updateBadge } from "../data/updateBadge";
+import { loadPersonaHeartbeat, heartbeatPill, PersonaHeartbeat, PERSONA_HEARTBEAT_PATH } from "../data/personaHeartbeat";
 import type AgenticOSPlugin from "../../main";
 
 export const VIEW_TYPE_SIDEBAR_HUD = "agentic-os-sidebar-hud";
@@ -16,6 +17,7 @@ export class SidebarHUDView extends ItemView {
   private history: DailySnapshot[] = [];
   private staff: StaffAgent[] = [];
   private statuses: PipelineStatus[] = [];
+  private heartbeat: PersonaHeartbeat | null = null;
   private clockTimerId: number | null = null;
   private refreshDebounce: number | null = null;
 
@@ -45,7 +47,7 @@ export class SidebarHUDView extends ItemView {
   private registerVaultWatchers(): void {
     this.registerEvent(
       this.app.vault.on("modify", (file: TAbstractFile) => {
-        if (file.path === SNAPSHOT_PATH || file.path === RUNS_PATH || file.path === PIPELINES_PATH) {
+        if (file.path === SNAPSHOT_PATH || file.path === RUNS_PATH || file.path === PIPELINES_PATH || file.path === PERSONA_HEARTBEAT_PATH) {
           this.scheduleRefresh();
         }
       })
@@ -65,6 +67,7 @@ export class SidebarHUDView extends ItemView {
     this.staff = await loadStaff(this.app);
     const led = await loadPipelines(this.app);
     this.statuses = pipelineStatuses(led, Date.now());
+    this.heartbeat = await loadPersonaHeartbeat(this.app);
     this.render();
   }
 
@@ -113,6 +116,13 @@ export class SidebarHUDView extends ItemView {
     const update = updateBadge(s.config.updates, formatRelative);
     if (update) {
       status.createSpan({ cls: "aos-pill aos-pill-amber", text: update.label, attr: { title: update.title } });
+    }
+    // The persona heartbeat: the watchdog's verdict on the duty schedule (src/data/personaHeartbeat.ts). Absent
+    // until the watchdog has written its file once; green/amber/rose follow the last check's age and any miss.
+    const beat = heartbeatPill(this.heartbeat, Date.now(), formatRelative);
+    if (beat) {
+      const tone = beat.tone === "ok" ? "aos-pill-green" : beat.tone === "warn" ? "aos-pill-amber" : "aos-pill-rose";
+      status.createSpan({ cls: `aos-pill ${tone}`, text: beat.label, attr: { title: beat.title, "aria-label": beat.title } });
     }
 
     // sparkline trend tiles

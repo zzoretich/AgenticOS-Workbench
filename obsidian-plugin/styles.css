@@ -92,6 +92,7 @@
 .aos-pill-cyan { color: var(--aos-cyan); border-color: rgba(0,212,255,0.4); background: rgba(0,212,255,0.08); }
 .aos-pill-rose { color: var(--aos-rose); border-color: rgba(255,94,126,0.4); background: rgba(255,94,126,0.08); }
 .aos-pill-dim  { color: var(--aos-dim);  border-color: var(--aos-border); }
+.aos-pill-green { color: var(--aos-green); border-color: rgba(94,226,160,0.4); background: rgba(94,226,160,0.08); }
 
 /* ── PANEL ─────────────────────────────────────────────────────────────── */
 

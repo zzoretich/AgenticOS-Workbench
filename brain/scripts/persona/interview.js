@@ -4,6 +4,7 @@
  * interview.js — Chief of Staff identity interview → <vault>/persona/.
  * Writes IDENTITY.md (always), STATE.md (kept on re-run), PLAYBOOK.md (generated once via
  * build-playbook.js), duties/*.md (always), proposals/README.md and autoapply.json (kept),
+ * the persona routines from templates/routines/*.md into <vault>/brain/routines/ (kept),
  * journal/logs/ and answers.json. Pure file work: no model call, and no dependency on
  * lib/paths.js when --vault is given (cli/persona-cmd.js always gives it).
  *
@@ -22,7 +23,7 @@ const path = require('path');
 const readline = require('readline');
 const { buildPlaybook } = require('./build-playbook.js');
 
-const DUTIES = ['monitor', 'reflect', 'sitrep'];
+const DUTIES = ['monitor', 'reflect', 'sitrep', 'tick'];
 const EFFORTS = ['low', 'medium', 'high'];
 const DEFAULT_LAYOUT = '{yyyy}/{yyyy}-{MM}-{MMMM}/{yyyy}-{MM}-{dd}.md';
 const TEMPLATE_DIRS = [path.join(__dirname, 'templates'), path.join(__dirname, '..', '..', '..', 'vault-template', 'persona')];
@@ -157,12 +158,17 @@ function writePersona({ vault, configDir, templatesDir, answers, node, logDir, n
   put('STATE.md', renderTemplate(tmpl('STATE.template.md'), vars), true);
   put('proposals/README.md', renderTemplate(tmpl(path.join('proposals', 'README.md')), vars), true);
   put('autoapply.json', JSON.stringify({ classes: [] }, null, 2) + '\n', true);
-  // The heartbeat watchdog routine (kept once present; `{{NODE}}`/`{{VAULT}}` are expanded by run-routine.js, not here).
-  const hbTemplate = path.join(templatesDir, 'routines', 'heartbeat.md');
-  const hbFile = path.join(vault, 'brain', 'routines', 'heartbeat.md');
-  if (fs.existsSync(hbTemplate)) {
-    if (fs.existsSync(hbFile)) kept.push('../brain/routines/heartbeat.md');
-    else { fs.mkdirSync(path.dirname(hbFile), { recursive: true }); fs.writeFileSync(hbFile, fs.readFileSync(hbTemplate, 'utf8')); written.push('../brain/routines/heartbeat.md'); }
+  // The persona's own routines — the heartbeat watchdog and the hourly tick — seeded verbatim into brain/routines/ and
+  // kept once present (`{{NODE}}`/`{{VAULT}}` in them are expanded by run-routine.js, not here). `aos persona --yes`
+  // on an existing vault is how a routine added by an upgrade arrives.
+  let routineTemplates = [];
+  try { routineTemplates = fs.readdirSync(path.join(templatesDir, 'routines')).filter(f => f.endsWith('.md')).sort(); } catch { /* no routines in these templates */ }
+  for (const name of routineTemplates) {
+    const file = path.join(vault, 'brain', 'routines', name);
+    if (fs.existsSync(file)) { kept.push(`../brain/routines/${name}`); continue; }
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, fs.readFileSync(path.join(templatesDir, 'routines', name), 'utf8'));
+    written.push(`../brain/routines/${name}`);
   }
   fs.mkdirSync(path.join(persona, 'journal', 'logs'), { recursive: true });
   if (fs.existsSync(path.join(persona, 'PLAYBOOK.md'))) kept.push('PLAYBOOK.md');

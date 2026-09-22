@@ -110,3 +110,18 @@ test('brain/routines seeds the three duty routines (valid, guarded, enabled) and
   assert.deepEqual(all.map((r) => r.schedule), ['0 13 * * *', '0 18 * * 0', '45 7 * * 1-5']);
   assert.match(read('brain/routines/README.md'), /^# /);
 });
+
+test('persona/routines seeds the watchdog heartbeat (command) and the hourly tick (duty, 0.05 USD, read-only allowlist)', () => {
+  const store = require('../brain/scripts/lib/routines-store.js');
+  const all = store.list({ dir: path.join(T, 'persona', 'routines') });
+  assert.deepEqual(all.map((r) => [r.slug, r.kind, r.schedule, r.enabled]), [['heartbeat', 'command', '*/30 * * * *', true], ['tick', 'duty', '0 * * * *', true]]);
+  for (const r of all) assert.deepEqual(r.errors, [], r.slug);
+  const tick = all.find((r) => r.slug === 'tick');
+  assert.equal(tick.guarded, true);
+  assert.equal(tick.budgetUsd, 0.05);
+  assert.match(tick.tools, /^Read,Glob,Grep,Write,Edit,Bash\(date:\*\),Bash\(\{\{NODE\}\} \{\{VAULT\}\}\/brain\/scripts\/persona\/tick\.js:\*\)/);
+  assert.ok(!/git/.test(tick.tools), 'the tick never runs git');
+  assert.match(tick.body, /persona\/duties\/tick\.md/);
+  assert.match(read('persona/duties/tick.md'), /tick\.js signals/);
+  assert.match(read('persona/STATE.template.md'), /- tick: never/);
+});

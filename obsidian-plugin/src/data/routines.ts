@@ -16,7 +16,7 @@ export const KINDS = ["duty", "prompt", "command"] as const;
 export const EFFORTS = ["low", "medium", "high"] as const;
 export type RoutineKind = typeof KINDS[number];
 export type Effort = typeof EFFORTS[number];
-const KEY_ORDER = ["schema", "name", "kind", "schedule", "enabled", "guarded", "model", "effort", "budgetUsd", "argv", "timeoutSec", "tags"];
+const KEY_ORDER = ["schema", "name", "kind", "schedule", "enabled", "guarded", "model", "effort", "budgetUsd", "tools", "argv", "timeoutSec", "tags"];
 
 export type Scalar = string | number | boolean | null;
 export type Frontmatter = Record<string, Scalar | Scalar[]>;
@@ -32,6 +32,8 @@ export interface Routine {
   model?: string;
   effort?: string;
   budgetUsd?: number;
+  // duty only: the PERSONA_TOOLS allowlist for that duty's run (the runner expands {{NODE}} and {{VAULT}} in it).
+  tools?: string;
   argv?: string[];
   timeoutSec?: number;
   tags?: string[];
@@ -147,6 +149,10 @@ export function validateRoutine(r: Partial<Routine>): string[] {
     if (r.model !== undefined && (typeof r.model !== "string" || !r.model.trim())) errors.push("model must be a string");
     if (r.effort !== undefined && !(EFFORTS as readonly string[]).includes(String(r.effort))) errors.push(`effort must be one of ${EFFORTS.join(", ")}`);
     if (r.budgetUsd !== undefined && !isMoney(r.budgetUsd)) errors.push("budgetUsd must be a non-negative number");
+  }
+  if (r.kind === "duty") {
+    if (r.budgetUsd !== undefined && !isMoney(r.budgetUsd)) errors.push("budgetUsd must be a non-negative number");
+    if (r.tools !== undefined && (typeof r.tools !== "string" || !r.tools.trim())) errors.push("tools must be a non-empty string");
   }
   if (r.kind === "command") {
     if (!isStringArray(r.argv) || r.argv.length === 0) errors.push("a command routine needs argv: a non-empty array of strings");
