@@ -61,6 +61,9 @@ test("validateRoutine: kind rules and the slug rule", () => {
   assert.match(validateRoutine({ ...base, schedule: "0 9 1 * 1" }).join(), /both be restricted/);
   assert.match(validateRoutine({ ...base, slug: "A" }).join(), /slug/);
   assert.match(validateRoutine({ ...base, effort: "max" }).join(), /effort/);
+  assert.deepEqual(validateRoutine({ ...base, kind: "duty", body: "", budgetUsd: 0.05, tools: "Read,Glob" }), [], "a duty may carry its own budget and allowlist");
+  assert.match(validateRoutine({ ...base, kind: "duty", budgetUsd: -1 }).join(), /budgetUsd/);
+  assert.match(validateRoutine({ ...base, kind: "duty", tools: " " }).join(), /tools/);
 });
 
 test("parseRoutineFrontmatter: leading blank lines are layout, unterminated block is no block", () => {

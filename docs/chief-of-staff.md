@@ -56,6 +56,7 @@ there, not in `brain/config.json`. To turn the agent off without editing config,
 | monitor | daily 13:00 | duty health, vault drift, unfinished work, pending review counts; prepares one safe fix |
 | reflect | Sunday 18:00 | curates the playbook from `scan-arsenal.js`, promotes repeated corrections to feedback memories, files proposals, writes a weekly reflection |
 | sitrep | weekdays 07:45 | `sitrep-state.js diff` → one page with ONE recommended action → `brain/_index/sitrep.md` + daily note |
+| tick | hourly | the cheap beat (0.05 USD, read-only): `tick.js signals` → queues new corrections, duty failures, stalled repos, regressions and aged flags into `persona/queue.jsonl` for reflect; skipped by the runner when nothing changed |
 
 Runner: `sh <vault>/brain/scripts/persona/run-duty.sh <duty> [--dry-run]`. It runs
 `claude -p` with the duty prompt, appends `IDENTITY.md` + `STATE.md` as system prompt,
@@ -124,6 +125,32 @@ It removes its own MISSED line once the duty runs again and never touches any ot
 close by hand stays closed until a new miss. Once a day it also runs `ledger.js verify` (see
 Proposals). `aos routines run heartbeat` checks now; `aos routines disable heartbeat` turns the schedule
 off without deleting the file.
+
+The second layer is the **tick**, `brain/routines/tick.md` (`kind: duty`, hourly, seeded by `aos persona`
+next to the heartbeat; `aos persona --yes` adds it to an existing vault). It is the only duty with a
+runner-side helper, `brain/scripts/persona/tick.js`: before the model runs, `tick.js precheck` compares a
+signature of the vault's inputs — the journal, feedback memories and drafts, `STATE.md`, proposals, the
+ledger, each repo in `persona/repos.json` (its `.git/HEAD`, index, reflog and `.planning/STATE.md`) and
+the watchdog's beats — with the one recorded at the last beat, and `run-duty.sh` skips the model call when
+nothing changed (one `skipped: unchanged` line in `duty-tick.log`, no journal entry, exit 0, so the
+watchdog still counts the hour as a run). When something did change, the duty runs `tick.js signals`,
+which lists the candidates since the last beat with a source pointer each — `correction` (a feedback
+file or draft), `duty-failure` (a failed or missed beat), `repo-stall` (`.planning/STATE.md` idle past
+`stall_threshold_days`), `regressed` (a ledger event) and `flag-aged` (a `- [ ] <date>` flag older than
+`persona.tick.flagAgeDays`, default 7) — and queues the ones worth reflect's time with `tick.js queue
+<type> --source <pointer> --note <why>`, which validates the type and never queues the same (type, source)
+twice. The queue is `persona/queue.jsonl`, append-only, one JSON line per signal; the daily reflect that
+drains it is the next slice. The tick's budget and allowlist live in the routine file (`budgetUsd: 0.05`,
+`tools:` Read, Glob, Grep, Write, Edit, `date`, `tick.js` and `ledger.js summary` — no git), and the
+routine runner passes them to `run-duty.sh` as `PERSONA_MAX_USD` and `PERSONA_TOOLS`; `tick.js beat`
+records the beat after the contract check passes. The tick touches `STATE.md` in two places only: its
+`tick:` line under `## Last Duty Runs`, and the `## Sitrep` block when it queued something. `tick.js
+status` prints its state (`brain/_index/persona-tick.json`: last beat, skips, the pending signature).
+
+In the Obsidian HUD the sidebar shows a heartbeat pill next to the update pill, read from
+`persona-heartbeat.json`: green while the last check is under an hour old and no duty is missed or
+failed, amber under three hours (or while a duty has never run, is stale or invalid), rose otherwise or on
+any miss; the tooltip lists each duty with its status, last run and next fire.
 
 ## Commands and skills
 

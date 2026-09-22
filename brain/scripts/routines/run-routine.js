@@ -6,7 +6,8 @@
  *   node brain/scripts/routines/run-routine.js <slug> [--manual] [--dry-run]
  *
  * Loads <vault>/brain/routines/<slug>.md, then by kind:
- *   duty     sh <vault>/brain/scripts/persona/run-duty.sh <slug>   (its own kill switch, caps, journal, contract)
+ *   duty     sh <vault>/brain/scripts/persona/run-duty.sh <slug>   (its own kill switch, caps, journal, contract);
+ *            `budgetUsd` and `tools` in the routine file become PERSONA_MAX_USD and PERSONA_TOOLS for that run
  *   prompt   <claude> -p <body> --model … --effort … --allowedTools <routines.tools> --max-budget-usd …
  *            gated by routines.perDayUsd over today's routine:* ledger rows; the run is ledgered as routine:<slug>
  *   command  argv[0] argv.slice(1) — spawned directly (no shell), cwd = vault; `{{NODE}}` in an argv entry expands to
@@ -83,7 +84,12 @@ function plan(routine, cfg, deps) {
   if (rc.enabled === false) return { skip: 'routines disabled in config' };
   if (!routine.enabled) return { skip: 'routine disabled' };
   if (routine.kind === 'duty') {
-    return { cmd: 'sh', args: [path.join(deps.vault, 'brain', 'scripts', 'persona', 'run-duty.sh'), routine.slug], env: { ...deps.env }, feature: `duty:${routine.slug}` };
+    // A duty's own budget and allowlist (tick.md: 0.05 USD, read-only tools) reach run-duty.sh as the env overrides it
+    // already honours; `{{NODE}}`/`{{VAULT}}` in tools expand like argv so the template file works on every machine.
+    const env = { ...deps.env };
+    if (routine.budgetUsd !== undefined) env.PERSONA_MAX_USD = String(routine.budgetUsd);
+    if (typeof routine.tools === 'string' && routine.tools.trim()) env.PERSONA_TOOLS = expandArgv(routine.tools, deps);
+    return { cmd: 'sh', args: [path.join(deps.vault, 'brain', 'scripts', 'persona', 'run-duty.sh'), routine.slug], env, feature: `duty:${routine.slug}` };
   }
   if (routine.kind === 'prompt') {
     const perDay = n(rc.perDayUsd, 6);

@@ -50,6 +50,10 @@ test('validate: kind-specific rules and the slug rule', () => {
   assert.deepEqual(store.validate(base), []);
   assert.deepEqual(store.validate({ ...base, kind: 'command', argv: ['ls'] }), []);
   assert.deepEqual(store.validate({ ...base, kind: 'duty', body: '' }), []);
+  assert.deepEqual(store.validate({ ...base, kind: 'duty', body: '', budgetUsd: 0.05, tools: 'Read,Glob' }), [], 'a duty may carry its own budget and allowlist');
+  assert.match(store.validate({ ...base, kind: 'duty', budgetUsd: -1 }).join(), /budgetUsd/);
+  assert.match(store.validate({ ...base, kind: 'duty', tools: ['Read'] }).join(), /tools/);
+  assert.match(store.validate({ ...base, kind: 'duty', tools: ' ' }).join(), /tools/);
   assert.match(store.validate({ ...base, body: '' }).join(), /needs a body/);
   assert.match(store.validate({ ...base, effort: 'max' }).join(), /effort/);
   assert.match(store.validate({ ...base, budgetUsd: -1 }).join(), /budgetUsd/);

@@ -5,7 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { buildRoster, orchestratorFor } = require('../heartbeat-writer.js');
+const { buildRoster, orchestratorFor, nextFireFor } = require('../heartbeat-writer.js');
 
 test('an empty orchestrator map yields no roster and never attributes a run', () => {
   const roster = buildRoster({});
@@ -40,4 +40,19 @@ test('heartbeat-writer.js loads when brain/config.json sets "roster": null', () 
   });
   assert.equal(r.status, 0, r.stderr);
   assert.equal(r.stdout, 'LOADED_OK');
+});
+
+test('nextFireFor: an agent that is also an enabled routine gets its next fire; disabled, unscheduled or unknown names get null', () => {
+  const rows = [
+    { slug: 'sitrep', enabled: true, next: ['2026-09-23T07:45:00.000Z', '2026-09-24T07:45:00.000Z'] },
+    { slug: 'off', enabled: false, next: [] },
+    { slug: 'asdate', enabled: true, next: [new Date('2026-09-23T13:00:00.000Z')] },
+    { slug: 'bad', enabled: true, next: ['not a date'] },
+  ];
+  assert.equal(nextFireFor('sitrep', rows), '2026-09-23T07:45:00.000Z');
+  assert.equal(nextFireFor('asdate', rows), '2026-09-23T13:00:00.000Z');
+  assert.equal(nextFireFor('off', rows), null);
+  assert.equal(nextFireFor('bad', rows), null);
+  assert.equal(nextFireFor('Planner', rows), null);
+  assert.equal(nextFireFor('sitrep', null), null);
 });
