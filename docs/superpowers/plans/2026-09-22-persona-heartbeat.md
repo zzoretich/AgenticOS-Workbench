@@ -13,7 +13,7 @@ it helped), so that proposals get better over time instead of restarting from ze
 | Topic | Decision |
 |---|---|
 | Heartbeat | Two layers: a model-free watchdog guarding the schedule, plus an hourly model-run tick. |
-| Tick budget | Hourly, about 1 USD per day, hard cap 0.05 USD per tick, skips when nothing changed. |
+| Tick budget | Hourly, about 1 USD per day, hard cap 0.05 USD per tick, skips when nothing changed. (Raised to 0.10 after the first live runs on 2026-09-22 measured 0.055 per working run; skips keep the daily total near 1 USD.) |
 | Tick job | Write the beat, triage new signals since the last beat into a queue for reflect, touch the sitrep line only if something moved. |
 | Surfaces | `STATE.md` flag with session injection, OS notification, HUD pill. |
 | Proposal scope | Own prompts and duties, vault and memory hygiene, the user's workflows and projects, the product itself. |
@@ -40,7 +40,7 @@ it helped), so that proposals get better over time instead of restarting from ze
 - [ ] tests listed in the spec §5; `npm run gate`; `npm test`; first-run rehearsal
 
 ### Slice 2 — tick + HUD pill (spec: `docs/superpowers/specs/2026-09-22-persona-tick-design.md`)
-- [x] `tick` duty: hourly, `budgetUsd: 0.05` and a read-only `tools:` allowlist in the routine file
+- [x] `tick` duty: hourly, `budgetUsd: 0.1` (0.05 in the interview; see the decisions table) and a read-only `tools:` allowlist in the routine file
       (passed to `run-duty.sh` as `PERSONA_MAX_USD` / `PERSONA_TOOLS`), skipped by the runner via
       `tick.js precheck` when the journal, feedback and drafts, STATE.md, proposals, ledger, tracked
       repos and the watchdog's beats are unchanged since the last beat

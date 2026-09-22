@@ -56,7 +56,7 @@ there, not in `brain/config.json`. To turn the agent off without editing config,
 | monitor | daily 13:00 | duty health, vault drift, unfinished work, pending review counts; prepares one safe fix |
 | reflect | Sunday 18:00 | curates the playbook from `scan-arsenal.js`, promotes repeated corrections to feedback memories, files proposals, writes a weekly reflection |
 | sitrep | weekdays 07:45 | `sitrep-state.js diff` → one page with ONE recommended action → `brain/_index/sitrep.md` + daily note |
-| tick | hourly | the cheap beat (0.05 USD, read-only): `tick.js signals` → queues new corrections, duty failures, stalled repos, regressions and aged flags into `persona/queue.jsonl` for reflect; skipped by the runner when nothing changed |
+| tick | hourly | the cheap beat (0.10 USD cap, about 0.06 per working run, read-only): `tick.js signals` → queues new corrections, duty failures, stalled repos, regressions and aged flags into `persona/queue.jsonl` for reflect; skipped by the runner when nothing changed |
 
 Runner: `sh <vault>/brain/scripts/persona/run-duty.sh <duty> [--dry-run]`. It runs
 `claude -p` with the duty prompt, appends `IDENTITY.md` + `STATE.md` as system prompt,
@@ -140,7 +140,7 @@ file or draft), `duty-failure` (a failed or missed beat), `repo-stall` (`.planni
 `persona.tick.flagAgeDays`, default 7) — and queues the ones worth reflect's time with `tick.js queue
 <type> --source <pointer> --note <why>`, which validates the type and never queues the same (type, source)
 twice. The queue is `persona/queue.jsonl`, append-only, one JSON line per signal; the daily reflect that
-drains it is the next slice. The tick's budget and allowlist live in the routine file (`budgetUsd: 0.05`,
+drains it is the next slice. The tick's budget and allowlist live in the routine file (`budgetUsd: 0.1` — a working haiku run costs about 0.06 USD, most of it the cached system prompt across its tool turns, so 0.05 cut every run off mid-flight —
 `tools:` Read, Glob, Grep, Write, Edit, `date`, `tick.js` and `ledger.js summary` — no git), and the
 routine runner passes them to `run-duty.sh` as `PERSONA_MAX_USD` and `PERSONA_TOOLS`; `tick.js beat`
 records the beat after the contract check passes. The tick touches `STATE.md` in two places only: its
