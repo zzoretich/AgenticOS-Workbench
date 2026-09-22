@@ -28,6 +28,7 @@ Run before tagging a release, on a vault created by `aos init` (not the develope
 - [ ] **(Plan 5)** On a fresh install (Cost/Telemetry toggles never saved) `aos cost enable --budget 100` then a plugin reload shows the COST row with **no** toggle change — Settings → Cost module enabled already reads on (seeded from `agenticos.json` `cost.enabled`); flip it off in Settings and `aos cost enable` no longer overrides it (the saved toggle wins). Same precondition: until Plan 5, write `"cost": { "enabled": true }` into `agenticos.json` by hand to exercise the seeding.
 - [ ] Fix Queue shows no anchor/backfill cards while cost is off; `open-health` still appears when health.md has errors.
 - [ ] Command deck `/scan` spawns `scan-vault.js` with the resolved node (notice `▶ /scan`, then `✓ /scan: …`).
+- [ ] Heartbeat pill: absent on a vault whose watchdog never ran; after `aos routines run heartbeat` a green `♥ <age>` pill sits next to the update pill and its tooltip lists each duty with status, last run and next fire. Backdate `checkedAt` in `brain/_index/persona-heartbeat.json` by 2 h → amber within a second (the file is watched); set one duty's `status` to `missed` → rose with `· 1 missed` in the label.
 
 ## Spaces / Memory / Runs
 
