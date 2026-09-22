@@ -201,9 +201,11 @@ function writeCache(file, patch) {
     if (patch[h]) cur.hosts[h] = patch[h]; else delete cur.hosts[h];
   }
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(cur, null, 2) + '\n');
-  fs.renameSync(tmp, file);
+  // Per-process temp name: the HUD, the CLI and an upgrade can refresh at the same moment, and two writers sharing
+  // one `<file>.tmp` lose the race at rename (ENOENT). The last rename wins; both wrote a complete file.
+  const tmp = `${file}.${process.pid}.tmp`;
+  try { fs.writeFileSync(tmp, JSON.stringify(cur, null, 2) + '\n'); fs.renameSync(tmp, file); }
+  catch (e) { try { fs.rmSync(tmp, { force: true }); } catch { /* already gone */ } throw e; }
   return cur;
 }
 
