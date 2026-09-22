@@ -36,9 +36,10 @@ Re-running the interview regenerates `IDENTITY.md` and `duties/*.md`; it keeps `
 | `backlog.md` | `backlog.js` (tracked) | accepted `workflow` and `product` proposals, one section each with the What and Why; a product entry names its surface |
 | `journal/` | duties | one file per day; `journal/logs/` holds duty logs |
 | `answers.json` | interview | the interview answers (for prefilled re-runs and rename) |
-| `autoapply.json` | interview | `{ "classes": [] }` — the dormant auto-apply whitelist |
+| `autoapply.json` | interview, then approved `autoapply-<class>` proposals | `{ "classes": [] }` at install — the auto-apply whitelist; only your approval adds a class |
+| `flag-closer/confirmations.json` | `recheck.js record` (the tick, once a day) | per pending proposal, how many consecutive days its recipe still found the finding — the auto-apply gate's second condition |
 | `repos.json` | you (optional) | `{ "stall_threshold_days": 4, "repos": [{ "name", "path" }] }` for the sitrep |
-| `ledger.jsonl` | `ledger.js` (tracked) | append-only proposal outcomes: `filed`, `approved`, `rejected`, `stale-dropped`, `accepted`, `dismissed`, `verified`, `regressed` |
+| `ledger.jsonl` | `ledger.js` (tracked) | append-only proposal outcomes: `filed`, `approved`, `rejected`, `stale-dropped`, `accepted`, `dismissed`, `auto-applied`, `verified`, `regressed`, each with the proposal's `class` when it has one |
 | `DISABLED` | `aos persona off` | kill switch: no injection, no duties |
 
 ## Every session
@@ -186,9 +187,11 @@ verbs for them: **Accept** appends the proposal's What and Why to `persona/backl
 `brain/scripts/persona/backlog.js` and ledgers `accepted`; **Dismiss** ledgers `dismissed` with a reason and
 deletes the file. A product proposal names its `surface` (`cli | plugin | brain | hud | vault-template |
 docs`), so a backlog entry says where a feature run would start. `ledger.js summary [--days N]` prints
-counts per event and kind, the approval and accept rates, open proposals, dismissed slugs and unverified
-approvals; both reflects read it before proposing, so a rejected or dismissed idea is not filed twice and
-a regression counts as evidence against the earlier fix. Under the hood a duty may run `ledger.js` (it is
+counts per event and kind, the approval and accept rates, open proposals, dismissed slugs, unverified
+approvals and, over the whole file, the counts per `autoapply_class` (approved, verified, regressed,
+rejected); both reflects read it before proposing, so a rejected or dismissed idea is not filed twice and
+a regression counts as evidence against the earlier fix. An `auto-applied` change (below) keeps its recipe
+like an approval and is verified the same way. Under the hood a duty may run `ledger.js` (it is
 on the runner's tool allowlist), and the runner's system prompt opens with today's date and the journal
 path, so a duty that runs just after midnight no longer journals into yesterday's file.
 
@@ -229,9 +232,21 @@ The pieces above form one loop, and each step is deterministic except the two mo
    sees it. Nothing asks you to rate anything: the evidence is whether the recheck stays clean, whether the
    duty metrics move, and whether the corrections on that topic stop.
 
-What is still to come (slice 4 of the plan): the tick recording recheck confirmations between reviews,
-and earned autonomy — a class of change auto-applied only after repeated unchanged approvals, proposed by
-the reflect and approved by you like any other proposal. `autoapply.json` stays empty until then.
+6. **Earn.** Autonomy is granted per class of change, and only by you. A proposal may declare an
+   `autoapply_class` (say `doc-typo`); every ledger line for it carries that class, so the summary knows,
+   per class, how many approvals held (`verified`), how many regressed and how many you rejected. Once a
+   class has `persona.autoapply.minVerified` (3) verified approvals and neither a regression nor a
+   rejection, `reflect.js inputs` lists it under `autoapply.candidates` and the next reflect files
+   `autoapply-<class>`: a `self` proposal whose What is the exact new `persona/autoapply.json`. You approve
+   it like any other proposal (the file is gitignored, so that approval commits only the ledger). From then
+   on a proposal of that class is applied during the review without a question — but only after the tick
+   has confirmed it two days running: every hour `tick.js precheck` runs `recheck.js record`, which re-runs
+   each pending proposal's recipe once per local day and keeps the streak in
+   `persona/flag-closer/confirmations.json` (a STALE verdict resets it; an interactive review never counts).
+   The applied change is ledgered `auto-applied` with its recipe and class, committed on its own, and the
+   watchdog verifies it exactly like an approval, so a regression feeds step 5 and the class's record.
+   While the ledger is thin the ladder is inert: no class has three verified approvals, `candidates` is
+   empty, the whitelist stays `[]`, and the review's auto-apply lane finds nothing eligible.
 
 ## Privacy
 

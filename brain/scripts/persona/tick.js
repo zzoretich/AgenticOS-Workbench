@@ -5,8 +5,10 @@
  * The duty itself is a model run (persona/duties/tick.md through run-duty.sh, 0.10 USD, read-only tools); this script
  * is what makes it cheap and deterministic. run-duty.sh calls two verbs around the model:
  *
- *   precheck   compares a signature of the vault's inputs with the one recorded at the last beat and exits 3 when
- *              nothing changed — the runner then skips the model call (one duty-log line, no journal entry).
+ *   precheck   first records the recheck confirmations (spec 2026-09-22-persona-earned-autonomy-design D2: recheck.js
+ *              `record`, at most once per local day, never fatal), then compares a signature of the vault's inputs with
+ *              the one recorded at the last beat and exits 3 when nothing changed — the runner then skips the model
+ *              call (one duty-log line, no journal entry).
  *   beat       after the duty met its contract: records the beat and the signature the next precheck compares with,
  *              then (spec 2026-09-22-persona-reflect-daily-design D7) starts `reflect-daily` early — detached, through
  *              routines/run-routine.js with trigger `early` — when the queue holds persona.tick.earlyReflect.corrections
@@ -161,8 +163,20 @@ function diff(prev, cur) {
   return out;
 }
 
-/** Runner verb. Records the pending signature; `changed: false` means the runner skips the model call. */
+/** The confirmation pass (D2) — a broken recipe or a missing script never stops the tick. */
+function recordConfirmations(deps, now) {
+  try {
+    const recheck = deps.recheck || require('./recheck.js');
+    return recheck.record({ root: deps.vault, now });
+  } catch (e) {
+    console.error(`[tick] confirmations not recorded: ${e.message}`);
+    return { recorded: false, error: e.message };
+  }
+}
+
+/** Runner verb. Records the confirmations, then the pending signature; `changed: false` means the runner skips the model call. */
 function precheck({ deps = defaultDeps(), now = deps.now() } = {}) {
+  const confirmations = recordConfirmations(deps, now);
   const s = readState(deps);
   const sig = signature(deps);
   const changes = diff(s.lastSignature, sig);
@@ -171,7 +185,7 @@ function precheck({ deps = defaultDeps(), now = deps.now() } = {}) {
   s.pending = changed ? { at: s.lastPrecheckAt, signature: sig, changes } : null;
   if (!changed) s.skipped = (s.skipped || 0) + 1;
   writeState(deps, s);
-  return { changed, changes, since: s.lastBeatAt };
+  return { changed, changes, since: s.lastBeatAt, confirmations };
 }
 
 /** Runner verb. Promotes the pending signature, refreshing only what the tick itself writes; then the early-reflect check. */
@@ -367,4 +381,4 @@ function main(argv) {
 }
 
 if (require.main === module) process.exit(main(process.argv.slice(2)));
-module.exports = { SCHEMA, TYPES, EXIT_UNCHANGED, DEFAULT_FLAG_AGE_DAYS, DEFAULT_EARLY_REFLECT, signature, diff, precheck, beat, signals, queue, shouldReflectEarly, earlyThresholds, startEarlyReflect, readState, positionals, main };
+module.exports = { SCHEMA, TYPES, EXIT_UNCHANGED, DEFAULT_FLAG_AGE_DAYS, DEFAULT_EARLY_REFLECT, signature, diff, precheck, recordConfirmations, beat, signals, queue, shouldReflectEarly, earlyThresholds, startEarlyReflect, readState, positionals, main };
