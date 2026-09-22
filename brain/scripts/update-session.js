@@ -102,8 +102,9 @@ function readStdinAndRun() {
   let raw = '';
   process.stdin.on('data', chunk => raw += chunk);
   process.stdin.on('end', () => {
+    let input = {};
     try {
-      const input = JSON.parse(raw || '{}');
+      input = JSON.parse(raw || '{}');
       const transcriptPath = input.transcript_path || input.transcriptPath || '';
       const transcript = loadTranscript(transcriptPath);
       const turnCount = parseEntries(transcript).userTurns;
@@ -123,7 +124,7 @@ function readStdinAndRun() {
         child.unref();
       }
     } catch (_) {}
-    finishStop();
+    finishStop(input);
     process.exit(0);
   });
 }

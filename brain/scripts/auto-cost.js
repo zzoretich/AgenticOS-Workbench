@@ -168,7 +168,7 @@ function backfill(report) {
 
 /** Foreground worker: resolve the transcript (payload path first, then any
  *  projects/<slug>/ dir) and cost it under the 'auto-cost' ledger name. */
-async function costOne(sessionId, transcriptArg, hostName = host.currentHost()) {
+async function costOne(sessionId, transcriptArg, hostName = host.currentHost(process.env, { transcript_path: transcriptArg })) {
   await withReport('auto-cost', async (report) => {
     if (!costEnabled()) { report.disable('cost disabled'); return; }
     report.host = hostName;

@@ -37,6 +37,9 @@ const AGENTS_MD_DIR = path.join(brain.PATHS.CLAUDE_CONFIG_DIR, 'agents');
 const HB_DIR = path.join(VAULT, 'brain', 'agents');
 const { loadConfig } = require('./lib/config.js');
 const SEED_IDLE = !process.argv.includes('--no-seed');
+function claudeHostEnabled() {
+  try { const h = require('./lib/paths.js').readUserConfig().hosts; return !(h && h.claude && h.claude.enabled === false); } catch { return true; }
+}
 
 /** roster.orchestrators → [{ name, nickname, trigger, re }] */
 function buildRoster(orchestrators) {
@@ -75,6 +78,8 @@ function readJsonl(file) {
 }
 
 function definedAgents() {
+  // <claude config dir>/agents is Claude Code's; a Codex-only install (hosts.claude.enabled === false) has none (codex-parity D7).
+  if (!claudeHostEnabled()) return [];
   try {
     return fs.readdirSync(AGENTS_MD_DIR)
       .filter(f => f.endsWith('.md'))

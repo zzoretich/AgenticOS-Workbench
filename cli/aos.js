@@ -316,7 +316,8 @@ async function doctor() {
     if (cx.bin) add('codex login', cx.loggedIn, 'codex login status');
     add('codex hooks', cx.hookEvents === cx.hookEventsTotal,
       `${cx.hookEvents} of ${cx.hookEventsTotal} events in ${cx.hooksFile}${cx.hookEvents < cx.hookEventsTotal ? ' — run: aos init --host codex' : ' (trust them once under /hooks in codex)'}`);
-    if (cx.bin) add('codex MCP declared', cx.mcp, cx.mcp ? 'codex mcp get agenticos names the vault launcher' : 'run: aos init --host codex');
+    if (cx.bin) add('codex MCP declared', cx.mcp === 'ok', cx.mcp === 'ok' ? 'codex mcp get agenticos names the vault launcher with AOS_HOST=codex'
+      : cx.mcp === 'stale' ? 'registered without AOS_HOST=codex (a 0.5.0 registration) — run: aos upgrade' : 'run: aos init --host codex');
     add('codex skills', cx.skills > 0, `${cx.skills} generated under ${cx.skillsDir}${cx.skills ? '' : ' — run: aos init --host codex'}`);
     if (cx.memories) add('codex memories', true, 'Codex\'s built-in memories are on (separate from the vault; aos never touches them)', 'info');
   }

@@ -77,7 +77,7 @@ function ensureHeader(sessionId, extra = {}) {
     started_at: new Date().toISOString(),
     pid: process.pid,
     session_id: sessionId,
-    host: currentHost(),
+    host: currentHost(process.env, PAYLOAD),
     // Codex's hook payload names the model on every event; Claude Code's does not. Costing reads it back.
     model: typeof extra.model === 'string' && extra.model ? extra.model : null,
   };
@@ -153,10 +153,12 @@ function endRun(sessionId, reason) {
 }
 
 let raw = '';
+let PAYLOAD = null; // the parsed hook stdin, so the host can be resolved from transcript_path when AOS_HOST is unset (D1)
 process.stdin.on('data', (c) => (raw += c));
 process.stdin.on('end', () => {
   try {
     const input = JSON.parse(raw || '{}');
+    PAYLOAD = input;
     input.tool_input = fromJsonString(input.tool_input);
     input.tool_response = fromJsonString(input.tool_response);
     const sessionId = input.session_id || input.sessionId || 'unknown';
