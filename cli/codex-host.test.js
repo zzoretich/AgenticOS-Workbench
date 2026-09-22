@@ -33,10 +33,10 @@ test('mergeHooks writes the five events through the launcher with AOS_HOST=codex
   const doc = CH.mergeHooks(null, CTX);
   assert.deepEqual(Object.keys(doc.hooks), ['SessionStart', 'UserPromptSubmit', 'PostToolUse', 'Stop', 'SessionEnd']);
   const names = (ev) => doc.hooks[ev].flatMap((g) => g.hooks.map((h) => h.command.replace(/^env AOS_HOST=codex AOS_CONFIG='[^']*' sh '[^']*' /, '')));
-  assert.deepEqual(names('SessionStart'), ['telemetry-hook', 'update-notice', 'persona-watchdog', 'inject-conventions']);
+  assert.deepEqual(names('SessionStart'), ['telemetry-hook', 'update-notice', 'persona-watchdog', 'reconcile-sessions', 'inject-conventions']);
   assert.deepEqual(names('UserPromptSubmit'), ['inject-context']);
   assert.deepEqual(names('PostToolUse'), ['telemetry-hook']);
-  assert.deepEqual(names('Stop'), ['update-session', 'heartbeat-writer']);
+  assert.deepEqual(names('Stop'), ['update-session', 'heartbeat-writer', 'reconcile-sessions']);
   assert.deepEqual(names('SessionEnd'), ['telemetry-hook', 'auto-cost', 'heartbeat-writer', 'auto-wrap', 'scan-vault --quiet']);
   for (const g of doc.hooks.SessionEnd) for (const h of g.hooks) assert.equal(h.timeout, 3);
   for (const g of doc.hooks.Stop) for (const h of g.hooks) { assert.equal(h.timeout, 10); assert.equal(h.type, 'command'); }
