@@ -69,12 +69,16 @@ it helped), so that proposals get better over time instead of restarting from ze
       queue holds 3 corrections or duty failures weighing 2 (`persona.tick.earlyReflect`), once per day
 - [x] `docs/chief-of-staff.md` `## Self-improvement` describing the loop end to end
 
-### Slice 4 — earned autonomy
-- [ ] the tick calls `recheck.js --record` so confirmations accrue between reviews
-- [ ] ledger-derived class stats: approvals, rejections, regressions per `autoapply_class`
-- [ ] reflect proposes adding a class to `autoapply.json` after N unchanged approvals and zero
-      regressions; the user approves that proposal like any other
-- [ ] auto-applied changes ledger `auto-applied` and get verified like approvals
+### Slice 4 — earned autonomy (spec: `docs/superpowers/specs/2026-09-22-persona-earned-autonomy-design.md`)
+- [x] the tick calls `recheck.js record` (the runner moved into `brain/scripts/persona/recheck.js`) from its
+      precheck, once per local day, so confirmations accrue between reviews
+- [x] ledger-derived class stats: `class` on every event, `summary.byClass` over the whole file
+      (filed, approved, rejected, auto-applied, verified, regressed, stale-dropped) and `autoapplyCandidates`
+- [x] reflect proposes `autoapply-<class>` after `persona.autoapply.minVerified` (3) verified approvals with
+      zero regressions and zero rejections (`reflect.js inputs` → `autoapply.candidates`); the user approves
+      that proposal like any other
+- [x] the flag-closer's auto-apply lane ledgers `auto-applied` with the recipe and class and removes the
+      proposal; `ledger.verify` judges it like an approval (test pinned)
 
 ## Bootstrap in the vault (user-approved, done by hand, not by this branch)
 
