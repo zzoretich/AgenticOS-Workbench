@@ -10,6 +10,7 @@ const ROOT = path.resolve(__dirname, '..');
 const AOS = path.join(ROOT, 'cli', 'aos.js');
 const FAKE_CLAUDE = path.join(ROOT, 'cli', 'fixtures', 'fake-claude.sh');
 const FAKE_NPM = path.join(ROOT, 'cli', 'fixtures', 'fake-npm.sh');
+const FAKE_OLLAMA = path.join(ROOT, 'cli', 'fixtures', 'fake-ollama.sh');
 
 /** Isolated sandbox: temp HOME + CLAUDE_CONFIG_DIR, fakes for claude and npm. Nothing touches ~/.claude. */
 function sandbox() {
@@ -18,12 +19,18 @@ function sandbox() {
   const cfg = path.join(dir, 'cfg');
   fs.mkdirSync(home, { recursive: true });
   fs.mkdirSync(cfg, { recursive: true });
+  // mandatory-prereqs D3/D6: the install gate wants Obsidian and Ollama present; point the seams at a temp app dir
+  // and the fixture so the positive path is exercised on a runner that has neither. python3 is real.
+  const obsidianApp = path.join(dir, 'Obsidian.app');
+  fs.mkdirSync(obsidianApp, { recursive: true });
   const env = {
     ...process.env,
     HOME: home,
     CLAUDE_CONFIG_DIR: cfg,
     AOS_CLAUDE_BIN: FAKE_CLAUDE,
     AOS_NPM_BIN: FAKE_NPM,
+    AOS_OBSIDIAN_APP: obsidianApp,
+    AOS_OLLAMA_BIN: FAKE_OLLAMA,
     FAKE_CLAUDE_LOG: path.join(dir, 'claude.log'),
     FAKE_NPM_LOG: path.join(dir, 'npm.log'),
     FAKE_NPM_NODE_MODULES: path.join(ROOT, 'node_modules'),
@@ -42,6 +49,7 @@ function aos(sb, args, extraEnv = {}) {
   return spawnSync(process.execPath, [AOS, ...args], { encoding: 'utf8', env: { ...sb.env, ...extraEnv }, cwd: ROOT });
 }
 const readJson = (p) => JSON.parse(fs.readFileSync(p, 'utf8'));
+const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 test('no command prints usage and exits 2; unknown command exits 2', () => {
   const sb = sandbox();
@@ -59,6 +67,69 @@ test('doctor without agenticos.json fails that check and exits 1', () => {
   assert.match(r.stdout, /ok\s+node >= 20/);
   assert.match(r.stdout, /ok\s+claude login/);
   assert.match(r.stdout, /info\s+ollama reachable\s+127\.0\.0\.1:1 not probed \(AOS_SKIP_OLLAMA_PROBE=1\)/);
+  assert.match(r.stdout, new RegExp(`ok\\s+obsidian app\\s+${reEsc(sb.env.AOS_OBSIDIAN_APP)}`));
+  assert.match(r.stdout, new RegExp(`ok\\s+ollama installed\\s+${reEsc(FAKE_OLLAMA)}`));
+  assert.match(r.stdout, /ok\s+python3 >= 3\.9\s+3\.\d+/);
+});
+
+// mandatory-prereqs D2/D3/D5: each prerequisite has one env seam; '' means absent. init refuses before writing anything
+// (and --provider none does not waive it), doctor turns the row into a FAIL and exits 1.
+const PREREQ_CASES = [
+  { env: { AOS_OBSIDIAN_APP: '' }, initMsg: /Obsidian not found — install it from obsidian\.md/, row: /FAIL\s+obsidian app\s+not found/ },
+  { env: { AOS_OLLAMA_BIN: '' }, initMsg: /ollama not found — install it from ollama\.com/, row: /FAIL\s+ollama installed\s+not found/ },
+  { env: { AOS_PYTHON_BIN: '' }, initMsg: /python3 >= 3\.9 is required — python3 not found on PATH/, row: /FAIL\s+python3 >= 3\.9\s+python3 not found/ },
+];
+for (const c of PREREQ_CASES) {
+  const name = Object.keys(c.env)[0];
+  test(`init refuses when ${name} says the tool is absent, even with --provider none, and writes nothing`, () => {
+    const sb = sandbox();
+    const r = aos(sb, ['init', '--vault', sb.vault, '--no-obsidian', '--provider', 'none', '--yes'], c.env);
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.match(r.stderr, c.initMsg);
+    assert.ok(!fs.existsSync(sb.vault), 'no vault was created');
+    assert.ok(!fs.existsSync(path.join(sb.cfg, 'agenticos.json')), 'no config was written');
+    assert.doesNotMatch(sb.log('FAKE_CLAUDE_LOG'), /plugin install/, 'the plugin was not installed');
+  });
+  test(`doctor fails the ${name} row and exits 1 when the tool is absent`, () => {
+    const sb = sandbox();
+    const r = aos(sb, ['doctor'], c.env);
+    assert.equal(r.status, 1);
+    assert.match(r.stdout, c.row);
+  });
+}
+
+test('init rejects a python3 older than 3.9 and names the version it found', () => {
+  const sb = sandbox();
+  const oldPy = path.join(sb.dir, 'old-python3');
+  fs.writeFileSync(oldPy, '#!/bin/sh\necho "Python 3.8.2"\n', { mode: 0o755 });
+  const r = aos(sb, ['init', '--vault', sb.vault, '--no-obsidian', '--provider', 'none', '--yes'], { AOS_PYTHON_BIN: oldPy });
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /python3 >= 3\.9 is required — found 3\.8/);
+});
+
+test('a non-empty seam that points at a missing path counts as absent (D3)', () => {
+  const { obsidianApp, ollamaBin, pythonBin } = require('./aos.js');
+  const gone = path.join(os.tmpdir(), 'aos-nowhere-' + process.pid);
+  const saved = { ...process.env };
+  try {
+    process.env.AOS_OBSIDIAN_APP = gone; process.env.AOS_OLLAMA_BIN = gone; process.env.AOS_PYTHON_BIN = '';
+    assert.equal(obsidianApp(), null);
+    assert.equal(ollamaBin(), null);
+    assert.equal(pythonBin(), null);
+    process.env.AOS_OBSIDIAN_APP = ROOT; process.env.AOS_OLLAMA_BIN = FAKE_OLLAMA; delete process.env.AOS_PYTHON_BIN;
+    assert.equal(obsidianApp(), ROOT);
+    assert.equal(ollamaBin(), FAKE_OLLAMA);
+    assert.equal(pythonBin(), 'python3');
+  } finally {
+    for (const k of ['AOS_OBSIDIAN_APP', 'AOS_OLLAMA_BIN', 'AOS_PYTHON_BIN']) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; }
+  }
+});
+
+test('doctor warns (not fails) when ollama is installed but not answering', () => {
+  const sb = sandbox();
+  const r = aos(sb, ['doctor'], { AOS_SKIP_OLLAMA_PROBE: '0' });
+  assert.match(r.stdout, /warn\s+ollama reachable\s+127\.0\.0\.1:1 not answering — run `ollama serve`/);
+  assert.match(r.stdout, /ok\s+ollama installed/);
 });
 
 test('status and provider need a config; provider validates its argument', () => {
@@ -478,7 +549,6 @@ test('doctor warns when AOS_VAULT points at a directory that does not exist', ()
   assert.match(r.stdout, /all checks passed/);
 });
 
-const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /** A hand-written agenticos.json whose claude.bin is `bin`, with the env knob and PATH out of the way so only the
  *  recorded path — or the fallback chain after it — can produce a CLI. Nothing here is initialized (no plugin, no MCP). */
 function recordedSandbox(bin) {

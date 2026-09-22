@@ -8,9 +8,10 @@ absolute home path the installer prints. Criteria are spec §1; each block names
 ## 0. Prerequisites (10 min)
 - [ ] Node 20+ from the nodejs.org installer: `node -v` prints `v20` or `v22`.
 - [ ] Claude Code installed and logged in: `claude --version`; `claude -p "Reply with the word ok." --tools "" --max-budget-usd 0.01` prints `ok`.
-- [ ] Obsidian installed (drag to Applications); opened once.
+- [ ] Obsidian installed (drag to Applications); opened once. `aos init` refuses to run without it.
+- [ ] Ollama installed (`ollama --version` prints a version). `aos init` refuses to run without it; it need not be serving.
 - [ ] `ls ~/.claude` shows no `agenticos.json`.
-- [ ] python3 present (`python3 --version` ≥ 3.9) — needed for §4 and §6. `git` and `python3` come with the Command Line Tools; accept the install dialog if it appears.
+- [ ] python3 present (`python3 --version` ≥ 3.9) — `aos init` refuses to run without it. `git` and `python3` come with the Command Line Tools; accept the install dialog if it appears.
 
 ## 1. Install in under ten minutes (criterion 1)
 Start a timer.

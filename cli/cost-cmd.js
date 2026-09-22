@@ -33,8 +33,10 @@ function extrasDirFor(configDir, hint = process.env.AOS_REPO_HINT, { checkout = 
   return candidates.find(d => fs.existsSync(path.join(d, 'analyze_transcript.py'))) || candidates[candidates.length - 1];
 }
 
+/** Same seam as cli/aos.js pythonBin() (mandatory-prereqs D7): AOS_PYTHON_BIN when defined ('' → absent), else python3. */
 function pythonVersion(exec = spawnSync) {
-  const r = exec('python3', ['--version'], { encoding: 'utf8' }) || {};
+  const bin = process.env.AOS_PYTHON_BIN === undefined ? 'python3' : process.env.AOS_PYTHON_BIN;
+  const r = bin ? exec(bin, ['--version'], { encoding: 'utf8' }) || {} : { error: new Error('AOS_PYTHON_BIN is empty') };
   const m = `${r.stdout || ''}${r.stderr || ''}`.match(/Python (\d+)\.(\d+)(?:\.(\d+))?/);
   if (r.error || !m) return { ok: false, version: null, reason: 'python3 not found on PATH' };
   const version = m[0].slice('Python '.length);

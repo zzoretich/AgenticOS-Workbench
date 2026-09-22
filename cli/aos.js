@@ -5,6 +5,7 @@
  *
  *   aos init [--vault <dir>] [--host auto|claude|codex|both] [--provider auto|ollama|claude|codex|none] [--no-obsidian]
  *            [--terminal] [--cost] [--budget <usd>] [--persona-json <file>] [--from-local <repo-dir>] [--dry-run] [--yes]
+ *   (Obsidian, Ollama and python3 >= 3.9 are hard prerequisites of init; --no-obsidian only skips the HUD bundle step.)
  *   aos doctor · aos status · aos provider [auto|ollama|claude|codex|none]
  *   aos upgrade [--from-local <repo-dir>] [--no-obsidian] · aos uninstall [--host claude|codex] [--keep-vault] [--yes]
  *   aos persona [rename <name> | on | off] [--persona-json <file>] [--yes] · aos cost [enable [--budget <usd>] [--yes] | disable]
@@ -177,15 +178,46 @@ function installedPlugin(bin) {
   return arr.find((p) => typeof p.id === 'string' && p.id.startsWith('agenticos@')) || null;
 }
 function nodeMajor() { return Number(process.versions.node.split('.')[0]); }
+/** Env seam shared by the prerequisite probes (mandatory-prereqs D3): defined and empty → the tool is absent (null),
+ *  defined and non-empty → that path when it exists (else null), undefined → run the real probe. */
+function seam(envName, probe) {
+  const v = process.env[envName];
+  if (v === undefined) return probe();
+  return v && exists(v) ? v : null;
+}
+/** The python3 to test: AOS_PYTHON_BIN when defined ('' → none), else `python3` on PATH. */
+function pythonBin() {
+  const v = process.env.AOS_PYTHON_BIN;
+  if (v === undefined) return 'python3';
+  return v || null;
+}
 function python3Version() {
-  const r = run('python3', ['--version'], { capture: true, allowFail: true });
+  const bin = pythonBin();
+  if (!bin) return null;
+  const r = run(bin, ['--version'], { capture: true, allowFail: true });
   const m = /(\d+)\.(\d+)/.exec(r.stdout + r.stderr);
   return m ? { major: Number(m[1]), minor: Number(m[2]) } : null;
 }
 function python3Ok(v) { return !!v && (v.major > 3 || (v.major === 3 && v.minor >= 9)); }
-function obsidianDetected() {
-  if (process.platform === 'darwin') return exists('/Applications/Obsidian.app') || exists(path.join(os.homedir(), 'Applications', 'Obsidian.app'));
-  return !!which('obsidian') || isDir(path.join(os.homedir(), '.var', 'app', 'md.obsidian.Obsidian')) || exists('/usr/bin/obsidian');
+/** Obsidian's install location (mandatory-prereqs D1): AOS_OBSIDIAN_APP → the app bundle on macOS, `obsidian` on PATH,
+ *  the Flatpak dir or /usr/bin/obsidian on Linux → null. */
+function obsidianApp() {
+  return seam('AOS_OBSIDIAN_APP', () => {
+    const c = process.platform === 'darwin'
+      ? ['/Applications/Obsidian.app', path.join(os.homedir(), 'Applications', 'Obsidian.app')]
+      : [which('obsidian'), path.join(os.homedir(), '.var', 'app', 'md.obsidian.Obsidian'), '/usr/bin/obsidian'];
+    return c.find((p) => p && exists(p)) || null;
+  });
+}
+function obsidianDetected() { return !!obsidianApp(); }
+/** The Ollama install (mandatory-prereqs D1): AOS_OLLAMA_BIN → `ollama` on PATH → the macOS app bundle → null.
+ *  Presence, not liveness: whether it answers is the separate `ollama reachable` probe. */
+function ollamaBin() {
+  return seam('AOS_OLLAMA_BIN', () => {
+    const c = [which('ollama')];
+    if (process.platform === 'darwin') c.push('/Applications/Ollama.app', path.join(os.homedir(), 'Applications', 'Ollama.app'));
+    return c.find((p) => p && exists(p)) || null;
+  });
 }
 function httpProbe(url, timeoutMs = 2000) {
   return new Promise((resolve) => {
@@ -273,6 +305,13 @@ async function doctor() {
   const checks = [];
   const add = (name, ok, detail, level = 'fail') => checks.push({ name, ok, detail, level });
   add('node >= 20', nodeMajor() >= 20, `v${process.versions.node}`);
+  // mandatory-prereqs D5: the three install prerequisites are fail rows; the HUD bundle and Ollama liveness stay warn.
+  const obsApp = obsidianApp();
+  add('obsidian app', !!obsApp, obsApp || 'not found — install Obsidian from obsidian.md');
+  const ollBin = ollamaBin();
+  add('ollama installed', !!ollBin, ollBin || 'not found on PATH — install Ollama from ollama.com');
+  const py = python3Version();
+  add('python3 >= 3.9', python3Ok(py), py ? `${py.major}.${py.minor}` : 'python3 not found on PATH');
   const cfg = readJson(configPath());
   const hosts = hostsOf(cfg);
   const bin = hosts.claude ? claudeBin(cfg) : null;
@@ -354,10 +393,11 @@ async function doctor() {
   }
   const { host, port } = ollamaEndpoint(cfg);
   if (ollamaProbeSkipped()) add('ollama reachable', false, `${host}:${port} not probed (AOS_SKIP_OLLAMA_PROBE=1)`, 'info');
-  else add('ollama reachable', await httpProbe(`http://${host}:${port}/api/tags`), `${host}:${port} (informational)`, 'info');
+  else {
+    const up = await httpProbe(`http://${host}:${port}/api/tags`);
+    add('ollama reachable', up, up ? `${host}:${port}` : `${host}:${port} not answering — run \`ollama serve\``, 'warn');
+  }
   if (cfg && cfg.cost && cfg.cost.enabled) {
-    const py = python3Version();
-    add('python3 >= 3.9', python3Ok(py), py ? `${py.major}.${py.minor}` : 'python3 not found (needed because cost is enabled)');
     // execution amendment 2026-09-15 (A39): the opt-in analyzer is not in `need`; check it here, where cost is known to be on.
     const analyzer = vault ? scriptPath(vault, 'cost/analyze_transcript.py') : null;
     add('cost analyzer', !!analyzer && exists(analyzer), analyzer ? (exists(analyzer) ? analyzer : `${analyzer} missing — run aos cost enable`) : 'no vault');
@@ -801,18 +841,26 @@ async function init(flags) {
     }
   }
   const hostLabel = [hosts.claude && 'claude', hosts.codex && 'codex'].filter(Boolean).join('+');
-  out.log(`preflight: hosts ${hostLabel} · claude ${bin ? bin : 'absent'} · codex ${cxBin ? cxBin : 'absent'} · obsidian ${obsidianDetected() ? 'detected' : 'not detected (optional)'}`);
-  // execution amendment 2026-09-15 (A37): the analyzer ships from Plan 5 Task 1 on. --cost has one preflight (python3) and installs
-  // the module through cost-cmd.js right after agenticos.json is written (step 5b) — no shipped/not-shipped branch any more.
+  out.log(`preflight: hosts ${hostLabel} · claude ${bin ? bin : 'absent'} · codex ${cxBin ? cxBin : 'absent'}`);
+  // mandatory-prereqs D2: Obsidian, Ollama and python3 >= 3.9 are hard gates, checked before anything is written and not
+  // waived by --provider none (that flag is about model calls, not tools). --no-obsidian only skips the HUD bundle step (D4).
+  const obsApp = obsidianApp();
+  if (!obsApp) throw new CheckFailed('Obsidian not found — install it from obsidian.md (macOS: drag to Applications), then re-run aos init');
+  const ollBin = ollamaBin();
+  if (!ollBin) throw new CheckFailed('ollama not found — install it from ollama.com, then re-run aos init');
+  const py = python3Version();
+  if (!python3Ok(py)) throw new CheckFailed(`python3 >= 3.9 is required — ${py ? `found ${py.major}.${py.minor}` : 'python3 not found on PATH'}`);
+  out.log(`preflight: obsidian ${obsApp} · ollama ${ollBin} · python3 ${py.major}.${py.minor}`);
+  // execution amendment 2026-09-15 (A37): the analyzer ships from Plan 5 Task 1 on. --cost installs the module through
+  // cost-cmd.js right after agenticos.json is written (step 5b); its python3 gate is now the unconditional one above (D7).
   if (flags.cost) {
-    if (!python3Ok(python3Version())) throw new CheckFailed('--cost needs python3 >= 3.9');
     // execution amendment 2026-09-15 (A63): the sources check A37 dropped, restored here where nothing has been written yet — a
     // marketplace clone published without extras/ or a --from-local checkout that predates the analyzer fails in the preflight, not at step 5b.
     const costSrc = require('./cost-cmd.js').extrasDirFor(configDir(), flags.fromLocal || process.env.AOS_REPO_HINT);
     if (!exists(path.join(costSrc, 'analyze_transcript.py'))) throw new CheckFailed(`--cost: cost module sources not found at ${costSrc} (pass --from-local <repo-dir> carrying extras/cost, or run without --cost and \`aos cost enable\` later)`);
   }
   const oll = ollamaEndpoint(readJson(configPath()));
-  out.log(`preflight: ollama ${oll.host}:${oll.port} ${ollamaProbeSkipped() ? 'not probed (AOS_SKIP_OLLAMA_PROBE=1)' : (await httpProbe(`http://${oll.host}:${oll.port}/api/tags`)) ? 'reachable' : 'not reachable (auto falls back to claude, then none)'}`);
+  out.log(`preflight: ollama ${oll.host}:${oll.port} ${ollamaProbeSkipped() ? 'not probed (AOS_SKIP_OLLAMA_PROBE=1)' : (await httpProbe(`http://${oll.host}:${oll.port}/api/tags`)) ? 'reachable' : 'not reachable — run `ollama serve` (auto falls back to claude, then none until it answers)'}`);
 
   // 2. vault path
   let vault = flags.vault ? path.resolve(flags.vault) : DEFAULT_VAULT;
@@ -1188,7 +1236,7 @@ if (require.main === module) {
 
 module.exports = {
   parseArgs, deepMerge, configDir, configPath, readJson, readJsonStrict, writeJson, exists, isDir, insideDir, localDay,
-  run, which, claudeBin, codexBin, hostsOf, resolveHosts, pluginSourceDir, npmBin, claudeLoggedIn, installedPlugin, python3Version, python3Ok, obsidianDetected, httpProbe, ollamaEndpoint, ollamaProbeSkipped, ask,
+  run, which, claudeBin, codexBin, hostsOf, resolveHosts, pluginSourceDir, npmBin, claudeLoggedIn, installedPlugin, python3Version, python3Ok, pythonBin, obsidianDetected, obsidianApp, ollamaBin, httpProbe, ollamaEndpoint, ollamaProbeSkipped, ask,
   runScript, scriptPath, mcpProbe, spendRowsToday, spendToday, isDutyFeature, isHookFeature, loadConfigOrThrow,
   doctor, status, provider, main,
   init, repoRoot, productVersion, upgradeReexecTarget, copyTree, assertVaultOk, dailyNotesJson, buildUserConfig, linkLauncher, vendorRuntime,

@@ -11,7 +11,7 @@
   <a href="https://github.com/zzoretich/AgenticOS-Workbench/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/zzoretich/AgenticOS-Workbench/ci.yml?branch=main&amp;style=flat-square&amp;labelColor=0d1117&amp;label=ci" alt="CI status" /></a>
   <img src="https://img.shields.io/badge/node-%E2%89%A5%2020-3fb950?style=flat-square&amp;labelColor=0d1117" alt="Node 20 or newer" />
   <img src="https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Linux-58a6ff?style=flat-square&amp;labelColor=0d1117" alt="macOS and Linux" />
-  <img src="https://img.shields.io/badge/hosts-Claude%20Code%20%C2%B7%20Codex%20CLI%20%C2%B7%20Ollama%20optional-bc8cff?style=flat-square&amp;labelColor=0d1117" alt="Works with Claude Code or Codex CLI alone; Ollama optional" />
+  <img src="https://img.shields.io/badge/hosts-Claude%20Code%20%C2%B7%20Codex%20CLI%20%C2%B7%20Ollama-bc8cff?style=flat-square&amp;labelColor=0d1117" alt="Works with Claude Code or Codex CLI, with a local Ollama" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-e6edf3?style=flat-square&amp;labelColor=0d1117" alt="MIT" /></a>
 </p>
 
@@ -30,7 +30,7 @@
 
 Claude Code and Codex CLI forget everything between sessions. AgenticOS Workbench gives them a vault they can read from on every prompt and write back to at the end of every session, then puts an Obsidian dashboard on top so you can see what they remember, what ran, and what it cost.
 
-It works with **Claude Code alone**, with **Codex CLI alone**, or with both sharing one vault. If a local **Ollama** is running, background work switches to it automatically. Nothing about you ships in this repository, and background work only ever goes through your local Ollama or your own Claude Code or Codex login, never a third-party service.
+It works with **Claude Code alone**, with **Codex CLI alone**, or with both sharing one vault. While your local **Ollama** is running, background work goes to it automatically. Nothing about you ships in this repository, and background work only ever goes through your local Ollama or your own Claude Code or Codex login, never a third-party service.
 
 <a name="what-you-get"></a>
 ## <img src="docs/assets/icon-brain.svg" width="36" align="top" alt="" /> What you get
@@ -66,9 +66,9 @@ Then add the one line the installer prints to `~/.claude/CLAUDE.md` (Claude Code
 | **Node.js 20 or newer** | required | `node -v` prints `v20` or later. CI runs on 20 and 22. |
 | **git** | required | On macOS it arrives with the Command Line Tools; accept the install dialog if one appears. |
 | **Claude Code and/or Codex CLI, logged in** | one required | `claude auth status` reports a login, or `codex login status` does (or both). `aos init` wires every host it finds; `--host claude\|codex\|both` picks. Background work runs through the same CLI, so there is nothing else to configure. |
-| **Obsidian** | optional | Renders the HUD. Skip it with `--no-obsidian`; everything else still works. |
-| **Ollama** | optional | Auto-detected on `127.0.0.1:11434`. When present, background summaries and embeddings run locally and cost nothing. |
-| **python3 3.9 or newer** | optional | Only for the cost module (`--cost` at install, or `aos cost enable` later). Standard library only. |
+| **Obsidian** | required | The app is installed: `/Applications/Obsidian.app` (or `~/Applications`) on macOS, `obsidian` on PATH, the Flatpak, or `/usr/bin/obsidian` on Linux. Renders the HUD. `--no-obsidian` only skips building the HUD bundle. |
+| **Ollama** | required | `ollama` on PATH, or `Ollama.app` on macOS. Background summaries and embeddings run locally through it on `127.0.0.1:11434`; whether it is *answering* is reported, not required. |
+| **python3 3.9 or newer** | required | `python3 --version` prints 3.9 or later. Standard library only; the cost module runs on it. |
 
 The installer refuses to use `~/.claude` as the vault, and refuses any directory that already holds a `settings.json`. The default vault is `~/AgenticOS`.
 
@@ -95,7 +95,7 @@ npm run setup
 
 `aos init` asks for a vault directory (default `~/AgenticOS`), then walks through nine steps and prints a checklist at the end:
 
-1. **Preflight** — Node ≥ 20, at least one host CLI (`claude`, `codex`) on PATH and logged in, Obsidian detected (optional), python3 ≥ 3.9 (only with `--cost`), Ollama reachable (informational).
+1. **Preflight** — Node ≥ 20, at least one host CLI (`claude`, `codex`) on PATH and logged in, Obsidian installed, Ollama installed, python3 ≥ 3.9. Any of these missing stops the install before anything is written. Whether Ollama is answering on `127.0.0.1:11434` is printed, not required.
 2. **Seed the vault** — the template files, a `brain/config.json` with the shipped defaults, and Obsidian's daily-notes settings. Existing files are kept.
 3. **Vendor the runtime** — the scripts, the `aos` subcommands, the persona templates and the schedule and cost sources into `<vault>/brain/scripts`, plus a symlink at `~/.local/bin/aos`.
 4. **Write `~/.claude/agenticos.json`** — the vault path, the node, `claude` and `codex` binaries it resolved, the enabled hosts, the provider (`auto`), spend caps, telemetry and feature flags. Honours `CLAUDE_CONFIG_DIR`.
@@ -105,7 +105,7 @@ npm run setup
 8. **First scan** — compiles `BRAIN.md`, builds the recall index.
 9. **Checklist** — every file written, the line to add to your `CLAUDE.md` or the `/hooks` entries to trust in Codex, and how to open the vault.
 
-Useful flags: `--vault <dir>` · `--host auto|claude|codex|both` · `--provider auto|ollama|claude|codex|none` · `--no-obsidian` · `--terminal` · `--cost [--budget <usd>]` · `--persona-json <file>` (answer the interview from a file; use it wherever stdin is not a terminal) · `--yes` (accept defaults, no prompts) · `--dry-run` (print the numbered plan, write nothing). Working from a checkout? `npm run setup -- --from-local .` installs the plugin from your clone instead of GitHub. A misspelled flag is a usage error, so a typo never starts a real install.
+Useful flags: `--vault <dir>` · `--host auto|claude|codex|both` · `--provider auto|ollama|claude|codex|none` · `--no-obsidian` (skip building the HUD bundle; Obsidian itself is still required) · `--terminal` · `--cost [--budget <usd>]` · `--persona-json <file>` (answer the interview from a file; use it wherever stdin is not a terminal) · `--yes` (accept defaults, no prompts) · `--dry-run` (print the numbered plan, write nothing). Working from a checkout? `npm run setup -- --from-local .` installs the plugin from your clone instead of GitHub. A misspelled flag is a usage error, so a typo never starts a real install.
 
 ### 3. Put `aos` on your PATH and check the install
 
@@ -186,7 +186,7 @@ Say `sitrep` for a one-action briefing on where your work stands, and `review pe
 
 | Command | Does |
 |---|---|
-| `aos doctor` | Checks Node, `agenticos.json`, the vault layout, the MCP handshake, the Obsidian bundle, Ollama and python3, plus one block per enabled host: the Claude login and plugin, or the Codex login, hook entries, MCP registration and generated skills; and which CLI runs persona duties and prompt routines. Exit 1 on any failure. |
+| `aos doctor` | Checks Node, Obsidian, Ollama and python3 (the install prerequisites), `agenticos.json`, the vault layout, the MCP handshake, the Obsidian bundle, whether Ollama is answering, plus one block per enabled host: the Claude login and plugin, or the Codex login, hook entries, MCP registration and generated skills; and which CLI runs persona duties and prompt routines. Exit 1 on any failure. |
 | `aos status` | The resolved provider and why, today's spend against the caps, and the pipeline ledger. |
 | `aos provider auto\|ollama\|claude\|codex\|none` | Force a provider or go back to `auto`. |
 | `aos upgrade` | Updates the plugin, re-vendors the runtime and bundle, re-wires the Codex host when it is enabled, adds new config keys (your values win). Never touches memory, notes or persona. |
@@ -270,7 +270,7 @@ flowchart LR
 - **Hooks.** Both hosts fire hooks for session start, every prompt, every tool use, stop and session end. Each one runs `aos <script>` inside your vault: inject context, update working memory, stream telemetry, write the heartbeat, cost the session, wrap it, rescan. Under Codex the conventions file is injected at every session start too, since `AGENTS.md` cannot include it. Codex fires session end late in its TUI (thread close, or 30 minutes idle) and, depending on the version, not at all under `codex exec` (0.144 did not, 0.155 does), so a reconcile pass on every session start and stop finishes any run idle for `telemetry.staleAfterMinutes`: it closes the telemetry, costs it and wraps it exactly as session end would have. A Claude Code terminal killed mid-session is healed the same way.
 - **Runners.** Persona duties and `prompt` routines run through `claude -p` when Claude Code is wired and installed, otherwise through `codex exec` (workspace-write sandbox, our hooks off, the spend estimated from its token counts since Codex has no budget flag; the daily caps still gate every start). `persona.runner` and `routines.runner` pin one; `aos doctor` shows the choice. The HUD's Chat tab is the one surface that still needs the `claude` CLI.
 - **The vault** is an ordinary folder that is both an Obsidian vault and the agent's second brain. Its `workspaces/` folder is the home for project working directories of both hosts: a project is anything with a `README.md`, `CLAUDE.md`, `AGENTS.md`, `STATUS.md`, `PLAN.md` or `.git`, every scan pins each host's sessions to the workspace they ran in, and the Spaces tab lists whatever ran outside. `AGENTICOS.md` documents the layout and the three-file rule: `MEMORY.md` is the index, `brain/memory/<type>/` holds the content, `brain/_index/BRAIN.md` is the compiled bootstrap injected on the first turn.
-- **Providers.** `auto` picks Ollama when it answers, otherwise headless Claude (`claude -p --model haiku`, capped per call and per day, every call ledgered), otherwise headless Codex when Codex is a wired host (`codex exec`, read-only, hooks off, spend estimated from its token counts), otherwise `none`. Under `none` nothing calls a model in the background; summaries are heuristic and `/wrap` extracts memories inside your own session through the `wrap_session` tool. Install Ollama later and `auto` switches over on its own. One role is the exception: the **reasoner** behind `/ask-brain --local`, `/reflect-week`, `/consolidate-memory` and the HUD's Chat tab is a Claude model (`reasoner.model`, default `claude-opus-5`, with its own per-call and per-day caps) whatever `auto` resolved, and falls back to the local workhorse when Claude is unavailable.
+- **Providers.** `auto` picks Ollama when it answers, otherwise headless Claude (`claude -p --model haiku`, capped per call and per day, every call ledgered), otherwise headless Codex when Codex is a wired host (`codex exec`, read-only, hooks off, spend estimated from its token counts), otherwise `none`. Under `none` nothing calls a model in the background; summaries are heuristic and `/wrap` extracts memories inside your own session through the `wrap_session` tool. Start Ollama (`ollama serve`) and `auto` switches over on its own. One role is the exception: the **reasoner** behind `/ask-brain --local`, `/reflect-week`, `/consolidate-memory` and the HUD's Chat tab is a Claude model (`reasoner.model`, default `claude-opus-5`, with its own per-call and per-day caps) whatever `auto` resolved, and falls back to the local workhorse when Claude is unavailable.
 - **The HUD** reads the same files: the pipeline ledger, live agent runs, the memory graph, provider state, spend, and your agent's identity and flags.
 
 <a name="privacy"></a>
