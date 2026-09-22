@@ -20,3 +20,4 @@ none
 - monitor: never
 - reflect: never
 - sitrep: never
+- tick: never

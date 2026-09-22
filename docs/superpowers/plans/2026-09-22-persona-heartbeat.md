@@ -39,17 +39,20 @@ it helped), so that proposals get better over time instead of restarting from ze
 - [ ] config defaults, `docs/chief-of-staff.md` `## Heartbeat`, README command rows
 - [ ] tests listed in the spec §5; `npm run gate`; `npm test`; first-run rehearsal
 
-### Slice 2 — Friday tick + HUD pill
-- [ ] `tick` duty: hourly, `PERSONA_MAX_USD=0.05`, tools Read/Glob/Grep only, skip when the vault,
-      journal, feedback drafts, and tracked repos are unchanged since the last beat (cheap mtime check
-      before the model call, done by the runner not the model)
-- [ ] `<vault>/persona/queue.jsonl`: events the tick queues for reflect (`correction`, `duty-failure`,
-      `repo-stall`, `regressed`, `flag-aged`) with a source pointer
-- [ ] HUD: `src/data/personaHeartbeat.ts` reading `brain/_index/persona-heartbeat.json`, a pill in
-      `SidebarHUD.ts` next to the update pill (green last beat under 1 h, amber under 3 h, red otherwise
+### Slice 2 — tick + HUD pill (spec: `docs/superpowers/specs/2026-09-22-persona-tick-design.md`)
+- [x] `tick` duty: hourly, `budgetUsd: 0.05` and a read-only `tools:` allowlist in the routine file
+      (passed to `run-duty.sh` as `PERSONA_MAX_USD` / `PERSONA_TOOLS`), skipped by the runner via
+      `tick.js precheck` when the journal, feedback and drafts, STATE.md, proposals, ledger, tracked
+      repos and the watchdog's beats are unchanged since the last beat
+- [x] `<vault>/persona/queue.jsonl`: events the tick queues for reflect (`correction`, `duty-failure`,
+      `repo-stall`, `regressed`, `flag-aged`) with a source pointer; `tick.js signals` finds them,
+      `tick.js queue` appends and dedupes
+- [x] HUD: `src/data/personaHeartbeat.ts` reading `brain/_index/persona-heartbeat.json`, a pill in
+      `SidebarHUD.ts` next to the update pill (green last check under 1 h, amber under 3 h, red otherwise
       or any miss), tooltip listing per-duty status; `docs/plugin-smoke.md` item
-- [ ] TS mirror of `cron.prev` so the HUD can show "expected next" per duty
-- [ ] fill `next_fire` in `heartbeat-writer.js` from the routine schedule
+- [x] ~~TS mirror of `cron.prev`~~ — slice 1 dropped `prev` (its D3); the beat carries `next` and `due`,
+      so the tooltip needs no calendar code (spec D9)
+- [x] fill `next_fire` in `heartbeat-writer.js` from the routine schedule (`nextFireFor`)
 
 ### Slice 3 — proposal loop
 - [ ] `reflect-daily` duty at 22:00: drains `queue.jsonl`, files at most two proposals, writes no

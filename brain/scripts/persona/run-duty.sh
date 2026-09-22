@@ -16,6 +16,8 @@
 #        PERSONA_CLAUDE_BIN  claude binary (default: claude.bin from agenticos.json, then `command -v claude`,
 #                          then $HOME/.local/bin/claude — contract §2 addendum order)   # execution amendment 2026-09-15 (A24)
 #        PERSONA_TIMEOUT   seconds, default 1800
+# Helper: the `tick` duty has a runner-side helper (tick.js): `precheck` exit 3 → the model call is skipped ("skipped:
+# unchanged" in the log, no journal entry, exit 0); `beat` runs once the duty met its contract.
 # Daily cap: record-spend.js --check compares today's duty:* ledger spend with persona.perDayUsd;
 # a capped day journals "SKIPPED daily-cap" and exits 0 (hook spend never blocks a duty).
 # Flags: --strict-mcp-config (no MCP servers) and --no-session-persistence (no session file) are always
@@ -129,6 +131,23 @@ if [ -n "$NODE" ] && [ -x "$NODE" ] && [ -f "$RECORD" ]; then
 fi
 MAX_USD="${MAX_USD:-2}"
 
+# Duty helper (spec 2026-09-22-persona-tick-design D3): a sibling script whose `precheck` verb exits 3 when nothing
+# changed since the duty's last beat — the model call is skipped (one log line, no journal entry, exit 0, and
+# run-routine.js still records the run, so the watchdog never mistakes an idle hour for a miss) — and whose `beat`
+# verb runs after the duty met its contract. Named per duty on purpose: only the tick has one, and a user duty that
+# happens to share a script's name must never pick that script up.
+case "$DUTY" in
+  tick) HELPER="$SCRIPT_DIR/tick.js" ;;
+  *) HELPER="" ;;
+esac
+if [ -n "$HELPER" ] && [ -f "$HELPER" ] && [ -n "$NODE" ] && [ -x "$NODE" ]; then
+  PRE="$(AOS_VAULT="$VAULT" AOS_CONFIG="$CONFIG" "$NODE" "$HELPER" precheck --root "$VAULT" 2>>"$ERR")"
+  if [ $? -eq 3 ]; then
+    echo "[$(date)] duty=$DUTY skipped: unchanged since the last beat $PRE" >> "$LOG"
+    exit 0
+  fi
+fi
+
 echo "[$(date)] duty=$DUTY model=$MODEL effort=$EFFORT budget=$MAX_USD start" >> "$LOG"
 BEFORE_COUNT=$(grep -c "duty: $DUTY" "$JOURNAL" 2>/dev/null || true); BEFORE_COUNT=${BEFORE_COUNT:-0}
 OUT="$(mktemp "${TMPDIR:-/tmp}/duty-$DUTY.XXXXXX")"
@@ -178,4 +197,7 @@ if [ "$AFTER_COUNT" -le "$BEFORE_COUNT" ]; then
   exit 1
 fi
 
+if [ -n "$HELPER" ] && [ -f "$HELPER" ] && [ -n "$NODE" ] && [ -x "$NODE" ]; then
+  AOS_VAULT="$VAULT" AOS_CONFIG="$CONFIG" "$NODE" "$HELPER" beat --root "$VAULT" >> "$LOG" 2>>"$ERR" || true
+fi
 echo "[$(date)] duty=$DUTY done (exit $STATUS)" >> "$LOG"
