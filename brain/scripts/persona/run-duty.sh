@@ -16,8 +16,9 @@
 #        PERSONA_CLAUDE_BIN  claude binary (default: claude.bin from agenticos.json, then `command -v claude`,
 #                          then $HOME/.local/bin/claude — contract §2 addendum order)   # execution amendment 2026-09-15 (A24)
 #        PERSONA_TIMEOUT   seconds, default 1800
-# Helper: the `tick` duty has a runner-side helper (tick.js): `precheck` exit 3 → the model call is skipped ("skipped:
-# unchanged" in the log, no journal entry, exit 0); `beat` runs once the duty met its contract.
+# Helper: two duties have a runner-side helper — tick.js for `tick`, reflect.js for `reflect-daily`: `precheck` exit 3 →
+# the model call is skipped ("skipped:" in the log, no journal entry, exit 0); `beat` runs once the duty met its
+# contract (the tick records its beat and may start an early reflect; the daily reflect drains the queue).
 # Daily cap: record-spend.js --check compares today's duty:* ledger spend with persona.perDayUsd;
 # a capped day journals "SKIPPED daily-cap" and exits 0 (hook spend never blocks a duty).
 # Flags: --strict-mcp-config (no MCP servers) and --no-session-persistence (no session file) are always
@@ -66,7 +67,7 @@ MAX_USD="${PERSONA_MAX_USD:-}"     # empty → persona.perDutyUsd from --check b
 # status/log/diff, so a duty can neither commit nor push (final review F3/safety-5, departs from A26 — git
 # add/commit were dropped: docs/chief-of-staff.md promises a duty never commits, and nothing needed the verbs).
 # Write/Edit are unscoped — guarded files rely on the proposal protocol plus git history, not on the permission layer.
-PERSONA_TOOLS="${PERSONA_TOOLS:-Read,Write,Edit,Glob,Grep,Bash(git status:*),Bash(git log:*),Bash(git diff:*),Bash(date:*),Bash(ls:*),Bash(grep:*),Bash(wc:*),Bash(tail:*),Bash(head:*),Bash($NODE $VAULT/brain/scripts/persona/sitrep-state.js:*),Bash($NODE $VAULT/brain/scripts/persona/scan-arsenal.js:*),Bash($NODE $VAULT/brain/scripts/persona/ledger.js:*),Bash(node $VAULT/brain/scripts/persona/sitrep-state.js:*),Bash(node $VAULT/brain/scripts/persona/scan-arsenal.js:*),Bash(node $VAULT/brain/scripts/persona/ledger.js:*)}"
+PERSONA_TOOLS="${PERSONA_TOOLS:-Read,Write,Edit,Glob,Grep,Bash(git status:*),Bash(git log:*),Bash(git diff:*),Bash(date:*),Bash(ls:*),Bash(grep:*),Bash(wc:*),Bash(tail:*),Bash(head:*),Bash($NODE $VAULT/brain/scripts/persona/sitrep-state.js:*),Bash($NODE $VAULT/brain/scripts/persona/scan-arsenal.js:*),Bash($NODE $VAULT/brain/scripts/persona/ledger.js:*),Bash($NODE $VAULT/brain/scripts/persona/reflect.js:*),Bash(node $VAULT/brain/scripts/persona/sitrep-state.js:*),Bash(node $VAULT/brain/scripts/persona/scan-arsenal.js:*),Bash(node $VAULT/brain/scripts/persona/ledger.js:*),Bash(node $VAULT/brain/scripts/persona/reflect.js:*)}"
 RECORD="$SCRIPT_DIR/record-spend.js"     # sibling: repo checkout in tests, <vault>/brain/scripts/persona/ when installed
 TODAY="$(date +%Y-%m-%d)"
 JOURNAL="$PERSONA/journal/$TODAY.md"
@@ -134,16 +135,19 @@ MAX_USD="${MAX_USD:-2}"
 # Duty helper (spec 2026-09-22-persona-tick-design D3): a sibling script whose `precheck` verb exits 3 when nothing
 # changed since the duty's last beat — the model call is skipped (one log line, no journal entry, exit 0, and
 # run-routine.js still records the run, so the watchdog never mistakes an idle hour for a miss) — and whose `beat`
-# verb runs after the duty met its contract. Named per duty on purpose: only the tick has one, and a user duty that
-# happens to share a script's name must never pick that script up.
+# verb runs after the duty met its contract. The daily reflect (spec 2026-09-22-persona-reflect-daily-design D2) uses the
+# same seam: reflect.js `precheck` exits 3 when the queue is empty and today already drained; `beat` drains the queue.
+# Named per duty on purpose: only these two have one, and a user duty that happens to share a script's name must never
+# pick that script up.
 case "$DUTY" in
-  tick) HELPER="$SCRIPT_DIR/tick.js" ;;
-  *) HELPER="" ;;
+  tick) HELPER="$SCRIPT_DIR/tick.js"; SKIP_WHY="unchanged since the last beat" ;;
+  reflect-daily) HELPER="$SCRIPT_DIR/reflect.js"; SKIP_WHY="queue empty and already drained today" ;;
+  *) HELPER=""; SKIP_WHY="" ;;
 esac
 if [ -n "$HELPER" ] && [ -f "$HELPER" ] && [ -n "$NODE" ] && [ -x "$NODE" ]; then
   PRE="$(AOS_VAULT="$VAULT" AOS_CONFIG="$CONFIG" "$NODE" "$HELPER" precheck --root "$VAULT" 2>>"$ERR")"
   if [ $? -eq 3 ]; then
-    echo "[$(date)] duty=$DUTY skipped: unchanged since the last beat $PRE" >> "$LOG"
+    echo "[$(date)] duty=$DUTY skipped: $SKIP_WHY $PRE" >> "$LOG"
     exit 0
   fi
 fi

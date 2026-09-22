@@ -7,7 +7,12 @@
  *
  *   precheck   compares a signature of the vault's inputs with the one recorded at the last beat and exits 3 when
  *              nothing changed — the runner then skips the model call (one duty-log line, no journal entry).
- *   beat       after the duty met its contract: records the beat and the signature the next precheck compares with.
+ *   beat       after the duty met its contract: records the beat and the signature the next precheck compares with,
+ *              then (spec 2026-09-22-persona-reflect-daily-design D7) starts `reflect-daily` early — detached, through
+ *              routines/run-routine.js with trigger `early` — when the queue holds persona.tick.earlyReflect.corrections
+ *              (3) corrections or duty failures weighing persona.tick.earlyReflect.dutyFailures (2), a queued failure of
+ *              duty s weighing max(1, its failStreak in brain/_index/routines.json). At most once per local day, and only
+ *              while brain/routines/reflect-daily.md exists and is enabled.
  *
  * and the model calls two more:
  *
@@ -40,6 +45,8 @@ const SCHEMA = 1;
 const TYPES = ['correction', 'duty-failure', 'repo-stall', 'regressed', 'flag-aged'];
 const EXIT_UNCHANGED = 3;
 const DEFAULT_FLAG_AGE_DAYS = 7;
+const DEFAULT_EARLY_REFLECT = { corrections: 3, dutyFailures: 2 };
+const REFLECT_DAILY = 'reflect-daily';
 const DEFAULT_STALL_DAYS = 4;
 const FIRST_RUN_WINDOW_MS = 24 * 3600e3;
 const DAY_MS = 86400e3;
@@ -63,6 +70,8 @@ function files(deps) {
     stateMd: path.join(v, 'persona', 'STATE.md'),
     repos: path.join(v, 'persona', 'repos.json'),
     journal: path.join(v, 'persona', 'journal'),
+    routines: path.join(v, 'brain', '_index', 'routines.json'),
+    routinesDir: path.join(v, 'brain', 'routines'),
     feedback: path.join(v, 'brain', 'memory', 'feedback'),
     drafts: path.join(v, 'brain', 'memory', 'feedback', '_drafts'),
     proposals: path.join(v, 'persona', 'proposals'),
@@ -99,7 +108,7 @@ function writeAtomic(file, text) {
 }
 function readState(deps) {
   const s = readJson(files(deps).state, 'the tick state');
-  return s && s.schema === SCHEMA ? s : { schema: SCHEMA, lastBeatAt: null, lastSignature: null, lastPrecheckAt: null, pending: null, beats: 0, skipped: 0 };
+  return s && s.schema === SCHEMA ? s : { schema: SCHEMA, lastBeatAt: null, lastSignature: null, lastPrecheckAt: null, pending: null, beats: 0, skipped: 0, lastEarlyReflectAt: null };
 }
 function writeState(deps, s) { writeAtomic(files(deps).state, JSON.stringify(s, null, 2) + '\n'); }
 
@@ -165,7 +174,7 @@ function precheck({ deps = defaultDeps(), now = deps.now() } = {}) {
   return { changed, changes, since: s.lastBeatAt };
 }
 
-/** Runner verb. Promotes the pending signature, refreshing only what the tick itself writes. */
+/** Runner verb. Promotes the pending signature, refreshing only what the tick itself writes; then the early-reflect check. */
 function beat({ deps = defaultDeps(), now = deps.now() } = {}) {
   const s = readState(deps);
   const f = files(deps);
@@ -174,8 +183,64 @@ function beat({ deps = defaultDeps(), now = deps.now() } = {}) {
   s.lastBeatAt = now.toISOString();
   s.beats = (s.beats || 0) + 1;
   s.pending = null;
+  const earlyReflect = startEarlyReflect({ deps, now, state: s });
   writeState(deps, s);
-  return { lastBeatAt: s.lastBeatAt, beats: s.beats };
+  return { lastBeatAt: s.lastBeatAt, beats: s.beats, earlyReflect };
+}
+
+function earlyThresholds(cfg) {
+  const e = (cfg && cfg.persona && cfg.persona.tick && cfg.persona.tick.earlyReflect) || {};
+  const pick = (k) => (Number.isFinite(e[k]) && e[k] > 0 ? e[k] : DEFAULT_EARLY_REFLECT[k]);
+  return { corrections: pick('corrections'), dutyFailures: pick('dutyFailures') };
+}
+/**
+ * Pure: should the queue wake the daily reflect now? `entries` are the queue lines, `routinesState` is
+ * brain/_index/routines.json (or null). A queued duty failure counts as that duty's fail streak, so one duty failing
+ * twice in a row and two duties failing once both reach the default of 2.
+ */
+function shouldReflectEarly(entries, routinesState, thresholds = DEFAULT_EARLY_REFLECT) {
+  const rows = (routinesState && routinesState.routines && typeof routinesState.routines === 'object') ? routinesState.routines : {};
+  let corrections = 0, failures = 0;
+  for (const e of entries || []) {
+    if (!e || typeof e !== 'object') continue;
+    if (e.type === 'correction') corrections++;
+    else if (e.type === 'duty-failure') {
+      const slug = String(e.source || '').split('#')[1] || '';
+      failures += Math.max(1, Number(rows[slug] && rows[slug].failStreak) || 0);
+    }
+  }
+  if (corrections >= thresholds.corrections) return { trigger: true, reason: `${corrections} corrections queued (threshold ${thresholds.corrections})`, corrections, failures };
+  if (failures >= thresholds.dutyFailures) return { trigger: true, reason: `duty failures weigh ${failures} (threshold ${thresholds.dutyFailures})`, corrections, failures };
+  return { trigger: false, reason: null, corrections, failures };
+}
+const pad2 = (n) => String(n).padStart(2, '0');
+function localDay(d) { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
+
+/** The default starter: run-routine.js next to this script (checkout and vendored copy alike), detached, output ignored. */
+function spawnDetached(argv, cwd) {
+  const { spawn } = require('child_process');
+  const child = spawn(argv[0], argv.slice(1), { cwd, detached: true, stdio: 'ignore', env: process.env });
+  child.unref();
+  return child.pid;
+}
+/** The D7 decision plus its guards; mutates `state.lastEarlyReflectAt` when it starts a run. Never throws. */
+function startEarlyReflect({ deps, now, state }) {
+  const f = files(deps);
+  try {
+    const decision = shouldReflectEarly(readJsonl(f.queue), readJson(f.routines, 'the routine state'), earlyThresholds(deps.config() || {}));
+    if (!decision.trigger) return { started: false, reason: 'below threshold', corrections: decision.corrections, failures: decision.failures };
+    if (state.lastEarlyReflectAt && localDay(new Date(state.lastEarlyReflectAt)) === localDay(now)) return { started: false, reason: `already started today (${state.lastEarlyReflectAt})`, why: decision.reason };
+    const routine = require('../lib/routines-store.js').read(REFLECT_DAILY, { dir: f.routinesDir });
+    if (!routine || routine.errors.length) return { started: false, reason: `no valid brain/routines/${REFLECT_DAILY}.md`, why: decision.reason };
+    if (!routine.enabled) return { started: false, reason: `${REFLECT_DAILY} is disabled`, why: decision.reason };
+    const argv = [deps.node || process.execPath, path.join(__dirname, '..', 'routines', 'run-routine.js'), REFLECT_DAILY, '--early'];
+    const pid = (deps.spawnReflect || spawnDetached)(argv, deps.vault);
+    state.lastEarlyReflectAt = now.toISOString();
+    return { started: true, reason: decision.reason, pid: pid || null, argv };
+  } catch (e) {
+    console.error(`[tick] early reflect check failed: ${e.message}`);
+    return { started: false, reason: `error: ${e.message}` };
+  }
 }
 
 function listMd(dir) {
@@ -302,4 +367,4 @@ function main(argv) {
 }
 
 if (require.main === module) process.exit(main(process.argv.slice(2)));
-module.exports = { SCHEMA, TYPES, EXIT_UNCHANGED, DEFAULT_FLAG_AGE_DAYS, signature, diff, precheck, beat, signals, queue, readState, positionals, main };
+module.exports = { SCHEMA, TYPES, EXIT_UNCHANGED, DEFAULT_FLAG_AGE_DAYS, DEFAULT_EARLY_REFLECT, signature, diff, precheck, beat, signals, queue, shouldReflectEarly, earlyThresholds, startEarlyReflect, readState, positionals, main };
