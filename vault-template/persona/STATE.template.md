@@ -19,5 +19,6 @@ none
 ## Last Duty Runs
 - monitor: never
 - reflect: never
+- reflect-daily: never
 - sitrep: never
 - tick: never

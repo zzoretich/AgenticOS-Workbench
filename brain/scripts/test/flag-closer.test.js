@@ -5,7 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const SCRIPTS = path.join(__dirname, '..', '..', '..', 'plugin', 'skills', 'persona-flag-closer', 'scripts');
-const { collect, defaultRoot, defaultLogDir, KINDS } = require(path.join(SCRIPTS, 'collect.js'));
+const { collect, defaultRoot, defaultLogDir, verbsFor, KINDS, SURFACES } = require(path.join(SCRIPTS, 'collect.js'));
 const { recheck, runRecipe, gateAutoApply, loadConfig } = require(path.join(SCRIPTS, 'recheck.js'));   // loadConfig: execution amendment 2026-09-15 (A32)
 const { render } = require(path.join(SCRIPTS, 'render-digest.js'));
 
@@ -109,6 +109,34 @@ test('proposal kind: defaults to self, is read from frontmatter, an unknown valu
   assert.deepEqual(out.proposals[2].lint, ['unknown kind "meta" (self | vault | workflow | product)']);
   assert.deepEqual(KINDS, ['self', 'vault', 'workflow', 'product']);
   const html = render(recheck(out, v));
-  assert.match(html, /<th>Kind<\/th>/);
-  assert.match(html, /<td>product<\/td>/);
+  assert.match(html, /<th>Kind · decision<\/th>/);
+  assert.match(html, /<td>product<div class="sub">accept → backlog \/ dismiss<\/div><\/td>/);
+  assert.match(html, /<td>self<div class="sub">approve \/ reject<\/div><\/td>/);
+});
+
+// Spec 2026-09-22-persona-reflect-daily-design D5/D6: an idea gets accept/dismiss, a change gets approve/reject; a
+// product proposal names the surface a feature run starts from, and the digest shows it under the target.
+test('verbs per kind, and the surface a product proposal names (linted when missing or unknown)', () => {
+  assert.deepEqual(verbsFor('self'), { accept: 'Approve', decline: 'Reject', defer: 'Defer', label: 'approve / reject', route: 'apply' });
+  assert.deepEqual(verbsFor('vault').accept, 'Approve');
+  assert.deepEqual(verbsFor('workflow'), { accept: 'Accept', decline: 'Dismiss', defer: 'Defer', label: 'accept → backlog / dismiss', route: 'backlog' });
+  assert.equal(verbsFor('product').route, 'backlog');
+  assert.equal(verbsFor(undefined).route, 'apply', 'no kind reads as self');
+  assert.deepEqual(SURFACES, ['cli', 'plugin', 'brain', 'hud', 'vault-template', 'docs']);
+  const v = vault();
+  const withKind = (slug, extra) => PROPOSAL('true').replace('slug: fix-thing', `slug: ${slug}`).replace('target:', `${extra}\ntarget:`);
+  fs.writeFileSync(path.join(v, 'persona', 'proposals', '2026-09-20-hud-idea.md'), withKind('hud-idea', 'kind: product\nsurface: hud'));
+  fs.writeFileSync(path.join(v, 'persona', 'proposals', '2026-09-21-no-surface.md'), withKind('no-surface', 'kind: product'));
+  fs.writeFileSync(path.join(v, 'persona', 'proposals', '2026-09-21-odd-surface.md'), withKind('odd-surface', 'kind: workflow\nsurface: kitchen'));
+  const out = collect(v);
+  const by = Object.fromEntries(out.proposals.map(p => [p.slug, p]));
+  assert.equal(by['hud-idea'].surface, 'hud');
+  assert.deepEqual(by['hud-idea'].lint, []);
+  assert.equal(by['hud-idea'].verbs.accept, 'Accept');
+  assert.equal(by['fix-thing'].surface, null);
+  assert.deepEqual(by['fix-thing'].lint, [], 'a self proposal needs no surface');
+  assert.deepEqual(by['no-surface'].lint, ['product proposal names no surface (cli | plugin | brain | hud | vault-template | docs)']);
+  assert.deepEqual(by['odd-surface'].lint, ['unknown surface "kitchen" (cli | plugin | brain | hud | vault-template | docs)']);
+  const html = render(recheck(out, v));
+  assert.match(html, /duties\/monitor\.md \(guarded\) · surface: hud<\/div>/);
 });

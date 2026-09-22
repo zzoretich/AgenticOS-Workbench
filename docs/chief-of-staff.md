@@ -30,13 +30,15 @@ Re-running the interview regenerates `IDENTITY.md` and `duties/*.md`; it keeps `
 | `IDENTITY.md` | interview | persona + directives; guarded |
 | `STATE.md` | duties, you | `## Sitrep`, `## Flags` (`- [ ]` items), `## Priorities`, `## Pending Proposals`, `## Last Duty Runs` |
 | `PLAYBOOK.md` | `build-playbook.js` once | intent → route table over your `<configDir>/{skills,agents,commands}` |
-| `duties/{monitor,reflect,sitrep}.md` | interview | duty prompts (guarded) |
+| `duties/{monitor,reflect,reflect-daily,sitrep,tick}.md` | interview | duty prompts (guarded) |
 | `proposals/` | agent | guarded changes awaiting approval (see its README) |
+| `queue.jsonl` | `tick.js` (tracked) | signals the tick queued for the nightly reflect, one JSON line each; drained by `reflect.js` after the daily reflect runs |
+| `backlog.md` | `backlog.js` (tracked) | accepted `workflow` and `product` proposals, one section each with the What and Why; a product entry names its surface |
 | `journal/` | duties | one file per day; `journal/logs/` holds duty logs |
 | `answers.json` | interview | the interview answers (for prefilled re-runs and rename) |
 | `autoapply.json` | interview | `{ "classes": [] }` — the dormant auto-apply whitelist |
 | `repos.json` | you (optional) | `{ "stall_threshold_days": 4, "repos": [{ "name", "path" }] }` for the sitrep |
-| `ledger.jsonl` | `ledger.js` (tracked) | append-only proposal outcomes: `filed`, `approved`, `rejected`, `stale-dropped`, `verified`, `regressed` |
+| `ledger.jsonl` | `ledger.js` (tracked) | append-only proposal outcomes: `filed`, `approved`, `rejected`, `stale-dropped`, `accepted`, `dismissed`, `verified`, `regressed` |
 | `DISABLED` | `aos persona off` | kill switch: no injection, no duties |
 
 ## Every session
@@ -55,6 +57,7 @@ there, not in `brain/config.json`. To turn the agent off without editing config,
 |---|---|---|
 | monitor | daily 13:00 | duty health, vault drift, unfinished work, pending review counts; prepares one safe fix |
 | reflect | Sunday 18:00 | curates the playbook from `scan-arsenal.js`, promotes repeated corrections to feedback memories, files proposals, writes a weekly reflection |
+| reflect-daily | daily 22:00 (or early, started by the tick) | the short nightly pass (0.50 USD cap): reads `reflect.js inputs` — the queue, the ledger summary, duty health, spend, this week's feedback and sessions — files at most two proposals, and the runner drains `persona/queue.jsonl`; skipped when the queue is empty and today already drained |
 | sitrep | weekdays 07:45 | `sitrep-state.js diff` → one page with ONE recommended action → `brain/_index/sitrep.md` + daily note |
 | tick | hourly | the cheap beat (0.10 USD cap, about 0.06 per working run, read-only): `tick.js signals` → queues new corrections, duty failures, stalled repos, regressions and aged flags into `persona/queue.jsonl` for reflect; skipped by the runner when nothing changed |
 
@@ -139,8 +142,8 @@ file or draft), `duty-failure` (a failed or missed beat), `repo-stall` (`.planni
 `stall_threshold_days`), `regressed` (a ledger event) and `flag-aged` (a `- [ ] <date>` flag older than
 `persona.tick.flagAgeDays`, default 7) — and queues the ones worth reflect's time with `tick.js queue
 <type> --source <pointer> --note <why>`, which validates the type and never queues the same (type, source)
-twice. The queue is `persona/queue.jsonl`, append-only, one JSON line per signal; the daily reflect that
-drains it is the next slice. The tick's budget and allowlist live in the routine file (`budgetUsd: 0.1` — a working haiku run costs about 0.06 USD, most of it the cached system prompt across its tool turns, so 0.05 cut every run off mid-flight —
+twice. The queue is `persona/queue.jsonl`, one JSON line per signal, drained by the nightly reflect (see
+Self-improvement). The tick's budget and allowlist live in the routine file (`budgetUsd: 0.1` — a working haiku run costs about 0.06 USD, most of it the cached system prompt across its tool turns, so 0.05 cut every run off mid-flight —
 `tools:` Read, Glob, Grep, Write, Edit, `date`, `tick.js` and `ledger.js summary` — no git), and the
 routine runner passes them to `run-duty.sh` as `PERSONA_MAX_USD` and `PERSONA_TOOLS`; `tick.js beat`
 records the beat after the contract check passes. The tick touches `STATE.md` in two places only: its
@@ -173,17 +176,62 @@ premise table; approval applies the change exactly as written and re-runs the re
 the finding to be gone. See `persona/proposals/README.md` in your vault.
 
 Every outcome lands in `persona/ledger.jsonl` (tracked, unlike `STATE.md`) through
-`brain/scripts/persona/ledger.js`: `filed` by reflect, `approved` / `rejected` / `stale-dropped` by the
+`brain/scripts/persona/ledger.js`: `filed` by a reflect, `approved` / `rejected` / `stale-dropped` by the
 review (an approval keeps the proposal's `recheck` recipe), and `verified` or `regressed` by the
 watchdog, which re-runs each approval's recipe daily from day 1 to day 14: exit 0 again means the
 finding is back (`regressed`, plus a `STATE.md` flag and a notification); a clean week means
-`verified`. A proposal carries an optional `kind: self | vault | workflow | product` (default `self`;
-the last two are ideas for you rather than changes the agent applies). `ledger.js summary [--days N]`
-prints counts per event and kind, the approval rate, open proposals and unverified approvals; reflect
-reads it before proposing, so a rejected idea is not filed twice and a regression counts as evidence
-against the earlier fix. Under the hood a duty may run `ledger.js` (it is on the runner's tool
-allowlist), and the runner's system prompt now opens with today's date and the journal path, so a duty
-that runs just after midnight no longer journals into yesterday's file.
+`verified`. A proposal carries an optional `kind: self | vault | workflow | product` (default `self`).
+The last two are ideas for you rather than changes the agent applies, so the review offers different
+verbs for them: **Accept** appends the proposal's What and Why to `persona/backlog.md` through
+`brain/scripts/persona/backlog.js` and ledgers `accepted`; **Dismiss** ledgers `dismissed` with a reason and
+deletes the file. A product proposal names its `surface` (`cli | plugin | brain | hud | vault-template |
+docs`), so a backlog entry says where a feature run would start. `ledger.js summary [--days N]` prints
+counts per event and kind, the approval and accept rates, open proposals, dismissed slugs and unverified
+approvals; both reflects read it before proposing, so a rejected or dismissed idea is not filed twice and
+a regression counts as evidence against the earlier fix. Under the hood a duty may run `ledger.js` (it is
+on the runner's tool allowlist), and the runner's system prompt opens with today's date and the journal
+path, so a duty that runs just after midnight no longer journals into yesterday's file.
+
+## Self-improvement
+
+The pieces above form one loop, and each step is deterministic except the two model runs that judge:
+
+1. **Notice.** Every hour the tick (`tick.js signals`, then a 0.10 USD haiku triage) queues what changed
+   into `persona/queue.jsonl`: a correction you made (a feedback memory or draft), a duty that failed or
+   was missed, a repo whose planning idled, an approved fix that regressed, a flag left open for a week.
+   The same `(type, source)` is never queued twice while it is pending.
+2. **Reflect.** At 22:00 `reflect-daily` runs (`brain/routines/reflect-daily.md`, seeded by `aos persona`
+   next to the tick). Its helper `brain/scripts/persona/reflect.js` snapshots the queue (`precheck`), the
+   duty reads one evidence pack — `reflect.js inputs --days 7`: the queue grouped by type with each source's
+   title, `ledger.js summary`, each duty's last run and fail streak from `routines.json`, spend per duty,
+   the week's feedback memories and drafts, sessions per day from the agent-runs telemetry — and files at
+   most two proposals, promoting a correction that repeated to a feedback memory on the way. After the
+   journal entry passes the runner's contract check, `reflect.js beat` removes exactly the snapshotted
+   lines, so a signal queued during the run waits for the next drain. When the queue is empty and today
+   already drained, `precheck` skips the run (exit 3, one log line, no journal entry). The Sunday reflect
+   reads the same pack over 28 days (`reflect.js inputs --days 28`) and keeps the long form: playbook
+   curation and the written reflection. Both prompts read `open`, rejected and `dismissed` from the summary
+   and never re-file them.
+3. **Early reflect.** The tick can bring step 2 forward. After its beat, `tick.js` weighs the queue: at
+   least `persona.tick.earlyReflect.corrections` (3) corrections, or duty failures weighing
+   `persona.tick.earlyReflect.dutyFailures` (2) — a queued failure of a duty counts as that duty's
+   `failStreak`, so one duty failing twice in a row and two duties failing once both qualify — and starts
+   `run-routine.js reflect-daily --early` detached, at most once per local day and only while the routine
+   file exists and is enabled. `aos routines list` shows the trigger as `early`; the 22:00 run then finds
+   an empty queue and skips unless something new arrived. The tick's own model never decides this: it runs
+   under a read-only allowlist, and the trigger belongs to the runner.
+4. **Review.** "review persona flags" (`persona-flag-closer`) re-runs each recipe and asks once per item.
+   A `self` or `vault` proposal is approved (applied exactly as written, recipe re-run expecting the finding
+   gone, one commit) or rejected (feedback memory). A `workflow` or `product` proposal is accepted into
+   `persona/backlog.md` or dismissed. Every decision is a ledger line.
+5. **Verify.** The watchdog re-runs each approval's recipe daily for two weeks and writes `verified` or
+   `regressed`; a regression is a flag, a notification, and the next tick's `regressed` signal, so step 2
+   sees it. Nothing asks you to rate anything: the evidence is whether the recheck stays clean, whether the
+   duty metrics move, and whether the corrections on that topic stop.
+
+What is still to come (slice 4 of the plan): the tick recording recheck confirmations between reviews,
+and earned autonomy — a class of change auto-applied only after repeated unchanged approvals, proposed by
+the reflect and approved by you like any other proposal. `autoapply.json` stays empty until then.
 
 ## Privacy
 

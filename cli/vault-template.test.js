@@ -111,11 +111,24 @@ test('brain/routines seeds the three duty routines (valid, guarded, enabled) and
   assert.match(read('brain/routines/README.md'), /^# /);
 });
 
-test('persona/routines seeds the watchdog heartbeat (command) and the hourly tick (duty, 0.10 USD, read-only allowlist)', () => {
+test('persona/routines seeds the watchdog heartbeat (command), the hourly tick (duty, 0.10 USD, read-only allowlist) and the nightly reflect (duty, 0.50 USD)', () => {
   const store = require('../brain/scripts/lib/routines-store.js');
   const all = store.list({ dir: path.join(T, 'persona', 'routines') });
-  assert.deepEqual(all.map((r) => [r.slug, r.kind, r.schedule, r.enabled]), [['heartbeat', 'command', '*/30 * * * *', true], ['tick', 'duty', '0 * * * *', true]]);
+  assert.deepEqual(all.map((r) => [r.slug, r.kind, r.schedule, r.enabled]), [['heartbeat', 'command', '*/30 * * * *', true], ['reflect-daily', 'duty', '0 22 * * *', true], ['tick', 'duty', '0 * * * *', true]]);
   for (const r of all) assert.deepEqual(r.errors, [], r.slug);
+  const daily = all.find((r) => r.slug === 'reflect-daily');
+  assert.equal(daily.guarded, true);
+  assert.equal(daily.budgetUsd, 0.5);
+  assert.equal(daily.timeoutSec, 900);
+  assert.match(daily.tools, /Bash\(\{\{NODE\}\} \{\{VAULT\}\}\/brain\/scripts\/persona\/reflect\.js:\*\)/);
+  assert.match(daily.tools, /Bash\(\{\{NODE\}\} \{\{VAULT\}\}\/brain\/scripts\/persona\/ledger\.js:\*\)/);
+  assert.ok(!/git (add|commit|push)/.test(daily.tools), 'the daily reflect never commits');
+  assert.match(daily.body, /persona\/duties\/reflect-daily\.md/);
+  assert.match(read('persona/duties/reflect-daily.md'), /reflect\.js inputs --days 7/);
+  assert.match(read('persona/duties/reflect-daily.md'), /at most two proposals/i);
+  assert.ok(!read('persona/duties/reflect-daily.md').includes('brain/reflections'), 'the nightly pass writes no weekly reflection');
+  assert.match(read('persona/STATE.template.md'), /- reflect-daily: never/);
+  assert.match(read('persona/proposals/README.md'), /surface: <product proposals only/);
   const tick = all.find((r) => r.slug === 'tick');
   assert.equal(tick.guarded, true);
   assert.equal(tick.budgetUsd, 0.1);

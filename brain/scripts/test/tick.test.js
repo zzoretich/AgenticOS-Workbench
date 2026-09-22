@@ -152,6 +152,64 @@ test('queue: validates the type and the source, appends the line shape, dedupes 
   assert.equal(queueLines(v)[1].note, null);
 });
 
+// Spec 2026-09-22-persona-reflect-daily-design D7: the queue can bring the daily reflect forward, decided runner-side.
+test('shouldReflectEarly: 3 corrections, a duty with failStreak 2, or two duties failing once; nothing below', () => {
+  const T0 = { corrections: 3, dutyFailures: 2 };
+  const c = (n) => Array.from({ length: n }, (_, i) => ({ type: 'correction', source: `brain/memory/feedback/r-${i}.md` }));
+  const fail = (slug) => ({ type: 'duty-failure', source: `brain/_index/persona-heartbeat.json#${slug}` });
+  assert.equal(T.shouldReflectEarly(c(2), null, T0).trigger, false);
+  assert.equal(T.shouldReflectEarly(c(3), null, T0).trigger, true);
+  assert.match(T.shouldReflectEarly(c(3), null, T0).reason, /3 corrections queued/);
+  assert.equal(T.shouldReflectEarly([fail('reflect')], { routines: { reflect: { failStreak: 1 } } }, T0).trigger, false);
+  assert.equal(T.shouldReflectEarly([fail('reflect')], { routines: { reflect: { failStreak: 2 } } }, T0).trigger, true, 'one duty failing twice in a row is a streak');
+  assert.equal(T.shouldReflectEarly([fail('reflect'), fail('monitor')], null, T0).trigger, true, 'two duties failing once each');
+  assert.deepEqual(T.shouldReflectEarly([...c(1), fail('sitrep'), { type: 'repo-stall', source: 'app:x' }], { routines: {} }, T0), { trigger: false, reason: null, corrections: 1, failures: 1 });
+  assert.equal(T.shouldReflectEarly([], null, T0).trigger, false, 'a drained queue never triggers');
+  assert.deepEqual(T.earlyThresholds({}), { corrections: 3, dutyFailures: 2 });
+  assert.deepEqual(T.earlyThresholds({ persona: { tick: { earlyReflect: { corrections: 2, dutyFailures: -1 } } } }), { corrections: 2, dutyFailures: 2 });
+});
+
+test('beat starts reflect-daily early once per day through run-routine.js, and not when the routine is missing or disabled', () => {
+  const v = vault();
+  const spawned = [];
+  const d = { ...deps(v), spawnReflect: (argv) => { spawned.push(argv); return 4242; } };
+  for (let i = 0; i < 3; i++) T.queue({ type: 'correction', source: `brain/memory/feedback/r-${i}.md`, deps: d });
+  T.precheck({ deps: d });
+  // no routine file yet → decision is yes, but nothing to start
+  const b0 = T.beat({ deps: d });
+  assert.equal(b0.earlyReflect.started, false);
+  assert.match(b0.earlyReflect.reason, /no valid brain\/routines\/reflect-daily\.md/);
+  assert.equal(spawned.length, 0);
+  // seed the routine like aos persona does, then the next beat starts it
+  const routines = path.join(v, 'brain', 'routines');
+  fs.mkdirSync(routines, { recursive: true });
+  const seed = path.join(__dirname, '..', '..', '..', 'vault-template', 'persona', 'routines', 'reflect-daily.md');
+  fs.copyFileSync(seed, path.join(routines, 'reflect-daily.md'));
+  const b1 = T.beat({ deps: d, now: at(HOUR) });
+  assert.equal(b1.earlyReflect.started, true, JSON.stringify(b1.earlyReflect));
+  assert.equal(b1.earlyReflect.pid, 4242);
+  assert.deepEqual(b1.earlyReflect.argv, [process.execPath, path.join(__dirname, '..', 'routines', 'run-routine.js'), 'reflect-daily', '--early']);
+  assert.equal(state(v).lastEarlyReflectAt, at(HOUR).toISOString());
+  // same day, still over threshold → not again
+  const b2 = T.beat({ deps: d, now: at(2 * HOUR) });
+  assert.equal(b2.earlyReflect.started, false);
+  assert.match(b2.earlyReflect.reason, /already started today/);
+  assert.equal(spawned.length, 1);
+  // next day → again; disabled routine → never
+  const b3 = T.beat({ deps: d, now: at(DAY + 2 * HOUR) });
+  assert.equal(b3.earlyReflect.started, true);
+  fs.writeFileSync(path.join(routines, 'reflect-daily.md'), fs.readFileSync(path.join(routines, 'reflect-daily.md'), 'utf8').replace('enabled: true', 'enabled: false'));
+  const b4 = T.beat({ deps: d, now: at(2 * DAY + 2 * HOUR) });
+  assert.equal(b4.earlyReflect.started, false);
+  assert.match(b4.earlyReflect.reason, /disabled/);
+  assert.equal(spawned.length, 2);
+  // below threshold → the check says so and touches nothing
+  fs.writeFileSync(path.join(v, 'persona', 'queue.jsonl'), '');
+  const b5 = T.beat({ deps: d, now: at(3 * DAY) });
+  assert.deepEqual(b5.earlyReflect, { started: false, reason: 'below threshold', corrections: 0, failures: 0 });
+  assert.equal(b5.beats, 6, 'the beat itself is always recorded');
+});
+
 test('CLI: queue prints the record, a bad queue call exits 2, usage exits 2, a corrupt state file reads as empty', () => {
   const v = vault();
   assert.equal(T.main(['queue', 'regressed', '--source', 'persona/ledger.jsonl#x', '--note', 'n', '--root', v]), 0);

@@ -18,6 +18,16 @@ function defaultLogDir(root) { return process.env.PERSONA_LOG_DIR || path.join(r
 
 /** Proposal kinds (spec 2026-09-22 D9): self and vault are applied on approval; workflow and product go to the backlog. */
 const KINDS = ['self', 'vault', 'workflow', 'product'];
+const IDEA_KINDS = ['workflow', 'product'];
+/** Where a product proposal would land — the surfaces a feature run knows (reflect-daily spec D5). */
+const SURFACES = ['cli', 'plugin', 'brain', 'hud', 'vault-template', 'docs'];
+
+/** The review verbs for a kind: an applied change is approved or rejected, an idea is accepted (to the backlog) or dismissed. */
+function verbsFor(kind) {
+  return IDEA_KINDS.includes(kind)
+    ? { accept: 'Accept', decline: 'Dismiss', defer: 'Defer', label: 'accept → backlog / dismiss', route: 'backlog' }
+    : { accept: 'Approve', decline: 'Reject', defer: 'Defer', label: 'approve / reject', route: 'apply' };
+}
 
 function stripAnsi(s) { return s.replace(/\x1b\[[0-9;]*m/g, ''); }
 
@@ -60,8 +70,11 @@ function collectProposals(root) {
     if (!premises) lint.push('missing premise table');
     const kind = fm.kind || 'self';
     if (!KINDS.includes(kind)) lint.push(`unknown kind "${kind}" (self | vault | workflow | product)`);
+    const surface = fm.surface || null;
+    if (kind === 'product' && !surface) lint.push(`product proposal names no surface (${SURFACES.join(' | ')})`);
+    if (surface && !SURFACES.includes(surface)) lint.push(`unknown surface "${surface}" (${SURFACES.join(' | ')})`);
     const slug = fm.slug || f.replace(/^\d{4}-\d{2}-\d{2}-/, '').replace(/\.md$/, '');
-    return { file: path.join(dir, f), slug, filed: fm.filed || f.slice(0, 10), kind,
+    return { file: path.join(dir, f), slug, filed: fm.filed || f.slice(0, 10), kind, surface, verbs: verbsFor(kind),
              target: fm.target || '(unspecified)', recheck: fm.recheck || null,
              autoapply_class: fm.autoapply_class || null, premises: premises || [], lint };
   });
@@ -144,4 +157,4 @@ if (require.main === module) {
     console.log(JSON.stringify(out, null, 2));
   }
 }
-module.exports = { collect, parseFrontmatter, parsePremiseTable, collectFlags, stripAnsi, defaultRoot, defaultLogDir, KINDS };
+module.exports = { collect, parseFrontmatter, parsePremiseTable, collectFlags, stripAnsi, defaultRoot, defaultLogDir, verbsFor, KINDS, IDEA_KINDS, SURFACES };
