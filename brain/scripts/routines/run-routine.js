@@ -84,7 +84,7 @@ function plan(routine, cfg, deps) {
   if (rc.enabled === false) return { skip: 'routines disabled in config' };
   if (!routine.enabled) return { skip: 'routine disabled' };
   if (routine.kind === 'duty') {
-    // A duty's own budget and allowlist (tick.md: 0.05 USD, read-only tools) reach run-duty.sh as the env overrides it
+    // A duty's own budget and allowlist (tick.md: 0.10 USD, read-only tools) reach run-duty.sh as the env overrides it
     // already honours; `{{NODE}}`/`{{VAULT}}` in tools expand like argv so the template file works on every machine.
     const env = { ...deps.env };
     if (routine.budgetUsd !== undefined) env.PERSONA_MAX_USD = String(routine.budgetUsd);
