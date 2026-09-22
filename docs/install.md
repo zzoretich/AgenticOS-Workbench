@@ -49,6 +49,7 @@ Flags: `--vault <dir>`, `--host auto|claude|codex|both` (default `auto`: an exis
 | `aos persona on\|off\|rename <name>` | kill switch (`persona/DISABLED` only — `persona.enabled` in `agenticos.json` is left alone) and rename; plain `aos persona` re-runs the interview, prefilled from `persona/answers.json` |
 | `aos cost enable [--budget <usd>]` | opt-in session costing (python3 ≥ 3.9) — see `docs/cost.md`; `aos cost disable` turns it off and leaves the installed files |
 | `aos terminal install` | node-pty for the Obsidian terminal tab |
+| `aos workspace list\|new <name>\|adopt <path> [--name <slug>]` | the projects under `<vault>/workspaces/`: `list` shows status and per-host session counts (from the last snapshot, else a fresh scan) and every working directory sessions ran in outside `workspaces/`; `new` creates a kebab-case workspace with `README.md`, `CLAUDE.md` and an identical `AGENTS.md`; `adopt` moves an existing project directory in (refusing the vault, the config dirs, the home directory and an existing target), mirrors whichever instruction file it has into the other, and adds the missing stubs. A nested git repository stays its own repo. |
 
 Every runtime script is also reachable as `aos <name>` (`aos scan-vault`, `aos recall "<query>"`, `aos build-brain-md`, …); the same launcher is what the plugin's hooks call as `sh "${CLAUDE_PLUGIN_ROOT}/bin/aos" <name>`.
 

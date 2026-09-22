@@ -10,7 +10,8 @@ const NOISE_DIRS = new Set([
   'tests', 'test', 'src', 'dist', 'build', 'archive', '.git', '.obsidian',
   'coverage', 'tmp', '.cache',
 ]);
-const PROJECT_MARKERS = ['README.md', 'CLAUDE.md', 'STATUS.md', 'PLAN.md'];
+// CLAUDE.md is Claude Code's instruction file, AGENTS.md is Codex CLI's: either marks a project (workspace hub D1).
+const PROJECT_MARKERS = ['README.md', 'CLAUDE.md', 'AGENTS.md', 'STATUS.md', 'PLAN.md'];
 const DOC_RANK = ['STATUS.md', 'HANDOFF.md', 'PLAN.md', 'PROGRESS.md', 'README.md'];
 const MAX_DOCS = 5;
 
@@ -92,7 +93,9 @@ function detectChildren(absDir, relDir) {
       path: `${relDir}/${n}`,
       status: null,
       summary: firstBodyLine(path.join(absDir, n, 'README.md'))
-        || firstBodyLine(path.join(absDir, n, 'STATUS.md')) || null,
+        || firstBodyLine(path.join(absDir, n, 'STATUS.md'))
+        || firstBodyLine(path.join(absDir, n, 'CLAUDE.md'))
+        || firstBodyLine(path.join(absDir, n, 'AGENTS.md')) || null,
     }));
     return { isCollection: true, subprojects, docs: [] };
   }
@@ -218,7 +221,8 @@ function scanOneWorkspace(absDir, relDir, name) {
     summary = firstBodyLine(path.join(absDir, 'STATUS.md'))
       || firstBodyLine(path.join(absDir, 'README.md'))
       || firstBodyLine(path.join(absDir, 'HANDOFF.md'))
-      || firstBodyLine(path.join(absDir, 'CLAUDE.md')) || null;
+      || firstBodyLine(path.join(absDir, 'CLAUDE.md'))
+      || firstBodyLine(path.join(absDir, 'AGENTS.md')) || null;
   }
 
   // objectives
@@ -226,7 +230,7 @@ function scanOneWorkspace(absDir, relDir, name) {
   if (manifest.objectives.length) {
     objectives = manifest.objectives.map((t) => ({ text: t, source: 'manifest' }));
   } else {
-    for (const f of ['PLAN.md', 'MASTER-PLAN.md', 'PROGRESS.md', 'README.md', 'STATUS.md', 'CLAUDE.md']) {
+    for (const f of ['PLAN.md', 'MASTER-PLAN.md', 'PROGRESS.md', 'README.md', 'STATUS.md', 'CLAUDE.md', 'AGENTS.md']) {
       const ex = extractObjectives(readText(path.join(absDir, f), 256 * 1024));
       if (ex.length) { objectives = ex.map((t) => ({ text: t, source: 'derived' })); break; }
     }
@@ -260,7 +264,7 @@ function scanOneWorkspace(absDir, relDir, name) {
     next = { text: manifest.next, source: 'manifest' };
   } else {
     let nextText = null;
-    for (const f of ['STATUS.md', 'PLAN.md', 'README.md', 'CLAUDE.md']) {
+    for (const f of ['STATUS.md', 'PLAN.md', 'README.md', 'CLAUDE.md', 'AGENTS.md']) {
       nextText = extractNext(readText(path.join(absDir, f), 256 * 1024));
       if (nextText) break;
     }

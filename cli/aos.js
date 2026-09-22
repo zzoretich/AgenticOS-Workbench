@@ -48,6 +48,7 @@ const USAGE = `usage:
   aos persona [rename <name> | on | off] [--persona-json <file>] [--yes]
   aos cost [enable [--budget <usd>] [--yes] | disable]
   aos routines [list [--json] | sync | run <slug> [--dry-run] | enable <slug> | disable <slug> | next [<slug>]]
+  aos workspace [list [--json] | new <name> | adopt <path> [--name <slug>]]
   aos update-status [--statusline | --snooze <N>d|<N>h | --off]
   aos update-check [--quiet]
   aos terminal install`;
@@ -897,6 +898,17 @@ function migrateRoutines(ctx) {
   out.log(`   schedules re-rendered: ${r.labels.join(', ') || 'none'}${r.removed.length ? ` (removed ${r.removed.map((x) => path.basename(x)).join(', ')})` : ''}`);
 }
 
+/** `aos workspace <verb>` — cli/workspace.js (workspace hub D3). */
+async function workspace(sub, flags) {
+  const W = require('./workspace.js');
+  try {
+    return await W.main([...sub, ...(flags.json ? ['--json'] : []), ...(flags.name ? ['--name', flags.name] : [])], { io: console });
+  } catch (e) {
+    if (e instanceof W.UsageError) throw new UsageError(e.message);
+    throw e;
+  }
+}
+
 /** `aos routines <verb>` — cli/routines.js. */
 async function routines(sub, flags) {
   const R = require('./routines.js');
@@ -1090,7 +1102,7 @@ function updateNotice() {
 }
 
 // ── args and main ─────────────────────────────────────────────────────────────
-const VALUE_FLAGS = new Set(['vault', 'provider', 'persona-json', 'from-local', 'budget', 'snooze', 'host']);
+const VALUE_FLAGS = new Set(['vault', 'provider', 'persona-json', 'from-local', 'budget', 'snooze', 'host', 'name']);
 const BOOL_FLAGS = new Set(['dry-run', 'yes', 'terminal', 'cost', 'keep-vault', 'statusline', 'off', 'quiet', 'json']);
 const NEGATABLE_FLAGS = new Set(['obsidian']);
 function camel(s) { return s.replace(/-([a-z])/g, (_, c) => c.toUpperCase()); }
@@ -1139,6 +1151,7 @@ async function main(argv) {
     case 'persona': return persona(sub, flags);
     case 'cost': return cost(sub, flags);
     case 'routines': return routines(sub, flags);
+    case 'workspace': return workspace(sub, flags);
     case 'doctor': return doctor();
     case 'status': return status();
     case 'provider': return provider(sub[0]);
@@ -1167,7 +1180,7 @@ module.exports = {
   doctor, status, provider, main,
   init, repoRoot, productVersion, upgradeReexecTarget, copyTree, assertVaultOk, dailyNotesJson, buildUserConfig, linkLauncher, vendorRuntime,
   installPlugin, download, obsidianBundle, terminalInstall, personaInterview, checklist,
-  upgrade, uninstall, removeSchedules, terminal, persona, cost, updateCheck, updateStatus, updateNotice,
+  upgrade, uninstall, removeSchedules, terminal, persona, cost, routines, workspace, updateCheck, updateStatus, updateNotice,
   PROVIDERS, HOST_CHOICES, PLUGIN_ID, MARKETPLACE, REPO_SLUG, OBSIDIAN_PLUGIN_ID, DEFAULT_VAULT, RUNTIME_SCRIPTS, USAGE,
   VALUE_FLAGS, BOOL_FLAGS, NEGATABLE_FLAGS,
   UsageError, CheckFailed, out,
