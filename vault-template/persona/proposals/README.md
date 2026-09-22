@@ -13,7 +13,12 @@ Guarded changes wait here for the user's sign-off. One file per proposal, `YYYY-
           approval; workflow and product are ideas for the user and go to persona/backlog.md when accepted>
     surface: <product proposals only: cli | plugin | brain | hud | vault-template | docs — where the
           change would live, so a feature run can start from the backlog entry>
-    autoapply_class: <optional; meaningful only once the class is listed in persona/autoapply.json>
+    autoapply_class: <optional; a kebab-case class of change (say doc-typo). The ledger counts approvals,
+          verifications, regressions and rejections per class; once a class has persona.autoapply.minVerified
+          (3) verified approvals and neither a regression nor a rejection, a reflect files an
+          `autoapply-<class>` proposal whose What is the exact new persona/autoapply.json. Only that approval
+          whitelists the class; a whitelisted proposal that stays STILL-VALID for two daily confirmations is
+          then applied by the review without a question and ledgered `auto-applied`.>
     ---
 
 Body sections, in order: **What** (the exact change, as a diff or full replacement text), **Why** (evidence from the journal or feedback memories), **Risk** (what could go wrong), and **Premises** — what was verified versus assumed:
@@ -28,6 +33,6 @@ Approval flow: the user says "approve <slug>" or "reject <slug>" in any session,
 
 A `workflow` or `product` proposal is an idea, not a change the agent applies, so the review offers **accept** and **dismiss** instead: accept appends the proposal's What and Why to `persona/backlog.md` (through `brain/scripts/persona/backlog.js`, tracked) and deletes the file; dismiss deletes the file and records a `dismissed` ledger line, so the idea is not filed again.
 
-Every outcome is appended to `persona/ledger.jsonl` through `brain/scripts/persona/ledger.js` (`filed` by the duty that wrote the proposal, `approved` / `rejected` / `stale-dropped` / `accepted` / `dismissed` by the review, `verified` / `regressed` by the watchdog once it has re-run an approved proposal's `recheck` for a week). `ledger.js summary` is the agent's track record; both reflects read it before proposing.
+Every outcome is appended to `persona/ledger.jsonl` through `brain/scripts/persona/ledger.js` (`filed` by the duty that wrote the proposal, `approved` / `rejected` / `stale-dropped` / `accepted` / `dismissed` / `auto-applied` by the review, `verified` / `regressed` by the watchdog once it has re-run an approved or auto-applied proposal's `recheck` for a week); each line carries the proposal's `autoapply_class` as `class` when it has one. `ledger.js summary` is the agent's track record, per kind and per class; both reflects read it before proposing.
 
 Guarded territory (proposal required): IDENTITY.md, duties/*.md, brain/scripts/persona/*, the duty schedules, and anything outside `persona/`.

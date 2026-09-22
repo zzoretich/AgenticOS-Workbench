@@ -24,7 +24,7 @@ function defaultFile(root) {
   return path.join(vault, 'persona', 'backlog.md');
 }
 
-/** The proposal frontmatter subset collect.js reads (inlined: this script is vendored without the plugin). */
+/** The proposal frontmatter subset collect.js reads (inlined: this script is vendored without the plugin; recheck.js shares it). */
 function parseFrontmatter(text) {
   const m = text.match(/^---\n([\s\S]*?)\n---\n/);
   if (!m) return null;
@@ -92,4 +92,4 @@ function main(argv, { stdout = (s) => process.stdout.write(s), stderr = (s) => p
 }
 
 if (require.main === module) process.exit(main(process.argv.slice(2)));
-module.exports = { IDEA_KINDS, SURFACES, HEADER, defaultFile, parseProposal, section, append, main };
+module.exports = { IDEA_KINDS, SURFACES, HEADER, defaultFile, parseFrontmatter, parseProposal, section, append, main };

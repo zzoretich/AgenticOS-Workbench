@@ -151,3 +151,54 @@ test('CLI: append and summary through main(); usage errors exit 2', () => {
   assert.equal(L.main(['append', 'bogus', 'cli-slug', '--root', root], io), 2);
   assert.equal(L.main(['dance', '--root', root], io), 2);
 });
+
+// Spec 2026-09-22-persona-earned-autonomy-design D3: every event may carry the proposal's autoapply_class; verify copies
+// it onto the verdict; summary counts per class over the whole file; autoapplyCandidates names the classes that earned
+// an auto-apply proposal. D7: an auto-applied change is verified exactly like an approval.
+test('class: validated and written when given, omitted otherwise, copied by verify onto the verdict; auto-applied is verified like an approval', () => {
+  const { root, file } = tmpFile();
+  assert.throws(() => L.append({ event: 'filed', slug: 'a-b', class: 'Doc Typo' }, { file }), /class must be kebab-case/);
+  const r = L.append({ event: 'filed', slug: 'a-b', class: 'doc-typo' }, { file, now: NOW });
+  assert.equal(r.class, 'doc-typo');
+  assert.equal(L.append({ event: 'filed', slug: 'c-d' }, { file, now: NOW }).class, undefined);
+  L.append({ event: 'approved', slug: 'a-b', class: 'doc-typo', recheck: 'exit 1' }, { file, now: daysAgo(8) });
+  L.append({ event: 'auto-applied', slug: 'e-f', class: 'doc-typo', recheck: 'exit 0', by: 'flag-closer' }, { file, now: daysAgo(3) });
+  const run = (cmd) => (cmd === 'exit 0' ? 'present' : 'gone');
+  const out = L.verify({ file, root, now: NOW, run });
+  assert.deepEqual(out, { checked: 2, verified: ['a-b'], regressed: ['e-f'], skipped: 0 });
+  const verdicts = L.read({ file }).filter(x => x.event === 'verified' || x.event === 'regressed');
+  assert.deepEqual(verdicts.map(x => [x.slug, x.event, x.class]), [['a-b', 'verified', 'doc-typo'], ['e-f', 'regressed', 'doc-typo']]);
+  const io = { stdout: () => {}, stderr: () => {} };
+  assert.equal(L.main(['append', 'approved', 'g-h', '--class', 'doc-typo', '--file', file], io), 0);
+  assert.equal(L.read({ file }).pop().class, 'doc-typo');
+});
+
+test('byClass counts every record regardless of the window; autoapplyCandidates needs minVerified clean verifications', () => {
+  const { file } = tmpFile();
+  const put = (slug, event, at, extra = {}) => L.append({ event, slug, ...extra }, { file, now: at });
+  for (const [i, slug] of ['t-one', 't-two', 't-three'].entries()) {
+    put(slug, 'filed', daysAgo(90 - i), { class: 'doc-typo' });
+    put(slug, 'approved', daysAgo(80 - i), { class: 'doc-typo', recheck: 'exit 1' });
+    put(slug, 'verified', daysAgo(70 - i), { class: 'doc-typo' });
+  }
+  put('s-one', 'filed', daysAgo(5), { class: 'schedule' });
+  put('s-one', 'approved', daysAgo(4), { class: 'schedule' });
+  put('s-one', 'verified', daysAgo(1), { class: 'schedule' });
+  put('r-one', 'approved', daysAgo(50), { class: 'risky' });
+  put('r-one', 'regressed', daysAgo(45), { class: 'risky' });
+  put('no-class', 'approved', daysAgo(2));
+  const s = L.summary({ file, days: 28, now: NOW });
+  assert.deepEqual(s.byClass['doc-typo'], { filed: 3, approved: 3, rejected: 0, autoApplied: 0, verified: 3, regressed: 0, staleDropped: 0 }, 'all time, not the 28-day window');
+  assert.deepEqual(s.byClass.risky, { filed: 0, approved: 1, rejected: 0, autoApplied: 0, verified: 0, regressed: 1, staleDropped: 0 });
+  assert.equal(s.byClass['no-class'], undefined);
+  assert.deepEqual(L.autoapplyCandidates(s.byClass).map(c => c.class), ['doc-typo']);
+  assert.deepEqual(L.autoapplyCandidates(s.byClass, { minVerified: 1 }).map(c => c.class), ['doc-typo', 'schedule'], 'risky stays out: a regression');
+  assert.deepEqual(L.autoapplyCandidates(s.byClass, { whitelisted: ['doc-typo'] }), [], 'already whitelisted');
+  put('t-four', 'rejected', daysAgo(1), { class: 'doc-typo' });
+  assert.deepEqual(L.autoapplyCandidates(L.summary({ file, now: NOW }).byClass), [], 'a rejection blocks the class');
+  assert.deepEqual(L.autoapplyCandidates({}), []);
+  assert.equal(L.DEFAULT_MIN_VERIFIED, 3);
+  const text = L.formatSummary(s);
+  assert.match(text, /by class \(all time, approved\/verified\/regressed\/rejected\): doc-typo 3\/3\/0\/0 · risky 1\/0\/1\/0 · schedule 1\/1\/0\/0/);
+  assert.doesNotMatch(L.formatSummary(L.summary({ file: path.join(os.tmpdir(), 'ledger-none.jsonl') })), /by class/);
+});
