@@ -3,7 +3,7 @@
 Opt-in. Costs every Claude Code session from its transcript (the Python analyzer) and every Codex
 session from the token counts in its rollout (priced in Node from a rate table; an estimate, since
 Codex never reports dollars), and shows month-to-date spend in the Pulse COST row and the COST DETAIL
-drawer section of the HUD. Needs python3 3.9+ (stdlib only); nothing leaves your machine — the
+drawer section of the HUD. Runs on python3 3.9+ (stdlib only; an install prerequisite, so `aos init` already checked it); nothing leaves your machine — the
 session-end hook runs the analyzer with `--no-api`.
 
 ## Enable / disable

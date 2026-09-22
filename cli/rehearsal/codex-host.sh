@@ -11,6 +11,9 @@ mkdir -p "$HOME" "$CLAUDE_CONFIG_DIR" "$CODEX_HOME"
 printf 'model = "fake-model"\n' > "$CODEX_HOME/config.toml"
 export AOS_NO_CLAUDE=1 AOS_CODEX_BIN="$ROOT/cli/fixtures/fake-codex.sh" FAKE_CODEX_LOG="$TMP/codex.log" FAKE_CODEX_STATE="$TMP/codex-mcp.state"
 unset AOS_VAULT BRAIN_VAULT AOS_CONFIG CLAUDE_PROJECT_DIR AOS_HOST AOS_NO_CODEX || true
+# mandatory-prereqs D6: the install gate needs Obsidian and Ollama present; same seams as first-run.sh.
+mkdir -p "$TMP/Obsidian.app"
+export AOS_OBSIDIAN_APP="$TMP/Obsidian.app" AOS_OLLAMA_BIN="$ROOT/cli/fixtures/fake-ollama.sh"
 VAULT="$TMP/aos"
 SKILLS="$HOME/.agents/skills"
 

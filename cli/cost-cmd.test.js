@@ -26,6 +26,20 @@ function world() {
   return { configDir, vault, io, logs, agenticos, vaultCfg };
 }
 
+test('pythonVersion honours AOS_PYTHON_BIN (mandatory-prereqs D7): a path is spawned, empty means absent', () => {
+  const saved = process.env.AOS_PYTHON_BIN;
+  try {
+    const calls = [];
+    process.env.AOS_PYTHON_BIN = '/opt/some/python3';
+    const r = C.pythonVersion((bin, args) => { calls.push([bin, args]); return { stdout: 'Python 3.12.0\n', stderr: '' }; });
+    assert.deepEqual(calls, [['/opt/some/python3', ['--version']]]);
+    assert.equal(r.ok, true);
+    process.env.AOS_PYTHON_BIN = '';
+    const none = C.pythonVersion(() => { throw new Error('must not spawn'); });
+    assert.deepEqual(none, { ok: false, version: null, reason: 'python3 not found on PATH' });
+  } finally { if (saved === undefined) delete process.env.AOS_PYTHON_BIN; else process.env.AOS_PYTHON_BIN = saved; }
+});
+
 test('pythonVersion parses and enforces the 3.9 floor', () => {
   assert.deepEqual(C.pythonVersion(py('Python 3.11.4')), { ok: true, version: '3.11.4', reason: null });
   assert.equal(C.pythonVersion(py('Python 3.9.6')).ok, true);
