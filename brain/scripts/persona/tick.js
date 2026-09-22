@@ -2,7 +2,7 @@
 'use strict';
 /**
  * tick.js — the runner-side half of the hourly `tick` duty (docs/superpowers/specs/2026-09-22-persona-tick-design.md).
- * The duty itself is a model run (persona/duties/tick.md through run-duty.sh, 0.05 USD, read-only tools); this script
+ * The duty itself is a model run (persona/duties/tick.md through run-duty.sh, 0.10 USD, read-only tools); this script
  * is what makes it cheap and deterministic. run-duty.sh calls two verbs around the model:
  *
  *   precheck   compares a signature of the vault's inputs with the one recorded at the last beat and exits 3 when
