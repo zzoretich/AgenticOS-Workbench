@@ -185,13 +185,14 @@ test('beat starts reflect-daily early once per day through run-routine.js, and n
   fs.mkdirSync(routines, { recursive: true });
   const seed = path.join(__dirname, '..', '..', '..', 'vault-template', 'persona', 'routines', 'reflect-daily.md');
   fs.copyFileSync(seed, path.join(routines, 'reflect-daily.md'));
-  const b1 = T.beat({ deps: d, now: at(HOUR) });
+  // (NOW is 10:00 UTC; the two same-day beats stay within the hour so they share a local day in every timezone)
+  const b1 = T.beat({ deps: d, now: at(30 * 60e3) });
   assert.equal(b1.earlyReflect.started, true, JSON.stringify(b1.earlyReflect));
   assert.equal(b1.earlyReflect.pid, 4242);
   assert.deepEqual(b1.earlyReflect.argv, [process.execPath, path.join(__dirname, '..', 'routines', 'run-routine.js'), 'reflect-daily', '--early']);
-  assert.equal(state(v).lastEarlyReflectAt, at(HOUR).toISOString());
+  assert.equal(state(v).lastEarlyReflectAt, at(30 * 60e3).toISOString());
   // same day, still over threshold → not again
-  const b2 = T.beat({ deps: d, now: at(2 * HOUR) });
+  const b2 = T.beat({ deps: d, now: at(HOUR) });
   assert.equal(b2.earlyReflect.started, false);
   assert.match(b2.earlyReflect.reason, /already started today/);
   assert.equal(spawned.length, 1);

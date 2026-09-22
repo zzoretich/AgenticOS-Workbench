@@ -6,7 +6,9 @@ const os = require('os');
 const path = require('path');
 const R = require('../persona/reflect.js');
 
-const NOW = new Date('2026-09-22T22:00:00.000Z');
+// Mid-day UTC: "drained today" is the LOCAL day (the runner names the journal that way), so NOW ± 2 h must stay on one
+// local day in every timezone CI or a developer runs in (an evening fixture crossed midnight on the UTC runners).
+const NOW = new Date('2026-09-22T12:00:00.000Z');
 const at = (ms) => new Date(NOW.getTime() + ms);
 const HOUR = 3600e3, DAY = 86400e3;
 const line = (type, source, ts = '2026-09-22T10:00:00.000Z', note = null) => ({ schema: 1, ts, type, source, note, by: 'tick' });
