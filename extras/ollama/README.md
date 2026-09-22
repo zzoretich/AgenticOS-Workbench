@@ -1,7 +1,7 @@
 # extras/ollama
 
-Optional pieces that only make sense with a local Ollama. Nothing here is installed by
-`aos init`; the product's hooks and MCP server never call these files.
+Optional supervisors and helpers for the local Ollama that `aos init` requires to be installed.
+Nothing here is installed by `aos init`; the product's hooks and MCP server never call these files.
 
 | File | What it is |
 |---|---|
