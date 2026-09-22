@@ -6,7 +6,7 @@ const os = require('os');
 const path = require('path');
 const SCRIPTS = path.join(__dirname, '..', '..', '..', 'plugin', 'skills', 'persona-flag-closer', 'scripts');
 const { collect, defaultRoot, defaultLogDir, verbsFor, KINDS, SURFACES } = require(path.join(SCRIPTS, 'collect.js'));
-const { recheck, runRecipe, gateAutoApply, loadConfig } = require(path.join(SCRIPTS, 'recheck.js'));   // loadConfig: execution amendment 2026-09-15 (A32)
+const { recheck, runRecipe, gateAutoApply, loadConfig } = require('../persona/recheck.js');   // the runner moved into the vendored runtime (spec 2026-09-22-persona-earned-autonomy-design D1)
 const { render } = require(path.join(SCRIPTS, 'render-digest.js'));
 
 const PROPOSAL = (recipe) => `---

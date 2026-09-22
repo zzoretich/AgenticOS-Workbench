@@ -51,7 +51,7 @@ export interface VaultConfig {
   telemetry: { enabled: boolean; redact: boolean; retentionDays: number };
   updates: { check: boolean; intervalHours: number };
   cost: { enabled: boolean; monthlyBudget: number | null };
-  persona: { enabled: boolean; perDutyUsd: number; perDayUsd: number; watchdog: { graceMinutes: number; notify: boolean }; tick: { flagAgeDays: number; earlyReflect: { corrections: number; dutyFailures: number } } };
+  persona: { enabled: boolean; perDutyUsd: number; perDayUsd: number; watchdog: { graceMinutes: number; notify: boolean }; tick: { flagAgeDays: number; earlyReflect: { corrections: number; dutyFailures: number } }; autoapply: { minVerified: number } };
   // Routines (brain/routines/*.md): caps for the prompt kind and the launchd labels the Routines tab lists read-only.
   routines: { enabled: boolean; perRunUsd: number; perDayUsd: number; tools: string; externalLabels: string[] };
 }
@@ -85,7 +85,7 @@ export const VAULT_CONFIG_DEFAULTS: VaultConfig = {
   telemetry: { enabled: true, redact: true, retentionDays: 30 },
   updates: { check: true, intervalHours: 24 },
   cost: { enabled: false, monthlyBudget: null },
-  persona: { enabled: true, perDutyUsd: 2.0, perDayUsd: 6.0, watchdog: { graceMinutes: 45, notify: true }, tick: { flagAgeDays: 7, earlyReflect: { corrections: 3, dutyFailures: 2 } } },
+  persona: { enabled: true, perDutyUsd: 2.0, perDayUsd: 6.0, watchdog: { graceMinutes: 45, notify: true }, tick: { flagAgeDays: 7, earlyReflect: { corrections: 3, dutyFailures: 2 } }, autoapply: { minVerified: 3 } },
   routines: { enabled: true, perRunUsd: 2.0, perDayUsd: 6.0, tools: "Read,Glob,Grep", externalLabels: [] },
 };
 

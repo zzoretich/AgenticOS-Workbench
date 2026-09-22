@@ -7,14 +7,16 @@
  * the reflect duty (summary) and the flag-closer skill (append).
  *
  *   node ledger.js append <event> <slug> [--kind self|vault|workflow|product] [--target <text>] [--by <who>]
- *                                        [--recheck <sh>] [--commit <sha>] [--note <text>]
+ *                                        [--class <autoapply_class>] [--recheck <sh>] [--commit <sha>] [--note <text>]
  *   node ledger.js verify                re-run the recheck recipe of every approval aged 1–14 days that has no
  *                                        verdict yet; append `regressed` (exit 0 again) or, after 7 days clean,
  *                                        `verified`. Prints one JSON line.
  *   node ledger.js summary [--days N] [--json]
  *   Every verb takes --root <vault> (default: the resolved vault) or --file <path>.
  *
- * Line shape: { schema: 1, ts, event, slug, kind, target, by, recheck?, commit?, note? }.
+ * Line shape: { schema: 1, ts, event, slug, kind, target, by, class?, recheck?, commit?, note? }. `class` is the
+ * proposal's autoapply_class (spec 2026-09-22-persona-earned-autonomy-design D3): summary counts per class over the
+ * whole file, and autoapplyCandidates() names the classes that earned an auto-apply proposal.
  * Events: filed · approved · rejected · stale-dropped · auto-applied · verified · regressed, plus the two verbs an idea
  * (kind workflow or product) gets instead of approve/reject: accepted (kept in persona/backlog.md) · dismissed.
  * A corrupt line is skipped with one stderr warning (the twin of loadRepos() in sitrep-state.js).
@@ -31,6 +33,9 @@ const TERMINAL = new Set(['approved', 'rejected', 'stale-dropped', 'auto-applied
 const APPLIED = new Set(['approved', 'auto-applied']);
 const VERDICTS = new Set(['verified', 'regressed']);
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,60}$/;
+const CLASS_RE = /^[a-z0-9][a-z0-9-]{0,40}$/;
+const CLASS_COUNTS = { filed: 'filed', approved: 'approved', rejected: 'rejected', 'auto-applied': 'autoApplied', verified: 'verified', regressed: 'regressed', 'stale-dropped': 'staleDropped' };
+const DEFAULT_MIN_VERIFIED = 3;
 const DAY_MS = 86400e3;
 
 function defaultFile(root) {
@@ -63,6 +68,7 @@ function validate(rec) {
   if (!EVENTS.includes(rec.event)) errors.push(`event must be one of ${EVENTS.join(', ')}`);
   if (!SLUG_RE.test(String(rec.slug || ''))) errors.push('slug must be kebab-case (2–61 chars)');
   if (rec.kind !== undefined && rec.kind !== null && !KINDS.includes(rec.kind)) errors.push(`kind must be one of ${KINDS.join(', ')}`);
+  if (rec.class !== undefined && rec.class !== null && !CLASS_RE.test(String(rec.class))) errors.push('class must be kebab-case (1–41 chars)');
   for (const k of ['target', 'by', 'recheck', 'commit', 'note']) {
     if (rec[k] !== undefined && rec[k] !== null && typeof rec[k] !== 'string') errors.push(`${k} must be a string`);
   }
@@ -74,7 +80,7 @@ function append(rec, { file, now = new Date() } = {}) {
   const errors = validate(rec);
   if (errors.length) { const e = new Error(`invalid ledger event: ${errors.join('; ')}`); e.errors = errors; throw e; }
   const r = { schema: SCHEMA, ts: now.toISOString(), event: rec.event, slug: rec.slug, kind: rec.kind || 'self', target: rec.target || null, by: rec.by || null };
-  for (const k of ['recheck', 'commit', 'note']) if (rec[k]) r[k] = rec[k];
+  for (const k of ['class', 'recheck', 'commit', 'note']) if (rec[k]) r[k] = rec[k];
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.appendFileSync(file, JSON.stringify(r) + '\n');
   return r;
@@ -113,7 +119,7 @@ function verify({ file, root, now = new Date(), run = runRecipe, minDays = 1, se
     if (ageDays < minDays || ageDays > maxDays) continue;
     out.checked++;
     const res = run(a.recheck, root);
-    const base = { slug: a.slug, kind: a.kind, target: a.target, by: 'watchdog' };
+    const base = { slug: a.slug, kind: a.kind, target: a.target, by: 'watchdog', class: a.class || null };
     if (res === 'present') {
       append({ ...base, event: 'regressed', note: `recheck exits 0 again ${Math.floor(ageDays)}d after approval` }, { file, now });
       out.regressed.push(a.slug);
@@ -125,7 +131,27 @@ function verify({ file, root, now = new Date(), run = runRecipe, minDays = 1, se
   return out;
 }
 
-/** Counts over the last `days`, plus the all-time open (filed, undecided) and unverified slugs. */
+/** Per-class counts over every record (trust accrues over months, so no window): { filed, approved, rejected, autoApplied, verified, regressed, staleDropped }. */
+function classStats(records) {
+  const out = {};
+  for (const r of records) {
+    if (typeof r.class !== 'string' || !r.class) continue;
+    const c = out[r.class] || (out[r.class] = { filed: 0, approved: 0, rejected: 0, autoApplied: 0, verified: 0, regressed: 0, staleDropped: 0 });
+    const k = CLASS_COUNTS[r.event];
+    if (k) c[k]++;
+  }
+  return out;
+}
+/** Pure (spec D3): the classes whose record earned an auto-apply proposal — verified ≥ minVerified, no regression, no rejection, not whitelisted yet. */
+function autoapplyCandidates(byClass, { minVerified = DEFAULT_MIN_VERIFIED, whitelisted = [] } = {}) {
+  const min = Number(minVerified) > 0 ? Number(minVerified) : DEFAULT_MIN_VERIFIED;
+  return Object.keys(byClass || {}).sort()
+    .filter(c => !whitelisted.includes(c))
+    .map(c => ({ class: c, ...byClass[c] }))
+    .filter(c => c.verified >= min && c.regressed === 0 && c.rejected === 0);
+}
+
+/** Counts over the last `days`, plus the all-time open (filed, undecided) and unverified slugs, and byClass over every record. */
 function summary({ file, days = 28, now = new Date() } = {}) {
   const records = read({ file });
   const since = now - days * DAY_MS;
@@ -156,6 +182,7 @@ function summary({ file, days = 28, now = new Date() } = {}) {
     dismissed: win.filter(r => r.event === 'dismissed').map(r => r.slug),
     open: open.sort(),
     unverified: unverified(records).map(a => a.slug).sort(),
+    byClass: classStats(records),
   };
 }
 
@@ -168,6 +195,7 @@ function formatSummary(s) {
     `  verified ${s.counts.verified} · regressed ${s.counts.regressed}${s.regressed.length ? ` (${s.regressed.join(', ')})` : ''} · approval rate ${s.approvalRate === null ? 'n/a' : s.approvalRate} · accept rate ${s.acceptRate === null ? 'n/a' : s.acceptRate}`,
     `  by kind (filed/approved/rejected): ${applied} · (filed/accepted/dismissed): ${ideas}`,
     `  open: ${s.open.length ? s.open.join(', ') : 'none'} · unverified approvals: ${s.unverified.length ? s.unverified.join(', ') : 'none'}`,
+    ...(Object.keys(s.byClass || {}).length ? [`  by class (all time, approved/verified/regressed/rejected): ${Object.keys(s.byClass).sort().map(c => `${c} ${s.byClass[c].approved}/${s.byClass[c].verified}/${s.byClass[c].regressed}/${s.byClass[c].rejected}`).join(' · ')}`] : []),
   ].join('\n');
 }
 
@@ -190,9 +218,9 @@ function main(argv, { stdout = (s) => process.stdout.write(s), stderr = (s) => p
   try { file = flags.file || defaultFile(flags.root); } catch (e) { stderr(`ledger: ${e.message}\n`); return 2; }
   const root = flags.root || path.dirname(path.dirname(file));
   if (verb === 'append') {
-    if (!event || !slug) { stderr('usage: ledger.js append <event> <slug> [--kind k] [--target t] [--by who] [--recheck sh] [--commit sha] [--note text]\n'); return 2; }
+    if (!event || !slug) { stderr('usage: ledger.js append <event> <slug> [--kind k] [--target t] [--by who] [--class c] [--recheck sh] [--commit sha] [--note text]\n'); return 2; }
     try {
-      const r = append({ event, slug, kind: flags.kind, target: flags.target, by: flags.by, recheck: flags.recheck, commit: flags.commit, note: flags.note }, { file, now });
+      const r = append({ event, slug, kind: flags.kind, target: flags.target, by: flags.by, class: flags.class, recheck: flags.recheck, commit: flags.commit, note: flags.note }, { file, now });
       stdout(JSON.stringify(r) + '\n');
       return 0;
     } catch (e) { stderr(`ledger: ${e.message}\n`); return 2; }
@@ -209,4 +237,4 @@ function main(argv, { stdout = (s) => process.stdout.write(s), stderr = (s) => p
 }
 
 if (require.main === module) process.exit(main(process.argv.slice(2)));
-module.exports = { SCHEMA, EVENTS, KINDS, DECISIONS, defaultFile, read, validate, append, runRecipe, verify, summary, formatSummary, main };
+module.exports = { SCHEMA, EVENTS, KINDS, DECISIONS, DEFAULT_MIN_VERIFIED, defaultFile, read, validate, append, runRecipe, verify, summary, classStats, autoapplyCandidates, formatSummary, main };
