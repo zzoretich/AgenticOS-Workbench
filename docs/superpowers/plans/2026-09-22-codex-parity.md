@@ -7,43 +7,43 @@ Each task lands as one commit with its tests. Tests: `npm test` (root) — `node
 
 ## Phase 1 — host detection and registration (D1, D2, D7)
 
-- [ ] 1.1 `brain/scripts/lib/host.js`: `resolveHost({ env, payload, userConfig })` → `{ host, via }`;
+- [x] 1.1 `brain/scripts/lib/host.js`: `resolveHost({ env, payload, userConfig })` → `{ host, via }`;
       `currentHost(env, payload)` delegates. `test/host.test.js` chain matrix.
-- [ ] 1.2 `brain/scripts/lib/hook-entry.js`: parse stdin once, expose `hookPayload()`; hooks that
+- [x] 1.2 (revised) callers pass the payload they parsed: `finishStop(input)`, `currentHost(env, input)`; the prologue never consumes stdin. Hooks that
       already parse stdin keep doing so (no behaviour change), `currentHost()` reads the stored payload.
-- [ ] 1.3 MCP server: `sdk/mcp-server.js` `wrap_session.sessionId` description → "session id of either
+- [x] 1.3 MCP server: `sdk/mcp-server.js` `wrap_session.sessionId` description → "session id of either
       host"; `auto-wrap.js` line 579 uses `host.currentHost(process.env, input)`.
-- [ ] 1.4 `cli/codex-host.js`: `--env AOS_HOST=codex` in the add command; `codexHostStatus().mcp`
+- [x] 1.4 `cli/codex-host.js`: `--env AOS_HOST=codex` in the add command; `codexHostStatus().mcp`
       gains `stale`; `cli/aos.js` upgrade re-registers on `stale`; doctor row text.
       `cli/codex-host.test.js`, `cli/aos.test.js`.
-- [ ] 1.5 `heartbeat-writer.js`: gate `AGENTS_MD_DIR` listing on `hosts.claude.enabled !== false`.
+- [x] 1.5 `heartbeat-writer.js`: gate `AGENTS_MD_DIR` listing on `hosts.claude.enabled !== false`.
 
 ## Phase 2 — reconcile stale sessions (D3, D6)
 
-- [ ] 2.1 `lib/transcript.js` `sessionModel(file, host)`; `test/transcript.test.js`.
-- [ ] 2.2 `sdk/lib/telemetry.js` `endRun` model backfill (transcript path from payload or `findTranscript`).
-- [ ] 2.3 `brain/scripts/reconcile-sessions.js` + `test/reconcile-sessions.test.js`
+- [x] 2.1 `lib/transcript.js` `sessionModel(file, host)`; `test/transcript.test.js`.
+- [x] 2.2 `sdk/lib/telemetry.js` `endRun` model backfill (transcript path from payload or `findTranscript`).
+- [x] 2.3 `brain/scripts/reconcile-sessions.js` + `test/reconcile-sessions.test.js`
       (fixture live dir, stamp throttle, late SessionEnd no-op). `config.default.json`
       `telemetry.staleAfterMinutes`.
-- [ ] 2.4 Wire: `plugin/hooks/hooks.json` (SessionStart, Stop), `cli/codex-host.js` `HOOKS`,
+- [x] 2.4 Wire: `plugin/hooks/hooks.json` (SessionStart, Stop), `cli/codex-host.js` `HOOKS`,
       `plugin/bin/aos` case arm, `cli/plugin-manifests.test.js`.
 
 ## Phase 3 — headless runner (D4, D5)
 
-- [ ] 3.1 `brain/scripts/lib/headless.js`: `resolveRunner`, `runnerArgs`, `--resolve` CLI mode;
+- [x] 3.1 `brain/scripts/lib/headless.js`: `resolveRunner`, `runnerArgs`, `--resolve` CLI mode;
       `test/headless.test.js`. Config `routines.runner`, `persona.runner`.
-- [ ] 3.2 `routines/run-routine.js`: `deps.runner`, per-runner argv, codex stdin prompt, `report.provider`;
+- [x] 3.2 `routines/run-routine.js`: `deps.runner`, per-runner argv, codex stdin prompt, `report.provider`;
       `test/run-routine.test.js` codex leg.
-- [ ] 3.3 `persona/record-spend.js`: `--file` accepts the codex `--json` stream; `test/record-spend.test.js`.
-- [ ] 3.4 `persona/run-duty.sh`: resolve the runner, branch the exec line, `--dry-run` shows it.
-- [ ] 3.5 `cli/aos.js` doctor: `persona runner` / `routines runner` rows (host + bin, or why none).
-- [ ] 3.6 `cli/rehearsal/codex-host.sh`: runner row + one fake prompt routine under codex;
+- [x] 3.3 `persona/record-spend.js`: `--file` accepts the codex `--json` stream; `test/record-spend.test.js`.
+- [x] 3.4 `persona/run-duty.sh`: resolve the runner, branch the exec line, `--dry-run` shows it.
+- [x] 3.5 `cli/aos.js` doctor: `persona runner` / `routines runner` rows (host + bin, or why none).
+- [x] 3.6 `cli/rehearsal/codex-host.sh`: runner row + one fake prompt routine under codex;
       `cli/fixtures/fake-codex.sh` answers `exec --json`.
 
 ## Phase 4 — docs
 
-- [ ] 4.1 README "Hosts": the three modes and what auto-detects what; runner note.
-- [ ] 4.2 `docs/install.md` Codex-only walkthrough; `docs/plugin-smoke.md` reconcile + runner items;
+- [x] 4.1 README "Hosts": the three modes and what auto-detects what; runner note.
+- [x] 4.2 `docs/install.md` Codex-only walkthrough; `docs/plugin-smoke.md` reconcile + runner items;
       `vault-template/AGENTICOS.md` `runner` line; `vault-template/brain/routines/README.md`.
 - [ ] 4.3 Manual verification on the owner's machine (real `codex exec`, reconcile, runs.jsonl row).
 

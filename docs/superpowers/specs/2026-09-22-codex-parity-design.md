@@ -57,7 +57,7 @@ either transcript format; telemetry stamps `host`. Six holes remain between that
 ## 4. Design
 
 ### 4.1 Host detection (`lib/host.js`)
-`resolveHost({ env, payload, userConfig })` returns `{ host, via }` with `via` ∈ `aos-host | claude-env | transcript | config | default`. `currentHost(env, payload)` returns `.host`. `hook-entry.js` parses stdin once and stores the payload so every hook script can call `host.currentHost()` without re-reading; the MCP server passes `{}`; `AOS_DEBUG=1` prints `via` on stderr.
+`resolveHost({ env, payload, userConfig })` returns `{ host, via }` with `via` ∈ `aos-host | claude-env | transcript | config | default`. `currentHost(env, payload)` returns `.host`. Every caller passes the payload it already parsed (`telemetry-hook`, `auto-wrap`, `auto-cost`, `finishStop(input)`); the MCP server passes nothing and relies on its registration env; `AOS_DEBUG=1` prints `via` on stderr. (Implementation note: storing the payload in `hook-entry.js` was dropped because the prologue must not consume stdin before the hook script reads it.)
 
 ### 4.2 Installer (`cli/codex-host.js`, `cli/aos.js`)
 `mcpAddArgs()` gains `--env AOS_HOST=codex`. `codexHostStatus().mcp` ∈ `ok | missing | stale | foreign`. `upgrade()` treats `stale` like `missing` (remove, add). Doctor row text: `codex MCP declared … (env lacks AOS_HOST — run: aos upgrade)`.
