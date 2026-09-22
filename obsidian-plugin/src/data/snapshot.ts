@@ -202,9 +202,32 @@ export interface WorkspaceInsight {
   inputHash?: string;
 }
 
+/** Sessions of both hosts that ran inside a workspace (collectors/hostSessions.js, workspace hub D2). */
+export interface WorkspaceSessions {
+  claude: number;
+  codex: number;
+  total: number;
+  lastAt: string | null;   // ISO of the newest session, either host
+}
+
+export interface HostSessionsOutside {
+  cwd: string;
+  claude: number;
+  codex: number;
+  total: number;
+  lastAt: string | null;
+}
+
+export interface SnapshotHostSessions {
+  byCwd: Record<string, { claude: number; codex: number; lastAt: string | null }>;
+  outsideWorkspaces: HostSessionsOutside[];   // cwds under no workspace, newest first
+  scannedAt: string;
+}
+
 export interface WorkspaceEntry {
   name: string;
   path: string;            // vault-relative "workspaces/<name>"
+  sessions?: WorkspaceSessions;   // attached by the scan; absent in snapshots written before the workspace hub
   absPath?: string;        // absolute fs path recorded at scan time (for the file tree)
   status: string | null;
   statusSource: WorkspaceSource;
@@ -370,6 +393,7 @@ export interface Snapshot {
   brain: SnapshotBrain;
   projects?: SnapshotProjects;
   workspaces?: WorkspaceEntry[];
+  hostSessions?: SnapshotHostSessions;
   plans?: SnapshotPlans;
   runtime?: SnapshotRuntime;
   gsd?: SnapshotGsd;

@@ -137,3 +137,28 @@ test('defaultStatusFromAge buckets by recency (14d active / 60d idle)', () => {
   assert.equal(defaultStatusFromAge(90), 'planned');
   assert.equal(defaultStatusFromAge(null), 'planned');
 });
+
+
+// ── workspace hub D1: AGENTS.md is a project marker and a source ────────────────────────────────
+test('detectChildren counts an AGENTS.md-only directory as a project and summarises it from AGENTS.md', () => {
+  const abs = path.join(FIXTURES, 'collection-agents');
+  const res = detectChildren(abs, 'workspaces/collection-agents');
+  assert.equal(res.isCollection, true);
+  assert.deepEqual(res.subprojects.map((s) => s.name), ['ProjectC', 'ProjectD']);
+  assert.equal(res.subprojects[0].summary, 'A Codex-shaped project described only by AGENTS.md.');
+});
+
+test('collectWorkspaces reads summary, objectives and next from AGENTS.md when CLAUDE.md is absent', () => {
+  const fs = require('fs');
+  const os = require('os');
+  const { collectWorkspaces } = require('../collectors/workspaces');
+  const vault = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-ws-agents-'));
+  fs.mkdirSync(path.join(vault, 'workspaces', 'codex-proj'), { recursive: true });
+  fs.copyFileSync(path.join(FIXTURES, 'collection-agents', 'ProjectC', 'AGENTS.md'), path.join(vault, 'workspaces', 'codex-proj', 'AGENTS.md'));
+  const [ws] = collectWorkspaces({ vault });
+  assert.equal(ws.name, 'codex-proj');
+  assert.equal(ws.summary, 'A Codex-shaped project described only by AGENTS.md.');
+  assert.deepEqual(ws.objectives.map((o) => o.text), ['Ship the thing', 'Measure it']);
+  assert.equal(ws.next.text, 'Write the plan');
+  assert.equal(ws.absPath, path.join(vault, 'workspaces', 'codex-proj'));
+});

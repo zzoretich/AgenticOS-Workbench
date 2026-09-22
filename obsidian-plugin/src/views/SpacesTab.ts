@@ -5,6 +5,7 @@ import type { WorkbenchView } from "./WorkbenchView";
 import { formatRelative } from "../data/runs";
 import { loadSnapshot, Snapshot, SNAPSHOT_PATH, WorkspaceEntry, WorkspaceSource } from "../data/snapshot";
 import { listDir, readPreview } from "../data/workspaceFiles";
+import { sessionsChip, outsideRows } from "../data/hostSessions";
 import { loadWorkspaceMap, mapStats, filterFiles, WorkspaceMap, MapFile, MAPS_DIR } from "../data/workspaceMaps";
 
 const STATUS_DOT: Record<string, string> = {
@@ -78,6 +79,8 @@ export class SpacesTab {
       const meta = row.createDiv({ cls: "aos-ws-rowmeta" });
       meta.createDiv({ cls: "aos-ws-name", text: w.name });
       meta.createDiv({ cls: "aos-ws-sub aos-dim", text: w.summary ?? "—" });
+      const chip = sessionsChip(w.sessions);
+      if (chip) meta.createDiv({ cls: "aos-ws-sub aos-dim", text: chip });
       row.addEventListener("click", () => {
         this.selected = w.name;
         this.expandedDirs.clear();
@@ -89,6 +92,19 @@ export class SpacesTab {
         // showing the previous workspace's map, so reload via refresh().
         void this.refresh();
       });
+    }
+    this.renderOutside(parent);
+  }
+
+  // Sessions of either host that ran outside workspaces/: the centralisation signal (workspace hub D5).
+  private renderOutside(parent: HTMLElement): void {
+    const rows = outsideRows(this.snapshot?.hostSessions?.outsideWorkspaces);
+    if (!rows.length) return;
+    const foot = parent.createDiv({ cls: "aos-ws-outside" });
+    foot.createDiv({ cls: "aos-ws-name aos-dim", text: `outside workspaces (${this.snapshot?.hostSessions?.outsideWorkspaces?.length ?? rows.length})` });
+    for (const r of rows) {
+      const line = foot.createDiv({ cls: "aos-ws-sub aos-dim", text: `${r.label} — ${r.chip}` });
+      line.setAttr("title", `${r.cwd}\naos workspace adopt "${r.cwd}"`);
     }
   }
 
