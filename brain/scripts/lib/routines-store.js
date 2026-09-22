@@ -5,8 +5,8 @@
  *
  * A routine file is YAML-ish frontmatter plus a body:
  *   schema: 1 · name · kind (duty|prompt|command) · schedule (5-field cron, see lib/cron.js) · enabled
- *   guarded (bool) · model, effort, budgetUsd (prompt) · argv (command; flow array of strings)
- *   timeoutSec · tags (flow array)
+ *   guarded (bool) · model, effort (prompt) · budgetUsd (prompt, duty) · tools (duty; the PERSONA_TOOLS allowlist,
+ *   `{{NODE}}`/`{{VAULT}}` expanded by the runner) · argv (command; flow array of strings) · timeoutSec · tags (flow array)
  * The frontmatter subset here is deliberately small — scalars (string, number, boolean, null),
  * quoted strings, and single-line flow arrays — and the writer only ever emits that subset, so a
  * file the HUD wrote is always a file the runtime can read (and vice versa; src/data/routines.ts
@@ -23,7 +23,7 @@ const cron = require('./cron.js');
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,40}$/;
 const KINDS = ['duty', 'prompt', 'command'];
 const EFFORTS = ['low', 'medium', 'high'];
-const KEY_ORDER = ['schema', 'name', 'kind', 'schedule', 'enabled', 'guarded', 'model', 'effort', 'budgetUsd', 'argv', 'timeoutSec', 'tags'];
+const KEY_ORDER = ['schema', 'name', 'kind', 'schedule', 'enabled', 'guarded', 'model', 'effort', 'budgetUsd', 'tools', 'argv', 'timeoutSec', 'tags'];
 const STATE_SCHEMA = 1;
 
 function defaultDir() { return require('./paths.js').PATHS.ROUTINES; }
@@ -125,6 +125,10 @@ function validate(routine) {
     if (r.model !== undefined && (typeof r.model !== 'string' || !r.model.trim())) errors.push('model must be a string');
     if (r.effort !== undefined && !EFFORTS.includes(r.effort)) errors.push(`effort must be one of ${EFFORTS.join(', ')}`);
     if (r.budgetUsd !== undefined && !isMoney(r.budgetUsd)) errors.push('budgetUsd must be a non-negative number');
+  }
+  if (r.kind === 'duty') {
+    if (r.budgetUsd !== undefined && !isMoney(r.budgetUsd)) errors.push('budgetUsd must be a non-negative number');
+    if (r.tools !== undefined && (typeof r.tools !== 'string' || !r.tools.trim())) errors.push('tools must be a non-empty string');
   }
   if (r.kind === 'command') {
     if (!isStringArray(r.argv) || r.argv.length === 0) errors.push('a command routine needs argv: a non-empty array of strings');

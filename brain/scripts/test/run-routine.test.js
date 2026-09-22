@@ -148,6 +148,17 @@ test('duty kind: delegates to run-duty.sh with the inherited env, ledgered as pe
   assert.equal(d.calls[0].opts.env.AOS_HEADLESS, undefined);
   assert.equal(readLedgerFile().pipelines['routine:monitor'].lastRun.provider, 'persona');
   assert.equal(d.ledger.length, 0, 'the duty runner ledgers its own duty:* row');
+  assert.equal(d.calls[0].opts.env.PERSONA_MAX_USD, undefined, 'no budgetUsd → the runner\'s own default');
+  assert.equal(d.calls[0].opts.env.PERSONA_TOOLS, undefined);
+});
+
+test('duty kind: budgetUsd and tools in the routine file reach run-duty.sh as PERSONA_MAX_USD and PERSONA_TOOLS, placeholders expanded', async () => {
+  put('tick', { kind: 'duty', guarded: true, budgetUsd: 0.05, tools: 'Read,Glob,Bash({{NODE}} {{VAULT}}/brain/scripts/persona/tick.js:*)' });
+  const d = deps();
+  assert.equal(await runRoutine('tick', { deps: d }), 0);
+  assert.equal(d.calls[0].opts.env.PERSONA_MAX_USD, '0.05');
+  assert.equal(d.calls[0].opts.env.PERSONA_TOOLS, `Read,Glob,Bash(${process.execPath} ${VAULT}/brain/scripts/persona/tick.js:*)`);
+  assert.equal(d.calls[0].opts.env.CLAUDECODE, '1', 'the rest of the env is still passed through');
 });
 
 test('prompt kind: claude -p argv, headless env, ledger row routine:<slug>, cost recorded', async () => {
