@@ -93,3 +93,24 @@ test('SessionStart records the host and the model the payload names; SessionEnd 
   assert.equal(h2.host, 'claude');
   assert.equal(h2.model, null);
 });
+
+test('SessionEnd backfills a null model from the transcript (codex-parity D6); a reconciled end keeps the given ended_at', () => {
+  fs.writeFileSync(CONFIG, JSON.stringify({ provider: 'none' }));
+  const env = { ...process.env, AOS_VAULT: TMP, AOS_CONFIG: path.join(TMP, 'none.json') };
+  delete env.AOS_HOST;
+  const transcript = path.join(TMP, 'cc-b.jsonl');
+  fs.writeFileSync(transcript, [
+    JSON.stringify({ type: 'user', message: { role: 'user', content: 'hi' } }),
+    JSON.stringify({ type: 'assistant', message: { role: 'assistant', model: 'claude-backfilled', content: 'hello' } }),
+  ].join('\n') + '\n');
+  const start = spawnSync(process.execPath, [SCRIPT], { input: JSON.stringify({ hook_event_name: 'SessionStart', session_id: 'cc-b', transcript_path: transcript }), encoding: 'utf8', env });
+  assert.equal(start.status, 0, start.stderr);
+  assert.equal(JSON.parse(fs.readFileSync(LIVE('cc-b'), 'utf8').split('\n')[0]).model, null);
+  const end = spawnSync(process.execPath, [SCRIPT], { input: JSON.stringify({ hook_event_name: 'SessionEnd', session_id: 'cc-b', reason: 'other', transcript_path: transcript }), encoding: 'utf8', env });
+  assert.equal(end.status, 0, end.stderr);
+  const runs = fs.readFileSync(path.join(TMP, 'brain', '_index', 'agent-runs', 'runs.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.equal(runs.find((r) => r.session_id === 'cc-b').model, 'claude-backfilled');
+  // in-process: endRun returns false without a live file, true (with the given end time) when it closes one
+  const hook = require('../telemetry-hook.js');
+  assert.equal(hook.endRun('never-started', 'reconciled'), false);
+});

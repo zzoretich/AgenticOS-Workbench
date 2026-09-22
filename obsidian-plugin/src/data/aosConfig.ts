@@ -27,7 +27,7 @@ export interface AgenticosJson {
   hosts?: { claude?: { enabled?: boolean; configDir?: string; bin?: string }; codex?: { enabled?: boolean; home?: string; bin?: string } };
   reasoner?: { model?: string; perCallUsd?: number; perDayUsd?: number; effort?: string };
   ollama?: { host?: string; port?: number };
-  telemetry?: { enabled?: boolean; redact?: boolean; retentionDays?: number };
+  telemetry?: { enabled?: boolean; redact?: boolean; retentionDays?: number; staleAfterMinutes?: number };
   updates?: { check?: boolean; intervalHours?: number };
   cost?: { enabled?: boolean; monthlyBudget?: number | null };
   persona?: { enabled?: boolean };
@@ -48,12 +48,12 @@ export interface VaultConfig {
   // The reasoner role: a Claude model with its own caps (reason:* ledger rows), used by the Chat tab.
   reasoner: { model: string; perCallUsd: number; perDayUsd: number; effort: string };
   ollama: { host: string; port: number };
-  telemetry: { enabled: boolean; redact: boolean; retentionDays: number };
+  telemetry: { enabled: boolean; redact: boolean; retentionDays: number; staleAfterMinutes: number };
   updates: { check: boolean; intervalHours: number };
   cost: { enabled: boolean; monthlyBudget: number | null };
-  persona: { enabled: boolean; perDutyUsd: number; perDayUsd: number; watchdog: { graceMinutes: number; notify: boolean }; tick: { flagAgeDays: number; earlyReflect: { corrections: number; dutyFailures: number } }; autoapply: { minVerified: number } };
+  persona: { enabled: boolean; runner: "auto" | "claude" | "codex"; perDutyUsd: number; perDayUsd: number; watchdog: { graceMinutes: number; notify: boolean }; tick: { flagAgeDays: number; earlyReflect: { corrections: number; dutyFailures: number } }; autoapply: { minVerified: number } };
   // Routines (brain/routines/*.md): caps for the prompt kind and the launchd labels the Routines tab lists read-only.
-  routines: { enabled: boolean; perRunUsd: number; perDayUsd: number; tools: string; externalLabels: string[] };
+  routines: { enabled: boolean; runner: "auto" | "claude" | "codex"; perRunUsd: number; perDayUsd: number; tools: string; externalLabels: string[] };
 }
 
 export interface ProviderState {
@@ -82,11 +82,11 @@ export const VAULT_CONFIG_DEFAULTS: VaultConfig = {
   codex: { model: null, perCallUsd: 0.05, perDayUsd: 0.5 },
   reasoner: { model: "claude-opus-5", perCallUsd: 0.5, perDayUsd: 5.0, effort: "medium" },
   ollama: { host: "127.0.0.1", port: 11434 },
-  telemetry: { enabled: true, redact: true, retentionDays: 30 },
+  telemetry: { enabled: true, redact: true, retentionDays: 30, staleAfterMinutes: 30 },
   updates: { check: true, intervalHours: 24 },
   cost: { enabled: false, monthlyBudget: null },
-  persona: { enabled: true, perDutyUsd: 2.0, perDayUsd: 6.0, watchdog: { graceMinutes: 45, notify: true }, tick: { flagAgeDays: 7, earlyReflect: { corrections: 3, dutyFailures: 2 } }, autoapply: { minVerified: 3 } },
-  routines: { enabled: true, perRunUsd: 2.0, perDayUsd: 6.0, tools: "Read,Glob,Grep", externalLabels: [] },
+  persona: { enabled: true, runner: "auto", perDutyUsd: 2.0, perDayUsd: 6.0, watchdog: { graceMinutes: 45, notify: true }, tick: { flagAgeDays: 7, earlyReflect: { corrections: 3, dutyFailures: 2 } }, autoapply: { minVerified: 3 } },
+  routines: { enabled: true, runner: "auto", perRunUsd: 2.0, perDayUsd: 6.0, tools: "Read,Glob,Grep", externalLabels: [] },
 };
 
 export const PROVIDER_STATE_PATH = "brain/_index/provider-state.json";

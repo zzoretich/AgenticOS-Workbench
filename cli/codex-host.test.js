@@ -21,9 +21,9 @@ function fakeRun(state = {}) {
     calls.push([cmd, ...args]);
     const key = args.slice(0, 2).join(' ');
     if (key === 'login status') return state.loggedOut ? { status: 1, stdout: 'Not logged in\n', stderr: '' } : { status: 0, stdout: 'Logged in using ChatGPT\n', stderr: '' };
-    if (key === 'mcp get') return state.registered ? { status: 0, stdout: JSON.stringify({ name: 'agenticos', transport: { type: 'stdio', command: 'sh', args: [state.registered, 'mcp-server'] } }), stderr: '' } : { status: 1, stdout: '', stderr: 'no such server' };
-    if (key === 'mcp add') { if (state.failAdd) return { status: 1, stdout: '', stderr: 'boom' }; state.registered = args[args.indexOf('--') + 2]; return { status: 0, stdout: '', stderr: '' }; }
-    if (key === 'mcp remove') { state.registered = null; return { status: 0, stdout: '', stderr: '' }; }
+    if (key === 'mcp get') return state.registered ? { status: 0, stdout: JSON.stringify({ name: 'agenticos', transport: { type: 'stdio', command: 'sh', args: [state.registered, 'mcp-server'], env: state.hostEnv ? { AOS_CONFIG: CONFIG, AOS_HOST: 'codex' } : { AOS_CONFIG: CONFIG } } }), stderr: '' } : { status: 1, stdout: '', stderr: 'no such server' };
+    if (key === 'mcp add') { if (state.failAdd) return { status: 1, stdout: '', stderr: 'boom' }; state.registered = args[args.indexOf('--') + 2]; state.hostEnv = args.includes('AOS_HOST=codex'); return { status: 0, stdout: '', stderr: '' }; }
+    if (key === 'mcp remove') { state.registered = null; state.hostEnv = false; return { status: 0, stdout: '', stderr: '' }; }
     return { status: 0, stdout: '', stderr: '' };
   };
   return { run, calls, state };
@@ -33,10 +33,10 @@ test('mergeHooks writes the five events through the launcher with AOS_HOST=codex
   const doc = CH.mergeHooks(null, CTX);
   assert.deepEqual(Object.keys(doc.hooks), ['SessionStart', 'UserPromptSubmit', 'PostToolUse', 'Stop', 'SessionEnd']);
   const names = (ev) => doc.hooks[ev].flatMap((g) => g.hooks.map((h) => h.command.replace(/^env AOS_HOST=codex AOS_CONFIG='[^']*' sh '[^']*' /, '')));
-  assert.deepEqual(names('SessionStart'), ['telemetry-hook', 'update-notice', 'persona-watchdog', 'inject-conventions']);
+  assert.deepEqual(names('SessionStart'), ['telemetry-hook', 'update-notice', 'persona-watchdog', 'reconcile-sessions', 'inject-conventions']);
   assert.deepEqual(names('UserPromptSubmit'), ['inject-context']);
   assert.deepEqual(names('PostToolUse'), ['telemetry-hook']);
-  assert.deepEqual(names('Stop'), ['update-session', 'heartbeat-writer']);
+  assert.deepEqual(names('Stop'), ['update-session', 'heartbeat-writer', 'reconcile-sessions']);
   assert.deepEqual(names('SessionEnd'), ['telemetry-hook', 'auto-cost', 'heartbeat-writer', 'auto-wrap', 'scan-vault --quiet']);
   for (const g of doc.hooks.SessionEnd) for (const h of g.hooks) assert.equal(h.timeout, 3);
   for (const g of doc.hooks.Stop) for (const h of g.hooks) { assert.equal(h.timeout, 10); assert.equal(h.type, 'command'); }
@@ -140,7 +140,7 @@ test('installCodexHost writes hooks.json, registers the MCP server once, generat
   assert.equal(r.hooksChanged, true);
   assert.equal(r.mcp, 'added');
   assert.equal(state.registered, LAUNCHER);
-  assert.ok(calls.some((c) => c.join(' ') === `/x/codex mcp add agenticos --env AOS_CONFIG=${CONFIG} -- sh ${LAUNCHER} mcp-server`));
+  assert.ok(calls.some((c) => c.join(' ') === `/x/codex mcp add agenticos --env AOS_CONFIG=${CONFIG} --env AOS_HOST=codex -- sh ${LAUNCHER} mcp-server`));
   assert.equal(r.skills.written.length, 19);
   const doc = JSON.parse(fs.readFileSync(r.hooksFile, 'utf8'));
   assert.equal(CH.countOurEvents(doc), 5);
@@ -152,7 +152,7 @@ test('installCodexHost writes hooks.json, registers the MCP server once, generat
   const st = CH.codexHostStatus({ cfg: {}, launcher: LAUNCHER, run, env: { ...env, AOS_CODEX_BIN: '/x/codex' }, dir });
   assert.equal(st.loggedIn, true);
   assert.equal(st.hookEvents, 5);
-  assert.equal(st.mcp, true);
+  assert.equal(st.mcp, 'ok');
   assert.equal(st.skills, 19);
   assert.equal(st.memories, false);
   const rm = CH.removeCodexHost({ cfg: {}, bin: '/x/codex', run, env, dir });
@@ -208,4 +208,22 @@ test('codexHome and memoriesEnabled read the config the way Codex does', () => {
   assert.equal(CH.memoriesEnabled({}, { CODEX_HOME: home }), true);
   fs.writeFileSync(path.join(home, 'config.toml'), '[features]\nhooks = true\n[other]\nmemories = true\n');
   assert.equal(CH.memoriesEnabled({}, { CODEX_HOME: home }), false);
+});
+
+test('a 0.5.0 MCP registration (launcher right, no AOS_HOST env) reads as stale and is re-added with the env (codex-parity D2)', () => {
+  const home = tmp('aos-codex-home3-');
+  const dir = tmp('aos-skills4-');
+  const env = { CODEX_HOME: home };
+  const { run, calls, state } = fakeRun({ registered: LAUNCHER, hostEnv: false });
+  assert.equal(CH.mcpState({ bin: '/x/codex', run, launcher: LAUNCHER }), 'stale');
+  assert.equal(CH.mcpRegistered({ bin: '/x/codex', run, launcher: LAUNCHER }), false);
+  assert.equal(CH.codexHostStatus({ cfg: {}, launcher: LAUNCHER, run, env: { ...env, AOS_CODEX_BIN: '/x/codex' }, dir }).mcp, 'stale');
+  const r = CH.installCodexHost({ cfg: {}, launcher: LAUNCHER, config: CONFIG, pluginDir: PLUGIN, bin: '/x/codex', run, env, dir });
+  assert.equal(r.mcp, 'added');
+  assert.equal(state.hostEnv, true);
+  assert.ok(calls.some((c) => c[1] === 'mcp' && c[2] === 'remove'), 'the stale entry is removed before the add');
+  assert.equal(CH.mcpState({ bin: '/x/codex', run, launcher: LAUNCHER }), 'ok');
+  assert.equal(CH.mcpState({ bin: null, run, launcher: LAUNCHER }), 'no-binary');
+  assert.equal(CH.mcpState({ bin: '/x/codex', run, launcher: '/elsewhere/aos' }), 'missing');
+  assert.deepEqual(CH.mcpAddArgs({ config: CONFIG, launcher: LAUNCHER }).slice(0, 7), ['mcp', 'add', 'agenticos', '--env', `AOS_CONFIG=${CONFIG}`, '--env', 'AOS_HOST=codex']);
 });

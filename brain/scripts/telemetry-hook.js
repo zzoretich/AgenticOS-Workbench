@@ -24,7 +24,8 @@ const { PATHS } = require('./lib/hook-entry.js').hookEntry();
 const fs = require('fs');
 const path = require('path');
 const { RUNS_DIR, LIVE_DIR, SUMMARY_LOG } = require('./sdk/lib/telemetry.js');
-const { currentHost } = require('./lib/host.js');
+const host = require('./lib/host.js');
+const { currentHost } = host;
 
 const TRUNC = 300;
 const { loadConfig } = require('./lib/config.js');
@@ -77,7 +78,7 @@ function ensureHeader(sessionId, extra = {}) {
     started_at: new Date().toISOString(),
     pid: process.pid,
     session_id: sessionId,
-    host: currentHost(),
+    host: currentHost(process.env, PAYLOAD),
     // Codex's hook payload names the model on every event; Claude Code's does not. Costing reads it back.
     model: typeof extra.model === 'string' && extra.model ? extra.model : null,
   };
@@ -91,9 +92,15 @@ function appendEvent(sessionId, evt) {
   try { fs.appendFileSync(lf, JSON.stringify(evt) + '\n'); } catch (_) {}
 }
 
-function endRun(sessionId, reason) {
+/**
+ * Close a run: timeline JSON + a runs.jsonl summary line, then delete the live file. No live file → no-op,
+ * which is what makes a late real SessionEnd after a reconcile harmless (codex-parity D3).
+ *   opts.transcriptPath  the session transcript, for the model backfill (D6) when the header has none
+ *   opts.endedAt         Date — a reconciled run ends when its transcript last changed, not now
+ */
+function endRun(sessionId, reason, opts = {}) {
   const lf = liveFileFor(sessionId);
-  if (!fs.existsSync(lf)) return;
+  if (!fs.existsSync(lf)) return false;
   let lines;
   try { lines = fs.readFileSync(lf, 'utf8').split('\n').filter(Boolean); } catch { return; }
 
@@ -106,7 +113,15 @@ function endRun(sessionId, reason) {
   }
 
   const startedAt = header.started_at ? new Date(header.started_at) : new Date();
-  const endedAt = new Date();
+  const endedAt = opts.endedAt instanceof Date && !Number.isNaN(opts.endedAt.getTime()) ? opts.endedAt : new Date();
+  let model = header.model || null;
+  if (!model) {
+    try {
+      const hostName = header.host || 'claude';
+      const tp = (opts.transcriptPath && fs.existsSync(opts.transcriptPath)) ? opts.transcriptPath : host.findTranscript(hostName, sessionId);
+      model = require('./lib/transcript.js').sessionModelFile(tp) || null;
+    } catch (_) { model = null; }
+  }
 
   // Aggregate tool usage + subagents
   let toolCount = 0;
@@ -140,7 +155,7 @@ function endRun(sessionId, reason) {
     subagents: Array.from(subagents),
     end_reason: reason || null,
     host: header.host || 'claude',
-    model: header.model || null,
+    model,
   };
 
   const dayDir = path.join(RUNS_DIR, startedAt.toISOString().slice(0, 10));
@@ -150,13 +165,17 @@ function endRun(sessionId, reason) {
   } catch (_) {}
   try { fs.appendFileSync(SUMMARY_LOG, JSON.stringify(summary) + '\n'); } catch (_) {}
   try { fs.unlinkSync(lf); } catch (_) {}
+  return true;
 }
 
+let PAYLOAD = null; // the parsed hook stdin, so the host can be resolved from transcript_path when AOS_HOST is unset (D1)
 let raw = '';
+if (require.main === module) {
 process.stdin.on('data', (c) => (raw += c));
 process.stdin.on('end', () => {
   try {
     const input = JSON.parse(raw || '{}');
+    PAYLOAD = input;
     input.tool_input = fromJsonString(input.tool_input);
     input.tool_response = fromJsonString(input.tool_response);
     const sessionId = input.session_id || input.sessionId || 'unknown';
@@ -189,7 +208,7 @@ process.stdin.on('end', () => {
         break;
       }
       case 'SessionEnd':
-        endRun(sessionId, input.reason);
+        endRun(sessionId, input.reason, { transcriptPath: input.transcript_path || input.transcriptPath || '' });
         break;
       default:
         break;
@@ -197,3 +216,6 @@ process.stdin.on('end', () => {
   } catch (_) { /* never block the session */ }
   process.exit(0);
 });
+}
+
+module.exports = { ensureHeader, endRun, liveFileFor, LIVE_DIR };

@@ -331,3 +331,47 @@ test('tick helper: the budget and allowlist come from the env like any duty (run
   assert.match(r.stdout, /^--allowedTools\nRead,Glob,Grep,Bash\(node tick\.js:\*\)$/m);
   assert.ok(!fs.existsSync(path.join(s.vault, 'brain', '_index', 'persona-tick.json')), 'dry-run runs no precheck');
 });
+
+test('codex runner: with no claude and a codex host, the duty runs through `codex exec -` (prompt on stdin), journals, and ledgers an estimated codex row (codex-parity D4/D5)', () => {
+  const s = sandbox();
+  const fakeCodex = path.join(__dirname, '..', '..', '..', 'cli', 'fixtures', 'fake-codex.sh');
+  const cfg = path.join(s.vault, 'agenticos.json');
+  fs.writeFileSync(cfg, JSON.stringify({ vault: s.vault, claude: { model: 'haiku' }, hosts: { claude: { enabled: false }, codex: { enabled: true, bin: fakeCodex } } }, null, 2));
+  fs.writeFileSync(path.join(s.vault, 'brain', 'config.json'), JSON.stringify({ provider: 'none', codex: { model: 'gpt-5-mini' } }));
+  const env = { ...s.env, AOS_CONFIG: cfg, AOS_NO_CLAUDE: '1', PATH: '/usr/bin:/bin', HOME: s.vault };
+  delete env.PERSONA_CLAUDE_BIN;
+  const dry = run(['testduty', '--dry-run'], env);
+  assert.equal(dry.status, 0, dry.stderr);
+  const lines = dry.stdout.split('\n');
+  assert.equal(lines[0], fakeCodex);
+  assert.deepEqual(lines.slice(1, 4), ['exec', '-', '--skip-git-repo-check']);
+  assert.match(dry.stdout, /^-m\ngpt-5-mini$/m);
+  assert.match(dry.stdout, /^model_reasoning_effort="medium"$/m);
+  assert.match(dry.stdout, /on stdin, after persona IDENTITY\.md \+ STATE\.md/);
+  assert.ok(!dry.stdout.includes('--max-budget-usd'), 'codex has no per-run budget flag');
+  const stdinFile = path.join(s.vault, 'codex-stdin.txt');
+  const argsFile = path.join(s.vault, 'codex-args.txt');
+  const r = run(['testduty'], { ...env, FAKE_JOURNAL: s.journal, FAKE_CODEX_STDIN: stdinFile, FAKE_ARGS: argsFile });
+  assert.equal(r.status, 0, r.stderr + fs.readFileSync(path.join(s.logDir, 'duty-testduty.log'), 'utf8'));
+  const prompt = fs.readFileSync(stdinFile, 'utf8');
+  assert.match(prompt, /^Today is /);
+  assert.match(prompt, /# Atlas/);
+  assert.match(prompt, /ascii fixture duty/);
+  assert.match(fs.readFileSync(argsFile, 'utf8'), /^-s\nworkspace-write$/m);
+  const log = fs.readFileSync(path.join(s.logDir, 'duty-testduty.log'), 'utf8');
+  assert.match(log, /runner=codex/);
+  assert.match(log, /"provider":"codex"/);
+  assert.match(log, /"model":"gpt-5-mini"/);
+  assert.match(log, /done \(exit 0\)/);
+  const ledger = fs.readFileSync(path.join(s.vault, 'brain', '_index', 'provider-spend.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.equal(ledger.length, 1);
+  assert.equal(ledger[0].feature, 'duty:testduty');
+  assert.equal(ledger[0].inputTokens, 1200);
+  assert.ok(ledger[0].usd > 0);
+  // persona.runner=claude pins claude even when codex is the only host: the claude path is taken (its default
+  // location, since nothing resolves), never the codex binary — the flat "bin" scan of 0.5.0 would have picked it.
+  fs.writeFileSync(path.join(s.vault, 'brain', 'config.json'), JSON.stringify({ provider: 'none', persona: { runner: 'claude' } }));
+  const pinned = run(['testduty', '--dry-run'], env);
+  assert.equal(pinned.status, 0);
+  assert.match(pinned.stdout.split('\n')[0], /\/\.local\/bin\/claude$/);
+});

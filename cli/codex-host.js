@@ -9,8 +9,8 @@
  *            is the ownership marker (no extra keys, so Codex's hooks.json schema is untouched). Foreign
  *            entries and unknown top-level keys survive a merge and a removal. SessionEnd entries carry the
  *            3 s cap Codex enforces; every one of those handlers detaches its real work.
- *   mcp      `codex mcp add agenticos --env AOS_CONFIG=<config> -- sh <launcher> mcp-server`, skipped when
- *            `codex mcp get agenticos --json` already names that launcher.
+ *   mcp      `codex mcp add agenticos --env AOS_CONFIG=<config> --env AOS_HOST=codex -- sh <launcher> mcp-server`,
+ *            skipped when `codex mcp get agenticos --json` already names that launcher with that env.
  *   skills   <skillsDir>/<name>/SKILL.md carries GENERATED_MARKER right under its frontmatter; only
  *            directories with that marker are ever removed or overwritten.
  *
@@ -24,10 +24,10 @@ const { spawnSync } = require('child_process');
 
 /** Event → [command name, timeout seconds]. Mirrors plugin/hooks/hooks.json plus inject-conventions (D5). */
 const HOOKS = [
-  ['SessionStart', [['telemetry-hook', 10], ['update-notice', 10], ['persona-watchdog', 10], ['inject-conventions', 10]]],
+  ['SessionStart', [['telemetry-hook', 10], ['update-notice', 10], ['persona-watchdog', 10], ['reconcile-sessions', 10], ['inject-conventions', 10]]],
   ['UserPromptSubmit', [['inject-context', 10]]],
   ['PostToolUse', [['telemetry-hook', 10]]],
-  ['Stop', [['update-session', 10], ['heartbeat-writer', 10]]],
+  ['Stop', [['update-session', 10], ['heartbeat-writer', 10], ['reconcile-sessions', 10]]],
   ['SessionEnd', [['telemetry-hook', 3], ['auto-cost', 3], ['heartbeat-writer', 3], ['auto-wrap', 3], ['scan-vault --quiet', 3]]],
 ];
 const OURS_RE = /^env AOS_HOST=codex /;
@@ -134,21 +134,32 @@ function countOurEvents(doc) {
 }
 
 // ── MCP ───────────────────────────────────────────────────────────────────────
-function mcpRegistered({ bin, run = defaultRun, launcher }) {
-  if (!bin) return false;
-  const r = run(bin, ['mcp', 'get', 'agenticos', '--json'], { capture: true, allowFail: true });
-  if (r.status !== 0) return false;
-  const j = safeParse(r.stdout);
-  const args = j && j.transport && Array.isArray(j.transport.args) ? j.transport.args : [];
-  return args.includes(launcher) && args.includes('mcp-server');
+/** The `codex mcp add` argv. AOS_HOST=codex tells the MCP server which host spawned it (codex-parity D2); without it a
+ *  wrap_session from a Codex session would resolve the Claude transcript directory on a two-host machine. */
+function mcpAddArgs({ config, launcher }) {
+  return ['mcp', 'add', 'agenticos', '--env', `AOS_CONFIG=${config}`, '--env', 'AOS_HOST=codex', '--', 'sh', launcher, 'mcp-server'];
 }
-/** 'present' | 'added' | 'failed'. A stale registration (another launcher path) is replaced. */
+/** 'ok' | 'stale' (names the launcher but its env lacks AOS_HOST=codex — a 0.5.0 registration) | 'missing' | 'no-binary' */
+function mcpState({ bin, run = defaultRun, launcher }) {
+  if (!bin) return 'no-binary';
+  const r = run(bin, ['mcp', 'get', 'agenticos', '--json'], { capture: true, allowFail: true });
+  if (r.status !== 0) return 'missing';
+  const j = safeParse(r.stdout);
+  const t = j && j.transport && typeof j.transport === 'object' ? j.transport : {};
+  const args = Array.isArray(t.args) ? t.args : [];
+  if (!(args.includes(launcher) && args.includes('mcp-server'))) return 'missing';
+  const env = t.env && typeof t.env === 'object' ? t.env : {};
+  return env.AOS_HOST === 'codex' ? 'ok' : 'stale';
+}
+function mcpRegistered(o) { return mcpState(o) === 'ok'; }
+/** 'present' | 'added' | 'failed'. A stale registration (another launcher path, or one without AOS_HOST) is replaced. */
 function registerMcp({ bin, run = defaultRun, launcher, config, io }) {
   if (mcpRegistered({ bin, run, launcher })) return 'present';
   run(bin, ['mcp', 'remove', 'agenticos'], { capture: true, allowFail: true });
-  const r = run(bin, ['mcp', 'add', 'agenticos', '--env', `AOS_CONFIG=${config}`, '--', 'sh', launcher, 'mcp-server'], { capture: true, allowFail: true });
+  const addArgs = mcpAddArgs({ config, launcher });
+  const r = run(bin, addArgs, { capture: true, allowFail: true });
   if (r.status !== 0) {
-    if (io) io.warn(`codex mcp add failed (${(r.stderr || r.stdout).trim() || 'exit ' + r.status}); run: codex mcp add agenticos --env AOS_CONFIG=${config} -- sh ${launcher} mcp-server`);
+    if (io) io.warn(`codex mcp add failed (${(r.stderr || r.stdout).trim() || 'exit ' + r.status}); run: codex ${addArgs.join(' ')}`);
     return 'failed';
   }
   return 'added';
@@ -329,7 +340,7 @@ function codexHostStatus({ cfg, launcher, run = defaultRun, env = process.env, d
     hooksFile: file,
     hookEvents: countOurEvents(readJson(file, null)),
     hookEventsTotal: HOOKS.length,
-    mcp: launcher ? mcpRegistered({ bin, run, launcher }) : false,
+    mcp: launcher ? mcpState({ bin, run, launcher }) : 'missing',
     skillsDir: dir,
     skills: countGenerated(dir),
     memories: memoriesEnabled(cfg, env),
@@ -339,7 +350,7 @@ function codexHostStatus({ cfg, launcher, run = defaultRun, env = process.env, d
 module.exports = {
   HOOKS, GENERATED_MARKER, codexHome, hooksFile, skillsDir, codexBin, codexLoggedIn, memoriesEnabled,
   hookCommand, isOurs, mergeHooks, stripHooks, countOurEvents,
-  mcpRegistered, registerMcp,
+  mcpAddArgs, mcpState, mcpRegistered, registerMcp,
   parseFrontmatter, rewriteBody, commandToSkill, skillToCodex, generateSkills, removeSkills, countGenerated,
   installCodexHost, removeCodexHost, codexHostStatus,
 };

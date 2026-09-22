@@ -576,7 +576,7 @@ function readStdinAndSpawn() {
       const sessionId = input.session_id || input.sessionId || '';
       let transcriptPath = input.transcript_path || input.transcriptPath || '';
       if (!transcriptPath && sessionId) {
-        const h = host.currentHost();
+        const h = host.currentHost(process.env, input);
         transcriptPath = (h === 'codex' ? host.findTranscript('codex', sessionId) : findTranscript(sessionId)) || '';
       }
 

@@ -7,8 +7,8 @@
  * finishStop() is the matching epilogue for Stop hooks: Codex requires JSON on stdout there
  * (plain text is rejected), Claude Code accepts silence, so it prints `{}` only under Codex.
  */
-function finishStop() {
-  if (require('./host.js').currentHost() === 'codex') process.stdout.write('{}');
+function finishStop(payload = null) {
+  if (require('./host.js').currentHost(process.env, payload) === 'codex') process.stdout.write('{}');
 }
 
 function hookEntry() {

@@ -1,0 +1,120 @@
+'use strict';
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { spawnSync } = require('child_process');
+const R = require('../reconcile-sessions.js');
+
+const MIN = 60 * 1000;
+const NOW = Date.parse('2026-09-22T12:00:00Z');
+const SCRIPT = path.join(__dirname, '..', 'reconcile-sessions.js');
+
+function liveDirWith(headers) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-live-'));
+  for (const h of headers) {
+    const f = path.join(dir, `sess-${h.session_id}.ndjson`);
+    fs.writeFileSync(f, JSON.stringify({ type: 'run_start', id: `sess-${h.session_id}`, script: 'session', ...h }) + '\n');
+    const at = new Date(NOW - (h.idleMin || 0) * MIN);
+    fs.utimesSync(f, at, at);
+  }
+  fs.writeFileSync(path.join(dir, 'junk.ndjson'), 'not json\n');
+  return dir;
+}
+
+function transcriptAt(idleMin, name = 'rollout-2026-09-22T10-00-00-abc.jsonl') {
+  const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'aos-tr-')), name);
+  fs.writeFileSync(f, JSON.stringify({ type: 'session_meta', payload: { id: 'abc', cwd: '/w' } }) + '\n');
+  const at = new Date(NOW - idleMin * MIN);
+  fs.utimesSync(f, at, at);
+  return f;
+}
+
+test('findStale: only runs whose header, live file and transcript are all older than the window', () => {
+  const trOld = transcriptAt(45);
+  const trFresh = transcriptAt(2, 'rollout-2026-09-22T11-58-00-def.jsonl');
+  const liveDir = liveDirWith([
+    { session_id: 'abc', host: 'codex', started_at: new Date(NOW - 90 * MIN).toISOString(), idleMin: 60 },
+    { session_id: 'def', host: 'codex', started_at: new Date(NOW - 90 * MIN).toISOString(), idleMin: 60 },
+    { session_id: 'ghi', host: 'claude', started_at: new Date(NOW - 90 * MIN).toISOString(), idleMin: 3 },
+    { session_id: 'jkl', host: 'claude', started_at: new Date(NOW - 2 * MIN).toISOString(), idleMin: 60 },
+    { session_id: 'mno', host: 'claude', started_at: new Date(NOW - 90 * MIN).toISOString(), idleMin: 60 },
+  ]);
+  const map = { abc: trOld, def: trFresh };
+  const stale = R.findStale({ liveDir, staleMs: 30 * MIN, now: NOW, findTranscript: (h, id) => map[id] || null });
+  assert.deepEqual(stale.map((s) => s.sessionId).sort(), ['abc', 'mno']);
+  const abc = stale.find((s) => s.sessionId === 'abc');
+  assert.equal(abc.host, 'codex');
+  assert.equal(abc.transcript, trOld);
+  assert.equal(abc.endedAt.getTime(), NOW - 45 * MIN, 'ends when the transcript last changed');
+  const mno = stale.find((s) => s.sessionId === 'mno');
+  assert.equal(mno.transcript, null);
+  assert.equal(mno.endedAt.getTime(), NOW - 60 * MIN, 'no transcript: ends at the live file mtime');
+  assert.deepEqual(R.findStale({ liveDir: path.join(liveDir, 'missing'), staleMs: MIN, now: NOW }), []);
+});
+
+test('reconcile ends each stale run then spawns auto-cost and auto-wrap with AOS_HOST from the header; dry-run touches nothing', () => {
+  const tr = transcriptAt(45);
+  const liveDir = liveDirWith([
+    { session_id: 'abc', host: 'codex', started_at: new Date(NOW - 90 * MIN).toISOString(), idleMin: 60 },
+    { session_id: 'zzz', host: 'claude', started_at: new Date(NOW - 90 * MIN).toISOString(), idleMin: 60 },
+  ]);
+  const ended = [];
+  const spawned = [];
+  const deps = {
+    liveDir, staleMs: 30 * MIN, now: NOW,
+    findTranscript: (h, id) => (id === 'abc' ? tr : null),
+    endRun: (id, reason, opts) => { ended.push([id, reason, opts]); return id !== 'zzz'; },
+    spawn: (bin, args, opts) => { spawned.push({ args: args.map((a) => path.basename(a)), env: opts.env }); },
+  };
+  const dry = R.reconcile({ dryRun: true, deps });
+  assert.deepEqual(dry.map((s) => s.sessionId).sort(), ['abc', 'zzz']);
+  assert.equal(ended.length, 0);
+  assert.equal(spawned.length, 0);
+  const done = R.reconcile({ deps });
+  assert.deepEqual(done.map((s) => s.sessionId), ['abc'], 'a run endRun refused (already gone) spawns no workers');
+  assert.equal(ended.length, 2);
+  assert.deepEqual(ended[0].slice(0, 2), ['abc', 'reconciled']);
+  assert.equal(ended[0][2].transcriptPath, tr);
+  assert.equal(ended[0][2].endedAt.getTime(), NOW - 45 * MIN);
+  assert.equal(spawned.length, 2);
+  assert.deepEqual(spawned[0].args, ['auto-cost.js', '--cost-one', 'abc', path.basename(tr)]);
+  assert.equal(spawned[0].env.AOS_HOST, 'codex');
+  assert.equal(spawned[0].env.AOS_DETACHED, '1');
+  assert.deepEqual(spawned[1].args, ['auto-wrap.js']);
+  assert.equal(spawned[1].env.AUTO_WRAP_DETACHED, '1');
+  assert.equal(spawned[1].env.BRAIN_SESSION_ID, 'abc');
+  assert.equal(spawned[1].env.BRAIN_TRANSCRIPT, tr);
+  assert.equal(spawned[1].env.AOS_HOST, 'codex');
+});
+
+test('throttled: a stamp younger than five minutes skips the sweep; --force and an old stamp run it and refresh the stamp', () => {
+  const stamp = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'aos-stamp-')), '.reconcile');
+  assert.equal(R.throttled(false, stamp, NOW), false, 'no stamp yet: run and write it');
+  assert.ok(fs.existsSync(stamp));
+  fs.utimesSync(stamp, new Date(NOW - MIN), new Date(NOW - MIN));
+  assert.equal(R.throttled(false, stamp, NOW), true);
+  assert.equal(R.throttled(true, stamp, NOW), false);
+  fs.utimesSync(stamp, new Date(NOW - 6 * MIN), new Date(NOW - 6 * MIN));
+  assert.equal(R.throttled(false, stamp, NOW), false);
+  assert.ok(Date.now() - fs.statSync(stamp).mtime.getTime() < 10 * 1000, 'the stamp was refreshed');
+});
+
+test('as a hook: exits 0 fast, answers Stop with {} under Codex and nothing under Claude Code; inline --dry-run lists the sweep', () => {
+  const vault = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-rec-vault-'));
+  fs.mkdirSync(path.join(vault, 'brain', '_index'), { recursive: true });
+  fs.writeFileSync(path.join(vault, 'brain', 'config.json'), JSON.stringify({ provider: 'none' }));
+  const base = { ...process.env, AOS_VAULT: vault, AOS_CONFIG: path.join(vault, 'none.json') };
+  delete base.AOS_DETACHED;
+  const stop = spawnSync(process.execPath, [SCRIPT], { input: JSON.stringify({ hook_event_name: 'Stop', session_id: 'h1', stop_hook_active: false }), encoding: 'utf8', env: { ...base, AOS_HOST: 'codex' } });
+  assert.equal(stop.status, 0, stop.stderr);
+  assert.equal(stop.stdout, '{}');
+  const start = spawnSync(process.execPath, [SCRIPT], { input: JSON.stringify({ hook_event_name: 'SessionStart', session_id: 'h1', source: 'startup' }), encoding: 'utf8', env: { ...base, CLAUDE_PROJECT_DIR: vault } });
+  assert.equal(start.status, 0, start.stderr);
+  assert.equal(start.stdout, '');
+  assert.ok(fs.existsSync(path.join(vault, 'brain', '_index', 'agent-runs', '.reconcile')), 'the hook stamped the sweep');
+  const inline = spawnSync(process.execPath, [SCRIPT, '--dry-run', '--force'], { input: '', encoding: 'utf8', env: { ...base, AOS_HOST: '', CLAUDE_PROJECT_DIR: '' } });
+  assert.equal(inline.status, 0, inline.stderr);
+  assert.match(inline.stdout, /nothing stale/);
+});

@@ -147,6 +147,31 @@ function readTranscriptFile(transcriptPath, opts) {
   return readTurns(text, opts);
 }
 
+/**
+ * The model that answered in a session, from the transcript (codex-parity D6): Claude Code writes
+ * `message.model` on every assistant entry; Codex names it in turn_context.payload.model (and, on
+ * newer CLIs, session_meta.payload.model). null when neither is present. Fixture-tested on both.
+ */
+function sessionModel(entries, { format } = {}) {
+  const list = Array.isArray(entries) ? entries : [];
+  const fmt = format || detectFormat(list);
+  for (const e of list) {
+    if (!e || typeof e !== 'object') continue;
+    if (fmt === 'codex') {
+      const p = e.payload && typeof e.payload === 'object' ? e.payload : null;
+      if (p && (e.type === 'turn_context' || e.type === 'session_meta') && typeof p.model === 'string' && p.model) return p.model;
+      continue;
+    }
+    if ((e.type === 'assistant' || e.role === 'assistant') && e.message && typeof e.message.model === 'string' && e.message.model) return e.message.model;
+  }
+  return null;
+}
+
+function sessionModelFile(transcriptPath, opts) {
+  if (!transcriptPath) return null;
+  try { return sessionModel(parseJsonl(fs.readFileSync(transcriptPath, 'utf8')), opts); } catch { return null; }
+}
+
 /** "role: text" lines, one per spoken turn — the shape the extractors and summarizers consume. */
 function flattenTurns(parsed, { maxChars = 0 } = {}) {
   const out = [];
@@ -159,4 +184,4 @@ function flattenTurns(parsed, { maxChars = 0 } = {}) {
   return out.join('\n');
 }
 
-module.exports = { parseJsonl, textOf, detectFormat, parseEntries, readTurns, readTranscriptFile, flattenTurns, FILE_TOOLS };
+module.exports = { parseJsonl, textOf, detectFormat, parseEntries, readTurns, readTranscriptFile, flattenTurns, sessionModel, sessionModelFile, FILE_TOOLS };
