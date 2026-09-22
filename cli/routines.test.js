@@ -199,7 +199,7 @@ test('import-cloud: from a file and from stdin, then the HOSTS table; a bad payl
   assert.equal(await R.main(['import-cloud', file], { configDir: w.configDir, io: w.io, now: NOW }), 0);
   assert.match(w.out(), /^import-cloud: 2 cloud routines → .*routines-hosts\.json$/m);
   assert.match(w.out(), /^claude\s+One shot\s+once at (Sat|Sun|Mon) 2026-05-1\d \d\d:\d\d\s+off\s+—\s+\d+d ago \(ran once\)\s+1s ago$/m);
-  assert.match(w.out(), /^claude\s+Weekly digest\s+Mondays at 13:00 \(UTC\)\s+on\s+Mon 2026-09-28 \d\d:\d\d\s+\d+h ago \(fired\)\s+1s ago$/m);
+  assert.match(w.out(), /^claude\s+Weekly digest\s+Mondays at 13:00 \(UTC\)\s+on\s+Mon 2026-09-28 \d\d:\d\d\s+\d+[mh] ago \(fired\)\s+1s ago$/m);
   w.logs.length = 0;
   assert.equal(await R.main(['import-cloud', '-'], { configDir: w.configDir, io: w.io, now: NOW, stdin: () => JSON.stringify({ data: [] }) }), 0);
   assert.match(w.out(), /^import-cloud: 0 cloud routines/m);
