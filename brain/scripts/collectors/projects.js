@@ -224,6 +224,7 @@ function collectProjects() {
         mtime: iso(st.mtimeMs),
         ageDays: daysSince(st.mtimeMs),
         hasClaudeMd: exists(path.join(full, 'CLAUDE.md')),
+        hasAgentsMd: exists(path.join(full, 'AGENTS.md')),
         hasReadme: exists(path.join(full, 'README.md')),
         linkedMemory,
         status,

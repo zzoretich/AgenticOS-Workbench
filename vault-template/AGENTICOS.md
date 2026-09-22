@@ -33,6 +33,7 @@ Under Codex CLI every `/name` below is the skill `$name` (`$wrap`, `$remember`, 
 ## Conventions
 
 - New memory → file in `brain/memory/<type>/` → one line in `MEMORY.md` → (only if session-relevant) a pointer in `BRAIN.md`. **Never duplicate** across the three.
+- Projects live in `workspaces/<slug>/` (kebab-case), each with a `CLAUDE.md` and an identical `AGENTS.md` so both hosts read the same instructions. Create one with `aos workspace new <name>`, bring an existing folder in with `aos workspace adopt <path>`; never create project directories elsewhere. Every scan pins each host's sessions to their workspace and lists the rest (`aos workspace list`).
 - `MEMORY.md` bullets are `- [Title](brain/memory/<type>/<slug>.md) — description` under the H2 for that type; the H2 names are fixed.
 - `[[wiki-links]]` in Obsidian-facing files (daily notes, memory, MOCs); markdown `[text](path)` in Claude-facing files (this file, `MEMORY.md`, skills).
 - `brain/_index/` is written only by scripts. In `BRAIN.md` the `## Last Session` block is the one hand-editable part; everything else is compiled from memory frontmatter (`pin: true`, `status/active`).

@@ -28,6 +28,7 @@ const { collectHealth, renderHealthMarkdown } = require('./collectors/health');
 const { collectHistory, writeDailyRecord, prune } = require('./collectors/history');
 const { sweepOrphans } = require('./sweep-orphans');
 const { collectWorkspaces } = require('./collectors/workspaces');
+const { collectHostSessions, attachSessions } = require('./collectors/hostSessions');
 const { generateInsight } = require('./collectors/workspaceInsights');
 const { withLock } = require('./lib/snapshotLock');
 const { collectFileMaps } = require('./collectors/fileMap.js');
@@ -61,6 +62,13 @@ function scan() {
     folderAtlas: collectFolderAtlas(),
   };
   snapshot.workspaces = collectWorkspaces({ prevWorkspaces: prev && prev.workspaces ? prev.workspaces : [] });
+  // Both hosts' sessions, pinned to the workspace they ran in (workspace hub D2); the rest is what runs outside workspaces/.
+  const hostSessions = collectHostSessions();
+  snapshot.hostSessions = {
+    byCwd: hostSessions.byCwd,
+    scannedAt: hostSessions.scannedAt,
+    outsideWorkspaces: attachSessions(snapshot.workspaces, hostSessions.byCwd),
+  };
   snapshot.health = collectHealth(snapshot);
   snapshot.history = collectHistory(snapshot);
   snapshot.elapsedMs = Date.now() - start;

@@ -32,6 +32,8 @@ Run before tagging a release, on a vault created by `aos init` (not the develope
 ## Spaces / Memory / Runs
 
 - [ ] Spaces lists workspaces from `snapshot.json`; insight footer says `local` when no model tag is present.
+- [ ] Spaces rows carry a sessions chip (`claude N · codex M · Nd ago`) for every workspace either CLI has worked in since the last scan; a workspace with no sessions shows no chip.
+- [ ] An "outside workspaces" footer under the list names each working directory sessions ran in elsewhere (`~`-shortened, newest first, at most eight); hovering shows the `aos workspace adopt` command. It disappears once those folders are adopted and the vault rescanned.
 - [ ] Memory graph renders; daily notes under the configured `dailyNote.layout` classify as `session` nodes.
 - [ ] Runs tab updates within a second of a new line appended to `agent-runs/runs.jsonl` (bus `runs-appended`).
 

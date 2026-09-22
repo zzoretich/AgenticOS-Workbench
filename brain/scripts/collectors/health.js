@@ -77,6 +77,11 @@ function collectHealth(snapshot) {
   if (pj?.summary?.userNamedWithoutMemory) {
     add('info', 'projects', `${pj.summary.userNamedWithoutMemory} user-named projects without a linked brain memory`);
   }
+  // Sessions of either host that ran outside workspaces/ (workspace hub D4): information, never a fault.
+  const outside = snapshot.hostSessions?.outsideWorkspaces;
+  if (Array.isArray(outside) && outside.length) {
+    add('info', 'projects', `${outside.length} session cwd${outside.length === 1 ? '' : 's'} outside workspaces/ (run aos workspace list)`, outside.slice(0, 10).map((o) => o.cwd));
+  }
 
   // Plans
   if (pl?.summary?.dormant) {
