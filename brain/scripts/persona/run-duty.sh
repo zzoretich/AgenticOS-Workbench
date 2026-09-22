@@ -64,7 +64,7 @@ MAX_USD="${PERSONA_MAX_USD:-}"     # empty → persona.perDutyUsd from --check b
 # status/log/diff, so a duty can neither commit nor push (final review F3/safety-5, departs from A26 — git
 # add/commit were dropped: docs/chief-of-staff.md promises a duty never commits, and nothing needed the verbs).
 # Write/Edit are unscoped — guarded files rely on the proposal protocol plus git history, not on the permission layer.
-PERSONA_TOOLS="${PERSONA_TOOLS:-Read,Write,Edit,Glob,Grep,Bash(git status:*),Bash(git log:*),Bash(git diff:*),Bash(date:*),Bash(ls:*),Bash(grep:*),Bash(wc:*),Bash(tail:*),Bash(head:*),Bash($NODE $VAULT/brain/scripts/persona/sitrep-state.js:*),Bash($NODE $VAULT/brain/scripts/persona/scan-arsenal.js:*),Bash(node $VAULT/brain/scripts/persona/sitrep-state.js:*),Bash(node $VAULT/brain/scripts/persona/scan-arsenal.js:*)}"
+PERSONA_TOOLS="${PERSONA_TOOLS:-Read,Write,Edit,Glob,Grep,Bash(git status:*),Bash(git log:*),Bash(git diff:*),Bash(date:*),Bash(ls:*),Bash(grep:*),Bash(wc:*),Bash(tail:*),Bash(head:*),Bash($NODE $VAULT/brain/scripts/persona/sitrep-state.js:*),Bash($NODE $VAULT/brain/scripts/persona/scan-arsenal.js:*),Bash($NODE $VAULT/brain/scripts/persona/ledger.js:*),Bash(node $VAULT/brain/scripts/persona/sitrep-state.js:*),Bash(node $VAULT/brain/scripts/persona/scan-arsenal.js:*),Bash(node $VAULT/brain/scripts/persona/ledger.js:*)}"
 RECORD="$SCRIPT_DIR/record-spend.js"     # sibling: repo checkout in tests, <vault>/brain/scripts/persona/ when installed
 TODAY="$(date +%Y-%m-%d)"
 JOURNAL="$PERSONA/journal/$TODAY.md"
@@ -90,7 +90,9 @@ else
 fi
 
 # Hooks do not run under AOS_HEADLESS=1, so the persona is injected here instead.
-SYSTEM="$( { cat "$PERSONA/IDENTITY.md" 2>/dev/null; echo; echo '---'; cat "$PERSONA/STATE.md" 2>/dev/null; } )"
+# The date line pins "today": a duty running just after midnight otherwise infers the date from STATE.md and the
+# journal (both still yesterday's), appends its entry to yesterday's file, and the contract check below reads FAILED.
+SYSTEM="$( { echo "Today is $TODAY (local time $(date +%H:%M)). This run's journal file is $JOURNAL."; echo; cat "$PERSONA/IDENTITY.md" 2>/dev/null; echo; echo '---'; cat "$PERSONA/STATE.md" 2>/dev/null; } )"
 PROMPT="$(cat "$DUTY_FILE")"
 
 if [ "$DRY_RUN" = "--dry-run" ]; then
