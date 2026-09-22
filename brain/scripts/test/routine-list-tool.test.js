@@ -48,5 +48,15 @@ test('routine_list returns every routine with cadence, next fire times, last run
 test('routine_list on a vault without brain/routines/ is an empty list', async () => {
   fs.rmSync(path.join(TMP, 'brain', 'routines'), { recursive: true, force: true });
   const out = await withClient(async (client) => JSON.parse((await client.callTool({ name: 'routine_list', arguments: {} })).content[0].text));
-  assert.deepEqual(out, { schema: 1, count: 0, routines: [] });
+  assert.deepEqual(out, { schema: 1, count: 0, routines: [], hosts: null });
+});
+
+test('routine_list carries the host routines cache as `hosts` once brain/_index/routines-hosts.json exists', async () => {
+  const file = path.join(TMP, 'brain', '_index', 'routines-hosts.json');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({ schema: 1, hosts: { claude: { fetchedAt: '2026-09-21T23:00:00.000Z', routines: [{ id: 'trig_1', name: 'One shot', cadence: 'once', schedule: '', enabled: false, status: 'ran once', next: null, last: null, model: null, target: null, link: null, summary: '' }] } } }));
+  const out = await withClient(async (client) => JSON.parse((await client.callTool({ name: 'routine_list', arguments: {} })).content[0].text));
+  assert.equal(out.hosts.claude.routines[0].id, 'trig_1');
+  assert.equal(out.hosts.codex, undefined);
+  fs.rmSync(file, { force: true });
 });

@@ -120,6 +120,9 @@ test('parseArgs handles value flags, --no-flags, booleans and positionals', () =
   assert.throws(() => parseArgs(['init', '--vault=']), /needs a value/);
   assert.throws(() => parseArgs(['init', '--dry-rnu']), /unknown flag --dry-rnu/);
   assert.throws(() => parseArgs(['init', '--no-cost']), /unknown flag --no-cost/);
+  // `aos routines hosts --refresh` (host-routines D4): a boolean flag the dispatcher forwards to cli/routines.js.
+  assert.deepEqual(parseArgs(['routines', 'hosts', '--refresh', '--json']), { cmd: 'routines', sub: ['hosts'], flags: { refresh: true, json: true } });
+  assert.deepEqual(parseArgs(['routines', 'import-cloud', '-']).sub, ['import-cloud', '-']);
   // A single-dash token is a usage error, not a positional: `aos init -y` must not silently start an interactive install.
   assert.throws(() => parseArgs(['init', '-y']), /unknown flag -y/);
 });

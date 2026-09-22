@@ -6,8 +6,12 @@
  *   run <slug> [--dry-run]   run one routine now through run-routine.js (trigger "manual")
  *   enable|disable <slug>    flip `enabled:` in the file, then sync
  *   next [<slug>]        the next three fire times
+ *   hosts [--refresh] [--json]   the routines each session host owns (Codex Automations live via sqlite3; the Claude
+ *                        Code cloud snapshot) from brain/_index/routines-hosts.json — read-only (spec host-routines D4)
+ *   import-cloud <file|->    write the `RemoteTrigger list` payload (a Claude Code session's view of its cloud routines)
+ *                        into that cache; `/routines cloud` drives it (D3)
  * Runs from the checkout (node cli/aos.js) and from the vendored <vault>/brain/scripts/cli/ (the aos launcher):
- * the store, cron and interview modules are looked up next to this file first, then in the checkout.
+ * the store, cron and host-routines modules are looked up next to this file first, then in the checkout.
  * Zero dependencies; every external effect is injectable (opts).
  */
 const fs = require('fs');
@@ -16,7 +20,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const schedule = require('./schedule.js');
 
-const VERBS = ['list', 'sync', 'run', 'enable', 'disable', 'next'];
+const VERBS = ['list', 'sync', 'run', 'enable', 'disable', 'next', 'hosts', 'import-cloud'];
 const REPO = path.join(__dirname, '..');
 
 function resolveModule(rel) {
@@ -25,6 +29,7 @@ function resolveModule(rel) {
 }
 const store = () => resolveModule('lib/routines-store.js');
 const cron = () => resolveModule('lib/cron.js');
+const hostsLib = () => resolveModule('lib/host-routines.js');
 
 function claudeConfigDir() { return path.resolve(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')); }
 function readJson(file) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; } }
@@ -50,10 +55,11 @@ function scheduleVarsFor({ vault, configDir, node, cfg }) {
 
 function routinesDir(vault) { return path.join(vault, 'brain', 'routines'); }
 function stateFile(vault) { return path.join(vault, 'brain', '_index', 'routines.json'); }
+function dutyLogDir(vault) { return path.join(vault, 'persona', 'journal', 'logs'); }
 
-/** Reader-side rows (lib/routines-store.js overview): routine + state + computed next/health. */
+/** Reader-side rows (lib/routines-store.js overview): routine + state (merged with the duty log) + computed next/health. */
 function rows({ vault, now = new Date() }) {
-  return store().overview({ dir: routinesDir(vault), file: stateFile(vault), now });
+  return store().overview({ dir: routinesDir(vault), file: stateFile(vault), logDir: dutyLogDir(vault), now });
 }
 
 function pad(n) { return String(n).padStart(2, '0'); }
@@ -77,16 +83,58 @@ function table(headers, lines) {
   return [fmt(headers), ...lines.map(fmt)].join('\n');
 }
 
+/** The `HOSTS` table: one row per host routine from the cache, with the section's snapshot age. */
+function hostLines(cache, now) {
+  const H = hostsLib();
+  return H.flatten(cache).map(r => [r.host, r.name, r.cadence, r.enabled ? 'on' : 'off', r.next ? fmtLocal(r.next) : '—',
+    r.last ? `${ago(r.last.at, now)} (${r.last.status})` : 'never', ago(r.fetchedAt, now)]);
+}
+function hostWarnings(cache) {
+  return Object.entries(cache.hosts || {}).filter(([, s]) => s && s.ok === false && s.warning).map(([h, s]) => `${h}: ${s.warning}`);
+}
+const HOST_HEADERS = ['host', 'name', 'cadence', 'on', 'next', 'last', 'as-of'];
+
 function list(ctx, { json = false, io, now = new Date() }) {
   const all = rows({ vault: ctx.vault, now });
-  if (json) { io.log(JSON.stringify({ schema: 1, routines: all }, null, 2)); return 0; }
-  if (!all.length) { io.log(`no routines under ${routinesDir(ctx.vault)} — create <slug>.md there or use the HUD Routines tab`); return 0; }
-  const lines = all.map(r => [r.slug, r.kind, r.enabled ? 'on' : 'off', r.cadence, r.next[0] ? fmtLocal(r.next[0]) : '—',
-    r.last ? `${ago(r.last.at, now)} (exit ${r.last.exit}${r.last.usd != null ? `, $${Number(r.last.usd).toFixed(2)}` : ''})` : 'never', r.health]);
-  io.log(table(['slug', 'kind', 'on', 'cadence', 'next', 'last', 'health'], lines));
+  const cache = hostsLib().readCache(hostsLib().cacheFile(ctx.vault));
+  if (json) { io.log(JSON.stringify({ schema: 1, routines: all, hosts: cache.hosts }, null, 2)); return 0; }
+  if (!all.length) io.log(`no routines under ${routinesDir(ctx.vault)} — create <slug>.md there or use the HUD Routines tab`);
+  else {
+    const lines = all.map(r => [r.slug, r.kind, r.enabled ? 'on' : 'off', r.cadence, r.next[0] ? fmtLocal(r.next[0]) : '—',
+      r.last ? `${ago(r.last.at, now)} (exit ${r.last.exit}${r.last.usd != null ? `, $${Number(r.last.usd).toFixed(2)}` : ''})` : 'never', r.health]);
+    io.log(table(['slug', 'kind', 'on', 'cadence', 'next', 'last', 'health'], lines));
+  }
   const bad = all.filter(r => r.errors.length);
   for (const r of bad) io.error(`${r.slug}: ${r.errors.join('; ')}`);
+  const hl = hostLines(cache, now);
+  if (hl.length) io.log(`\nHOSTS\n${table(HOST_HEADERS, hl)}`);
+  for (const w of hostWarnings(cache)) io.error(`warning: ${w}`);
   return 0;
+}
+
+function hosts(ctx, { json = false, refresh = false, io, now = new Date(), exec, sqlite3 }) {
+  const H = hostsLib();
+  const cache = refresh ? H.refresh({ vault: ctx.vault, cfg: ctx.cfg, exec, sqlite3, now }) : H.readCache(H.cacheFile(ctx.vault));
+  if (json) { io.log(JSON.stringify(cache, null, 2)); return 0; }
+  const hl = hostLines(cache, now);
+  if (!hl.length) {
+    const names = Object.keys(cache.hosts || {});
+    io.log(names.length ? `no host routines (${names.join(', ')} checked)` : `no host routines yet — \`aos routines hosts --refresh\` reads the Codex Automations; \`/routines cloud\` in a Claude Code session imports the cloud routines`);
+  } else io.log(table(HOST_HEADERS, hl));
+  for (const w of hostWarnings(cache)) io.error(`warning: ${w}`);
+  return 0;
+}
+
+function importCloud(ctx, file, { io, now = new Date(), stdin = () => fs.readFileSync(0, 'utf8') }) {
+  if (!file) throw new UsageError('usage: aos routines import-cloud <file.json | ->');
+  let payload;
+  try { payload = JSON.parse(file === '-' ? stdin() : fs.readFileSync(file, 'utf8')); } catch (e) { io.error(`import-cloud: cannot read ${file}: ${e.message}`); return 2; }
+  const H = hostsLib();
+  let cache;
+  try { cache = H.importCloud({ vault: ctx.vault, payload, now }); } catch (e) { io.error(`import-cloud: ${e.message}`); return 2; }
+  const n = cache.hosts.claude.routines.length;
+  io.log(`import-cloud: ${n} cloud routine${n === 1 ? '' : 's'} → ${H.cacheFile(ctx.vault)}`);
+  return hosts(ctx, { io, now });
 }
 
 function sync(ctx, { io, installSchedules = schedule.installSchedules }) {
@@ -143,7 +191,7 @@ async function main(argv, opts = {}) {
   const verb = words[0] || 'list';
   if (!VERBS.includes(verb)) throw new UsageError(`aos routines: unknown verb "${verb}" (${VERBS.join(' | ')})`);
   const ctx = resolveCtx(opts);
-  const o = { io, installSchedules: opts.installSchedules, spawn: opts.spawn, now: opts.now };
+  const o = { io, installSchedules: opts.installSchedules, spawn: opts.spawn, now: opts.now, exec: opts.exec, sqlite3: opts.sqlite3, stdin: opts.stdin };
   switch (verb) {
     case 'list': return list(ctx, { ...o, json: flags.has('--json') });
     case 'sync': return sync(ctx, o);
@@ -151,6 +199,8 @@ async function main(argv, opts = {}) {
     case 'enable': return setEnabled(ctx, words[1], true, o);
     case 'disable': return setEnabled(ctx, words[1], false, o);
     case 'next': return next(ctx, words[1], o);
+    case 'hosts': return hosts(ctx, { ...o, json: flags.has('--json'), refresh: flags.has('--refresh') });
+    case 'import-cloud': return importCloud(ctx, words[1], o);
     default: return 2;
   }
 }
