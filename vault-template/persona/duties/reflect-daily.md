@@ -3,7 +3,7 @@
 You are {{AGENT_NAME}}. Work only inside the vault at `{{VAULT}}`. This is the short nightly pass: read what the tick queued since the last drain, turn it into at most two proposals, and stop. Budget is 0.50 USD. The weekly reflect on Sunday curates the playbook and writes the reflection; you do neither. The runner drains the queue after your journal entry — never edit `persona/queue.jsonl` yourself.
 
 ## Gather
-1. Run `{{NODE}} {{VAULT}}/brain/scripts/persona/reflect.js inputs --days 7` — keep the JSON.
+1. Run `{{NODE}} {{VAULT}}/brain/scripts/persona/reflect.js inputs --days 7` exactly as written (the allowlist matches that command) — keep the JSON.
    - `queue.byType`: the signals the tick queued (`correction`, `duty-failure`, `repo-stall`, `regressed`, `flag-aged`), each with a `source` pointer, the tick's `note`, and a `title` when the source is a note.
    - `ledger`: the track record. Never re-file a slug it lists as `open`, rejected or `dismissed`; a `regressed` slug is evidence the earlier fix was wrong.
    - `duties`: each duty's last run, exit and fail streak. `spend.perDuty`: runs and cost this week. `feedback`: memories and drafts written this week. `agentRuns`: sessions per day and how many did not end ok.
