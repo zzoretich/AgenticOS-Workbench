@@ -3,7 +3,7 @@
 /**
  * run-routine.js — the single entrypoint every scheduled routine runs through (spec D5).
  *
- *   node brain/scripts/routines/run-routine.js <slug> [--manual] [--dry-run]
+ *   node brain/scripts/routines/run-routine.js <slug> [--manual|--early] [--dry-run]
  *
  * Loads <vault>/brain/routines/<slug>.md, then by kind:
  *   duty     sh <vault>/brain/scripts/persona/run-duty.sh <slug>   (its own kill switch, caps, journal, contract);
@@ -23,7 +23,8 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-const TRIGGERS = ['scheduled', 'manual'];
+// `early`: started by the tick's helper (persona/tick.js beat) when the queue crosses persona.tick.earlyReflect.
+const TRIGGERS = ['scheduled', 'manual', 'early'];
 const DEFAULT_TIMEOUT_SEC = 1800;
 const TAIL_CHARS = 400;
 
@@ -174,8 +175,9 @@ async function runRoutine(slug, { trigger = 'scheduled', dryRun = false, deps = 
 
 function main(argv) {
   const slug = argv.find(a => !a.startsWith('--'));
-  if (!slug) { process.stderr.write('usage: run-routine.js <slug> [--manual] [--dry-run]\n'); return Promise.resolve(2); }
-  return runRoutine(slug, { trigger: argv.includes('--manual') ? 'manual' : 'scheduled', dryRun: argv.includes('--dry-run') });
+  if (!slug) { process.stderr.write('usage: run-routine.js <slug> [--manual|--early] [--dry-run]\n'); return Promise.resolve(2); }
+  const trigger = argv.includes('--early') ? 'early' : argv.includes('--manual') ? 'manual' : 'scheduled';
+  return runRoutine(slug, { trigger, dryRun: argv.includes('--dry-run') });
 }
 
 if (require.main === module) main(process.argv.slice(2)).then((code) => process.exit(code), (e) => { process.stderr.write(`run-routine: ${e.message}\n`); process.exit(1); });

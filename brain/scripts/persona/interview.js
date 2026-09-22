@@ -23,7 +23,7 @@ const path = require('path');
 const readline = require('readline');
 const { buildPlaybook } = require('./build-playbook.js');
 
-const DUTIES = ['monitor', 'reflect', 'sitrep', 'tick'];
+const DUTIES = ['monitor', 'reflect', 'reflect-daily', 'sitrep', 'tick'];
 const EFFORTS = ['low', 'medium', 'high'];
 const DEFAULT_LAYOUT = '{yyyy}/{yyyy}-{MM}-{MMMM}/{yyyy}-{MM}-{dd}.md';
 const TEMPLATE_DIRS = [path.join(__dirname, 'templates'), path.join(__dirname, '..', '..', '..', 'vault-template', 'persona')];
@@ -158,7 +158,7 @@ function writePersona({ vault, configDir, templatesDir, answers, node, logDir, n
   put('STATE.md', renderTemplate(tmpl('STATE.template.md'), vars), true);
   put('proposals/README.md', renderTemplate(tmpl(path.join('proposals', 'README.md')), vars), true);
   put('autoapply.json', JSON.stringify({ classes: [] }, null, 2) + '\n', true);
-  // The persona's own routines — the heartbeat watchdog and the hourly tick — seeded verbatim into brain/routines/ and
+  // The persona's own routines — the heartbeat watchdog, the hourly tick and the nightly reflect — seeded verbatim into brain/routines/ and
   // kept once present (`{{NODE}}`/`{{VAULT}}` in them are expanded by run-routine.js, not here). `aos persona --yes`
   // on an existing vault is how a routine added by an upgrade arrives.
   let routineTemplates = [];

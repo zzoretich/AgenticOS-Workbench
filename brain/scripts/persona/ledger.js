@@ -15,7 +15,8 @@
  *   Every verb takes --root <vault> (default: the resolved vault) or --file <path>.
  *
  * Line shape: { schema: 1, ts, event, slug, kind, target, by, recheck?, commit?, note? }.
- * Events: filed · approved · rejected · stale-dropped · auto-applied · verified · regressed.
+ * Events: filed · approved · rejected · stale-dropped · auto-applied · verified · regressed, plus the two verbs an idea
+ * (kind workflow or product) gets instead of approve/reject: accepted (kept in persona/backlog.md) · dismissed.
  * A corrupt line is skipped with one stderr warning (the twin of loadRepos() in sitrep-state.js).
  */
 const fs = require('fs');
@@ -23,9 +24,10 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 
 const SCHEMA = 1;
-const EVENTS = ['filed', 'approved', 'rejected', 'stale-dropped', 'auto-applied', 'verified', 'regressed'];
+const EVENTS = ['filed', 'approved', 'rejected', 'stale-dropped', 'auto-applied', 'verified', 'regressed', 'accepted', 'dismissed'];
 const KINDS = ['self', 'vault', 'workflow', 'product'];
-const TERMINAL = new Set(['approved', 'rejected', 'stale-dropped', 'auto-applied']);
+const DECISIONS = ['filed', 'approved', 'rejected', 'accepted', 'dismissed'];
+const TERMINAL = new Set(['approved', 'rejected', 'stale-dropped', 'auto-applied', 'accepted', 'dismissed']);
 const APPLIED = new Set(['approved', 'auto-applied']);
 const VERDICTS = new Set(['verified', 'regressed']);
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,60}$/;
@@ -129,13 +131,15 @@ function summary({ file, days = 28, now = new Date() } = {}) {
   const since = now - days * DAY_MS;
   const win = records.filter(r => ts(r) >= since);
   const counts = Object.fromEntries(EVENTS.map(e => [e, 0]));
-  const byKind = Object.fromEntries(KINDS.map(k => [k, { filed: 0, approved: 0, rejected: 0 }]));
+  const blank = () => Object.fromEntries(DECISIONS.map(e => [e, 0]));
+  const byKind = Object.fromEntries(KINDS.map(k => [k, blank()]));
   for (const r of win) {
     counts[r.event] = (counts[r.event] || 0) + 1;
-    const k = byKind[r.kind] || (byKind[r.kind] = { filed: 0, approved: 0, rejected: 0 });
+    const k = byKind[r.kind] || (byKind[r.kind] = blank());
     if (r.event in k) k[r.event]++;
   }
   const decided = counts.approved + counts.rejected;
+  const judged = counts.accepted + counts.dismissed;
   const bySlug = new Map();
   for (const r of records) { if (!bySlug.has(r.slug)) bySlug.set(r.slug, []); bySlug.get(r.slug).push(r); }
   const open = [];
@@ -146,20 +150,23 @@ function summary({ file, days = 28, now = new Date() } = {}) {
   return {
     days, total: win.length, counts, byKind,
     approvalRate: decided ? Math.round((counts.approved / decided) * 100) / 100 : null,
+    acceptRate: judged ? Math.round((counts.accepted / judged) * 100) / 100 : null,
     regressed: win.filter(r => r.event === 'regressed').map(r => r.slug),
     verified: win.filter(r => r.event === 'verified').map(r => r.slug),
+    dismissed: win.filter(r => r.event === 'dismissed').map(r => r.slug),
     open: open.sort(),
     unverified: unverified(records).map(a => a.slug).sort(),
   };
 }
 
 function formatSummary(s) {
-  const kinds = KINDS.map(k => `${k} ${s.byKind[k].filed}/${s.byKind[k].approved}/${s.byKind[k].rejected}`).join(' · ');
+  const applied = ['self', 'vault'].map(k => `${k} ${s.byKind[k].filed}/${s.byKind[k].approved}/${s.byKind[k].rejected}`).join(' · ');
+  const ideas = ['workflow', 'product'].map(k => `${k} ${s.byKind[k].filed}/${s.byKind[k].accepted}/${s.byKind[k].dismissed}`).join(' · ');
   return [
     `ledger: last ${s.days}d — ${s.total} event(s)`,
-    `  filed ${s.counts.filed} · approved ${s.counts.approved} · rejected ${s.counts.rejected} · stale-dropped ${s.counts['stale-dropped']} · auto-applied ${s.counts['auto-applied']}`,
-    `  verified ${s.counts.verified} · regressed ${s.counts.regressed}${s.regressed.length ? ` (${s.regressed.join(', ')})` : ''} · approval rate ${s.approvalRate === null ? 'n/a' : s.approvalRate}`,
-    `  by kind (filed/approved/rejected): ${kinds}`,
+    `  filed ${s.counts.filed} · approved ${s.counts.approved} · rejected ${s.counts.rejected} · stale-dropped ${s.counts['stale-dropped']} · auto-applied ${s.counts['auto-applied']} · accepted ${s.counts.accepted} · dismissed ${s.counts.dismissed}${s.dismissed.length ? ` (${s.dismissed.join(', ')})` : ''}`,
+    `  verified ${s.counts.verified} · regressed ${s.counts.regressed}${s.regressed.length ? ` (${s.regressed.join(', ')})` : ''} · approval rate ${s.approvalRate === null ? 'n/a' : s.approvalRate} · accept rate ${s.acceptRate === null ? 'n/a' : s.acceptRate}`,
+    `  by kind (filed/approved/rejected): ${applied} · (filed/accepted/dismissed): ${ideas}`,
     `  open: ${s.open.length ? s.open.join(', ') : 'none'} · unverified approvals: ${s.unverified.length ? s.unverified.join(', ') : 'none'}`,
   ].join('\n');
 }
@@ -202,4 +209,4 @@ function main(argv, { stdout = (s) => process.stdout.write(s), stderr = (s) => p
 }
 
 if (require.main === module) process.exit(main(process.argv.slice(2)));
-module.exports = { SCHEMA, EVENTS, KINDS, defaultFile, read, validate, append, runRecipe, verify, summary, formatSummary, main };
+module.exports = { SCHEMA, EVENTS, KINDS, DECISIONS, defaultFile, read, validate, append, runRecipe, verify, summary, formatSummary, main };

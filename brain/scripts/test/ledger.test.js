@@ -93,7 +93,9 @@ test('summary counts the window, rates approvals, and lists open and unverified 
   assert.equal(s.counts.approved, 2);
   assert.equal(s.counts.rejected, 1);
   assert.equal(s.approvalRate, 0.67);
-  assert.deepEqual(s.byKind.product, { filed: 1, approved: 0, rejected: 1 });
+  assert.deepEqual(s.byKind.product, { filed: 1, approved: 0, rejected: 1, accepted: 0, dismissed: 0 });
+  assert.equal(s.acceptRate, null, 'no idea was accepted or dismissed yet');
+  assert.deepEqual(s.dismissed, []);
   assert.deepEqual(s.regressed, ['e-five']);
   assert.deepEqual(s.open, ['c-three', 'd-four']);
   assert.deepEqual(s.unverified, ['a-one']);
@@ -101,6 +103,34 @@ test('summary counts the window, rates approvals, and lists open and unverified 
   assert.match(text, /approval rate 0\.67/);
   assert.match(text, /open: c-three, d-four/);
   assert.equal(L.summary({ file: path.join(os.tmpdir(), 'ledger-none.jsonl') }).approvalRate, null);
+});
+
+// Spec 2026-09-22-persona-reflect-daily-design D6: an idea (workflow or product) is accepted into the backlog or
+// dismissed; both are terminal, counted per kind, and dismissed slugs are listed so the reflects do not re-file them.
+test('accepted and dismissed: terminal idea verbs, counted per kind with an accept rate, dismissed slugs listed', () => {
+  const { file } = tmpFile();
+  const put = (slug, event, at, extra = {}) => L.append({ event, slug, ...extra }, { file, now: at });
+  put('w-one', 'filed', daysAgo(6), { kind: 'workflow' });
+  put('w-one', 'accepted', daysAgo(5), { kind: 'workflow', by: 'user' });
+  put('p-two', 'filed', daysAgo(4), { kind: 'product', target: 'hud' });
+  put('p-two', 'dismissed', daysAgo(3), { kind: 'product', by: 'user', note: 'not this quarter' });
+  put('p-three', 'filed', daysAgo(2), { kind: 'product' });
+  put('p-three', 'accepted', daysAgo(1), { kind: 'product' });
+  put('s-four', 'filed', daysAgo(1), { kind: 'self' });
+  assert.ok(L.EVENTS.includes('accepted') && L.EVENTS.includes('dismissed'));
+  const s = L.summary({ file, days: 28, now: NOW });
+  assert.equal(s.counts.accepted, 2);
+  assert.equal(s.counts.dismissed, 1);
+  assert.equal(s.acceptRate, 0.67);
+  assert.equal(s.approvalRate, null, 'ideas never count toward the approval rate');
+  assert.deepEqual(s.byKind.workflow, { filed: 1, approved: 0, rejected: 0, accepted: 1, dismissed: 0 });
+  assert.deepEqual(s.byKind.product, { filed: 2, approved: 0, rejected: 0, accepted: 1, dismissed: 1 });
+  assert.deepEqual(s.open, ['s-four'], 'accepted and dismissed proposals are no longer open');
+  assert.deepEqual(s.dismissed, ['p-two']);
+  const text = L.formatSummary(s);
+  assert.match(text, /accepted 2 · dismissed 1 \(p-two\)/);
+  assert.match(text, /accept rate 0\.67/);
+  assert.match(text, /\(filed\/accepted\/dismissed\): workflow 1\/1\/0 · product 2\/1\/1/);
 });
 
 test('CLI: append and summary through main(); usage errors exit 2', () => {

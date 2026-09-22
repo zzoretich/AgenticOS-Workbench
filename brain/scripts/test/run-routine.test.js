@@ -152,6 +152,19 @@ test('duty kind: delegates to run-duty.sh with the inherited env, ledgered as pe
   assert.equal(d.calls[0].opts.env.PERSONA_TOOLS, undefined);
 });
 
+// Spec 2026-09-22-persona-reflect-daily-design D7: the tick starts the daily reflect early through this entrypoint; the
+// trigger is recorded so `aos routines list` can tell an early run from the 22:00 one.
+test('duty kind: the early trigger (tick-started reflect) is recorded, and main() maps --early to it', async () => {
+  put('reflect-daily', { kind: 'duty', guarded: true, budgetUsd: 0.5 });
+  const d = deps();
+  assert.equal(await runRoutine('reflect-daily', { deps: d, trigger: 'early' }), 0);
+  assert.equal(state().routines['reflect-daily'].lastTrigger, 'early');
+  assert.equal(d.calls[0].opts.env.PERSONA_MAX_USD, '0.5');
+  assert.ok(require('../routines/run-routine.js').TRIGGERS.includes('early'));
+  assert.equal(await runRoutine('reflect-daily', { deps: deps(), trigger: 'bogus' }), 0);
+  assert.equal(state().routines['reflect-daily'].lastTrigger, 'scheduled', 'an unknown trigger still falls back');
+});
+
 test('duty kind: budgetUsd and tools in the routine file reach run-duty.sh as PERSONA_MAX_USD and PERSONA_TOOLS, placeholders expanded', async () => {
   put('tick', { kind: 'duty', guarded: true, budgetUsd: 0.05, tools: 'Read,Glob,Bash({{NODE}} {{VAULT}}/brain/scripts/persona/tick.js:*)' });
   const d = deps();

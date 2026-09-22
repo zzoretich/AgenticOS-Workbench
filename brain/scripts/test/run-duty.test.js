@@ -56,6 +56,7 @@ test('dry-run prints the invocation (binary, model, effort, tools, budget, json 
   assert.match(r.stdout, /^--max-budget-usd\n2$/m, 'perDutyUsd default without a --check run');
   assert.match(r.stdout, /^--append-system-prompt$/m);
   assert.match(r.stdout, /brain\/scripts\/persona\/ledger\.js:\*\)/, 'duties may append to the proposal ledger');
+  assert.match(r.stdout, /brain\/scripts\/persona\/reflect\.js:\*\)/, 'the weekly reflect (no tools: in its routine file) may read the evidence pack');
   assert.match(r.stdout, /^--strict-mcp-config$/m);          // execution amendment 2026-09-15 (A25)
   assert.match(r.stdout, /^--no-session-persistence$/m);     // execution amendment 2026-09-15 (A25)
   assert.ok(!r.stdout.includes('bypassPermissions'));
@@ -266,6 +267,59 @@ test('tick helper: precheck skips an unchanged vault silently, beat runs after a
   assert.match(fs.readFileSync(s.journal, 'utf8'), /duty: tick\n- status: FAILED/);
   assert.equal(tickState().beats, 1, 'no beat after a failed contract');
   assert.ok(tickState().pending, 'the pending signature waits for a run that meets the contract');
+});
+
+// Spec 2026-09-22-persona-reflect-daily-design D2: the daily reflect rides the same seam with reflect.js — precheck skips
+// only an empty queue that already drained today; beat drains the queue after the contract passes, never after a failure.
+test('reflect-daily helper: precheck skips only when the queue is empty and today drained, beat drains after a met contract', () => {
+  const s = sandbox();
+  fs.writeFileSync(path.join(s.vault, 'persona', 'duties', 'reflect-daily.md'), 'ascii fixture nightly reflect\n');
+  const fake = path.join(s.vault, 'fake-reflect-claude');
+  fs.writeFileSync(fake, [
+    '#!/bin/sh',
+    '[ -n "${FAKE_JOURNAL:-}" ] && { mkdir -p "$(dirname "$FAKE_JOURNAL")"; printf "\\n## 22:00 — duty: reflect-daily\\n- status: OK\\n" >> "$FAKE_JOURNAL"; }',
+    '[ -n "${FAKE_QUEUE_DURING_RUN:-}" ] && echo "$FAKE_QUEUE_DURING_RUN" >> "$AOS_VAULT/persona/queue.jsonl"',
+    'echo "{\\"type\\":\\"result\\",\\"result\\":\\"done\\",\\"total_cost_usd\\":0.02,\\"usage\\":{\\"input_tokens\\":1,\\"output_tokens\\":1},\\"duration_ms\\":10}"',
+    '',
+  ].join('\n'), { mode: 0o755 });
+  const env = { ...s.env, PERSONA_CLAUDE_BIN: fake };
+  const queueFile = path.join(s.vault, 'persona', 'queue.jsonl');
+  const line = (type, source) => JSON.stringify({ schema: 1, ts: '2026-09-22T10:00:00.000Z', type, source, note: null, by: 'tick' });
+  fs.writeFileSync(queueFile, `${line('correction', 'brain/memory/feedback/a.md')}\n${line('duty-failure', 'brain/_index/persona-heartbeat.json#reflect')}\n`);
+  const reflectState = () => JSON.parse(fs.readFileSync(path.join(s.vault, 'brain', '_index', 'persona-reflect.json'), 'utf8'));
+  const queue = () => fs.readFileSync(queueFile, 'utf8').trim().split('\n').filter(Boolean);
+  const log = () => fs.readFileSync(path.join(s.logDir, 'duty-reflect-daily.log'), 'utf8');
+
+  // 1. two signals queued, a line arrives during the run: the run drains the two it saw and keeps the newcomer
+  const late = line('repo-stall', 'app:.planning/STATE.md');
+  const r1 = run(['reflect-daily'], { ...env, FAKE_JOURNAL: s.journal, FAKE_QUEUE_DURING_RUN: late });
+  assert.equal(r1.status, 0, r1.stderr);
+  assert.match(log(), /duty=reflect-daily done \(exit 0\)/);
+  assert.equal(reflectState().drains, 1);
+  assert.deepEqual(reflectState().lastDrain, { count: 2, byType: { correction: 1, 'duty-failure': 1 } });
+  assert.deepEqual(queue(), [late], 'the signal queued during the run waits for the next drain');
+
+  // 2. the newcomer is still queued → the model runs again the same day and drains it
+  const r2 = run(['reflect-daily'], { ...env, FAKE_JOURNAL: s.journal });
+  assert.equal(r2.status, 0, r2.stderr);
+  assert.equal(reflectState().drains, 2);
+  assert.equal(queue().length, 0);
+
+  // 3. empty queue, already drained today → skipped: exit 0, one log line, no new journal entry, no FAILED flag
+  const r3 = run(['reflect-daily'], { ...env, FAKE_JOURNAL: s.journal });
+  assert.equal(r3.status, 0, r3.stderr);
+  assert.match(log(), /duty=reflect-daily skipped: queue empty and already drained today/);
+  assert.equal(fs.readFileSync(s.journal, 'utf8').match(/duty: reflect-daily/g).length, 2, 'a skip writes no journal entry');
+  assert.equal(reflectState().skipped, 1);
+  assert.ok(!fs.readFileSync(path.join(s.vault, 'persona', 'STATE.md'), 'utf8').includes('FAILED'));
+
+  // 4. a new signal, but the model never journals → FAILED as usual and NOT drained
+  fs.appendFileSync(queueFile, line('correction', 'brain/memory/feedback/b.md') + '\n');
+  const r4 = run(['reflect-daily'], env);
+  assert.equal(r4.status, 1);
+  assert.match(fs.readFileSync(s.journal, 'utf8'), /duty: reflect-daily\n- status: FAILED/);
+  assert.equal(reflectState().drains, 2, 'no drain after a failed contract');
+  assert.equal(queue().length, 1, 'the signal is still queued for the next run');
 });
 
 test('tick helper: the budget and allowlist come from the env like any duty (run-routine.js sets them from the routine file)', () => {

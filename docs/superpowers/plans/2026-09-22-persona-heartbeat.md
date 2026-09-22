@@ -54,18 +54,20 @@ it helped), so that proposals get better over time instead of restarting from ze
       so the tooltip needs no calendar code (spec D9)
 - [x] fill `next_fire` in `heartbeat-writer.js` from the routine schedule (`nextFireFor`)
 
-### Slice 3 — proposal loop
-- [ ] `reflect-daily` duty at 22:00: drains `queue.jsonl`, files at most two proposals, writes no
+### Slice 3 — proposal loop (spec: `docs/superpowers/specs/2026-09-22-persona-reflect-daily-design.md`)
+- [x] `reflect-daily` duty at 22:00: drains `queue.jsonl` (runner-side, `reflect.js precheck`/`beat` on
+      the tick's helper seam — exact snapshot, atomic rewrite), files at most two proposals, writes no
       weekly reflection; Sunday `reflect` keeps the long form and reads `ledger.js summary --days 28`
-- [ ] reflect inputs: `ledger summary`, `routines.json` health, `provider-spend.jsonl` per duty,
-      feedback memories and drafts, `agent-runs` summaries (already partly there)
-- [ ] backlog routing: accepted `workflow` and `product` proposals append to
-      `<vault>/persona/backlog.md` with the proposal body; product items name the surface so a later
-      `/AgenticOS-New-Feature` run can start from them
-- [ ] flag-closer: verdict labels per kind, `accept` and `dismiss` verbs, ledger events for both
-- [ ] event-driven early reflect: the tick triggers `reflect-daily` early when the queue holds a
-      duty failure streak of two or three new corrections
-- [ ] `docs/chief-of-staff.md` `## Self-improvement` describing the loop end to end
+- [x] reflect inputs: `reflect.js inputs --days N` — `ledger summary`, `routines.json` health,
+      `provider-spend.jsonl` per duty, feedback memories and drafts, `agent-runs` per day, the queue
+- [x] backlog routing: accepted `workflow` and `product` proposals append to
+      `<vault>/persona/backlog.md` through `backlog.js` with the proposal's What and Why; product items
+      name the `surface` so a later `/AgenticOS-New-Feature` run can start from them
+- [x] flag-closer: verbs per kind (`verbsFor`), `accept` and `dismiss` lanes, ledger events `accepted`
+      and `dismissed`
+- [x] event-driven early reflect: `tick.js beat` starts `reflect-daily` early (trigger `early`) when the
+      queue holds 3 corrections or duty failures weighing 2 (`persona.tick.earlyReflect`), once per day
+- [x] `docs/chief-of-staff.md` `## Self-improvement` describing the loop end to end
 
 ### Slice 4 — earned autonomy
 - [ ] the tick calls `recheck.js --record` so confirmations accrue between reviews
