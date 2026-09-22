@@ -217,7 +217,7 @@ test('prompt kind: no claude binary → exit 1 with a clear message; is_error re
   put('brief', { kind: 'prompt' }, 'x');
   const d = deps({ claudeBin: () => null });
   assert.equal(await runRoutine('brief', { deps: d }), 1);
-  assert.match(d.err, /no claude binary/);
+  assert.match(d.err, /no runner for prompt routines \(claude CLI not found\)/);
   const bad = JSON.stringify({ type: 'result', is_error: true, result: 'budget exceeded', total_cost_usd: 0.01 });
   const e = deps({ spawn: () => ({ status: 0, stdout: bad, stderr: '' }) });
   assert.equal(await runRoutine('brief', { deps: e }), 1);
@@ -245,4 +245,51 @@ test('command kind: {{NODE}} and {{VAULT}} in argv expand to this node and the v
   assert.equal(d2.calls[0].cmd, '/opt/n/bin/node');
   assert.deepEqual(d2.calls[0].args, [`${VAULT}/brain/scripts/persona/watchdog.js`, '--keep-{{X}}']);
   assert.equal(d2.calls[0].opts.cwd, VAULT);
+});
+
+test('codex runner: the body goes on stdin, the spend is estimated from the event stream, dry-run shows the argv (codex-parity D4/D5)', async () => {
+  put('cx', { kind: 'prompt', effort: 'high' }, 'Summarise the vault.');
+  const events = [
+    JSON.stringify({ type: 'thread.started', thread_id: 't1' }),
+    JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'done' } }),
+    JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 1000, cached_input_tokens: 0, output_tokens: 500 } }),
+  ].join('\n') + '\n';
+  process.env.CODEX_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'rr-codex-home-'));
+  const { rowFromCodex, parseCodexEvents } = require('../persona/record-spend.js');
+  const d = deps({
+    runner: (cfg) => ({ host: 'codex', bin: '/fake/codex', model: cfg.codex && cfg.codex.model || null, reason: 'auto' }),
+    config: () => ({ claude: { model: 'haiku' }, codex: { model: 'gpt-5-mini' }, routines: { enabled: true, perRunUsd: 2, perDayUsd: 6, tools: 'Read,Glob' } }),
+    spawn: (cmd, args, opts) => { d.calls.push({ cmd, args, opts }); return { status: 0, stdout: events, stderr: '' }; },
+    rowFromCodex, parseCodexEvents,
+  });
+  assert.equal(await runRoutine('cx', { deps: d, dryRun: true }), 0);
+  assert.match(d.out, /^\/fake\/codex\nexec\n-\n--skip-git-repo-check\n--ephemeral\n-s\nworkspace-write\n-c\nfeatures\.hooks=false\n--json\n-o\n.*aos-routine-cx-.*\n-m\ngpt-5-mini\n-c\nmodel_reasoning_effort="high"\n<cx body on stdin>\n$/);
+  assert.equal(d.calls.length, 0);
+  assert.equal(await runRoutine('cx', { deps: d }), 0);
+  assert.equal(d.calls.length, 1);
+  const c = d.calls[0];
+  assert.equal(c.cmd, '/fake/codex');
+  assert.equal(c.opts.input, 'Summarise the vault.\n');
+  assert.equal(c.opts.stdio[0], 'pipe');
+  assert.equal(c.opts.env.AOS_HEADLESS, '1');
+  assert.equal(c.opts.env.CLAUDECODE, undefined);
+  assert.ok(!c.args.includes('--allowedTools') && !c.args.includes('--max-budget-usd'), 'no Claude-only flags reach codex');
+  assert.equal(d.ledger.length, 1);
+  assert.equal(d.ledger[0].provider, 'codex');
+  assert.equal(d.ledger[0].model, 'gpt-5-mini');
+  assert.equal(d.ledger[0].inputTokens, 1000);
+  assert.ok(d.ledger[0].usd > 0, 'priced from the usage block');
+  assert.equal(state().routines.cx.lastExit, 0);
+  assert.equal(state().routines.cx.lastCostUsd, d.ledger[0].usd);
+  assert.equal(readLedgerFile().pipelines['routine:cx'].lastRun.provider, 'codex');
+  // a failed turn: the error text from the stream becomes lastError
+  const bad = deps({
+    runner: () => ({ host: 'codex', bin: '/fake/codex', model: null, reason: 'auto' }),
+    spawn: () => ({ status: 1, stdout: JSON.stringify({ type: 'turn.failed', error: { message: 'quota exceeded' } }) + '\n', stderr: '' }),
+    rowFromCodex, parseCodexEvents,
+  });
+  assert.equal(await runRoutine('cx', { deps: bad }), 1);
+  assert.equal(state().routines.cx.lastError, 'quota exceeded');
+  assert.equal(bad.ledger[0].usd, 0);
+  assert.equal(bad.ledger[0].model, 'codex-default');
 });

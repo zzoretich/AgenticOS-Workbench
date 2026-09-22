@@ -8,8 +8,10 @@
  * Loads <vault>/brain/routines/<slug>.md, then by kind:
  *   duty     sh <vault>/brain/scripts/persona/run-duty.sh <slug>   (its own kill switch, caps, journal, contract);
  *            `budgetUsd` and `tools` in the routine file become PERSONA_MAX_USD and PERSONA_TOOLS for that run
- *   prompt   <claude> -p <body> --model … --effort … --allowedTools <routines.tools> --max-budget-usd …
- *            gated by routines.perDayUsd over today's routine:* ledger rows; the run is ledgered as routine:<slug>
+ *   prompt   the headless runner (lib/headless.js, codex-parity D4): `claude -p <body> --model … --effort … --allowedTools
+ *            <routines.tools> --max-budget-usd …`, or `codex exec -` with the body on stdin when routines.runner says so
+ *            or no claude is installed (spend then estimated from the usage block); gated by routines.perDayUsd over
+ *            today's routine:* ledger rows; the run is ledgered as routine:<slug>
  *   command  argv[0] argv.slice(1) — spawned directly (no shell), cwd = vault; `{{NODE}}` in an argv entry expands to
  *            this process.execPath and `{{VAULT}}` to the vault, so a template routine needs no per-machine rendering
  * Always: one entry in brain/_index/routines.json (lastRunAt, lastExit, lastCostUsd, lastDurationMs, failStreak,
@@ -37,8 +39,8 @@ function defaultDeps() {
   const { loadConfig } = require('../lib/config.js');
   const { withReport } = require('../lib/pipeline-report.js');
   const ledger = require('../sdk/lib/spend-ledger.js');
-  const { resolveClaudeBin } = require('../sdk/lib/claude-cli.js');
-  const { parseClaudeJson, rowFrom } = require('../persona/record-spend.js');
+  const { resolveRunner } = require('../lib/headless.js');
+  const { parseClaudeJson, rowFrom, rowFromCodex, parseCodexEvents } = require('../persona/record-spend.js');
   return {
     vault: PATHS.VAULT,
     store,
@@ -47,8 +49,8 @@ function defaultDeps() {
     spawn: (cmd, args, opts) => spawnSync(cmd, args, opts),
     recordSpend: ledger.recordSpend,
     routineSpendToday: ledger.routineSpendToday,
-    claudeBin: () => resolveClaudeBin(),
-    parseClaudeJson, rowFrom,
+    runner: (cfg) => resolveRunner({ cfg, kind: 'routines' }),
+    parseClaudeJson, rowFrom, rowFromCodex, parseCodexEvents,
     now: () => new Date(),
     env: process.env,
     logDir: process.env.AOS_ROUTINE_LOG_DIR || process.env.PERSONA_LOG_DIR || path.join(PATHS.VAULT, 'persona', 'journal', 'logs'),
@@ -57,21 +59,30 @@ function defaultDeps() {
   };
 }
 
-function headlessEnv(base) {
-  const env = { ...base, AOS_HEADLESS: '1' };
-  delete env.CLAUDECODE;
-  return env;
+const { headlessEnv, runnerArgs } = require('../lib/headless.js');
+
+/** What a prompt routine asks of its runner: { prompt, model, effort, tools, budget }. */
+function promptSpec(routine, cfg) {
+  const rc = cfg.routines || {};
+  return {
+    prompt: routine.body,
+    model: routine.model || (cfg.claude && cfg.claude.model) || 'haiku',
+    effort: routine.effort || 'medium',
+    tools: typeof rc.tools === 'string' ? rc.tools : 'Read,Glob,Grep',
+    budget: routine.budgetUsd !== undefined ? routine.budgetUsd : n(rc.perRunUsd, 2),
+  };
 }
 
-/** The `claude -p` argv for a prompt routine; shared by the real run and --dry-run. */
+/** The `claude -p` argv for a prompt routine (the claude runner; codex builds its own through runnerArgs). */
 function promptArgs(routine, cfg) {
-  const rc = cfg.routines || {};
-  const model = routine.model || (cfg.claude && cfg.claude.model) || 'haiku';
-  const effort = routine.effort || 'medium';
-  const budget = routine.budgetUsd !== undefined ? routine.budgetUsd : n(rc.perRunUsd, 2);
-  const tools = typeof rc.tools === 'string' ? rc.tools : 'Read,Glob,Grep';
-  return ['-p', routine.body, '--model', model, '--effort', effort, '--allowedTools', tools,
-    '--max-budget-usd', String(budget), '--output-format', 'json', '--strict-mcp-config', '--no-session-persistence'];
+  return runnerArgs('claude', promptSpec(routine, cfg)).argv;
+}
+
+/** Older injected deps name a claudeBin; the runner seam (codex-parity D4) supersedes it. */
+function runnerOf(deps, cfg) {
+  if (typeof deps.runner === 'function') return deps.runner(cfg);
+  const bin = typeof deps.claudeBin === 'function' ? deps.claudeBin() : null;
+  return bin ? { host: 'claude', bin, model: null, reason: 'claudeBin' } : { host: null, bin: null, model: null, reason: 'claude CLI not found' };
 }
 
 /** `{{NODE}}` → the running node, `{{VAULT}}` → the vault. Only these two; anything else is literal. */
@@ -96,9 +107,14 @@ function plan(routine, cfg, deps) {
     const perDay = n(rc.perDayUsd, 6);
     const spent = deps.routineSpendToday();
     if (spent >= perDay) return { skip: `daily cap reached (${spent.toFixed(2)} of ${perDay} USD)` };
-    const bin = deps.claudeBin();
-    if (!bin) return { error: 'no claude binary found (set claude.bin in agenticos.json or install claude)' };
-    return { cmd: bin, args: promptArgs(routine, cfg), env: headlessEnv(deps.env), feature: `routine:${routine.slug}` };
+    const r = runnerOf(deps, cfg);
+    if (!r.host) return { error: `no runner for prompt routines (${r.reason}) — install claude or codex, or set routines.runner` };
+    const spec = promptSpec(routine, cfg);
+    // A routine's `model` is a Claude alias by contract; the codex runner takes codex.model (null = the Codex default).
+    const model = r.host === 'codex' ? r.model : spec.model;
+    const outFile = r.host === 'codex' ? path.join(require('os').tmpdir(), `aos-routine-${routine.slug}-${process.pid}.txt`) : null;
+    const { argv, stdin } = runnerArgs(r.host, { ...spec, model, outFile });
+    return { cmd: r.bin, args: argv, stdin, env: headlessEnv(deps.env), feature: `routine:${routine.slug}`, runner: r.host, model, outFile };
   }
   const argv = routine.argv.map(a => expandArgv(a, deps));
   return { cmd: argv[0], args: argv.slice(1), env: { ...deps.env }, feature: null };
@@ -119,7 +135,9 @@ async function runRoutine(slug, { trigger = 'scheduled', dryRun = false, deps = 
     return 0;
   }
   if (dryRun) {
-    deps.stdout([p.cmd, ...p.args.map(a => (a === routine.body && routine.kind === 'prompt' ? `<${slug} body>` : a))].join('\n') + '\n');
+    const shown = [p.cmd, ...p.args.map(a => (a === routine.body && routine.kind === 'prompt' ? `<${slug} body>` : a))];
+    if (p.stdin != null) shown.push(`<${slug} body on stdin>`);
+    deps.stdout(shown.join('\n') + '\n');
     return 0;
   }
 
@@ -131,10 +149,12 @@ async function runRoutine(slug, { trigger = 'scheduled', dryRun = false, deps = 
 
   let exit = 1, costUsd = null, lastError = null;
   const run = async (report) => {
-    report.provider = routine.kind === 'prompt' ? 'claude' : routine.kind === 'duty' ? 'persona' : 'local';
+    report.provider = routine.kind === 'prompt' ? (p.runner || 'claude') : routine.kind === 'duty' ? 'persona' : 'local';
     let res;
     try {
-      res = deps.spawn(p.cmd, p.args, { cwd: deps.vault, env: p.env, encoding: 'utf8', timeout: timeoutMs, stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 16 * 1024 * 1024 });
+      // The codex runner takes the prompt on stdin (then closed: an open non-TTY stdin blocks `codex exec`).
+      const stdin = p.stdin != null ? { input: p.stdin } : {};
+      res = deps.spawn(p.cmd, p.args, { cwd: deps.vault, env: p.env, encoding: 'utf8', timeout: timeoutMs, stdio: [p.stdin != null ? 'pipe' : 'ignore', 'pipe', 'pipe'], maxBuffer: 16 * 1024 * 1024, ...stdin });
     } catch (e) { res = { status: 1, stdout: '', stderr: e.message, error: e }; }
     const stdout = String(res.stdout || ''), stderr = String(res.stderr || '');
     if (res.error && res.error.code === 'ENOENT') exit = 127;
@@ -143,7 +163,14 @@ async function runRoutine(slug, { trigger = 'scheduled', dryRun = false, deps = 
     if (res.signal === 'SIGTERM' && timeoutMs) lastError = `timed out after ${routine.timeoutSec || DEFAULT_TIMEOUT_SEC}s`;
     else if (exit !== 0) lastError = tail(stderr) || (res.error && res.error.message) || `exit ${exit}`;
 
-    if (routine.kind === 'prompt') {
+    if (routine.kind === 'prompt' && p.runner === 'codex') {
+      const row = deps.rowFromCodex(stdout, { feature: p.feature, model: p.model, ms: Math.max(0, deps.now() - started) });
+      deps.recordSpend(row);
+      costUsd = row.usd;
+      const errs = deps.parseCodexEvents(stdout).errors;
+      if (errs.length && exit !== 0) lastError = tail(errs.join(' | '));
+      if (p.outFile) { try { fs.unlinkSync(p.outFile); } catch { /* codex may not have written it */ } }
+    } else if (routine.kind === 'prompt') {
       const json = deps.parseClaudeJson(stdout);
       const row = deps.rowFrom(json, { feature: p.feature, model: p.args[p.args.indexOf('--model') + 1] });
       deps.recordSpend(row);
@@ -181,4 +208,4 @@ function main(argv) {
 }
 
 if (require.main === module) main(process.argv.slice(2)).then((code) => process.exit(code), (e) => { process.stderr.write(`run-routine: ${e.message}\n`); process.exit(1); });
-module.exports = { runRoutine, plan, promptArgs, expandArgv, main, TRIGGERS };
+module.exports = { runRoutine, plan, promptArgs, promptSpec, expandArgv, main, TRIGGERS };

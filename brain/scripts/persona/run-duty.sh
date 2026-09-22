@@ -36,6 +36,12 @@ json_value() {
   [ -f "$CONFIG" ] || return 0
   sed -n "s/.*\"$1\": *\"\([^\"]*\)\".*/\1/p" "$CONFIG" | head -n 1
 }
+# claude_bin_from_config: the "bin" inside the top-level "claude" block only. Since 0.5.0 agenticos.json also carries
+# hosts.claude.bin and hosts.codex.bin, so a flat scan for "bin" could name the codex binary on a Codex-only machine.
+claude_bin_from_config() {
+  [ -f "$CONFIG" ] || return 0
+  awk '/"claude": *\{/ { f = 1 } f && /"bin": *"/ { sub(/.*"bin": *"/, ""); sub(/".*/, ""); print; exit } f && /\}/ { f = 0 }' "$CONFIG"
+}
 
 VAULT="${AOS_VAULT:-$(json_value vault)}"
 [ -n "$VAULT" ] || { echo "run-duty: no vault (set AOS_VAULT or run 'aos init')" >&2; exit 1; }
@@ -88,8 +94,21 @@ if [ -n "${PERSONA_CLAUDE_BIN:-}" ]; then
   CLAUDE_BIN="$PERSONA_CLAUDE_BIN"
   [ -x "$CLAUDE_BIN" ] || { echo "run-duty: PERSONA_CLAUDE_BIN is not executable: $CLAUDE_BIN" >&2; exit 1; }
 else
-  CLAUDE_BIN="$(json_value bin)"
+  CLAUDE_BIN="$(claude_bin_from_config)"
   [ -x "$CLAUDE_BIN" ] || CLAUDE_BIN="$(command -v claude 2>/dev/null || echo "$HOME/.local/bin/claude")"
+fi
+
+# Runner (codex-parity D4): lib/headless.js picks claude when the Claude host is enabled and a binary resolves, else
+# codex (persona.runner / AOS_RUNNER override; PERSONA_CLAUDE_BIN still pins claude). Under codex there is no
+# --max-budget-usd: the daily cap below still gates the start and the spend is estimated from the usage block
+# afterwards (D5); the tools allowlist has no Codex form, the workspace-write sandbox is the guard. No node → claude.
+RUNNER="claude"; CODEX_BIN=""; CODEX_MODEL=""
+if [ -n "$NODE" ] && [ -x "$NODE" ] && [ -f "$SCRIPT_DIR/../lib/headless.js" ]; then
+  RES="$(AOS_VAULT="$VAULT" AOS_CONFIG="$CONFIG" "$NODE" "$SCRIPT_DIR/../lib/headless.js" --resolve --kind persona 2>/dev/null)" || RES=""
+  case "$RES" in
+    claude*) [ -n "${PERSONA_CLAUDE_BIN:-}" ] || CLAUDE_BIN="$(printf '%s' "$RES" | cut -f2)" ;;
+    codex*) RUNNER="codex"; CODEX_BIN="$(printf '%s' "$RES" | cut -f2)"; CODEX_MODEL="$(printf '%s' "$RES" | cut -f3)" ;;
+  esac
 fi
 
 # Hooks do not run under AOS_HEADLESS=1, so the persona is injected here instead.
@@ -99,6 +118,12 @@ SYSTEM="$( { echo "Today is $TODAY (local time $(date +%H:%M)). This run's journ
 PROMPT="$(cat "$DUTY_FILE")"
 
 if [ "$DRY_RUN" = "--dry-run" ]; then
+  if [ "$RUNNER" = "codex" ]; then
+    printf '%s\n' "$CODEX_BIN" "exec" "-" "--skip-git-repo-check" "--ephemeral" "-s" "workspace-write" "-c" "features.hooks=false" \
+      "--json" "-o" "<last message file>" ${CODEX_MODEL:+-m "$CODEX_MODEL"} "-c" "model_reasoning_effort=\"$EFFORT\"" \
+      "<duty $DUTY on stdin, after persona IDENTITY.md + STATE.md>"
+    exit 0
+  fi
   printf '%s\n' "$CLAUDE_BIN" "-p" "<duty $DUTY>" "--model" "$MODEL" "--effort" "$EFFORT" \
     "--allowedTools" "$PERSONA_TOOLS" "--max-budget-usd" "${MAX_USD:-2}" "--output-format" "json" \
     "--strict-mcp-config" "--no-session-persistence" \
@@ -152,14 +177,25 @@ if [ -n "$HELPER" ] && [ -f "$HELPER" ] && [ -n "$NODE" ] && [ -x "$NODE" ]; the
   fi
 fi
 
-echo "[$(date)] duty=$DUTY model=$MODEL effort=$EFFORT budget=$MAX_USD start" >> "$LOG"
+echo "[$(date)] duty=$DUTY runner=$RUNNER model=$MODEL effort=$EFFORT budget=$MAX_USD start" >> "$LOG"
 BEFORE_COUNT=$(grep -c "duty: $DUTY" "$JOURNAL" 2>/dev/null || true); BEFORE_COUNT=${BEFORE_COUNT:-0}
 OUT="$(mktemp "${TMPDIR:-/tmp}/duty-$DUTY.XXXXXX")"
 
-( cd "$VAULT" && AOS_HEADLESS=1 exec "$CLAUDE_BIN" -p "$PROMPT" --model "$MODEL" --effort "$EFFORT" \
-    --allowedTools "$PERSONA_TOOLS" --max-budget-usd "$MAX_USD" --output-format json \
-    --strict-mcp-config --no-session-persistence \
-    --append-system-prompt "$SYSTEM" > "$OUT" 2>> "$ERR" ) &
+IN=""
+if [ "$RUNNER" = "codex" ]; then
+  # The prompt goes on stdin from a file (not a pipe: `exec` must replace this subshell so the watchdog can kill
+  # the codex process itself, and a pipeline element cannot do that). --json events land in $OUT for the ledger.
+  IN="$(mktemp "${TMPDIR:-/tmp}/duty-$DUTY-in.XXXXXX")"
+  { printf '%s\n\n---\n\n' "$SYSTEM"; printf '%s' "$PROMPT"; } > "$IN"
+  ( cd "$VAULT" && AOS_HEADLESS=1 exec "$CODEX_BIN" exec - --skip-git-repo-check --ephemeral -s workspace-write \
+      -c features.hooks=false --json -o "$OUT.msg" ${CODEX_MODEL:+-m "$CODEX_MODEL"} -c "model_reasoning_effort=\"$EFFORT\"" \
+      < "$IN" > "$OUT" 2>> "$ERR" ) &
+else
+  ( cd "$VAULT" && AOS_HEADLESS=1 exec "$CLAUDE_BIN" -p "$PROMPT" --model "$MODEL" --effort "$EFFORT" \
+      --allowedTools "$PERSONA_TOOLS" --max-budget-usd "$MAX_USD" --output-format json \
+      --strict-mcp-config --no-session-persistence \
+      --append-system-prompt "$SYSTEM" > "$OUT" 2>> "$ERR" ) &
+fi
 CLAUDE_PID=$!
 # `exec` replaces the backgrounded subshell with $CLAUDE_BIN itself, so $! above is the claude process,
 # not a wrapper shell around it — without exec, killing $! only kills the subshell and claude is
@@ -175,9 +211,10 @@ kill "$KILLER_PID" 2>/dev/null; wait "$KILLER_PID" 2>/dev/null
 
 cat "$OUT" >> "$LOG"
 if [ -n "$NODE" ] && [ -x "$NODE" ] && [ -f "$RECORD" ] && [ -s "$OUT" ]; then
-  AOS_VAULT="$VAULT" AOS_CONFIG="$CONFIG" "$NODE" "$RECORD" --file "$OUT" --feature "duty:$DUTY" --model "$MODEL" >> "$LOG" 2>> "$ERR" || true
+  SPEND_MODEL="$MODEL"; [ "$RUNNER" = "codex" ] && SPEND_MODEL="${CODEX_MODEL:-codex-default}"
+  AOS_VAULT="$VAULT" AOS_CONFIG="$CONFIG" "$NODE" "$RECORD" --file "$OUT" --feature "duty:$DUTY" --model "$SPEND_MODEL" >> "$LOG" 2>> "$ERR" || true
 fi
-rm -f "$OUT"
+rm -f "$OUT" "$OUT.msg"; [ -n "$IN" ] && rm -f "$IN"
 
 # Duty contract check: the duty must have added a NEW journal entry this run
 # (a plain grep would match a prior run's watchdog entry and self-satisfy).

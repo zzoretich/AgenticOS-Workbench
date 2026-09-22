@@ -56,9 +56,21 @@ echo "$DOC" | grep -q '^ok    codex login'
 echo "$DOC" | grep -q '^ok    codex hooks'
 echo "$DOC" | grep -q '^ok    codex MCP declared'
 echo "$DOC" | grep -q '^ok    codex skills'
+echo "$DOC" | grep -q '^ok    persona runner *codex'
+echo "$DOC" | grep -q '^ok    routines runner *codex'
 echo "$DOC" | grep -q 'all checks passed'
 ! echo "$DOC" | grep -q 'claude CLI'
 ! echo "$DOC" | grep -q 'plugin installed'
+
+echo "== a persona duty runs through codex exec (dry-run)"
+if [ -f "$VAULT/persona/duties/sitrep.md" ]; then
+  DRY=$(sh "$VAULT/brain/scripts/persona/run-duty.sh" sitrep --dry-run)
+  echo "$DRY" | head -1 | grep -q 'fake-codex.sh$'
+  echo "$DRY" | grep -q '^workspace-write$'
+  ! echo "$DRY" | grep -q -- '--max-budget-usd'
+else
+  echo "   (no sitrep duty in this vault; skipped)"
+fi
 
 echo "== status names the codex host"
 STATUS=$(node "$ROOT/cli/aos.js" status)

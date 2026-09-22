@@ -30,5 +30,16 @@ case "$1 $2" in
     [ -n "$STATE" ] && [ $# -ge 3 ] && printf '%s\n%s\n' "$3" "$HOSTENV" > "$STATE" ;;
   "mcp remove")
     [ -n "$STATE" ] && rm -f "$STATE" ;;
+  "exec -")
+    # A headless run (lib/headless.js codex runner): the prompt is on stdin, the final message goes to the -o file,
+    # the --json event stream to stdout. FAKE_CODEX_STDIN captures the prompt, FAKE_ARGS the argv (like fake-claude),
+    # FAKE_JOURNAL appends a duty journal entry so run-duty.sh sees its contract met.
+    PROMPT_IN=$(cat)
+    [ -n "${FAKE_CODEX_STDIN:-}" ] && printf '%s' "$PROMPT_IN" > "$FAKE_CODEX_STDIN"
+    [ -n "${FAKE_ARGS:-}" ] && printf '%s\n' "$@" > "$FAKE_ARGS"
+    [ -n "${FAKE_JOURNAL:-}" ] && { mkdir -p "$(dirname "$FAKE_JOURNAL")"; printf '\n## 09:00 — duty: testduty\n- status: OK\n' >> "$FAKE_JOURNAL"; }
+    OUTF=""; while [ $# -gt 0 ]; do [ "$1" = "-o" ] && OUTF="$2"; shift; done
+    [ -n "$OUTF" ] && printf 'fake reply\n' > "$OUTF"
+    printf '{"type":"thread.started","thread_id":"fake"}\n{"type":"item.completed","item":{"type":"agent_message","text":"fake reply"}}\n{"type":"turn.completed","usage":{"input_tokens":1200,"cached_input_tokens":0,"output_tokens":300}}\n' ;;
 esac
 exit 0
