@@ -210,3 +210,15 @@ test('--dry-run prints the invocation and executes nothing; the prompt body is e
   assert.ok(!d.out.includes('secret body'));
   assert.deepEqual(state().routines, {});
 });
+
+test('command kind: {{NODE}} and {{VAULT}} in argv expand to this node and the vault; anything else stays literal', async () => {
+  put('wd', { kind: 'command', argv: ['{{NODE}}', '{{VAULT}}/brain/scripts/persona/watchdog.js', '--keep-{{X}}'] });
+  const d = deps();
+  assert.equal(await runRoutine('wd', { dryRun: true, deps: d }), 0);
+  assert.equal(d.out, `${process.execPath}\n${VAULT}/brain/scripts/persona/watchdog.js\n--keep-{{X}}\n`);
+  const d2 = deps({ node: '/opt/n/bin/node' });
+  assert.equal(await runRoutine('wd', { deps: d2 }), 0);
+  assert.equal(d2.calls[0].cmd, '/opt/n/bin/node');
+  assert.deepEqual(d2.calls[0].args, [`${VAULT}/brain/scripts/persona/watchdog.js`, '--keep-{{X}}']);
+  assert.equal(d2.calls[0].opts.cwd, VAULT);
+});

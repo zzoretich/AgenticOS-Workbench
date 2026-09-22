@@ -34,7 +34,7 @@ test('hooks.json wires exactly the contract events, in order, through bin/aos', 
     assert.equal(typeof x.timeout, 'number');
     return m[1] + m[2];
   }));
-  assert.deepEqual(names('SessionStart'), ['telemetry-hook', 'update-notice']);
+  assert.deepEqual(names('SessionStart'), ['telemetry-hook', 'update-notice', 'persona-watchdog']);
   assert.deepEqual(names('UserPromptSubmit'), ['inject-context']);
   assert.deepEqual(names('PostToolUse'), ['telemetry-hook']);
   assert.equal(h.PostToolUse[0].matcher, '');

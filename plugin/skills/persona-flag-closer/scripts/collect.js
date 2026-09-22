@@ -16,6 +16,9 @@ function defaultRoot() {
 /** run-duty.sh writes duty-<name>-error.log here. */
 function defaultLogDir(root) { return process.env.PERSONA_LOG_DIR || path.join(root, 'persona', 'journal', 'logs'); }
 
+/** Proposal kinds (spec 2026-09-22 D9): self and vault are applied on approval; workflow and product go to the backlog. */
+const KINDS = ['self', 'vault', 'workflow', 'product'];
+
 function stripAnsi(s) { return s.replace(/\x1b\[[0-9;]*m/g, ''); }
 
 function parseFrontmatter(text) {
@@ -55,8 +58,10 @@ function collectProposals(root) {
     const lint = [];
     if (!fm.recheck) lint.push('missing recheck recipe');
     if (!premises) lint.push('missing premise table');
+    const kind = fm.kind || 'self';
+    if (!KINDS.includes(kind)) lint.push(`unknown kind "${kind}" (self | vault | workflow | product)`);
     const slug = fm.slug || f.replace(/^\d{4}-\d{2}-\d{2}-/, '').replace(/\.md$/, '');
-    return { file: path.join(dir, f), slug, filed: fm.filed || f.slice(0, 10),
+    return { file: path.join(dir, f), slug, filed: fm.filed || f.slice(0, 10), kind,
              target: fm.target || '(unspecified)', recheck: fm.recheck || null,
              autoapply_class: fm.autoapply_class || null, premises: premises || [], lint };
   });
@@ -139,4 +144,4 @@ if (require.main === module) {
     console.log(JSON.stringify(out, null, 2));
   }
 }
-module.exports = { collect, parseFrontmatter, parsePremiseTable, collectFlags, stripAnsi, defaultRoot, defaultLogDir };
+module.exports = { collect, parseFrontmatter, parsePremiseTable, collectFlags, stripAnsi, defaultRoot, defaultLogDir, KINDS };

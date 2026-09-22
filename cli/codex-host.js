@@ -24,7 +24,7 @@ const { spawnSync } = require('child_process');
 
 /** Event → [command name, timeout seconds]. Mirrors plugin/hooks/hooks.json plus inject-conventions (D5). */
 const HOOKS = [
-  ['SessionStart', [['telemetry-hook', 10], ['update-notice', 10], ['inject-conventions', 10]]],
+  ['SessionStart', [['telemetry-hook', 10], ['update-notice', 10], ['persona-watchdog', 10], ['inject-conventions', 10]]],
   ['UserPromptSubmit', [['inject-context', 10]]],
   ['PostToolUse', [['telemetry-hook', 10]]],
   ['Stop', [['update-session', 10], ['heartbeat-writer', 10]]],

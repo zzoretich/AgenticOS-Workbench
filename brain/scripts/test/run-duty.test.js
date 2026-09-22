@@ -20,6 +20,7 @@ function sandbox() {
   const fake = path.join(vault, 'fake-claude');
   fs.writeFileSync(fake, [
     '#!/bin/sh',
+    '[ -n "${FAKE_ARGS:-}" ] && printf "%s\\n" "$@" > "$FAKE_ARGS"',
     '[ -n "${FAKE_JOURNAL:-}" ] && { mkdir -p "$(dirname "$FAKE_JOURNAL")"; printf "\\n## 09:00 — duty: testduty\\n- status: OK\\n" >> "$FAKE_JOURNAL"; }',
     'echo "{\\"type\\":\\"result\\",\\"result\\":\\"done\\",\\"total_cost_usd\\":0.0123,\\"usage\\":{\\"input_tokens\\":10,\\"output_tokens\\":5},\\"duration_ms\\":100}"',
     '',
@@ -54,6 +55,7 @@ test('dry-run prints the invocation (binary, model, effort, tools, budget, json 
   assert.match(r.stdout, /^--allowedTools$/m);
   assert.match(r.stdout, /^--max-budget-usd\n2$/m, 'perDutyUsd default without a --check run');
   assert.match(r.stdout, /^--append-system-prompt$/m);
+  assert.match(r.stdout, /brain\/scripts\/persona\/ledger\.js:\*\)/, 'duties may append to the proposal ledger');
   assert.match(r.stdout, /^--strict-mcp-config$/m);          // execution amendment 2026-09-15 (A25)
   assert.match(r.stdout, /^--no-session-persistence$/m);     // execution amendment 2026-09-15 (A25)
   assert.ok(!r.stdout.includes('bypassPermissions'));
@@ -135,9 +137,12 @@ test('watchdog: a duty that never journals is recorded FAILED, flagged in STATE.
 
 test('a duty that journals succeeds with exit 0', () => {
   const s = sandbox();
-  const r = run(['testduty'], { ...s.env, FAKE_JOURNAL: s.journal });
+  const argsFile = path.join(s.vault, 'claude-args.txt');
+  const r = run(['testduty'], { ...s.env, FAKE_JOURNAL: s.journal, FAKE_ARGS: argsFile });
   assert.equal(r.status, 0, r.stderr);
   assert.match(fs.readFileSync(path.join(s.logDir, 'duty-testduty.log'), 'utf8'), /duty=testduty done \(exit 0\)/);
+  const args = fs.readFileSync(argsFile, 'utf8');
+  assert.match(args, /^--append-system-prompt\nToday is \d{4}-\d{2}-\d{2} \(local time \d{2}:\d{2}\)\. This run's journal file is .*\/persona\/journal\/\d{4}-\d{2}-\d{2}\.md\.\n\n# Atlas\n/m, 'the system prompt opens with the date and journal path (a post-midnight duty otherwise journals into yesterday)');
   assert.ok(!fs.readFileSync(path.join(s.vault, 'persona', 'STATE.md'), 'utf8').includes('FAILED'));
 });
 

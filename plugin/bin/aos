@@ -81,6 +81,8 @@ case "$NAME" in
   feedback-apply) SCRIPT=feedback-apply.js ;;
   sitrep-state) SCRIPT=persona/sitrep-state.js ;;
   record-spend) SCRIPT=persona/record-spend.js ;;
+  persona-watchdog) SCRIPT=persona/watchdog.js; set -- --hook "$@" ;;
+  ledger) SCRIPT=persona/ledger.js ;;
   interview) SCRIPT=persona/interview.js ;;
   run-duty) exec sh "$VAULT/brain/scripts/persona/run-duty.sh" "$@" ;;
   run-routine) SCRIPT=routines/run-routine.js ;;
