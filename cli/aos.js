@@ -913,7 +913,7 @@ async function workspace(sub, flags) {
 async function routines(sub, flags) {
   const R = require('./routines.js');
   try {
-    return await R.main([...sub, ...(flags.json ? ['--json'] : []), ...(flags.dryRun ? ['--dry-run'] : [])], { io: console });
+    return await R.main([...sub, ...(flags.json ? ['--json'] : []), ...(flags.dryRun ? ['--dry-run'] : []), ...(flags.refresh ? ['--refresh'] : [])], { io: console });
   } catch (e) {
     if (e instanceof R.UsageError) throw new UsageError(e.message);
     throw e;
@@ -1103,7 +1103,7 @@ function updateNotice() {
 
 // ── args and main ─────────────────────────────────────────────────────────────
 const VALUE_FLAGS = new Set(['vault', 'provider', 'persona-json', 'from-local', 'budget', 'snooze', 'host', 'name']);
-const BOOL_FLAGS = new Set(['dry-run', 'yes', 'terminal', 'cost', 'keep-vault', 'statusline', 'off', 'quiet', 'json']);
+const BOOL_FLAGS = new Set(['dry-run', 'yes', 'terminal', 'cost', 'keep-vault', 'statusline', 'off', 'quiet', 'json', 'refresh']);
 const NEGATABLE_FLAGS = new Set(['obsidian']);
 function camel(s) { return s.replace(/-([a-z])/g, (_, c) => c.toUpperCase()); }
 /** `--flag`, `--no-flag`, `--flag value`, `--flag=value`; unknown flags are a usage error (a typo must never start a real install). */
