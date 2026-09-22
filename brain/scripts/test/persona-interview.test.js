@@ -41,7 +41,8 @@ test('writePersona renders the full layout from the templates', () => {
   const answers = I.normalizeAnswers(ANSWERS, {});
   const r = I.writePersona({ vault, configDir: configDir(), templatesDir: TEMPLATES, answers, node: '/opt/node/bin/node', now: new Date('2026-09-04T00:00:00Z') });
   const p = (rel) => fs.readFileSync(path.join(vault, 'persona', rel), 'utf8');
-  assert.deepEqual(r.written.sort(), ['IDENTITY.md', 'PLAYBOOK.md', 'STATE.md', 'answers.json', 'autoapply.json', 'duties/monitor.md', 'duties/reflect.md', 'duties/sitrep.md', 'proposals/README.md'].sort());
+  assert.deepEqual(r.written.sort(), ['../brain/routines/heartbeat.md', 'IDENTITY.md', 'PLAYBOOK.md', 'STATE.md', 'answers.json', 'autoapply.json', 'duties/monitor.md', 'duties/reflect.md', 'duties/sitrep.md', 'proposals/README.md'].sort());
+  assert.equal(fs.readFileSync(path.join(vault, 'brain', 'routines', 'heartbeat.md'), 'utf8'), fs.readFileSync(path.join(TEMPLATES, 'routines', 'heartbeat.md'), 'utf8'), 'the heartbeat routine is seeded verbatim (run-routine.js expands {{NODE}}/{{VAULT}})');
   assert.match(p('IDENTITY.md'), /^# Atlas$/m);
   assert.match(p('IDENTITY.md'), /address the user as boss/);
   assert.match(p('IDENTITY.md'), /^updated: 2026-09-04$/m);
@@ -62,7 +63,7 @@ test('a prefilled re-run keeps STATE.md, PLAYBOOK.md and proposals/README.md but
   I.writePersona({ vault, configDir: cfg, templatesDir: TEMPLATES, answers: I.normalizeAnswers(ANSWERS, {}) });
   fs.appendFileSync(path.join(vault, 'persona', 'STATE.md'), '- [ ] keep me\n');
   const r = I.writePersona({ vault, configDir: cfg, templatesDir: TEMPLATES, answers: I.normalizeAnswers({ ...ANSWERS, voice: 'warmer' }, {}) });
-  assert.deepEqual(r.kept.sort(), ['PLAYBOOK.md', 'STATE.md', 'autoapply.json', 'proposals/README.md']);
+  assert.deepEqual(r.kept.sort(), ['../brain/routines/heartbeat.md', 'PLAYBOOK.md', 'STATE.md', 'autoapply.json', 'proposals/README.md']);
   assert.match(fs.readFileSync(path.join(vault, 'persona', 'STATE.md'), 'utf8'), /keep me/);
   assert.match(fs.readFileSync(path.join(vault, 'persona', 'IDENTITY.md'), 'utf8'), /^warmer$/m);
 });

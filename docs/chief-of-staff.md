@@ -36,6 +36,7 @@ Re-running the interview regenerates `IDENTITY.md` and `duties/*.md`; it keeps `
 | `answers.json` | interview | the interview answers (for prefilled re-runs and rename) |
 | `autoapply.json` | interview | `{ "classes": [] }` — the dormant auto-apply whitelist |
 | `repos.json` | you (optional) | `{ "stall_threshold_days": 4, "repos": [{ "name", "path" }] }` for the sitrep |
+| `ledger.jsonl` | `ledger.js` (tracked) | append-only proposal outcomes: `filed`, `approved`, `rejected`, `stale-dropped`, `verified`, `regressed` |
 | `DISABLED` | `aos persona off` | kill switch: no injection, no duties |
 
 ## Every session
@@ -99,6 +100,31 @@ shell-special characters (`& ; $ ' " %` — `%` is cron's command terminator); l
 `PERSONA_TOOLS` interpolates the vault path into permission rules, so a vault path with spaces
 cannot be used by duties at all. Windows: not supported; run duties by hand.
 
+## Heartbeat
+
+Duties are only as reliable as the scheduler that starts them, and `run-duty.sh` can only record a
+FAILED run it was started for. The watchdog, `brain/scripts/persona/watchdog.js`, closes that gap from
+outside and never calls a model. It runs two ways: as the `heartbeat` routine
+(`brain/routines/heartbeat.md`, `kind: command`, every 30 minutes; `aos persona` seeds the file when it
+is missing, and `{{NODE}}` / `{{VAULT}}` in its `argv` are expanded by the routine runner, so the file
+is the same on every machine) and from the `SessionStart` hook (`aos persona-watchdog`, throttled to
+once per 30 minutes, silent), so a dead launchd still gets noticed the next time you open a session.
+
+Each check takes every enabled duty's last run from `brain/_index/routines.json` (merged with the duty
+log, as `aos routines list` does) and projects its schedule forward: a fire time more than
+`persona.watchdog.graceMinutes` (default 45, longer than `PERSONA_TIMEOUT`, so a duty still running is
+never a miss) in the past with no run since is a MISSED duty; a duty that never ran counts from the
+moment `aos routines sync` installed its schedule. On a miss the watchdog writes one
+`- [ ] <date> duty '<slug>' MISSED — … (watchdog)` line directly under `## Flags` in `STATE.md` (the
+next session sees it in the `<persona>` block), sends one OS notification (`osascript` on macOS,
+`notify-send` on Linux; `persona.watchdog.notify: false` turns that off), and records every beat in
+`brain/_index/persona-heartbeat.json` (`schema: 1`; per routine `status`:
+`ok | missed | failed | never | disabled | unwatched | invalid | stale`, `lastRunAt`, `due`, `next`).
+It removes its own MISSED line once the duty runs again and never touches any other flag; a line you
+close by hand stays closed until a new miss. Once a day it also runs `ledger.js verify` (see
+Proposals). `aos routines run heartbeat` checks now; `aos routines disable heartbeat` turns the schedule
+off without deleting the file.
+
 ## Commands and skills
 
 - `aos persona` — re-run the interview (prefilled). `aos persona rename <name>` re-renders
@@ -118,6 +144,19 @@ Guarded files (IDENTITY.md, duties and their routine files — `guarded: true`, 
 change only through `persona/proposals/YYYY-MM-DD-<slug>.md` with a `recheck` recipe and a
 premise table; approval applies the change exactly as written and re-runs the recipe expecting
 the finding to be gone. See `persona/proposals/README.md` in your vault.
+
+Every outcome lands in `persona/ledger.jsonl` (tracked, unlike `STATE.md`) through
+`brain/scripts/persona/ledger.js`: `filed` by reflect, `approved` / `rejected` / `stale-dropped` by the
+review (an approval keeps the proposal's `recheck` recipe), and `verified` or `regressed` by the
+watchdog, which re-runs each approval's recipe daily from day 1 to day 14: exit 0 again means the
+finding is back (`regressed`, plus a `STATE.md` flag and a notification); a clean week means
+`verified`. A proposal carries an optional `kind: self | vault | workflow | product` (default `self`;
+the last two are ideas for you rather than changes the agent applies). `ledger.js summary [--days N]`
+prints counts per event and kind, the approval rate, open proposals and unverified approvals; reflect
+reads it before proposing, so a rejected idea is not filed twice and a regression counts as evidence
+against the earlier fix. Under the hood a duty may run `ledger.js` (it is on the runner's tool
+allowlist), and the runner's system prompt now opens with today's date and the journal path, so a duty
+that runs just after midnight no longer journals into yesterday's file.
 
 ## Privacy
 

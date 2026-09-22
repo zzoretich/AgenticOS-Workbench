@@ -157,6 +157,13 @@ function writePersona({ vault, configDir, templatesDir, answers, node, logDir, n
   put('STATE.md', renderTemplate(tmpl('STATE.template.md'), vars), true);
   put('proposals/README.md', renderTemplate(tmpl(path.join('proposals', 'README.md')), vars), true);
   put('autoapply.json', JSON.stringify({ classes: [] }, null, 2) + '\n', true);
+  // The heartbeat watchdog routine (kept once present; `{{NODE}}`/`{{VAULT}}` are expanded by run-routine.js, not here).
+  const hbTemplate = path.join(templatesDir, 'routines', 'heartbeat.md');
+  const hbFile = path.join(vault, 'brain', 'routines', 'heartbeat.md');
+  if (fs.existsSync(hbTemplate)) {
+    if (fs.existsSync(hbFile)) kept.push('../brain/routines/heartbeat.md');
+    else { fs.mkdirSync(path.dirname(hbFile), { recursive: true }); fs.writeFileSync(hbFile, fs.readFileSync(hbTemplate, 'utf8')); written.push('../brain/routines/heartbeat.md'); }
+  }
   fs.mkdirSync(path.join(persona, 'journal', 'logs'), { recursive: true });
   if (fs.existsSync(path.join(persona, 'PLAYBOOK.md'))) kept.push('PLAYBOOK.md');
   else { buildPlaybook({ configDir, vault, name: answers.name, now }); written.push('PLAYBOOK.md'); }
