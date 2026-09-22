@@ -54,6 +54,18 @@ function orchestratorFor(roster, rec) {
 const ROSTER = buildRoster((loadConfig().roster || {}).orchestrators); // `"roster": null` in brain/config.json must not crash the hook at load
 const NICKNAMES = Object.fromEntries(ROSTER.map(o => [o.name, o.nickname]));
 
+/** next_fire for an agent that is also a scheduled routine (rows = routines-store.overview()): its next fire as ISO, else null. */
+function nextFireFor(name, rows) {
+  const r = (rows || []).find(x => x && x.slug === name && x.enabled && Array.isArray(x.next) && x.next.length);
+  if (!r) return null;
+  const d = r.next[0] instanceof Date ? r.next[0] : new Date(r.next[0]);
+  return Number.isFinite(d.getTime()) ? d.toISOString() : null;
+}
+/** The routine rows, or [] when the store cannot be read — never a reason to fail the hook. */
+function routineRows() {
+  try { return require('./lib/routines-store.js').overview(); } catch { return []; }
+}
+
 function readJsonl(file) {
   try {
     return fs.readFileSync(file, 'utf8').split('\n').filter(Boolean)
@@ -217,9 +229,11 @@ if (SEED_IDLE) {
 // ── 4. write brain/agents/<name>/heartbeat.json (only when changed) ─────────
 fs.mkdirSync(HB_DIR, { recursive: true });
 let wrote = 0, skipped = 0;
+const rows = routineRows();
 for (const [rawName, hb] of Object.entries(state)) {
   delete hb._sort;
   if (NICKNAMES[rawName]) hb.display_name = NICKNAMES[rawName];
+  if (!hb.next_fire) hb.next_fire = nextFireFor(rawName, rows);   // an agent that is also a routine (brain/routines/<name>.md)
   const name = rawName.replace(/[\/:]+/g, '-').trim();
   if (!name) continue;
   const dir = path.join(HB_DIR, name);
@@ -245,4 +259,4 @@ if (require.main === module) {
   withReport('heartbeat-writer', async (report) => { await main(report); })
     .catch(() => { /* best-effort: never fail the hook */ });
 }
-module.exports = { main, buildRoster, orchestratorFor };
+module.exports = { main, buildRoster, orchestratorFor, nextFireFor };
