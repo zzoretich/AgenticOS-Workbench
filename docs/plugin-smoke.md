@@ -45,6 +45,9 @@ Run before tagging a release, on a vault created by `aos init` (not the develope
 - [ ] `on`/`off` on a row rewrites only `enabled:` (the body is untouched) and re-applies; a disabled row dims and its next fire reads `—`.
 - [ ] `▶` on a `command` routine (e.g. `argv: [node, brain/scripts/scan-vault.js, --quiet]`) runs it: `brain/_index/routines.json` gains `lastTrigger: "manual"` and the last column updates within a second.
 - [ ] With `routines.externalLabels: ["<a launchd label you have>"]` in `brain/config.json`, "OUTSIDE THE RUNTIME" lists it read-only with its cadence; the Obsidian Git backup timer appears when that plugin has a timer on; neither row has actions.
+- [ ] With the Codex app installed, the same section lists its Automations with a `codex` pill, cadence, next fire, last run and a chip (`active` / `paused`); the subhead reads `codex as of <age>` and `refresh` spawns `aos routines hosts --refresh` (notice `▶ aos.js routines hosts --refresh`). Without the app (or without `sqlite3`) one dim line names the reason.
+- [ ] After `/routines cloud` in a Claude Code session, the cloud routines appear with a `claude` pill, the name linking to claude.ai/code/routines/…, a `(UTC)` cadence or `once at …`, and a `ran once` chip on a fired one-shot; `claude as of <age>` shows the snapshot's age.
+- [ ] A duty run that bypassed the runtime (run `sh brain/scripts/persona/run-duty.sh monitor` by hand) shows in the duty's `last` column within a second, with tooltip `trigger: duty-log`, and a `missed` chip clears.
 
 ## Codex host
 

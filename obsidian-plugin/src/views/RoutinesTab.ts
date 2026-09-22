@@ -7,11 +7,12 @@ import { ConfirmModal } from "../ui/ConfirmModal";
 import { readVaultConfig } from "../data/aosConfig";
 import { describe, next as nextFire, validateCron } from "../data/cron";
 import {
-  Routine, RoutineRow, RoutinesState, RoutineKind, KINDS, EFFORTS, ROUTINES_DIR, ROUTINES_STATE_PATH, SLUG_RE,
-  listRoutines, readRoutinesState, buildRows, schedulesOutOfDate, emptyState,
+  Routine, RoutineRow, RoutinesState, RoutineKind, KINDS, EFFORTS, ROUTINES_DIR, ROUTINES_STATE_PATH, SLUG_RE, DUTY_LOG_DIR, DutyLogRun,
+  listRoutines, readRoutinesState, buildRows, schedulesOutOfDate, emptyState, readDutyLogLast,
 } from "../data/routines";
 import { adapterOf, writeRoutine, setRoutineEnabled, deleteRoutine, isGuardedChange, GuardedRoutineError, RoutineDraft } from "../data/routineWriter";
 import { readExternalSchedules, ExternalSchedule } from "../data/externalSchedules";
+import { readHostRoutines, hostRows, hostChip, sectionStale, emptyHostRoutines, HostRoutinesCache, HOST_ROUTINES_PATH, HOST_NAMES } from "../data/hostRoutines";
 
 const RUNNER = "brain/scripts/routines/run-routine.js";
 const AOS_CLI = "brain/scripts/cli/aos.js";
@@ -33,8 +34,11 @@ export function formatAgo(iso: string | null, now = Date.now()): string {
 /**
  * ROUTINES — one row per brain/routines/<slug>.md with cadence, next fire, last run and a health chip;
  * a drawer form to create or edit; run-now / on-off / apply-schedules that spawn the runtime (never
- * launchctl directly — spec D8); and the read-only "Outside the runtime" rows (D13). Logic lives in
- * src/data/{routines,routineWriter,externalSchedules,cron}.ts; this class only renders and wires.
+ * launchctl directly — spec D8); and the read-only "Outside the runtime" rows: launchd labels and the
+ * Obsidian Git timer (D13) plus the routines each session host owns from brain/_index/routines-hosts.json
+ * (host-routines D4 — written by the runtime, refreshed here by spawning `aos routines hosts --refresh`).
+ * Logic lives in src/data/{routines,routineWriter,externalSchedules,hostRoutines,cron}.ts; this class only
+ * renders and wires.
  */
 export class RoutinesTab {
   private host: HTMLElement | null = null;
@@ -42,6 +46,9 @@ export class RoutinesTab {
   private state: RoutinesState = emptyState();
   private rows: RoutineRow[] = [];
   private external: ExternalSchedule[] = [];
+  private hosts: HostRoutinesCache = emptyHostRoutines();
+  private dutyLogs: Record<string, DutyLogRun | null> = {};
+  private hostRefreshAt = 0;
   private listenersRegistered = false;
   private refreshDebounce: number | null = null;
   private tick: number | null = null;
@@ -52,7 +59,7 @@ export class RoutinesTab {
     this.host = host;
     if (!this.listenersRegistered) {
       this.listenersRegistered = true;
-      const watch = (f: TAbstractFile) => { if (f.path.startsWith(ROUTINES_DIR + "/") || f.path === ROUTINES_STATE_PATH) this.schedule(); };
+      const watch = (f: TAbstractFile) => { if (f.path.startsWith(ROUTINES_DIR + "/") || f.path === ROUTINES_STATE_PATH || f.path === HOST_ROUTINES_PATH || f.path.startsWith(DUTY_LOG_DIR + "/duty-")) this.schedule(); };
       this.view.registerEvent(this.plugin.app.vault.on("modify", watch));
       this.view.registerEvent(this.plugin.app.vault.on("create", watch));
       this.view.registerEvent(this.plugin.app.vault.on("delete", watch));
@@ -72,11 +79,23 @@ export class RoutinesTab {
   }
 
   async refresh(): Promise<void> {
+    const root = this.plugin.vaultRoot();
     this.routines = await listRoutines(this.plugin.app);
     this.state = await readRoutinesState(this.plugin.app);
-    const cfg = readVaultConfig(this.plugin.vaultRoot(), this.plugin.claudeConfigDir());
-    this.external = readExternalSchedules(this.plugin.vaultRoot(), cfg.routines.externalLabels);
+    const cfg = readVaultConfig(root, this.plugin.claudeConfigDir());
+    this.external = readExternalSchedules(root, cfg.routines.externalLabels);
+    this.hosts = readHostRoutines(root);
+    this.dutyLogs = {};
+    for (const r of this.routines) if (r.kind === "duty") this.dutyLogs[r.slug] = readDutyLogLast(root, r.slug);
+    // The Codex section is live data the runtime reads through sqlite3: ask for it when it is old (at most once a minute).
+    if (sectionStale(this.hosts.hosts.codex) && Date.now() - this.hostRefreshAt > 60_000) this.refreshHosts();
     this.render();
+  }
+
+  /** `aos routines hosts --refresh`: re-reads the Codex Automations and rewrites the cache; the file event re-renders. */
+  private refreshHosts(): void {
+    this.hostRefreshAt = Date.now();
+    this.plugin.runBrainScript(AOS_CLI, ["routines", "hosts", "--refresh"], () => this.schedule(), { env: this.spawnEnv() });
   }
 
   // ── render ──
@@ -87,7 +106,7 @@ export class RoutinesTab {
     if (!host) return;
     host.empty();
     const now = new Date();
-    this.rows = buildRows(this.routines, this.state, now);
+    this.rows = buildRows(this.routines, this.state, now, this.dutyLogs);
 
     const head = host.createDiv({ cls: "aos-rt-head" });
     head.createSpan({ cls: "aos-rt-title", text: "ROUTINES" });
@@ -112,15 +131,43 @@ export class RoutinesTab {
     }
     for (const row of this.rows) this.renderRow(table, row, now);
 
-    if (this.external.length) {
-      host.createDiv({ cls: "aos-rt-subhead aos-dim", text: "OUTSIDE THE RUNTIME" });
+    const hostList = hostRows(this.hosts);
+    const sections = HOST_NAMES.filter((h) => this.hosts.hosts[h]);
+    if (this.external.length || hostList.length || sections.length) {
+      const sub = host.createDiv({ cls: "aos-rt-subhead aos-dim" });
+      sub.createSpan({ text: "OUTSIDE THE RUNTIME" });
+      // Snapshot ages per host and the refresh link (Codex re-reads live; the Claude section needs `/routines cloud`).
+      const trail = sub.createSpan({ cls: "aos-rt-asof" });
+      trail.createSpan({ text: sections.map((h) => `${h} as of ${formatAgo(this.hosts.hosts[h]!.fetchedAt, now.getTime())}`).join(" · ") });
+      const link = trail.createEl("a", { text: "refresh", cls: "aos-link", href: "#", attr: { title: "aos routines hosts --refresh (Codex live; the Claude Code snapshot updates with /routines cloud in a session)" } });
+      link.addEventListener("click", (e) => { e.preventDefault(); this.refreshHosts(); });
       const ext = host.createDiv({ cls: "aos-inv-table aos-rt-table" });
       for (const e of this.external) {
         const r = ext.createDiv({ cls: "aos-inv-row aos-rt-row", attr: { title: e.source } });
         r.createSpan({ cls: "aos-rt-name", text: e.name });
         r.createSpan({ cls: "aos-pill aos-pill-dim", text: e.id === "obsidian-git" ? "obsidian" : "launchd" });
         r.createSpan({ cls: "aos-rt-cadence", text: e.cadence });
+        r.createSpan({ cls: "aos-rt-next aos-dim", text: "—" });
+        r.createSpan({ cls: "aos-rt-last aos-dim", text: "" });
         r.createSpan({ cls: `aos-pulse-chip ${e.loaded === false ? "is-stale" : "is-neutral"}`, text: e.loaded === false ? "not loaded" : "read-only" });
+      }
+      for (const h of hostList) {
+        const tip = [h.summary, h.target ? `target: ${h.target}` : "", h.model ? `model: ${h.model}` : "", h.schedule ? `schedule: ${h.schedule}` : ""].filter(Boolean).join("\n");
+        const r = ext.createDiv({ cls: `aos-inv-row aos-rt-row${h.enabled ? "" : " is-off"}`, attr: { title: tip } });
+        const name = r.createDiv({ cls: "aos-rt-name" });
+        if (h.link) name.createEl("a", { text: h.name, href: h.link, cls: "aos-link", attr: { target: "_blank", rel: "noopener" } });
+        else name.createDiv({ text: h.name });
+        r.createSpan({ cls: `aos-pill ${h.host === "claude" ? "aos-pill-cyan" : "aos-pill-amber"}`, text: h.host });
+        r.createSpan({ cls: "aos-rt-cadence", text: h.cadence, attr: { title: h.schedule } });
+        r.createSpan({ cls: "aos-rt-next aos-dim", text: h.next ? formatFire(new Date(h.next)) : "—" });
+        r.createSpan({ cls: "aos-rt-last aos-dim", text: h.last ? `${formatAgo(h.last.at, now.getTime())} · ${h.last.status}` : "never" });
+        const chip = hostChip(h);
+        r.createSpan({ cls: `aos-pulse-chip ${chip.cls}`, text: chip.text });
+      }
+      for (const h of sections) {
+        const s = this.hosts.hosts[h]!;
+        if (s.ok === false && s.warning) ext.createDiv({ cls: "aos-inv-row aos-dim", text: `${h}: ${s.warning}` });
+        else if (!s.routines.length) ext.createDiv({ cls: "aos-inv-row aos-dim", text: `${h}: no routines` });
       }
     }
   }

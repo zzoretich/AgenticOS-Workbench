@@ -227,13 +227,16 @@ server.registerTool(
   {
     title: 'List the recurring routines',
     annotations: READ_ONLY,
-    description: 'Every routine file under brain/routines/ (kind duty|prompt|command, cron schedule, enabled) with its human cadence, the next three fire times (ISO, local clock), the last run (exit, cost, duration, trigger, failure streak) from brain/_index/routines.json, and a health word: ok | off | stale (file changed since `aos routines sync`) | failed | missed | invalid. Read-only; `aos routines <verb>` or the HUD Routines tab change them.',
+    description: 'Every routine file under brain/routines/ (kind duty|prompt|command, cron schedule, enabled) with its human cadence, the next three fire times (ISO, local clock), the last run (exit, cost, duration, trigger, failure streak) from brain/_index/routines.json (a duty run seen only in persona/journal/logs has trigger "duty-log"), and a health word: ok | off | stale (file changed since `aos routines sync`) | failed | missed | invalid. `hosts` is the read-only snapshot of the routines each session host owns (brain/_index/routines-hosts.json: codex = the Codex app Automations, claude = the Claude Code cloud routines, each with a fetchedAt), or null before `aos routines hosts --refresh` / `/routines cloud` ever ran. Read-only; `aos routines <verb>` or the HUD Routines tab change them.',
     inputSchema: {},
   },
   async () => {
     const store = require('../lib/routines-store.js');
+    const H = require('../lib/host-routines.js');
     const routines = store.overview();
-    return jsonResult({ schema: 1, count: routines.length, routines });
+    let hosts = null;
+    try { const c = H.readCache(H.cacheFile(require('../lib/paths.js').VAULT)); if (Object.keys(c.hosts).length) hosts = c.hosts; } catch { /* no vault: hosts stay null */ }
+    return jsonResult({ schema: 1, count: routines.length, routines, hosts });
   }
 );
 
