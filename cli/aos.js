@@ -6,7 +6,7 @@
  *   aos init [--vault <dir>] [--host auto|claude|codex|both] [--provider auto|ollama|claude|codex|none] [--no-obsidian]
  *            [--terminal] [--cost] [--budget <usd>] [--persona-json <file>] [--from-local <repo-dir>] [--dry-run] [--yes]
  *   (Obsidian, Ollama, python3 >= 3.9 and uv are hard prerequisites of init; --no-obsidian only skips the HUD bundle step.)
- *   aos doctor · aos status · aos provider [auto|ollama|claude|codex|none] · aos graph [status | build | on | off]
+ *   aos doctor · aos status · aos provider [auto|ollama|claude|codex|none] · aos graph [status | build [--semantic] | on | off | semantic on|off|auto]
  *   aos upgrade [--from-local <repo-dir>] [--no-obsidian] · aos uninstall [--host claude|codex] [--keep-vault] [--yes]
  *   aos persona [rename <name> | on | off] [--persona-json <file>] [--yes] · aos cost [enable [--budget <usd>] [--yes] | disable]
  *   aos terminal install
@@ -49,7 +49,7 @@ const USAGE = `usage:
   aos uninstall [--host claude|codex] [--keep-vault] [--yes]
   aos persona [rename <name> | on | off] [--persona-json <file>] [--yes]
   aos cost [enable [--budget <usd>] [--yes] | disable]
-  aos graph [status | build | on | off]
+  aos graph [status | build [--semantic [--yes]] | on | off | semantic on|off|auto]
   aos routines [list [--json] | sync | run <slug> [--dry-run] | enable <slug> | disable <slug> | next [<slug>] | hosts [--refresh] [--json] | import-cloud <file>]
   aos workspace [list [--json] | new <name> | adopt <path> [--name <slug>]]
   aos update-status [--statusline | --snooze <N>d|<N>h | --off]
@@ -440,10 +440,12 @@ async function doctor() {
 const DUTY_FEATURE = /^duty:/;
 const REASON_FEATURE = /^reason:/;
 const ROUTINE_FEATURE = /^routine:/;
+const GRAPH_FEATURE = /^graph:/;
 const isDutyFeature = (feature) => DUTY_FEATURE.test(feature);
 const isReasonFeature = (feature) => REASON_FEATURE.test(feature);
 const isRoutineFeature = (feature) => ROUTINE_FEATURE.test(feature);
-const isHookFeature = (feature) => !DUTY_FEATURE.test(feature) && !REASON_FEATURE.test(feature) && !ROUTINE_FEATURE.test(feature);
+const isGraphFeature = (feature) => GRAPH_FEATURE.test(feature);
+const isHookFeature = (feature) => !DUTY_FEATURE.test(feature) && !REASON_FEATURE.test(feature) && !ROUTINE_FEATURE.test(feature) && !GRAPH_FEATURE.test(feature);
 /** Today's provider-spend.jsonl rows (local calendar day) that carry a numeric usd; [] when the ledger is absent. */
 function spendRowsToday(file) {
   let raw = '';
@@ -472,6 +474,8 @@ function status() {
   const dutyCap = num(cfg.persona, 'perDayUsd') ?? num(vaultCfg.persona, 'perDayUsd') ?? 6;
   const reasonCap = num(cfg.reasoner, 'perDayUsd') ?? num(vaultCfg.reasoner, 'perDayUsd') ?? 5;
   const routineCap = num(cfg.routines, 'perDayUsd') ?? num(vaultCfg.routines, 'perDayUsd') ?? 6;
+  const semOf = (c) => (c && c.graph && c.graph.semantic) || null;
+  const graphCap = num(semOf(cfg), 'perDayUsd') ?? num(semOf(vaultCfg), 'perDayUsd') ?? 1;
   const str = (obj, key) => (obj && typeof obj[key] === 'string' && obj[key].trim() ? obj[key].trim() : undefined);
   // The reasoner role (sdk/lib/models.js): BRAIN_REASONER, then reasoner.model by config precedence, then the default.
   const reasonerModel = (process.env.BRAIN_REASONER || '').trim() || str(cfg.reasoner, 'model') || str(vaultCfg.reasoner, 'model') || 'claude-opus-5';
@@ -492,6 +496,7 @@ function status() {
   out.log(`spend      today (duties) $${sumUsd(spend, isDutyFeature).toFixed(4)} / cap $${dutyCap}`);
   out.log(`spend      today (reasoner) $${sumUsd(spend, isReasonFeature).toFixed(4)} / cap $${reasonCap}`);
   out.log(`spend      today (routines) $${sumUsd(spend, isRoutineFeature).toFixed(4)} / cap $${routineCap}`);
+  out.log(`spend      today (graph) $${sumUsd(spend, isGraphFeature).toFixed(4)} / cap $${graphCap}`);
   // Ledger shape (lib/pipeline-report.js): { version: 1, pipelines: { <name>: { lastRun: {…} | null, history: [] } } }.
   const ledger = readJson(path.join(idx, 'pipelines.json'), {}) || {};
   const rows = Object.entries(ledger.pipelines || {}).map(([name, st]) => [name, (st && st.lastRun) || null]);
@@ -1248,8 +1253,8 @@ function cost(sub, flags) {
   return require('./cost-cmd.js').run(sub, { budget: flags.budget, yes: !!flags.yes, hint: flags.fromLocal || process.env.AOS_REPO_HINT, io: console });
 }
 
-function graph(sub) {
-  return require('./graph-cmd.js').run(sub, { configDir: configDir(), io: console });
+function graph(sub, flags) {
+  return require('./graph-cmd.js').run(sub, { configDir: configDir(), io: console, semantic: !!flags.semantic, yes: !!flags.yes });
 }
 
 // ── updates ───────────────────────────────────────────────────────────────────
@@ -1267,7 +1272,7 @@ function updateNotice() {
 
 // ── args and main ─────────────────────────────────────────────────────────────
 const VALUE_FLAGS = new Set(['vault', 'provider', 'persona-json', 'from-local', 'budget', 'snooze', 'host', 'name']);
-const BOOL_FLAGS = new Set(['dry-run', 'yes', 'terminal', 'cost', 'keep-vault', 'statusline', 'off', 'quiet', 'json', 'refresh']);
+const BOOL_FLAGS = new Set(['dry-run', 'yes', 'terminal', 'cost', 'keep-vault', 'statusline', 'off', 'quiet', 'json', 'refresh', 'semantic']);
 const NEGATABLE_FLAGS = new Set(['obsidian']);
 function camel(s) { return s.replace(/-([a-z])/g, (_, c) => c.toUpperCase()); }
 /** `--flag`, `--no-flag`, `--flag value`, `--flag=value`; unknown flags are a usage error (a typo must never start a real install). */
@@ -1314,7 +1319,7 @@ async function main(argv) {
     case 'terminal': return terminal(sub);
     case 'persona': return persona(sub, flags);
     case 'cost': return cost(sub, flags);
-    case 'graph': return graph(sub);
+    case 'graph': return graph(sub, flags);
     case 'routines': return routines(sub, flags);
     case 'workspace': return workspace(sub, flags);
     case 'doctor': return doctor();

@@ -113,3 +113,106 @@ test('a structural pass keeps the semantic stamp of an earlier model pass', asyn
   assert.equal(r.mode, 'semantic');
   assert.equal(r.lastSemantic, '2026-09-22T00:00:00.000Z');
 });
+
+// ── semantic pass (D5, D6, D10, D11): fake graphify `extract` → the real shim (bin/graph-shim/claude → graph-claude.js)
+//    → the fake claude. The shim's node starts with the vault as cwd, so the runner's relative NODE_OPTIONS preload is
+//    dropped for these tests (the shim needs none of test/setup.js).
+const FAKE_CLAUDE = path.resolve(__dirname, '..', '..', '..', 'cli', 'fixtures', 'fake-claude.sh');
+const CLAUDE_LOG = path.join(VAULT, 'fake-claude.log');
+const CLAUDE_ENV_LOG = path.join(VAULT, 'fake-claude-env.log');
+const { SPEND_PATH } = require('../sdk/lib/spend-ledger.js');
+const scfg = (sem = {}, over = {}) => ({
+  provider: 'auto', claude: { model: 'haiku' }, ...over,
+  graph: { enabled: true, out: 'brain/graphify-out', timeoutSec: 30, bin: FAKE, semantic: { enabled: 'auto', everyHours: 24, perDayUsd: 1, perCallUsd: 0.25, tokenBudget: 20000, timeoutSec: 30, ...sem } },
+});
+const semantic = (c = scfg(), opts = {}) => GB.buildSemantic({ report: rep(), cfg: c, vault: VAULT, claudeBin: FAKE_CLAUDE, ...opts });
+const skip = (c, opts = {}) => GB.semanticSkip(c, { vault: VAULT, claudeBin: FAKE_CLAUDE, ...opts });
+const savedNodeOptions = process.env.NODE_OPTIONS;
+
+beforeEach(() => {
+  for (const f of [SPEND_PATH, CLAUDE_LOG, CLAUDE_ENV_LOG]) fs.rmSync(f, { force: true });
+  for (const k of ['FAKE_CLAUDE_P_EXIT', 'FAKE_CLAUDE_USD', 'AOS_NO_SPAWN']) delete process.env[k];
+  process.env.FAKE_CLAUDE_LOG = CLAUDE_LOG;
+  process.env.FAKE_CLAUDE_ENV_LOG = CLAUDE_ENV_LOG;
+  delete process.env.NODE_OPTIONS;
+});
+test.after(() => { if (savedNodeOptions !== undefined) process.env.NODE_OPTIONS = savedNodeOptions; });
+
+test('semantic gates: provider opt-out, off switch, force, claude CLI, due time, budget', () => {
+  assert.deepEqual(skip(scfg({}, { provider: 'none' })), { status: 'disabled', reason: 'provider none' });
+  assert.deepEqual(skip(scfg({}, { provider: 'ollama' })), { status: 'disabled', reason: 'provider ollama' });
+  assert.equal(skip(scfg({ enabled: true }, { provider: 'none' })), null, 'an explicit on overrides the provider');
+  assert.deepEqual(skip(scfg({}, { provider: 'none' }), { force: true }), { status: 'disabled', reason: 'provider none' }, 'force never overrides a provider opt-out');
+  assert.deepEqual(skip(scfg({ enabled: false })), { status: 'disabled', reason: 'semantic off' });
+  assert.equal(skip(scfg({ enabled: false }), { force: true }), null, 'the foreground command runs even with the background pass off');
+  assert.deepEqual(skip(scfg(), { claudeBin: null }), { status: 'disabled', reason: 'no claude CLI' });
+  assert.deepEqual(skip(cfg({ enabled: false })), { status: 'disabled', reason: 'graph off' });
+  fs.mkdirSync(OUT, { recursive: true });
+  fs.writeFileSync(path.join(OUT, '.aos-graph.json'), JSON.stringify({ schema: 1, lastSemanticRun: new Date(Date.now() - 3_600_000).toISOString() }));
+  assert.deepEqual(skip(scfg()), { status: 'skipped', reason: 'not due' });
+  assert.equal(skip(scfg({ everyHours: 0.5 })), null, 'due again after everyHours');
+  assert.equal(skip(scfg(), { force: true }), null);
+  fs.writeFileSync(SPEND_PATH, JSON.stringify({ ts: new Date().toISOString(), feature: 'graph:semantic', usd: 1 }) + '\n');
+  assert.deepEqual(skip(scfg(), { force: true }), { status: 'skipped', reason: 'graph budget reached' });
+});
+
+test('a semantic pass runs extract through the shim: isolated, headless, no thinking, one ledger row, a semantic marker', async () => {
+  const r = await semantic();
+  assert.equal(r.status, 'ok');
+  assert.equal(r.mode, 'semantic');
+  assert.equal(r.concepts, 1);
+  assert.equal(r.inferred, 1);
+  assert.equal(r.semanticIncomplete, false);
+  assert.equal(r.semanticUsd, 0.004);
+  assert.equal(fs.readFileSync(LOG, 'utf8'), `extract ${VAULT} --backend claude-cli --token-budget 20000 --allow-partial | out=${OUT} nobackup=1 apikey=\n`);
+  const call = fs.readFileSync(CLAUDE_LOG, 'utf8').trim();
+  assert.match(call, /^-p --output-format json --no-session-persistence --json-schema \{"type":"object"\} --tools {2}--setting-sources {2}--strict-mcp-config --system-prompt .* --model haiku --max-budget-usd 0\.25$/);
+  assert.equal(call.split('--model').length, 2, 'graphify\'s own --model is replaced, not doubled');
+  assert.equal(fs.readFileSync(CLAUDE_ENV_LOG, 'utf8'), 'MAX_THINKING_TOKENS=0 AOS_HEADLESS=1 CLAUDECODE= ANTHROPIC_API_KEY=\n');
+  const rows = fs.readFileSync(SPEND_PATH, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.deepEqual(rows.map((x) => [x.feature, x.model, x.usd]), [['graph:semantic', 'haiku', 0.004]]);
+  const m = JSON.parse(fs.readFileSync(path.join(OUT, '.aos-graph.json'), 'utf8'));
+  assert.equal(m.lastSemantic, m.builtAt);
+  assert.ok(m.lastSemanticRun);
+  assert.equal(m.lastSemanticError, null);
+  assert.deepEqual(skip(scfg()), { status: 'skipped', reason: 'not due' });
+});
+
+test('graphify never sees an API key; the shim hands it back to the real CLI', async () => {
+  process.env.ANTHROPIC_API_KEY = 'k';
+  try {
+    await semantic();
+    assert.match(fs.readFileSync(LOG, 'utf8'), / apikey=\n$/);
+    assert.match(fs.readFileSync(CLAUDE_ENV_LOG, 'utf8'), /ANTHROPIC_API_KEY=set$/m);
+  } finally { delete process.env.ANTHROPIC_API_KEY; }
+});
+
+test('a failed model call leaves the pass incomplete, not failed; a failed extract is recorded and waits everyHours', async () => {
+  process.env.FAKE_CLAUDE_P_EXIT = '1';
+  const partial = await semantic();
+  assert.equal(partial.status, 'ok');
+  assert.equal(partial.semanticIncomplete, true);
+  assert.equal(partial.concepts, 0);
+  assert.ok(!fs.existsSync(SPEND_PATH), 'nothing billed, nothing ledgered');
+  delete process.env.FAKE_CLAUDE_P_EXIT;
+  fs.rmSync(OUT, { recursive: true, force: true });
+  process.env.FAKE_GRAPHIFY_EXIT = '2';
+  process.env.FAKE_GRAPHIFY_STDERR = 'extract blew up';
+  await assert.rejects(semantic(), /graphify extract exited 2: extract blew up/);
+  const m = JSON.parse(fs.readFileSync(path.join(OUT, '.aos-graph.json'), 'utf8'));
+  assert.equal(m.lastSemanticError, 'graphify extract exited 2: extract blew up');
+  assert.deepEqual(skip(scfg()), { status: 'skipped', reason: 'not due' }, 'no retry storm: a failure waits everyHours too');
+});
+
+test('spawnSemantic starts a detached --semantic worker, and AOS_NO_SPAWN stops it', () => {
+  const calls = [];
+  const spawnFn = (bin, args, opts) => { calls.push({ bin, args, opts }); return { unref() { calls[calls.length - 1].unref = true; } }; };
+  assert.equal(GB.spawnSemantic({ spawnFn }), true);
+  assert.deepEqual(calls[0].args.slice(1), ['--semantic', '--quiet']);
+  assert.equal(calls[0].opts.detached, true);
+  assert.equal(calls[0].opts.env.AOS_DETACHED, '1');
+  assert.equal(calls[0].unref, true);
+  process.env.AOS_NO_SPAWN = '1';
+  assert.equal(GB.spawnSemantic({ spawnFn }), false);
+  assert.equal(calls.length, 1);
+});
