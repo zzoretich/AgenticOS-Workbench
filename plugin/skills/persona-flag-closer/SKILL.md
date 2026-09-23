@@ -12,6 +12,7 @@ Paths: `SKILL_DIR = ${CLAUDE_PLUGIN_ROOT}/skills/persona-flag-closer`. The vault
 ## Workflow
 
 1. **Collect (deterministic, run ONCE per review):**
+   `node "<vault>/brain/scripts/persona/proposal-html.js"` first — it renders each pending proposal's HTML page into `<vault>/brain/_index/proposals/` (gitignored) and fixes its "Open the proposal in browser" line, so a proposal decided now still has a page in the Proposals tab's Backlog and History.
    `node "$SKILL_DIR/scripts/collect.js" --update-state > /tmp/pfc-collect.json`
    `--update-state` consumes error-log offsets and records the pending-set hash.
 2. **Re-verify (deterministic):**

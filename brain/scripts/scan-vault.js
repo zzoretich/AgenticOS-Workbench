@@ -452,6 +452,17 @@ async function main(report) {
     console.error('[scan-vault] recall-index failed:', e.message);
   }
 
+  // Proposal pages (spec 2026-09-22-proposal-pages D3): the filer renders at once; this catches hand-written and
+  // legacy files. A no-op without persona/proposals/, and a no-op for every page already current.
+  try {
+    const { render } = require('./persona/proposal-html.js');
+    const pr = render({ root: VAULT });
+    for (const e of pr.errors) console.error('[scan-vault] proposal page:', e);
+    if (report && (pr.rendered.length || pr.linked.length)) report.wrote.push(`brain/_index/proposals/ (rendered ${pr.rendered.length}, linked ${pr.linked.length})`);
+  } catch (e) {
+    console.error('[scan-vault] proposal pages failed:', e.message);
+  }
+
   try {
     const { refreshEmbedIndex } = require('./embed-vault.js');
     await withReport('embed-vault', async (r) => {
