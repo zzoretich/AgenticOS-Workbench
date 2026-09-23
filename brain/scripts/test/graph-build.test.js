@@ -173,8 +173,9 @@ const scfg = (sem = {}, over = {}) => ({
   provider: 'auto', claude: { model: 'haiku' }, ...over,
   graph: { enabled: true, out: 'brain/graphify-out', timeoutSec: 30, bin: FAKE, semantic: { enabled: 'auto', everyHours: 24, perDayUsd: 1, perCallUsd: 0.25, tokenBudget: 20000, timeoutSec: 30, ...sem } },
 });
-const semantic = (c = scfg(), opts = {}) => GB.buildSemantic({ report: rep(), cfg: c, vault: VAULT, claudeBin: FAKE_CLAUDE, ...opts });
-const skip = (c, opts = {}) => GB.semanticSkip(c, { vault: VAULT, claudeBin: FAKE_CLAUDE, ...opts });
+const CLAUDE_RUNNER = { host: 'claude', bin: FAKE_CLAUDE };
+const semantic = (c = scfg(), opts = {}) => GB.buildSemantic({ report: rep(), cfg: c, vault: VAULT, runner: CLAUDE_RUNNER, ...opts });
+const skip = (c, opts = {}) => GB.semanticSkip(c, { vault: VAULT, runner: CLAUDE_RUNNER, ...opts });
 const savedNodeOptions = process.env.NODE_OPTIONS;
 
 beforeEach(() => {
@@ -186,14 +187,15 @@ beforeEach(() => {
 });
 test.after(() => { if (savedNodeOptions !== undefined) process.env.NODE_OPTIONS = savedNodeOptions; });
 
-test('semantic gates: provider opt-out, off switch, force, claude CLI, due time, budget', () => {
+test('semantic gates: provider opt-out, off switch, force, a runner CLI, due time, budget', () => {
   assert.deepEqual(skip(scfg({}, { provider: 'none' })), { status: 'disabled', reason: 'provider none' });
   assert.deepEqual(skip(scfg({}, { provider: 'ollama' })), { status: 'disabled', reason: 'provider ollama' });
   assert.equal(skip(scfg({ enabled: true }, { provider: 'none' })), null, 'an explicit on overrides the provider');
   assert.deepEqual(skip(scfg({}, { provider: 'none' }), { force: true }), { status: 'disabled', reason: 'provider none' }, 'force never overrides a provider opt-out');
   assert.deepEqual(skip(scfg({ enabled: false })), { status: 'disabled', reason: 'semantic off' });
   assert.equal(skip(scfg({ enabled: false }), { force: true }), null, 'the foreground command runs even with the background pass off');
-  assert.deepEqual(skip(scfg(), { claudeBin: null }), { status: 'disabled', reason: 'no claude CLI' });
+  assert.deepEqual(skip(scfg(), { runner: null }), { status: 'disabled', reason: 'no claude or codex CLI' });
+  assert.equal(skip(scfg({}, { provider: 'codex' }), { runner: { host: 'codex', bin: '/x/codex' } }), null, 'provider codex keeps the pass on (D11)');
   assert.deepEqual(skip(cfg({ enabled: false })), { status: 'disabled', reason: 'graph off' });
   fs.mkdirSync(OUT, { recursive: true });
   fs.writeFileSync(path.join(OUT, '.aos-graph.json'), JSON.stringify({ schema: 1, lastSemanticRun: new Date(Date.now() - 3_600_000).toISOString() }));
@@ -274,4 +276,30 @@ test('a structural pass keeps the semantic run stamp, so the daily pass stays no
   for (const k of ['lastSemanticRun', 'lastSemantic', 'semanticUsd', 'concepts', 'inferred']) assert.deepEqual(after[k], before[k], k);
   assert.equal(after.mode, 'semantic');
   assert.deepEqual(skip(scfg()), { status: 'skipped', reason: 'not due' }, 'a scan right after a run does not start another');
+});
+
+// ── the same pass under Codex (spec 2026-09-23-codex-parity-gaps D3/D4): fake graphify → the real shim → fake codex exec.
+const FAKE_CODEX = path.resolve(__dirname, '..', '..', '..', 'cli', 'fixtures', 'fake-codex.sh');
+test('under the codex runner the shim answers graphify through codex exec: read-only, hooks off, low effort, one graph:semantic row', async () => {
+  const args = path.join(VAULT, 'fake-codex-args.log');
+  const stdin = path.join(VAULT, 'fake-codex-stdin.log');
+  Object.assign(process.env, { FAKE_ARGS: args, FAKE_CODEX_STDIN: stdin, FAKE_CODEX_REPLY: '{"nodes":[],"edges":[]}' });
+  try {
+    const report = rep();
+    const r = await GB.buildSemantic({ report, cfg: scfg({}, { provider: 'codex' }), vault: VAULT, runner: { host: 'codex', bin: FAKE_CODEX } });
+    assert.equal(r.status, 'ok');
+    assert.equal(r.concepts, 1, 'graphify saw a successful call');
+    assert.equal(report.provider, 'codex');
+    const argv = fs.readFileSync(args, 'utf8').trim().split('\n');
+    assert.equal(argv[0], 'exec');
+    for (const a of ['--ephemeral', 'read-only', 'features.hooks=false', 'model_reasoning_effort="low"', '--json']) assert.ok(argv.includes(a), `argv has ${a}`);
+    assert.equal(argv[argv.length - 1], '-', 'the prompt on stdin');
+    assert.match(fs.readFileSync(stdin, 'utf8'), /Reply only with the JSON[\s\S]*Extract a knowledge graph from these notes\./);
+    const rows = fs.readFileSync(SPEND_PATH, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((x) => x.feature === 'graph:semantic');
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].provider, 'codex');
+    assert.equal(rows[0].inputTokens, 1200);
+  } finally {
+    for (const k of ['FAKE_ARGS', 'FAKE_CODEX_STDIN', 'FAKE_CODEX_REPLY']) delete process.env[k];
+  }
 });

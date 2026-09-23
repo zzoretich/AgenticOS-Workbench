@@ -96,6 +96,23 @@ function resolveRunner({ cfg, kind = 'routines', env = process.env, lookup, cand
   return { host: null, bin: null, model: null, home: null, reason: why.join('; ') || 'no host enabled' };
 }
 
+/**
+ * Which CLI answers the vault graph's semantic pass (spec 2026-09-23-codex-parity-gaps D3). graph.semantic.runner pins
+ * one (claude | codex); otherwise an explicit provider claude or codex names it; otherwise Claude when it is an enabled
+ * host with a binary, else Codex on the same test. → { host, bin } or null. `bins` replaces the lookups (tests).
+ */
+function graphRunner(cfg, { env = process.env, lookup, candidates, bins } = {}) {
+  const c = cfg || {};
+  const sem = (c.graph && c.graph.semantic) || {};
+  const pinned = HOSTS.includes(sem.runner) ? sem.runner : HOSTS.includes(c.provider) ? c.provider : null;
+  for (const h of pinned ? [pinned] : HOSTS) {
+    if (!pinned && !hostEnabled(c, h)) continue;
+    const bin = bins && Object.prototype.hasOwnProperty.call(bins, h) ? bins[h] : resolveBin(h, { cfg: c, env, lookup, candidates });
+    if (bin) return { host: h, bin };
+  }
+  return null;
+}
+
 /** { argv, stdin } for one headless agent run on `host`. */
 function runnerArgs(host, { prompt = '', system = '', model, effort = 'medium', tools = '', budget, outFile } = {}) {
   if (host === 'codex') {
@@ -133,4 +150,4 @@ function main(argv) {
 
 if (require.main === module) process.exit(main(process.argv.slice(2)));
 
-module.exports = { resolveRunner, resolveBin, runnerArgs, headlessEnv, hostEnabled, codexHomeOf, HOSTS, CODEX_EFFORTS, CLAUDE_EFFORTS };
+module.exports = { resolveRunner, graphRunner, resolveBin, runnerArgs, headlessEnv, hostEnabled, codexHomeOf, HOSTS, CODEX_EFFORTS, CLAUDE_EFFORTS };

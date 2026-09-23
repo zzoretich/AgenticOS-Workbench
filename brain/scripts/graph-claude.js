@@ -13,8 +13,15 @@
  *   - runs the real CLI with AOS_HEADLESS=1 (our hooks stay out) and MAX_THINKING_TOKENS=0 (D12)
  *   - passes stdin and stdout through byte for byte, and ledgers one graph:semantic row from the JSON envelope
  * The real CLI comes from AOS_GRAPH_CLAUDE_BIN (graph-build.js resolves it), never from PATH, where this shim comes first.
+ *
+ * Under Codex (AOS_GRAPH_RUNNER=codex, spec 2026-09-23-codex-parity-gaps D3/D4) graphify still talks to this `claude`;
+ * the answer comes from `codex exec` (sdk/lib/codex-cli.js: read-only, ephemeral, our hooks off) in an empty folder, on
+ * codex.model at low effort, printed as the result envelope graphify reads (result, usage, modelUsage, stop_reason).
+ * The same daily cap gates each call; Codex has no per-call cap, so the spend is estimated from its token counts.
  */
 const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const { spawnSync } = require('child_process');
 const { loadConfig } = require('./lib/config.js');
 const { recordSpend, graphSpendToday } = require('./sdk/lib/spend-ledger.js');
@@ -47,8 +54,58 @@ function childEnv(base) {
 
 function num(v) { return typeof v === 'number' && Number.isFinite(v) ? v : 0; }
 
+/** codexCall's result → the `claude -p --output-format json` result envelope graphify's claude-cli backend parses. */
+function codexEnvelope(r) {
+  const u = r.usage || {};
+  const cached = num(u.cachedInputTokens);
+  return {
+    type: 'result', subtype: 'success', is_error: false, result: String(r.text || ''),
+    usage: { input_tokens: Math.max(0, num(u.inputTokens) - cached), cache_read_input_tokens: cached, cache_creation_input_tokens: 0, output_tokens: num(u.outputTokens) },
+    modelUsage: { [r.model || 'codex-default']: {} }, stop_reason: 'end_turn', total_cost_usd: num(r.usd), duration_api_ms: num(r.ms),
+  };
+}
+
+const CODEX_HELP = 'claude (AgenticOS graph shim, answering through codex exec)\nUsage: claude -p [--output-format json] [--model <m>] < prompt\n';
+
+/** The Codex leg: one codex exec per graphify call, ledgered by codexCall as graph:semantic. Resolves the exit code. */
+async function codexLeg(argv, { env, readStdin, out, err, codexCall, mkTemp }) {
+  if (argv.some((a) => PASS_THROUGH.has(a))) { out.write(argv.includes('--version') || argv.includes('-v') ? '0.0.0 (graph shim, codex)\n' : CODEX_HELP); return 0; }
+  const cfg = loadConfig();
+  const sem = (cfg.graph && cfg.graph.semantic) || {};
+  const cap = Number(sem.perDayUsd) || 1;
+  const spent = graphSpendToday();
+  if (spent >= cap) {
+    err.write(`graph-claude: today's graph budget is spent ($${spent.toFixed(4)} of $${cap}); the rest waits for the next run\n`);
+    return 1;
+  }
+  let input = '';
+  try { input = String(readStdin()); } catch { input = ''; }
+  const cwd = mkTemp();
+  try {
+    const r = await codexCall({
+      system: SYSTEM, prompt: input, model: (cfg.codex && typeof cfg.codex.model === 'string' && cfg.codex.model) || null,
+      effort: 'low', timeoutMs: CALL_TIMEOUT_MS, cwd, feature: 'graph:semantic', bin: env.AOS_GRAPH_CODEX_BIN,
+    });
+    out.write(JSON.stringify(codexEnvelope(r)));
+    return 0;
+  } catch (e) {
+    err.write(`graph-claude: codex exec failed: ${e.message}\n`);
+    return 1;
+  } finally {
+    try { fs.rmSync(cwd, { recursive: true, force: true }); } catch { /* best effort */ }
+  }
+}
+
 function main(argv = process.argv.slice(2), io = {}) {
   const { env = process.env, spawn = spawnSync, readStdin = () => fs.readFileSync(0), out = process.stdout, err = process.stderr } = io;
+  if (env.AOS_GRAPH_RUNNER === 'codex') {
+    if (!env.AOS_GRAPH_CODEX_BIN) { err.write('graph-claude: AOS_GRAPH_CODEX_BIN is not set (run through graph-build.js)\n'); return 127; }
+    return codexLeg(argv, {
+      env, readStdin, out, err,
+      codexCall: io.codexCall || require('./sdk/lib/codex-cli.js').codexCall,
+      mkTemp: io.mkTemp || (() => fs.mkdtempSync(path.join(os.tmpdir(), 'aos-graph-codex-'))),
+    });
+  }
   const real = env.AOS_GRAPH_CLAUDE_BIN;
   if (!real) { err.write('graph-claude: AOS_GRAPH_CLAUDE_BIN is not set (run through graph-build.js)\n'); return 127; }
   if (argv.some((a) => PASS_THROUGH.has(a))) {
@@ -89,6 +146,6 @@ function main(argv = process.argv.slice(2), io = {}) {
   return typeof r.status === 'number' ? r.status : 1;
 }
 
-if (require.main === module) process.exitCode = main();
+if (require.main === module) Promise.resolve(main()).then((code) => { process.exitCode = code; });
 
-module.exports = { main, rewriteArgs, childEnv, SYSTEM };
+module.exports = { main, rewriteArgs, childEnv, codexEnvelope, SYSTEM };

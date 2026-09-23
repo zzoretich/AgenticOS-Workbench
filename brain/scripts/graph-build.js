@@ -156,7 +156,7 @@ async function buildStructural({ report, cfg = loadConfig(), vault = PATHS.VAULT
 }
 
 // ── semantic pass ─────────────────────────────────────────────────────────────
-/** D11: "auto" follows the provider (an explicit ollama or none means no background calls to Anthropic); true/false override. */
+/** D11: "auto" follows the provider (an explicit ollama or none means no background calls to a hosted model, Claude or Codex); true/false override. */
 function semanticState(cfg) {
   const v = cfg && cfg.graph && cfg.graph.semantic ? cfg.graph.semantic.enabled : 'auto';
   if (v === true) return { on: true, why: null };
@@ -170,7 +170,10 @@ function semanticState(cfg) {
  * Why the semantic pass will not run now — { status: 'disabled' | 'skipped', reason } — or null when it should.
  * `force` (the foreground command) skips the due check and overrides `semantic off`, never a provider opt-out.
  */
-function semanticSkip(cfg, { vault = PATHS.VAULT, now = new Date(), force = false, claudeBin } = {}) {
+/** The CLI behind the graph shim: lib/headless.js graphRunner (a pin, an explicit provider, else Claude, else Codex). */
+function semanticRunner(cfg) { return require('./lib/headless.js').graphRunner(cfg); }
+
+function semanticSkip(cfg, { vault = PATHS.VAULT, now = new Date(), force = false, runner } = {}) {
   const why = skipReason(cfg);
   if (why) return { status: 'disabled', reason: why };
   const st = semanticState(cfg);
@@ -180,12 +183,12 @@ function semanticSkip(cfg, { vault = PATHS.VAULT, now = new Date(), force = fals
   const last = Date.parse(m.lastSemanticRun || '');
   if (!force && last && now - last < (Number(sem.everyHours) || 24) * 3_600_000) return { status: 'skipped', reason: 'not due' };
   if (graphSpendToday(now) >= (Number(sem.perDayUsd) || 1)) return { status: 'skipped', reason: 'graph budget reached' };
-  const bin = claudeBin === undefined ? require('./sdk/lib/claude-cli.js').resolveClaudeBin() : claudeBin;
-  if (!bin) return { status: 'disabled', reason: 'no claude CLI' };
+  const r = runner === undefined ? semanticRunner(cfg) : runner;
+  if (!r) return { status: 'disabled', reason: 'no claude or codex CLI' };
   return null;
 }
 
-function semantic({ report, cfg, g, vault, out, timeoutMs, claudeBin, spawn, now }) {
+function semantic({ report, cfg, g, vault, out, timeoutMs, runner, spawn, now }) {
   const sem = g.semantic || {};
   fs.mkdirSync(out, { recursive: true });
   const graphFile = path.join(out, 'graph.json');
@@ -200,7 +203,9 @@ function semantic({ report, cfg, g, vault, out, timeoutMs, claudeBin, spawn, now
     PATH: `${SHIM_DIR}${path.delimiter}${process.env.PATH || ''}`,
     GRAPHIFY_CLAUDE_CLI_MODEL: model,            // graphify's own default is Opus; the shim forces this model anyway
     GRAPHIFY_MAX_RETRY_DEPTH: '0',               // one call per chunk: calls ≤ chunks
-    AOS_GRAPH_CLAUDE_BIN: claudeBin,
+    // The shim answers through the runner's CLI (graph-claude.js): the real `claude`, or `codex exec` behind the same envelope.
+    AOS_GRAPH_RUNNER: runner.host,
+    ...(runner.host === 'codex' ? { AOS_GRAPH_CODEX_BIN: runner.bin } : { AOS_GRAPH_CLAUDE_BIN: runner.bin }),
     AOS_NODE: process.execPath,
     AOS_VAULT: vault,
     ...(process.env.ANTHROPIC_API_KEY ? { AOS_GRAPH_ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY } : {}),
@@ -233,21 +238,21 @@ function semantic({ report, cfg, g, vault, out, timeoutMs, claudeBin, spawn, now
     ms: Date.now() - t0,
   };
   G.writeMarker(out, marker);
-  report.provider = 'claude';
+  report.provider = runner.host;
   Object.assign(report.counts, { nodes: o.nodes, edges: o.edges, concepts, inferred, usd, incomplete: incomplete ? 1 : 0 });
   report.wrote.push(path.relative(vault, graphFile));
   return { status: 'ok', out, ...marker };
 }
 
 /** The `graph-semantic` report body: fn(report) for withReport. */
-async function buildSemantic({ report, cfg = loadConfig(), vault = PATHS.VAULT, force = false, spawn = spawnSync, now = () => new Date(), claudeBin } = {}) {
-  const bin = claudeBin === undefined ? require('./sdk/lib/claude-cli.js').resolveClaudeBin() : claudeBin;
-  const sk = semanticSkip(cfg, { vault, now: now(), force, claudeBin: bin });
+async function buildSemantic({ report, cfg = loadConfig(), vault = PATHS.VAULT, force = false, spawn = spawnSync, now = () => new Date(), runner } = {}) {
+  const r0 = runner === undefined ? semanticRunner(cfg) : runner;
+  const sk = semanticSkip(cfg, { vault, now: now(), force, runner: r0 });
   if (sk) { if (sk.status === 'disabled') report.disable(sk.reason); else report.skip(sk.reason); return sk; }
   const g = cfg.graph;
   const out = G.outDir(vault, g);
   const timeoutMs = Math.max(1, Number((g.semantic || {}).timeoutSec) || 1800) * 1000;
-  const r = await withGraphLock('semantic', timeoutMs, () => semantic({ report, cfg, g, vault, out, timeoutMs, claudeBin: bin, spawn, now }));
+  const r = await withGraphLock('semantic', timeoutMs, () => semantic({ report, cfg, g, vault, out, timeoutMs, runner: r0, spawn, now }));
   if (r.busy) { const why = busyReason(r.busy); report.skip(why); return { status: 'skipped', reason: why }; }
   return r.value;
 }
@@ -277,4 +282,4 @@ if (require.main === module) {
     .catch((e) => { console.error('[graph-build]', e.message); process.exit(1); });
 }
 
-module.exports = { buildStructural, buildSemantic, semanticSkip, semanticState, spawnSemantic, skipReason, childEnv, withGraphLock, lockOwner, busyReason, LOCK, SHIM_DIR };
+module.exports = { buildStructural, buildSemantic, semanticSkip, semanticState, semanticRunner, spawnSemantic, skipReason, childEnv, withGraphLock, lockOwner, busyReason, LOCK, SHIM_DIR };
