@@ -103,16 +103,30 @@ function costTranscript(transcript, sessionId) {
 }
 
 /** The model recorded for a session in runs.jsonl (telemetry-hook writes it from the Codex hook payload). */
-function runModelFor(sessionId, runsFile = RUNS) {
+function runModelFor(sessionId, runsFile = RUNS) { return runFieldFor(sessionId, 'model', runsFile); }
+
+/** A string field of the newest run record for this session (runs.jsonl), else null. */
+function runFieldFor(sessionId, key, runsFile = RUNS) {
   if (!sessionId) return null;
   let lines = [];
   try { lines = fs.readFileSync(runsFile, 'utf8').split('\n'); } catch { return null; }
   for (let i = lines.length - 1; i >= 0; i--) {
     if (!lines[i].trim()) continue;
     let r; try { r = JSON.parse(lines[i]); } catch { continue; }
-    if ((r.session_id === sessionId || r.id === `sess-${sessionId}`) && typeof r.model === 'string' && r.model) return r.model;
+    if ((r.session_id === sessionId || r.id === `sess-${sessionId}`) && typeof r[key] === 'string' && r[key]) return r[key];
   }
   return null;
+}
+
+/**
+ * Which host ran a session: AOS_HOST when a hook set it, else the host its run record carries (telemetry stamps it),
+ * else the detection chain. `aos auto-cost --cost-one <uuid>` on a machine with both hosts needs the record: nothing
+ * in its environment says which host the session was.
+ */
+function hostForRun(sessionId, transcriptArg, env = process.env, runsFile = RUNS) {
+  if (host.HOSTS.includes(env.AOS_HOST)) return env.AOS_HOST;
+  const recorded = runFieldFor(sessionId, 'host', runsFile);
+  return host.HOSTS.includes(recorded) ? recorded : host.currentHost(env, { transcript_path: transcriptArg });
 }
 
 /**
@@ -142,7 +156,8 @@ function costCodexRollout(transcript, sessionId, { model = null, snapshotsDir = 
   }
 }
 
-/** Cost every run lacking a cost that still has a transcript in ANY project dir. */
+/** Cost every run lacking a cost that still has a transcript: a Claude Code transcript in any project dir, or a Codex
+ *  rollout, by the host the run record carries. */
 function backfill(report) {
   if (!costEnabled()) { process.stdout.write('[auto-cost] cost module disabled — run `aos cost enable`\n'); if (report) report.disable('cost disabled'); return; }
   let lines = [];
@@ -156,9 +171,10 @@ function backfill(report) {
     const sid = r.session_id || (r.id || '').replace(/^sess-/, '');
     if (!sid || seen.has(sid)) continue;
     seen.add(sid);
-    const transcript = findTranscript(sid);
+    const codex = r.host === 'codex';
+    const transcript = codex ? host.findTranscript('codex', sid) : findTranscript(sid);
     if (!transcript) continue;
-    const res = costTranscript(transcript, sid);
+    const res = codex ? costCodexRollout(transcript, sid, { model: (typeof r.model === 'string' && r.model) || null }) : costTranscript(transcript, sid);
     if (res.status === 'ok') { costed++; process.stdout.write(`[auto-cost] costed ${sid.slice(0, 8)}\n`); }
     else process.stdout.write(`[auto-cost] skipped ${sid.slice(0, 8)} — ${res.status}${res.detail ? `: ${res.detail}` : ''}\n`);
   }
@@ -168,7 +184,7 @@ function backfill(report) {
 
 /** Foreground worker: resolve the transcript (payload path first, then any
  *  projects/<slug>/ dir) and cost it under the 'auto-cost' ledger name. */
-async function costOne(sessionId, transcriptArg, hostName = host.currentHost(process.env, { transcript_path: transcriptArg })) {
+async function costOne(sessionId, transcriptArg, hostName = hostForRun(sessionId, transcriptArg)) {
   await withReport('auto-cost', async (report) => {
     if (!costEnabled()) { report.disable('cost disabled'); return; }
     report.host = hostName;
@@ -227,4 +243,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { findTranscript, costTranscript, costCodexRollout, runModelFor, costOne };
+module.exports = { findTranscript, costTranscript, costCodexRollout, runModelFor, hostForRun, backfill, costOne };
