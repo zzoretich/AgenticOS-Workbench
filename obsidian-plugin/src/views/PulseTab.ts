@@ -1,6 +1,7 @@
 import { TAbstractFile } from "obsidian";
 import * as fs from "fs";
 import * as path from "path";
+import * as os from "os";
 import type AgenticOSPlugin from "../../main";
 import type { WorkbenchView } from "./WorkbenchView";
 import { loadSnapshot, Snapshot, SNAPSHOT_PATH } from "../data/snapshot";
@@ -25,6 +26,19 @@ function transcriptExists(sid: string, configDir: string): boolean {
   let dirs: string[] = [];
   try { dirs = fs.readdirSync(root); } catch { return false; }
   return dirs.some((d) => fs.existsSync(path.join(root, d, `${sid}.jsonl`)));
+}
+
+/** True when a Codex rollout for `sid` exists under <codex home>/sessions/YYYY/MM/DD or archived_sessions — mirrors
+ *  lib/host.js findTranscript('codex'), so a Codex run counts as backfillable exactly when auto-cost can cost it. */
+function codexRolloutExists(sid: string, codexHome: string): boolean {
+  const named = (f: string) => f.startsWith("rollout-") && f.endsWith(`-${sid}.jsonl`);
+  const ls = (d: string): string[] => { try { return fs.readdirSync(d); } catch { return []; } };
+  if (ls(path.join(codexHome, "archived_sessions")).some(named)) return true;
+  const root = path.join(codexHome, "sessions");
+  for (const y of ls(root)) for (const m of ls(path.join(root, y))) for (const d of ls(path.join(root, y, m))) {
+    if (ls(path.join(root, y, m, d)).some(named)) return true;
+  }
+  return false;
 }
 
 export class PulseTab {
@@ -104,6 +118,8 @@ export class PulseTab {
   private countBackfillable(runs: AgentRun[]): number {
     try {
       const configDir = this.plugin.claudeConfigDir();
+      const cfg = readAgenticosJson();
+      const codexHome = cfg?.hosts?.codex?.home || process.env.CODEX_HOME || path.join(os.homedir(), ".codex");
       const seen = new Set<string>();
       let count = 0;
       for (const r of runs) {
@@ -111,7 +127,8 @@ export class PulseTab {
         const sid = (r as AgentRun & { session_id?: string }).session_id || (r.id || "").replace(/^sess-/, "");
         if (!sid || seen.has(sid)) continue;
         seen.add(sid);
-        if (transcriptExists(sid, configDir)) count++;
+        const isCodex = (r as AgentRun & { host?: string }).host === "codex";
+        if (isCodex ? codexRolloutExists(sid, codexHome) : transcriptExists(sid, configDir)) count++;
       }
       return count;
     } catch (e) {
