@@ -146,7 +146,7 @@ test('persona/routines seeds the watchdog heartbeat (command), the hourly tick (
   const tick = all.find((r) => r.slug === 'tick');
   assert.equal(tick.guarded, true);
   assert.equal(tick.budgetUsd, 0.1);
-  assert.match(tick.tools, /^Read,Glob,Grep,Write,Edit,Bash\(date:\*\),Bash\(\{\{NODE\}\} \{\{VAULT\}\}\/brain\/scripts\/persona\/tick\.js:\*\)/);
+  assert.match(tick.tools, /^Read,Glob,Grep,Bash\(date:\*\),Bash\(\{\{NODE\}\} \{\{VAULT\}\}\/brain\/scripts\/persona\/tick\.js:\*\)/);
   assert.ok(!/git/.test(tick.tools), 'the tick never runs git');
   assert.match(tick.body, /persona\/duties\/tick\.md/);
   assert.match(read('persona/duties/tick.md'), /tick\.js signals/);

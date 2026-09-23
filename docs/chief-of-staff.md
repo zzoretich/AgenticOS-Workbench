@@ -84,9 +84,33 @@ runner records FAILED and adds a flag to `STATE.md`. A duty that runs past `PERS
 (default 1800 s) is killed and journaled FAILED too; `claude -p` prints its cost only at the end,
 so such a run ledgers $0 and only `--max-budget-usd` (`persona.perDutyUsd`) bounds what it
 spent. A duty never runs `git commit`: `STATE.md`
-and `journal/` are ignored by the vault's `.gitignore`, and anything else it edits stays in the
-working tree for you to review. Env: `PERSONA_MODEL`, `PERSONA_EFFORT`, `PERSONA_LOG_DIR`,
-`PERSONA_TOOLS`, `PERSONA_MAX_USD`, `PERSONA_TIMEOUT`, `PERSONA_CLAUDE_BIN`, `AOS_NODE`.
+and `journal/` are ignored by the vault's `.gitignore`, and anything else it edits (inside its write
+scope, below) stays in the working tree for you to review. Env: `PERSONA_MODEL`, `PERSONA_EFFORT`, `PERSONA_LOG_DIR`,
+`PERSONA_TOOLS`, `PERSONA_WRITES`, `PERSONA_MAX_USD`, `PERSONA_TIMEOUT`, `PERSONA_CLAUDE_BIN`, `AOS_NODE`.
+
+### What a duty may write
+
+A duty is steered by text it did not write (commit subjects, correction quotes, journal lines), so the runner limits
+what it can write, on both hosts (`docs/superpowers/specs/2026-09-23-duty-write-scope-design.md`):
+
+- **The write scope**: `persona/journal/`, `persona/STATE.md`, `persona/proposals/`, `persona/PLAYBOOK.md`,
+  `brain/reflections/`, `brain/_index/sitrep.md` and today's daily-note folder, plus the routine's `writes:` entries.
+  An entry that is the vault, sits in or holds a guarded or executable area (`persona/IDENTITY.md`, `duties/`,
+  `routines/`, `autoapply.json`, `flag-closer/`, `repos.json`, `ledger.jsonl`, `brain/scripts/`, `brain/routines/`,
+  `workspaces/`) or has a dot-segment is refused and logged.
+- **Claude Code**: `--permission-mode dontAsk`, so your settings' `defaultMode` never widens a duty; the routine's
+  `tools` without write tools, `git log`/`diff`/`show` or unrestricted `Bash`; one absolute `Edit(//…)` rule per
+  scope entry; deny rules for the guarded and executable areas and for `git … --output`.
+- **Codex**: the duty's workspace is `persona/` (`-C`) with one `--add-dir` per other scope folder, so the sandbox
+  refuses `brain/scripts/`, `workspaces/`, `.obsidian/` and the vault's `.git`. A file entry grants its folder
+  (Codex roots are folders); a file at the vault root cannot be granted.
+- **Both**: the persona scripts a duty may call refuse a `--root`, `--file` or file argument outside the vault under
+  `AOS_HEADLESS=1`. Before the run, `persona/duty-guard.js` copies `IDENTITY.md`, `duties/`, `routines/`,
+  `autoapply.json`, `flag-closer/` and `repos.json` to `agenticos-duty-guard/` next to `agenticos.json`; after it,
+  any of them the duty added, changed or removed is restored, the duty's version kept in
+  `persona/journal/logs/guard-<duty>-<time>/`, `ledger.jsonl` keeps only appended `filed` events, `STATE.md` gets a
+  flag and the run ends FAILED. Under Codex those files are writable during the run and restored after it; under
+  Claude Code they are never writable.
 `PERSONA_NAME` is set by the schedules (plists and cron lines) so that `aos persona rename` has
 something to re-render; the runner takes the name from `IDENTITY.md` and never reads it.
 

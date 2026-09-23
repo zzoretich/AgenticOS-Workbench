@@ -11,7 +11,8 @@
 #                          the only "model" key there — else haiku)          # execution amendment 2026-09-15 (A27)
 #        PERSONA_EFFORT    low|medium|high (default medium)
 #        PERSONA_LOG_DIR   default <vault>/persona/journal/logs
-#        PERSONA_TOOLS     --allowedTools value
+#        PERSONA_TOOLS     --allowedTools value (write tools and git read-outs are dropped: the write scope decides writes)
+#        PERSONA_WRITES    comma list of extra vault-relative paths the duty may write (a routine's `writes:`)
 #        PERSONA_MAX_USD   --max-budget-usd for this run (default persona.perDutyUsd from config, else 2)
 #        PERSONA_CLAUDE_BIN  claude binary (default: claude.bin from agenticos.json, then `command -v claude`,
 #                          then $HOME/.local/bin/claude — contract §2 addendum order)   # execution amendment 2026-09-15 (A24)
@@ -25,6 +26,9 @@
 # passed; --setting-sources "" is deliberately NOT passed — a duty may read the vault's CLAUDE.md and
 # settings, unlike the brain's own claude -p recipe (sdk/lib/claude-cli.js).   # execution amendment 2026-09-15 (A25)
 # Git: this runner never commits — the vault ignores persona/journal/ and persona/STATE.md.   # (A7)
+# Write scope and guard (spec 2026-09-23-duty-write-scope-design): duty-guard.js builds what the host enforces before the
+# run (Claude: dontAsk, absolute Edit rules, deny rules; Codex: persona/ as the workspace plus --add-dir folders),
+# snapshots the persona trust files, and after the run restores any it changed — the run then ends FAILED.
 set -u
 unset CLAUDECODE
 
@@ -69,11 +73,11 @@ ERR="$PERSONA_LOG_DIR/duty-$DUTY-error.log"
 MODEL="${PERSONA_MODEL:-$(json_value model)}"; MODEL="${MODEL:-haiku}"   # json_value is a flat scan: the only "model" key is claude.model
 EFFORT="${PERSONA_EFFORT:-medium}"
 MAX_USD="${PERSONA_MAX_USD:-}"     # empty → persona.perDutyUsd from --check below → 2
-# Scoped allowlist (not bypassPermissions): node is pinned to the two persona scripts; git is limited to
-# status/log/diff, so a duty can neither commit nor push (final review F3/safety-5, departs from A26 — git
-# add/commit were dropped: docs/chief-of-staff.md promises a duty never commits, and nothing needed the verbs).
-# Write/Edit are unscoped — guarded files rely on the proposal protocol plus git history, not on the permission layer.
-PERSONA_TOOLS="${PERSONA_TOOLS:-Read,Write,Edit,Glob,Grep,Bash(git status:*),Bash(git log:*),Bash(git diff:*),Bash(date:*),Bash(ls:*),Bash(grep:*),Bash(wc:*),Bash(tail:*),Bash(head:*),Bash($NODE $VAULT/brain/scripts/persona/sitrep-state.js:*),Bash($NODE $VAULT/brain/scripts/persona/scan-arsenal.js:*),Bash($NODE $VAULT/brain/scripts/persona/ledger.js:*),Bash($NODE $VAULT/brain/scripts/persona/proposal-html.js:*),Bash($NODE $VAULT/brain/scripts/persona/reflect.js:*),Bash(node $VAULT/brain/scripts/persona/sitrep-state.js:*),Bash(node $VAULT/brain/scripts/persona/scan-arsenal.js:*),Bash(node $VAULT/brain/scripts/persona/ledger.js:*),Bash(node $VAULT/brain/scripts/persona/proposal-html.js:*),Bash(node $VAULT/brain/scripts/persona/reflect.js:*),Bash($NODE brain/scripts/persona/reflect.js:*),Bash(node brain/scripts/persona/reflect.js:*),Bash($NODE brain/scripts/persona/ledger.js:*),Bash($NODE brain/scripts/persona/proposal-html.js:*),Bash(node brain/scripts/persona/ledger.js:*),Bash(node brain/scripts/persona/proposal-html.js:*)}"
+# Scoped allowlist (not bypassPermissions): node is pinned to the persona scripts; git is limited to status, so a duty
+# can neither commit nor push (final review F3/safety-5, departs from A26 — git add/commit were dropped:
+# docs/chief-of-staff.md promises a duty never commits) nor write a file through `git log/diff --output=` (duty-write-scope
+# D2). No Write/Edit here: duty-guard.js adds one Edit rule per path in the duty's write scope (D1).
+PERSONA_TOOLS="${PERSONA_TOOLS:-Read,Glob,Grep,Bash(git status:*),Bash(date:*),Bash(ls:*),Bash(grep:*),Bash(wc:*),Bash(tail:*),Bash(head:*),Bash($NODE $VAULT/brain/scripts/persona/sitrep-state.js:*),Bash($NODE $VAULT/brain/scripts/persona/scan-arsenal.js:*),Bash($NODE $VAULT/brain/scripts/persona/ledger.js:*),Bash($NODE $VAULT/brain/scripts/persona/proposal-html.js:*),Bash($NODE $VAULT/brain/scripts/persona/reflect.js:*),Bash(node $VAULT/brain/scripts/persona/sitrep-state.js:*),Bash(node $VAULT/brain/scripts/persona/scan-arsenal.js:*),Bash(node $VAULT/brain/scripts/persona/ledger.js:*),Bash(node $VAULT/brain/scripts/persona/proposal-html.js:*),Bash(node $VAULT/brain/scripts/persona/reflect.js:*),Bash($NODE brain/scripts/persona/reflect.js:*),Bash(node brain/scripts/persona/reflect.js:*),Bash($NODE brain/scripts/persona/ledger.js:*),Bash($NODE brain/scripts/persona/proposal-html.js:*),Bash(node brain/scripts/persona/ledger.js:*),Bash(node brain/scripts/persona/proposal-html.js:*)}"
 RECORD="$SCRIPT_DIR/record-spend.js"     # sibling: repo checkout in tests, <vault>/brain/scripts/persona/ when installed
 TODAY="$(date +%Y-%m-%d)"
 NOW="$(date +%H:%M)"
@@ -87,6 +91,12 @@ UTC_JOURNAL="$PERSONA/journal/$(date -u +%Y-%m-%d).md"
 duty_entries() {
   c=$(grep -c "duty: $DUTY" "$1" 2>/dev/null || true)
   echo "${c:-0}"
+}
+# flag_state <line>: <line> right under '## Flags' in STATE.md — portable insert (no sed -i).
+flag_state() {
+  [ -f "$PERSONA/STATE.md" ] || return 0
+  TMP="$PERSONA/STATE.md.tmp.$$"
+  awk -v line="$1" '{ print } /^## Flags[[:space:]]*$/ { print line }' "$PERSONA/STATE.md" > "$TMP" && mv "$TMP" "$PERSONA/STATE.md"
 }
 
 if [ -f "$PERSONA/DISABLED" ]; then
@@ -124,6 +134,37 @@ if [ -n "$NODE" ] && [ -x "$NODE" ] && [ -f "$SCRIPT_DIR/../lib/headless.js" ]; 
   esac
 fi
 
+# Write scope (duty-write-scope D1/D2/D4/D5). No node or no duty-guard.js → no scope → the duty does not run.
+GUARD="$SCRIPT_DIR/duty-guard.js"
+if [ -z "$NODE" ] || [ ! -x "$NODE" ] || [ ! -f "$GUARD" ]; then
+  echo "run-duty: node or duty-guard.js missing — '$DUTY' does not run without its write scope" >&2
+  exit 1
+fi
+# duty_scope <host>: duty-guard.js scope; refused writes: entries go to the error log (stderr on a dry run).
+duty_scope() {
+  if [ "$DRY_RUN" = "--dry-run" ]; then
+    AOS_VAULT="$VAULT" AOS_CONFIG="$CONFIG" "$NODE" "$GUARD" scope --host "$1" --tools "$PERSONA_TOOLS" --writes "${PERSONA_WRITES:-}" --dry-run
+  else
+    mkdir -p "$PERSONA_LOG_DIR"
+    AOS_VAULT="$VAULT" AOS_CONFIG="$CONFIG" "$NODE" "$GUARD" scope --host "$1" --tools "$PERSONA_TOOLS" --writes "${PERSONA_WRITES:-}" 2>> "$ERR"
+  fi
+}
+# Codex: the positional parameters become the `--add-dir <folder>` pairs (POSIX sh has no arrays; $1/$2 are read above).
+# Claude: line 1 is the --allowedTools value, line 2 the --disallowedTools value.
+ALLOWED=""; DENIED=""
+if [ "$RUNNER" = "codex" ]; then
+  ADD_DIRS="$(duty_scope codex)" || { echo "run-duty: duty-guard.js scope failed — '$DUTY' does not run" >&2; exit 1; }
+  set --
+  while IFS= read -r d; do [ -n "$d" ] && set -- "$@" --add-dir "$d"; done <<EOF
+$ADD_DIRS
+EOF
+else
+  SCOPE="$(duty_scope claude)" || { echo "run-duty: duty-guard.js scope failed — '$DUTY' does not run" >&2; exit 1; }
+  ALLOWED="$(printf '%s\n' "$SCOPE" | sed -n 1p)"
+  DENIED="$(printf '%s\n' "$SCOPE" | sed -n 2p)"
+  set --
+fi
+
 # Hooks do not run under AOS_HEADLESS=1, so the persona is injected here instead.
 # The date line pins "today": a duty running just after midnight otherwise infers the date from STATE.md and the
 # journal (both still yesterday's), appends its entry to yesterday's file, and the contract check below reads FAILED.
@@ -138,13 +179,14 @@ PROMPT="$(awk -v today="$TODAY" -v now="$NOW" '
 
 if [ "$DRY_RUN" = "--dry-run" ]; then
   if [ "$RUNNER" = "codex" ]; then
-    printf '%s\n' "$CODEX_BIN" "exec" "-" "--skip-git-repo-check" "--ephemeral" "-s" "workspace-write" "-c" "features.hooks=false" \
+    printf '%s\n' "$CODEX_BIN" "exec" "-" "--skip-git-repo-check" "--ephemeral" "-s" "workspace-write" \
+      "-C" "$PERSONA" "-c" "sandbox_workspace_write.writable_roots=[]" "$@" "-c" "features.hooks=false" \
       "--json" "-o" "<last message file>" ${CODEX_MODEL:+-m "$CODEX_MODEL"} "-c" "model_reasoning_effort=\"$EFFORT\"" \
       "<duty $DUTY on stdin, after persona IDENTITY.md + STATE.md>"
     exit 0
   fi
-  printf '%s\n' "$CLAUDE_BIN" "-p" "<duty $DUTY>" "--model" "$MODEL" "--effort" "$EFFORT" \
-    "--allowedTools" "$PERSONA_TOOLS" "--max-budget-usd" "${MAX_USD:-2}" "--output-format" "json" \
+  printf '%s\n' "$CLAUDE_BIN" "-p" "<duty $DUTY>" "--model" "$MODEL" "--effort" "$EFFORT" "--permission-mode" "dontAsk" \
+    "--allowedTools" "$ALLOWED" "--disallowedTools" "$DENIED" "--max-budget-usd" "${MAX_USD:-2}" "--output-format" "json" \
     "--strict-mcp-config" "--no-session-persistence" \
     "--append-system-prompt" "<persona IDENTITY.md + STATE.md>"
   exit 0
@@ -196,6 +238,12 @@ if [ -n "$HELPER" ] && [ -f "$HELPER" ] && [ -n "$NODE" ] && [ -x "$NODE" ]; the
   fi
 fi
 
+# Guard (duty-write-scope D6/D7): snapshot the persona trust files outside the vault; no snapshot → no run.
+if ! AOS_VAULT="$VAULT" AOS_CONFIG="$CONFIG" "$NODE" "$GUARD" snapshot "$DUTY" >> "$LOG" 2>> "$ERR"; then
+  echo "[$(date)] duty=$DUTY not run: duty-guard.js snapshot failed — see $ERR" >> "$LOG"
+  exit 1
+fi
+
 LOG_MODEL="$MODEL"; [ "$RUNNER" = "codex" ] && LOG_MODEL="${CODEX_MODEL:-codex-default}"
 echo "[$(date)] duty=$DUTY runner=$RUNNER model=$LOG_MODEL effort=$EFFORT budget=$MAX_USD start" >> "$LOG"
 BEFORE_COUNT=$(duty_entries "$JOURNAL")
@@ -208,12 +256,16 @@ if [ "$RUNNER" = "codex" ]; then
   # the codex process itself, and a pipeline element cannot do that). --json events land in $OUT for the ledger.
   IN="$(mktemp "${TMPDIR:-/tmp}/duty-$DUTY-in.XXXXXX")"
   { printf '%s\n\n---\n\n' "$SYSTEM"; printf '%s' "$PROMPT"; } > "$IN"
-  ( cd "$VAULT" && AOS_HEADLESS=1 exec "$CODEX_BIN" exec - --skip-git-repo-check --ephemeral -s workspace-write \
+  # The workspace is persona/, not the vault (D4): the sandbox then refuses brain/scripts, workspaces/, .obsidian/ and
+  # the vault's .git; "$@" adds the scope's other folders; an empty writable_roots drops any a user config.toml adds.
+  ( cd "$PERSONA" && AOS_HEADLESS=1 exec "$CODEX_BIN" exec - --skip-git-repo-check --ephemeral -s workspace-write \
+      -C "$PERSONA" -c 'sandbox_workspace_write.writable_roots=[]' "$@" \
       -c features.hooks=false --json -o "$OUT.msg" ${CODEX_MODEL:+-m "$CODEX_MODEL"} -c "model_reasoning_effort=\"$EFFORT\"" \
       < "$IN" > "$OUT" 2>> "$ERR" ) &
 else
-  ( cd "$VAULT" && AOS_HEADLESS=1 exec "$CLAUDE_BIN" -p "$PROMPT" --model "$MODEL" --effort "$EFFORT" \
-      --allowedTools "$PERSONA_TOOLS" --max-budget-usd "$MAX_USD" --output-format json \
+  # dontAsk: only the allowlist runs, whatever defaultMode the user's settings carry; the deny rules beat any allow rule.
+  ( cd "$VAULT" && AOS_HEADLESS=1 exec "$CLAUDE_BIN" -p "$PROMPT" --model "$MODEL" --effort "$EFFORT" --permission-mode dontAsk \
+      --allowedTools "$ALLOWED" --disallowedTools "$DENIED" --max-budget-usd "$MAX_USD" --output-format json \
       --strict-mcp-config --no-session-persistence \
       --append-system-prompt "$SYSTEM" > "$OUT" 2>> "$ERR" ) &
 fi
@@ -230,12 +282,31 @@ KILLER_PID=$!
 wait "$CLAUDE_PID"; STATUS=$?
 kill "$KILLER_PID" 2>/dev/null; wait "$KILLER_PID" 2>/dev/null
 
+# Guard check before anything else runs from the vault: exit 4 = guarded files restored (duty-guard.js flagged STATE.md
+# and kept the duty's version); any other non-zero = the check itself failed.
+GUARD_RC=0
+GUARD_OUT="$(AOS_VAULT="$VAULT" AOS_CONFIG="$CONFIG" "$NODE" "$GUARD" check "$DUTY" --keep "$PERSONA_LOG_DIR" 2>> "$ERR")" || GUARD_RC=$?
+[ "$GUARD_RC" -eq 0 ] || echo "[$(date)] duty=$DUTY guard exit $GUARD_RC $GUARD_OUT" >> "$LOG"
+
 cat "$OUT" >> "$LOG"
 if [ -n "$NODE" ] && [ -x "$NODE" ] && [ -f "$RECORD" ] && [ -s "$OUT" ]; then
   SPEND_MODEL="$MODEL"; [ "$RUNNER" = "codex" ] && SPEND_MODEL="${CODEX_MODEL:-codex-default}"
   AOS_VAULT="$VAULT" AOS_CONFIG="$CONFIG" "$NODE" "$RECORD" --file "$OUT" --feature "duty:$DUTY" --model "$SPEND_MODEL" >> "$LOG" 2>> "$ERR" || true
 fi
 rm -f "$OUT" "$OUT.msg"; [ -n "$IN" ] && rm -f "$IN"
+
+# A duty that wrote a guarded file failed, whatever it journaled; no helper beat follows.
+if [ "$GUARD_RC" -ne 0 ]; then
+  {
+    echo ""
+    echo "## $(date +%H:%M) — duty: $DUTY"
+    echo "- status: FAILED"
+    echo "- did: runner-detected guard failure (duty-guard exit $GUARD_RC) — see $LOG"
+  } >> "$JOURNAL"
+  [ "$GUARD_RC" -eq 4 ] || flag_state "- [ ] $TODAY duty '$DUTY' FAILED — its guard check did not complete (exit $GUARD_RC), check $ERR"
+  echo "[$(date)] duty=$DUTY FAILED (guard exit $GUARD_RC)" >> "$LOG"
+  exit 1
+fi
 
 # Duty contract check: the duty must have added a NEW journal entry this run
 # (a plain grep would match a prior run's watchdog entry and self-satisfy). An entry filed under the UTC day
@@ -252,12 +323,7 @@ if [ "$AFTER_COUNT" -le "$BEFORE_COUNT" ]; then
     echo "- status: FAILED"
     echo "- did: runner-detected failure (exit $STATUS, no journal entry) — see $ERR"
   } >> "$JOURNAL"
-  # Flag it in STATE.md right under '## Flags' — portable insert (no sed -i).
-  if [ -f "$PERSONA/STATE.md" ]; then
-    TMP="$PERSONA/STATE.md.tmp.$$"
-    awk -v line="- [ ] $TODAY duty '$DUTY' FAILED — check $ERR" \
-      '{ print } /^## Flags[[:space:]]*$/ { print line }' "$PERSONA/STATE.md" > "$TMP" && mv "$TMP" "$PERSONA/STATE.md"
-  fi
+  flag_state "- [ ] $TODAY duty '$DUTY' FAILED — check $ERR"
   # No commit here: the vault template ignores persona/journal/ and persona/STATE.md, and a background job must
   # never run a pathspec-less `git commit` over whatever the user had staged. execution amendment 2026-09-15 (A7)
   echo "[$(date)] duty=$DUTY FAILED (contract unmet)" >> "$LOG"

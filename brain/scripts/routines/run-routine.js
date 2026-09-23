@@ -101,6 +101,8 @@ function plan(routine, cfg, deps) {
     const env = { ...deps.env };
     if (routine.budgetUsd !== undefined) env.PERSONA_MAX_USD = String(routine.budgetUsd);
     if (typeof routine.tools === 'string' && routine.tools.trim()) env.PERSONA_TOOLS = expandArgv(routine.tools, deps);
+    // Extra write scope on top of the default one (spec 2026-09-23-duty-write-scope-design D5); duty-guard.js checks it.
+    if (Array.isArray(routine.writes) && routine.writes.length) env.PERSONA_WRITES = routine.writes.join(',');
     return { cmd: 'sh', args: [path.join(deps.vault, 'brain', 'scripts', 'persona', 'run-duty.sh'), routine.slug], env, feature: `duty:${routine.slug}` };
   }
   if (routine.kind === 'prompt') {

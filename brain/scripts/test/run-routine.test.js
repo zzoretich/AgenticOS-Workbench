@@ -174,6 +174,13 @@ test('duty kind: budgetUsd and tools in the routine file reach run-duty.sh as PE
   assert.equal(d.calls[0].opts.env.CLAUDECODE, '1', 'the rest of the env is still passed through');
 });
 
+test('duty kind: writes in the routine file reach run-duty.sh as PERSONA_WRITES (spec 2026-09-23-duty-write-scope-design D5)', async () => {
+  put('sitrep', { kind: 'duty', writes: ['notes/inbox/', 'TODO.md'] });
+  const d = deps();
+  assert.equal(await runRoutine('sitrep', { deps: d }), 0);
+  assert.equal(d.calls[0].opts.env.PERSONA_WRITES, 'notes/inbox/,TODO.md');
+});
+
 test('prompt kind: claude -p argv, headless env, ledger row routine:<slug>, cost recorded', async () => {
   put('brief', { kind: 'prompt', model: 'sonnet', effort: 'low', budgetUsd: 0.5 }, 'Write the brief.\n');
   const json = JSON.stringify({ type: 'result', result: 'done', total_cost_usd: 0.0421, usage: { input_tokens: 10, output_tokens: 5 }, duration_ms: 900 });
