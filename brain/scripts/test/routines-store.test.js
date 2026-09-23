@@ -53,6 +53,9 @@ test('validate: kind-specific rules and the slug rule', () => {
   assert.deepEqual(store.validate({ ...base, kind: 'duty', body: '', budgetUsd: 0.05, tools: 'Read,Glob' }), [], 'a duty may carry its own budget and allowlist');
   assert.match(store.validate({ ...base, kind: 'duty', budgetUsd: -1 }).join(), /budgetUsd/);
   assert.match(store.validate({ ...base, kind: 'duty', tools: ['Read'] }).join(), /tools/);
+  assert.deepEqual(store.validate({ ...base, kind: 'duty', body: '', writes: ['notes/inbox/', 'TODO.md'] }), [], 'a duty may widen its write scope');
+  assert.match(store.validate({ ...base, kind: 'duty', writes: 'notes/' }).join(), /writes/);
+  assert.match(store.validate({ ...base, kind: 'duty', writes: ['a,b'] }).join(), /writes/);
   assert.match(store.validate({ ...base, kind: 'duty', tools: ' ' }).join(), /tools/);
   assert.match(store.validate({ ...base, body: '' }).join(), /needs a body/);
   assert.match(store.validate({ ...base, effort: 'max' }).join(), /effort/);

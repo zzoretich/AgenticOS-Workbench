@@ -6,7 +6,7 @@ schedule: "0 22 * * *"
 enabled: true
 guarded: true
 budgetUsd: 0.5
-tools: "Read,Glob,Grep,Write,Edit,Bash(date:*),Bash(ls:*),Bash(git status:*),Bash(git log:*),Bash(git diff:*),Bash({{NODE}} {{VAULT}}/brain/scripts/persona/reflect.js:*),Bash({{NODE}} {{VAULT}}/brain/scripts/persona/ledger.js:*),Bash({{NODE}} {{VAULT}}/brain/scripts/persona/proposal-html.js:*),Bash({{NODE}} brain/scripts/persona/reflect.js:*),Bash({{NODE}} brain/scripts/persona/ledger.js:*),Bash({{NODE}} brain/scripts/persona/proposal-html.js:*),Bash(node brain/scripts/persona/reflect.js:*),Bash(node brain/scripts/persona/ledger.js:*),Bash(node brain/scripts/persona/proposal-html.js:*)"
+tools: "Read,Glob,Grep,Bash(date:*),Bash(ls:*),Bash(git status:*),Bash({{NODE}} {{VAULT}}/brain/scripts/persona/reflect.js:*),Bash({{NODE}} {{VAULT}}/brain/scripts/persona/ledger.js:*),Bash({{NODE}} {{VAULT}}/brain/scripts/persona/proposal-html.js:*),Bash({{NODE}} brain/scripts/persona/reflect.js:*),Bash({{NODE}} brain/scripts/persona/ledger.js:*),Bash({{NODE}} brain/scripts/persona/proposal-html.js:*),Bash(node brain/scripts/persona/reflect.js:*),Bash(node brain/scripts/persona/ledger.js:*),Bash(node brain/scripts/persona/proposal-html.js:*)"
 timeoutSec: 900
 tags: [persona]
 ---

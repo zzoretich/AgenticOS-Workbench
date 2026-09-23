@@ -22,6 +22,7 @@ function sandbox() {
     '#!/bin/sh',
     '[ -n "${FAKE_ARGS:-}" ] && printf "%s\\n" "$@" > "$FAKE_ARGS"',
     '[ -n "${FAKE_JOURNAL:-}" ] && { mkdir -p "$(dirname "$FAKE_JOURNAL")"; printf "\\n## 09:00 — duty: testduty\\n- status: OK\\n" >> "$FAKE_JOURNAL"; }',
+    '[ -n "${FAKE_TAMPER:-}" ] && { mkdir -p "$(dirname "$FAKE_TAMPER")"; echo tampered >> "$FAKE_TAMPER"; }',
     'echo "{\\"type\\":\\"result\\",\\"result\\":\\"done\\",\\"total_cost_usd\\":0.0123,\\"usage\\":{\\"input_tokens\\":10,\\"output_tokens\\":5},\\"duration_ms\\":100}"',
     '',
   ].join('\n'), { mode: 0o755 });
@@ -370,8 +371,61 @@ test('tick helper: the budget and allowlist come from the env like any duty (run
   const r = run(['tick', '--dry-run'], { ...s.env, PERSONA_MAX_USD: '0.05', PERSONA_TOOLS: 'Read,Glob,Grep,Bash(node tick.js:*)' });
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /^--max-budget-usd\n0\.05$/m);
-  assert.match(r.stdout, /^--allowedTools\nRead,Glob,Grep,Bash\(node tick\.js:\*\)$/m);
+  assert.match(r.stdout, /^--allowedTools\nRead,Glob,Grep,Bash\(node tick\.js:\*\),Edit\(\/\//m, 'the routine\'s tools, then the write scope');
   assert.ok(!fs.existsSync(path.join(s.vault, 'brain', '_index', 'persona-tick.json')), 'dry-run runs no precheck');
+});
+
+// ── duty write scope (spec 2026-09-23-duty-write-scope-design) ──────────────────────────────────────────────────────
+
+/** The value printed after `flag` in a dry-run listing, split into rules. */
+function dryValue(stdout, flag) {
+  const lines = stdout.split('\n');
+  return require('../persona/duty-guard.js').splitTools(lines[lines.indexOf(flag) + 1]);
+}
+
+test('claude dry-run: dontAsk, no write tool or git read-out survives, absolute Edit rules for the scope, deny rules for the guarded areas', () => {
+  const s = sandbox();
+  const tools = 'Read,Write,Edit,Bash,Bash(git log:*),Bash(git status:*)';
+  const r = run(['testduty', '--dry-run'], { ...s.env, PERSONA_TOOLS: tools, PERSONA_WRITES: 'notes/inbox/,persona/routines/' });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /^--permission-mode\ndontAsk$/m);
+  const allowed = dryValue(r.stdout, '--allowedTools');
+  const denied = dryValue(r.stdout, '--disallowedTools');
+  assert.deepEqual(allowed.filter((a) => !a.startsWith('Edit(')), ['Read', 'Bash(git status:*)']);
+  const real = fs.realpathSync(s.vault);
+  assert.ok(allowed.includes(`Edit(/${real}/persona/journal/**)`));
+  assert.ok(allowed.includes(`Edit(/${real}/notes/inbox/**)`), 'writes: adds to the scope');
+  assert.ok(!allowed.some((a) => a.includes('persona/routines')), 'a guarded writes: entry is refused');
+  assert.match(r.stderr, /writes entry 'persona\/routines\/' refused/);
+  assert.ok(denied.includes('Bash(git *--output*)'));
+  assert.ok(denied.includes(`Edit(/${real}/brain/scripts/**)`) && denied.includes(`Edit(/${real}/persona/routines/**)`));
+  assert.ok(!fs.existsSync(s.logDir), 'dry-run still writes no logs');
+});
+
+test('a duty that writes a guarded file fails: the file is restored, its version kept, STATE.md flagged, no snapshot left', () => {
+  const s = sandbox();
+  fs.mkdirSync(path.join(s.vault, 'persona', 'routines'), { recursive: true });
+  const routine = path.join(s.vault, 'persona', 'routines', 'heartbeat.md');
+  fs.writeFileSync(routine, 'argv: ["node", "watchdog.js"]\n');
+  const r = run(['testduty'], { ...s.env, FAKE_JOURNAL: s.journal, FAKE_TAMPER: routine });
+  assert.equal(r.status, 1, r.stderr);
+  assert.equal(fs.readFileSync(routine, 'utf8'), 'argv: ["node", "watchdog.js"]\n', 'restored from the snapshot');
+  const kept = fs.readdirSync(s.logDir).find((n) => n.startsWith('guard-testduty-'));
+  assert.ok(kept, 'the duty\'s version is kept in the log folder');
+  assert.match(fs.readFileSync(path.join(s.logDir, kept, 'persona', 'routines', 'heartbeat.md'), 'utf8'), /tampered/);
+  assert.match(fs.readFileSync(s.journal, 'utf8'), /- status: FAILED\n- did: runner-detected guard failure \(duty-guard exit 4\)/);
+  assert.match(fs.readFileSync(path.join(s.vault, 'persona', 'STATE.md'), 'utf8'), /duty 'testduty' wrote guarded file\(s\) persona\/routines\/heartbeat\.md — restored/);
+  assert.match(fs.readFileSync(path.join(s.logDir, 'duty-testduty.log'), 'utf8'), /FAILED \(guard exit 4\)/);
+  assert.ok(!fs.existsSync(path.join(s.vault, 'agenticos-duty-guard', 'testduty')), 'the snapshot (config home = the test vault here) is gone');
+});
+
+test('a clean duty leaves the guard silent: exit 0, no flag, no kept copy, no snapshot', () => {
+  const s = sandbox();
+  const r = run(['testduty'], { ...s.env, FAKE_JOURNAL: s.journal });
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(!fs.readdirSync(s.logDir).some((n) => n.startsWith('guard-')));
+  assert.ok(!fs.readFileSync(path.join(s.vault, 'persona', 'STATE.md'), 'utf8').includes('guard'));
+  assert.ok(!fs.existsSync(path.join(s.vault, 'agenticos-duty-guard', 'testduty')));
 });
 
 test('codex runner: with no claude and a codex host, the duty runs through `codex exec -` (prompt on stdin), journals, and ledgers an estimated codex row (codex-parity D4/D5)', () => {
@@ -416,4 +470,29 @@ test('codex runner: with no claude and a codex host, the duty runs through `code
   const pinned = run(['testduty', '--dry-run'], env);
   assert.equal(pinned.status, 0);
   assert.match(pinned.stdout.split('\n')[0], /\/\.local\/bin\/claude$/);
+});
+
+test('codex: the workspace is persona/, the user config cannot add roots, and the scope\'s other folders arrive as --add-dir', () => {
+  const s = sandbox();
+  const fakeCodex = path.join(__dirname, '..', '..', '..', 'cli', 'fixtures', 'fake-codex.sh');
+  const cfg = path.join(s.vault, 'agenticos.json');
+  fs.writeFileSync(cfg, JSON.stringify({ vault: s.vault, claude: { model: 'haiku' }, hosts: { claude: { enabled: false }, codex: { enabled: true, bin: fakeCodex } } }, null, 2));
+  fs.writeFileSync(path.join(s.vault, 'brain', 'config.json'), JSON.stringify({ provider: 'none', dailyNote: { layout: 'brain/sessions/{yyyy}-{MM}-{dd}.md' } }));
+  const env = { ...s.env, AOS_CONFIG: cfg, AOS_NO_CLAUDE: '1', PATH: '/usr/bin:/bin', HOME: s.vault };
+  delete env.PERSONA_CLAUDE_BIN;
+  const dry = run(['testduty', '--dry-run'], { ...env, PERSONA_WRITES: 'notes/inbox/' });
+  assert.equal(dry.status, 0, dry.stderr);
+  const persona = path.join(s.vault, 'persona');
+  assert.ok(dry.stdout.includes(`-C\n${persona}\n-c\nsandbox_workspace_write.writable_roots=[]\n`));
+  for (const d of ['brain/_index', 'brain/reflections', 'brain/sessions', 'notes/inbox']) {
+    assert.ok(dry.stdout.includes(`--add-dir\n${path.join(s.vault, d)}\n`), d);
+  }
+  assert.ok(!fs.existsSync(path.join(s.vault, 'notes')), 'a dry run creates no folder');
+  assert.ok(!dry.stdout.includes('--allowedTools'), 'codex has no tool allowlist: the sandbox is the guard');
+  const argsFile = path.join(s.vault, 'codex-args.txt');
+  const r = run(['testduty'], { ...env, FAKE_JOURNAL: s.journal, FAKE_ARGS: argsFile });
+  assert.equal(r.status, 0, r.stderr + fs.readFileSync(path.join(s.logDir, 'duty-testduty.log'), 'utf8'));
+  const args = fs.readFileSync(argsFile, 'utf8');
+  assert.ok(args.includes(`-C\n${persona}\n`) && args.includes(`--add-dir\n${path.join(s.vault, 'brain', 'reflections')}\n`));
+  assert.ok(fs.statSync(path.join(s.vault, 'brain', 'sessions')).isDirectory(), 'a real run creates the folders it grants');
 });

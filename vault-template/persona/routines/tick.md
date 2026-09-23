@@ -6,7 +6,7 @@ schedule: "0 * * * *"
 enabled: true
 guarded: true
 budgetUsd: 0.1
-tools: "Read,Glob,Grep,Write,Edit,Bash(date:*),Bash({{NODE}} {{VAULT}}/brain/scripts/persona/tick.js:*),Bash({{NODE}} {{VAULT}}/brain/scripts/persona/ledger.js summary:*)"
+tools: "Read,Glob,Grep,Bash(date:*),Bash({{NODE}} {{VAULT}}/brain/scripts/persona/tick.js:*),Bash({{NODE}} {{VAULT}}/brain/scripts/persona/ledger.js summary:*)"
 timeoutSec: 600
 tags: [persona]
 ---
