@@ -226,9 +226,10 @@ function semanticRow({ g, m, vault, now, runner }) {
   const st = semanticState(g);
   const spend = `today $${graphSpendToday(vault, new Date(now)).toFixed(2)} of $${g.semantic.perDayUsd}${runner && runner.host === 'codex' ? ' · via codex' : ''}`;
   if (!st.on) return { name: 'graph semantic', ok: false, detail: st.why, level: 'info' };
-  if (!runner) return { name: 'graph semantic', ok: false, detail: 'needs the claude or codex CLI (the model pass runs through one of them)', level: 'info' };
+  // A pass holding the lock is running whatever this process can resolve; only then does a missing CLI matter.
   const running = semanticRunning(vault, now);
   if (running) return { name: 'graph semantic', ok: true, detail: `running since ${hhmm(running.startedAt)} · ${spend}`, level: 'warn' };
+  if (!runner) return { name: 'graph semantic', ok: false, detail: 'needs the claude or codex CLI (the model pass runs through one of them)', level: 'info' };
   if (!m || !m.lastSemanticRun) return { name: 'graph semantic', ok: false, detail: `not run yet — the next scan starts it (every ${g.semantic.everyHours} h, ${spend})`, level: 'info' };
   if (m.lastSemanticError) return { name: 'graph semantic', ok: false, detail: `last run failed: ${m.lastSemanticError} — aos graph build --semantic`, level: 'warn' };
   const last = Date.parse(m.lastSemantic || m.lastSemanticRun);
