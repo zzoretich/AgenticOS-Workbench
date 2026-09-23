@@ -518,6 +518,14 @@ test('update-notice records the plugin version it can see', async () => {
   assert.match(w.outs[0], /\(plugin 0\.2\.0, vault 0\.1\.0\)/);
 });
 
+test('the Codex plugin\'s manifest counts too (Codex sets no CLAUDE_PLUGIN_ROOT; bin/aos exports AOS_PLUGIN_ROOT)', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-cxplug-'));
+  fs.mkdirSync(path.join(root, '.codex-plugin'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.codex-plugin', 'plugin.json'), JSON.stringify({ name: 'agenticos', version: '0.4.1' }));
+  assert.equal(U.pluginVersionFrom(root), '0.4.1');
+  assert.equal(U.pluginVersionFrom(fs.mkdtempSync(path.join(os.tmpdir(), 'aos-noplug-'))), null, 'a folder without a manifest (the vault\'s brain/scripts)');
+});
+
 const { spawnSync } = require('child_process');
 
 test('aos.js dispatches the three update commands and rejects a bad flag', () => {

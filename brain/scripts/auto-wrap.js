@@ -321,7 +321,7 @@ function writeWrapStatus(sessionId, providerName) {
   let content;
   try { content = fs.readFileSync(sessionPath, 'utf8'); }
   catch { content = '# SESSION\n\n## Key Context This Session\n\n## Things to Remember\n'; }
-  const body = `- Session ${sessionId} not wrapped (provider: ${providerName}) — run /wrap.`;
+  const body = `- Session ${sessionId} not wrapped (provider: ${providerName}) — run ${host.invocationHint('wrap')}.`;
   fs.writeFileSync(sessionPath, upsertSection(content, '## Wrap Status', body));
 }
 

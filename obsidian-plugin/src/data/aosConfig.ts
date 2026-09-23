@@ -24,7 +24,7 @@ export interface AgenticosJson {
   // The codex provider (design D9): model null = the user's own Codex default; caps over the same hook ledger.
   codex?: { model?: string | null; perCallUsd?: number; perDayUsd?: number; bin?: string };
   // The hosts a session may run under (design D1); absent in configs written before hosts existed (Claude-only).
-  hosts?: { claude?: { enabled?: boolean; configDir?: string; bin?: string }; codex?: { enabled?: boolean; home?: string; bin?: string } };
+  hosts?: { claude?: { enabled?: boolean; configDir?: string; bin?: string }; codex?: { enabled?: boolean; home?: string; bin?: string; install?: "plugin" | "direct" } };
   reasoner?: { model?: string; perCallUsd?: number; perDayUsd?: number; effort?: string };
   ollama?: { host?: string; port?: number };
   telemetry?: { enabled?: boolean; redact?: boolean; retentionDays?: number; staleAfterMinutes?: number };
@@ -93,6 +93,39 @@ export const VAULT_CONFIG_DEFAULTS: VaultConfig = {
 
 export const PROVIDER_STATE_PATH = "brain/_index/provider-state.json";
 export const VAULT_CONFIG_PATH = "brain/config.json";
+
+export type SessionHost = "claude" | "codex";
+
+/** The hosts a session may run under: `hosts.<h>.enabled` not false. A config without `hosts` predates Codex (Claude only). */
+export function sessionHosts(cfg: AgenticosJson | null): SessionHost[] {
+  const h = cfg && cfg.hosts;
+  if (!h) return ["claude"];
+  return (["claude", "codex"] as SessionHost[]).filter((k) => !!h[k] && h[k]!.enabled !== false);
+}
+
+/** How the user invokes a plugin command on `host`: Claude Code `/name`; Codex `$agenticos:name`, or `$name` when wired directly. */
+export function invocation(name: string, host: SessionHost, cfg: AgenticosJson | null): string {
+  if (host === "claude") return `/${name}`;
+  return cfg?.hosts?.codex?.install === "direct" ? `$${name}` : `$agenticos:${name}`;
+}
+
+/** The invocation for every enabled host, for UI text: "/todo", "$agenticos:todo", or "/todo (Claude Code) or $agenticos:todo (Codex)". */
+export function invocationHint(name: string, cfg: AgenticosJson | null): string {
+  const hosts = sessionHosts(cfg);
+  if (hosts.length === 1) return invocation(name, hosts[0], cfg);
+  if (!hosts.length) return `/${name}`;
+  return `${invocation(name, "claude", cfg)} (Claude Code) or ${invocation(name, "codex", cfg)} (Codex)`;
+}
+
+/**
+ * What the Proposals tab's review button types into a fresh terminal: the persona-flag-closer skill in the user's first
+ * host. The Codex form is single-quoted, or the shell would expand `$agenticos` to nothing.
+ */
+export function reviewCommand(cfg: AgenticosJson | null): { host: SessionHost; label: string; command: string } {
+  const host = sessionHosts(cfg)[0] || "claude";
+  if (host === "codex") return { host, label: "Review in Codex ❯_", command: `codex '${invocation("persona-flag-closer", "codex", cfg)}'` };
+  return { host, label: "Review in Claude ❯_", command: 'claude "review persona flags"' };
+}
 
 export function claudeConfigDir(): string {
   return path.resolve(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude"));

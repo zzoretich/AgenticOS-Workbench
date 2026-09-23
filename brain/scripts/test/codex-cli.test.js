@@ -60,6 +60,15 @@ test('buildArgs reproduces the measured recipe: ephemeral, read-only, hooks off,
   assert.ok(!cli.buildArgs({ model: null, effort: 'max', outFile: '/t/o' }).some((x) => /model_reasoning_effort/.test(x)));
 });
 
+test('headlessEnv: headless, no CLAUDECODE, and the recorded Codex home unless the environment names one', () => {
+  const e = cli.headlessEnv({ CLAUDECODE: '1' }, '/c/home');
+  assert.equal(e.AOS_HEADLESS, '1');
+  assert.ok(!('CLAUDECODE' in e));
+  assert.equal(e.CODEX_HOME, '/c/home');
+  assert.equal(cli.headlessEnv({ CODEX_HOME: '/mine' }, '/c/home').CODEX_HOME, '/mine');
+  assert.equal(cli.headlessEnv({}, null).CODEX_HOME, undefined);
+});
+
 test('pricing: exact, longest-prefix and default rates; cached input at a tenth', () => {
   assert.equal(rateFor('gpt-5-mini').matched, 'exact');
   assert.equal(rateFor('gpt-5.6-sol').model, 'gpt-5');

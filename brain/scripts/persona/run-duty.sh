@@ -118,7 +118,9 @@ if [ -n "$NODE" ] && [ -x "$NODE" ] && [ -f "$SCRIPT_DIR/../lib/headless.js" ]; 
   RES="$(AOS_VAULT="$VAULT" AOS_CONFIG="$CONFIG" "$NODE" "$SCRIPT_DIR/../lib/headless.js" --resolve --kind persona 2>/dev/null)" || RES=""
   case "$RES" in
     claude*) [ -n "${PERSONA_CLAUDE_BIN:-}" ] || CLAUDE_BIN="$(printf '%s' "$RES" | cut -f2)" ;;
-    codex*) RUNNER="codex"; CODEX_BIN="$(printf '%s' "$RES" | cut -f2)"; CODEX_MODEL="$(printf '%s' "$RES" | cut -f3)" ;;
+    codex*) RUNNER="codex"; CODEX_BIN="$(printf '%s' "$RES" | cut -f2)"; CODEX_MODEL="$(printf '%s' "$RES" | cut -f3)"
+            # The Codex home aos init recorded: a scheduled duty must use the same sessions and config (unless set already).
+            CODEX_HOME_CFG="$(printf '%s' "$RES" | cut -f4)"; [ -n "$CODEX_HOME_CFG" ] && [ -z "${CODEX_HOME:-}" ] && export CODEX_HOME="$CODEX_HOME_CFG" ;;
   esac
 fi
 

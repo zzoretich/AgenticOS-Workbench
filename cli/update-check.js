@@ -320,10 +320,15 @@ function setOff({ configDir = claudeConfigDir() } = {}) {
   return file;
 }
 
+/** The version in a plugin folder's manifest: the Claude Code plugin's `.claude-plugin/`, or the Codex plugin's `.codex-plugin/`. */
 function pluginVersionFrom(pluginRoot) {
   if (!pluginRoot) return null;
-  const p = readJsonOrNull(path.join(pluginRoot, '.claude-plugin', 'plugin.json'));
-  return (p && parseTag(p.version)) || null;
+  for (const dir of ['.claude-plugin', '.codex-plugin']) {
+    const p = readJsonOrNull(path.join(pluginRoot, dir, 'plugin.json'));
+    const v = p && parseTag(p.version);
+    if (v) return v;
+  }
+  return null;
 }
 
 async function cmdUpdateStatus({ vault, configDir = claudeConfigDir(), flags = {}, io = console, now = () => new Date() } = {}) {
@@ -376,7 +381,7 @@ async function cmdUpdateCheck({ vault, configDir = claudeConfigDir(), flags = {}
  */
 async function cmdUpdateNotice({
   vault, configDir = claudeConfigDir(), io = console, now = () => new Date(),
-  pluginRoot = process.env.CLAUDE_PLUGIN_ROOT || null, spawnFn = spawn,
+  pluginRoot = process.env.CLAUDE_PLUGIN_ROOT || process.env.AOS_PLUGIN_ROOT || null, spawnFn = spawn,
 } = {}) {
   try {
     if (!vault) return 0;

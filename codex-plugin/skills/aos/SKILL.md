@@ -8,6 +8,6 @@ description: AgenticOS Workbench maintenance — doctor, status, provider, perso
 
 Run `aos the text the user wrote after `$agenticos:aos`` via Bash (fallback: `sh "<plugin root>/bin/aos" the text the user wrote after `$agenticos:aos``); with no arguments run `aos doctor`.
 
-- `doctor`: relay every line; for each `FAIL` line quote the fix from its detail (missing config → `npm run setup` in the checkout; plugin missing → `claude plugin install agenticos@agenticos-workbench`; MCP not answering → check `node` in `agenticos.json` and run `aos upgrade`).
-- `status`: relay the provider line, both spend lines — `today (hooks)` against `claude.perDayUsd` (background hook calls) and `today (duties)` against `persona.perDayUsd` (the persona's `duty:*` runs; they never count toward the hook cap) — and any pipeline row whose status is `error`.
+- `doctor`: relay every line; for each `FAIL` line quote the fix its own detail names — every row carries the command for its host (missing config → `npm run setup` in the checkout; the Claude Code plugin missing → `claude plugin install agenticos@agenticos-workbench`; the Codex plugin missing → `aos upgrade`; MCP not answering → check `node` in `agenticos.json` and run `aos upgrade`).
+- `status`: relay the provider line, every spend line against its cap — `today (hooks)` (background hook calls; the cap is `claude.perDayUsd`, or `codex.perDayUsd` when the resolved provider is codex), `today (duties)` (the persona's `duty:*` runs, `persona.perDayUsd`; they never count toward the hook cap), `today (reasoner)`, `today (routines)` and `today (graph)` — and any pipeline row whose status is `error`.
 - `provider <mode>` / `persona …`: relay the confirmation line.

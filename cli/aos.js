@@ -470,7 +470,9 @@ function status() {
   // config.default.json values (claude.perDayUsd 0.5, persona.perDayUsd 6.0).
   const vaultCfg = readJson(path.join(cfg.vault, 'brain', 'config.json'), {}) || {};
   const num = (obj, key) => (obj && typeof obj[key] === 'number' ? obj[key] : undefined);
-  const hookCap = num(cfg.claude, 'perDayUsd') ?? num(vaultCfg.claude, 'perDayUsd') ?? 0.5;
+  // Hook calls are capped by the provider that makes them (sdk/lib/provider.js hookBudget / codexBudget).
+  const hookKey = state && state.name === 'codex' ? 'codex' : 'claude';
+  const hookCap = num(cfg[hookKey], 'perDayUsd') ?? num(vaultCfg[hookKey], 'perDayUsd') ?? 0.5;
   const dutyCap = num(cfg.persona, 'perDayUsd') ?? num(vaultCfg.persona, 'perDayUsd') ?? 6;
   const reasonCap = num(cfg.reasoner, 'perDayUsd') ?? num(vaultCfg.reasoner, 'perDayUsd') ?? 5;
   const routineCap = num(cfg.routines, 'perDayUsd') ?? num(vaultCfg.routines, 'perDayUsd') ?? 6;
@@ -492,7 +494,7 @@ function status() {
     out.log(`codex      bin=${codexState.bin || codexBin(cfg) || 'not found'} login=${typeof codexState.loggedIn === 'boolean' ? codexState.loggedIn : 'unprobed'} home=${CH.codexHome(cfg)} install=${((cfg.hosts || {}).codex || {}).install || 'direct'}`);
   }
   out.log(`reasoner   model=${reasonerModel} provider=claude effort=${reasonerEffort}`);
-  out.log(`spend      today (hooks) $${sumUsd(spend, isHookFeature).toFixed(4)} / cap $${hookCap}`);
+  out.log(`spend      today (hooks) $${sumUsd(spend, isHookFeature).toFixed(4)} / cap $${hookCap} (${hookKey}.perDayUsd)`);
   out.log(`spend      today (duties) $${sumUsd(spend, isDutyFeature).toFixed(4)} / cap $${dutyCap}`);
   out.log(`spend      today (reasoner) $${sumUsd(spend, isReasonFeature).toFixed(4)} / cap $${reasonCap}`);
   out.log(`spend      today (routines) $${sumUsd(spend, isRoutineFeature).toFixed(4)} / cap $${routineCap}`);
@@ -952,7 +954,7 @@ async function init(flags) {
     if (!exists(path.join(costSrc, 'analyze_transcript.py'))) throw new CheckFailed(`--cost: cost module sources not found at ${costSrc} (pass --from-local <repo-dir> carrying extras/cost, or run without --cost and \`aos cost enable\` later)`);
   }
   const oll = ollamaEndpoint(readJson(configPath()));
-  out.log(`preflight: ollama ${oll.host}:${oll.port} ${ollamaProbeSkipped() ? 'not probed (AOS_SKIP_OLLAMA_PROBE=1)' : (await httpProbe(`http://${oll.host}:${oll.port}/api/tags`)) ? 'reachable' : 'not reachable — run `ollama serve` (auto falls back to claude, then none until it answers)'}`);
+  out.log(`preflight: ollama ${oll.host}:${oll.port} ${ollamaProbeSkipped() ? 'not probed (AOS_SKIP_OLLAMA_PROBE=1)' : (await httpProbe(`http://${oll.host}:${oll.port}/api/tags`)) ? 'reachable' : 'not reachable — run `ollama serve` (auto falls back to claude, then codex, then none until it answers)'}`);
 
   // 2. vault path
   let vault = flags.vault ? path.resolve(flags.vault) : DEFAULT_VAULT;
@@ -1111,7 +1113,11 @@ async function upgrade(flags) {
     run(bin, ['plugin', 'marketplace', 'update', MARKETPLACE], { allowFail: true });
     run(bin, ['plugin', 'update', PLUGIN_ID], { allowFail: true });
   }
-  const repo = repoRoot(flags, mktDir);
+  // A Codex-only machine has no Claude Code marketplace: vendor from the Codex marketplace's folder instead, refreshed
+  // first like the clone above (codex-parity-gaps D6). The Codex plugin itself is refreshed further down.
+  const codexDir = !reexeced && !mktDir && !flags.fromLocal && hostsOf(cfg).codex
+    ? CH.codexMarketplaceRoot({ bin: codexBin(cfg), run, refresh: true }) : null;
+  const repo = repoRoot(flags, mktDir || codexDir);
   const target = reexeced ? null : upgradeReexecTarget(repo);
   if (target) {
     out.log(`upgrade: running the checkout's cli/aos.js (${target}) — the vendored copy is the one being replaced`);

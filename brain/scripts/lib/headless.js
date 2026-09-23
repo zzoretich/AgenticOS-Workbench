@@ -19,7 +19,7 @@
  *             hooks off, JSON events on stdout, the final message in outFile. Codex has no budget flag:
  *             the daily cap still gates the start and the spend is estimated afterwards (record-spend.js);
  *             the tools allowlist has no Codex form, the sandbox is the guard.
- *   CLI: node lib/headless.js --resolve [--kind persona|routines]  prints `host<TAB>bin<TAB>model`,
+ *   CLI: node lib/headless.js --resolve [--kind persona|routines]  prints `host<TAB>bin<TAB>model<TAB>codex home`,
  *        exit 3 (reason on stderr) when no runner resolves. run-duty.sh reads it.
  */
 const fs = require('fs');
@@ -70,6 +70,12 @@ function defaultConfig() {
   try { return require('./config.js').loadConfig(); } catch { return {}; }
 }
 
+/** The Codex home `aos init` recorded (hosts.codex.home), or null: a headless codex run must use the same one. */
+function codexHomeOf(cfg) {
+  const h = cfg && cfg.hosts && cfg.hosts.codex && cfg.hosts.codex.home;
+  return typeof h === 'string' && h ? h : null;
+}
+
 /** See the module comment. `cfg` undefined → loadConfig(). */
 function resolveRunner({ cfg, kind = 'routines', env = process.env, lookup, candidates } = {}) {
   const c = cfg === undefined ? defaultConfig() : (cfg || {});
@@ -82,9 +88,10 @@ function resolveRunner({ cfg, kind = 'routines', env = process.env, lookup, cand
     const bin = resolveBin(h, { cfg: c, env, kind, lookup, candidates });
     if (!bin) { why.push(`${h} CLI not found`); continue; }
     const model = h === 'codex' ? ((c.codex && typeof c.codex.model === 'string' && c.codex.model) || null) : null;
-    return { host: h, bin, model, reason: pref === 'auto' ? 'auto' : `${kind}.runner=${pref}` };
+    const home = h === 'codex' ? codexHomeOf(c) : null;
+    return { host: h, bin, model, home, reason: pref === 'auto' ? 'auto' : `${kind}.runner=${pref}` };
   }
-  return { host: null, bin: null, model: null, reason: why.join('; ') || 'no host enabled' };
+  return { host: null, bin: null, model: null, home: null, reason: why.join('; ') || 'no host enabled' };
 }
 
 /** { argv, stdin } for one headless agent run on `host`. */
@@ -104,9 +111,11 @@ function runnerArgs(host, { prompt = '', system = '', model, effort = 'medium', 
   return { argv, stdin: null };
 }
 
-function headlessEnv(base = process.env) {
+/** The child's env: headless, never CLAUDECODE, and the recorded Codex home unless the environment names one already. */
+function headlessEnv(base = process.env, { codexHome = null } = {}) {
   const env = { ...base, AOS_HEADLESS: '1' };
   delete env.CLAUDECODE;
+  if (codexHome && !env.CODEX_HOME) env.CODEX_HOME = codexHome;
   return env;
 }
 
@@ -116,10 +125,10 @@ function main(argv) {
   const kind = i !== -1 && ['persona', 'routines'].includes(argv[i + 1]) ? argv[i + 1] : 'routines';
   const r = resolveRunner({ kind });
   if (!r.host) { process.stderr.write(`headless: no runner for ${kind} (${r.reason})\n`); return 3; }
-  process.stdout.write(`${r.host}\t${r.bin}\t${r.model || ''}\n`);
+  process.stdout.write(`${r.host}\t${r.bin}\t${r.model || ''}\t${r.home || ''}\n`);
   return 0;
 }
 
 if (require.main === module) process.exit(main(process.argv.slice(2)));
 
-module.exports = { resolveRunner, resolveBin, runnerArgs, headlessEnv, hostEnabled, HOSTS, CODEX_EFFORTS, CLAUDE_EFFORTS };
+module.exports = { resolveRunner, resolveBin, runnerArgs, headlessEnv, hostEnabled, codexHomeOf, HOSTS, CODEX_EFFORTS, CLAUDE_EFFORTS };
