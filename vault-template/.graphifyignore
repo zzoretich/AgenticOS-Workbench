@@ -1,0 +1,9 @@
+# graphify (aos graph) — paths kept out of the vault knowledge graph. gitignore syntax; the vault .gitignore also applies.
+workspaces/
+brain/scripts/
+brain/_index/
+brain/graphify-out/
+brain/graphify-out.pre-aos/
+brain/archive/
+templates/
+.obsidian/

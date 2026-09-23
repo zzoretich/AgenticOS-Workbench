@@ -5,8 +5,8 @@
  *
  *   aos init [--vault <dir>] [--host auto|claude|codex|both] [--provider auto|ollama|claude|codex|none] [--no-obsidian]
  *            [--terminal] [--cost] [--budget <usd>] [--persona-json <file>] [--from-local <repo-dir>] [--dry-run] [--yes]
- *   (Obsidian, Ollama and python3 >= 3.9 are hard prerequisites of init; --no-obsidian only skips the HUD bundle step.)
- *   aos doctor · aos status · aos provider [auto|ollama|claude|codex|none]
+ *   (Obsidian, Ollama, python3 >= 3.9 and uv are hard prerequisites of init; --no-obsidian only skips the HUD bundle step.)
+ *   aos doctor · aos status · aos provider [auto|ollama|claude|codex|none] · aos graph [status | build | on | off]
  *   aos upgrade [--from-local <repo-dir>] [--no-obsidian] · aos uninstall [--host claude|codex] [--keep-vault] [--yes]
  *   aos persona [rename <name> | on | off] [--persona-json <file>] [--yes] · aos cost [enable [--budget <usd>] [--yes] | disable]
  *   aos terminal install
@@ -20,7 +20,8 @@
  * Hosts (design D1): a session runs under Claude Code, Codex CLI, or both; agenticos.json `hosts` says which. Claude Code is
  * wired through its plugin (installPlugin), Codex through cli/codex-host.js (hooks.json, `codex mcp add`, generated skills).
  * Test seams (env): AOS_CONFIG, AOS_CLAUDE_BIN, AOS_NO_CLAUDE=1, AOS_CODEX_BIN, AOS_NO_CODEX=1, AOS_NPM_BIN, AOS_SKIP_NPM=1, AOS_CONFIRM_DELETE=<vault path>,
- * AOS_SKIP_OLLAMA_PROBE=1, AOS_REPO_HINT=<repo-dir> (where cost-cmd.js looks for extras/cost before the checkout and the marketplace clone).
+ * AOS_SKIP_OLLAMA_PROBE=1, AOS_REPO_HINT=<repo-dir> (where cost-cmd.js looks for extras/cost before the checkout and the marketplace clone),
+ * AOS_UV_BIN (cli/graph-cmd.js uvBin; '' → uv absent).
  */
 const fs = require('fs');
 const os = require('os');
@@ -48,6 +49,7 @@ const USAGE = `usage:
   aos uninstall [--host claude|codex] [--keep-vault] [--yes]
   aos persona [rename <name> | on | off] [--persona-json <file>] [--yes]
   aos cost [enable [--budget <usd>] [--yes] | disable]
+  aos graph [status | build | on | off]
   aos routines [list [--json] | sync | run <slug> [--dry-run] | enable <slug> | disable <slug> | next [<slug>] | hosts [--refresh] [--json] | import-cloud <file>]
   aos workspace [list [--json] | new <name> | adopt <path> [--name <slug>]]
   aos update-status [--statusline | --snooze <N>d|<N>h | --off]
@@ -312,6 +314,9 @@ async function doctor() {
   add('ollama installed', !!ollBin, ollBin || 'not found on PATH — install Ollama from ollama.com');
   const py = python3Version();
   add('python3 >= 3.9', python3Ok(py), py ? `${py.major}.${py.minor}` : 'python3 not found on PATH');
+  const graphCmd = require('./graph-cmd.js');
+  const uv = graphCmd.uvBin();
+  add('uv installed', !!uv, uv || 'not found — install uv (docs.astral.sh/uv)');
   const cfg = readJson(configPath());
   const hosts = hostsOf(cfg);
   const bin = hosts.claude ? claudeBin(cfg) : null;
@@ -386,6 +391,8 @@ async function doctor() {
     } catch (e) { add('runner', false, e.message, 'warn'); }
   }
   if (vault) add('obsidian plugin', exists(path.join(vault, '.obsidian', 'plugins', OBSIDIAN_PLUGIN_ID, 'main.js')), `${vault}/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/main.js`, 'warn');
+  // graphify spec §4.6: the pinned binary (fail when missing, warn on drift) and the graph's age (warn).
+  if (cfg && vault) for (const row of graphCmd.doctorRows({ cfg, vault })) add(row.name, row.ok, row.detail, row.level);
   if (vault && isDir(path.join(vault, 'brain', 'routines'))) {
     // One row for the routines: anything failed, missed, invalid or out of sync with the installed schedules is a warn.
     try {
@@ -573,6 +580,7 @@ function buildUserConfig(existing, { vault, provider, version, bin, hosts, codex
     telemetry: { enabled: true, redact: true, retentionDays: 30 },
     cost: { enabled: false },
     persona: { enabled: true },
+    graph: { enabled: true },
     // Design D1: the hosts a session may run under. A config written before this key existed is a Claude-only install.
     hosts: { claude: { enabled: true, configDir: configDir() }, codex: { enabled: false, home: CH.codexHome(existing) } },
   };
@@ -925,7 +933,10 @@ async function init(flags) {
   if (!ollBin) throw new CheckFailed('ollama not found — install it from ollama.com, then re-run aos init');
   const py = python3Version();
   if (!python3Ok(py)) throw new CheckFailed(`python3 >= 3.9 is required — ${py ? `found ${py.major}.${py.minor}` : 'python3 not found on PATH'}`);
-  out.log(`preflight: obsidian ${obsApp} · ollama ${ollBin} · python3 ${py.major}.${py.minor}`);
+  // graphify spec D1: uv installs the pinned graphify (step 5c) with a Python of its own, so it is a hard gate too.
+  const uv = require('./graph-cmd.js').uvBin();
+  if (!uv) throw new CheckFailed('uv not found — install it (docs.astral.sh/uv), then re-run aos init');
+  out.log(`preflight: obsidian ${obsApp} · ollama ${ollBin} · python3 ${py.major}.${py.minor} · uv ${uv}`);
   // execution amendment 2026-09-15 (A37): the analyzer ships from Plan 5 Task 1 on. --cost installs the module through
   // cost-cmd.js right after agenticos.json is written (step 5b); its python3 gate is now the unconditional one above (D7).
   if (flags.cost) {
@@ -982,6 +993,12 @@ async function init(flags) {
     const cc = require('./cost-cmd.js');
     await cc.enable({ configDir: configDir(), vault, budget: flags.budget, yes, hint: flags.fromLocal || process.env.AOS_REPO_HINT, io: console });
     for (const f of cc.FILES) written.push(path.join('brain', 'scripts', 'cost', f));
+  });
+  // 5c. the vault knowledge graph (graphify spec D1/D2): the pinned graphify into a tool dir of our own; step 9's scan builds it
+  await act('install graphify (pinned, through uv) for the vault knowledge graph', () => {
+    const gc = require('./graph-cmd.js');
+    const r = gc.install({ vault, configDir: configDir(), uv, template: path.join(repo, 'vault-template', '.graphifyignore'), io: out });
+    written.push(r.bin);
   });
 
   // 6. plugin (Claude Code host)
@@ -1109,6 +1126,13 @@ async function upgrade(flags) {
     // not parse would drop every key the user has set. Refuse and stop the upgrade instead.
     writeJson(p, deepMerge(defaults, readJsonStrict(p, {}) || {}));
   });
+  await act('install or refresh the pinned graphify and seed .graphifyignore', () => {
+    // graphify spec D3: reinstall only when the installed version is not the pin. Upgrade is never gated (prereqs D9):
+    // a machine without uv keeps upgrading, and doctor's `uv installed` row says what is missing.
+    try {
+      require('./graph-cmd.js').install({ vault, configDir: configDir(), template: path.join(repo, 'vault-template', '.graphifyignore'), io: out });
+    } catch (e) { out.warn(`graph: ${e.message}`); }
+  });
   if (flags.obsidian !== false) await obsidianBundle(ctx);
   await act('rebuild indexes (scan-vault, build-brain-md, recall --warm)', () => {
     runScript(vault, 'scan-vault', ['--quiet'], { allowFail: true });
@@ -1179,6 +1203,8 @@ async function uninstall(flags) {
     out.warn(`claude CLI not found; skipped: claude plugin uninstall ${PLUGIN_ID} && claude plugin marketplace remove ${MARKETPLACE}`);
   }
   removeSchedules();
+  const graphTools = require('./graph-cmd.js').removeTools();
+  if (graphTools) out.log(`removed ${graphTools}`);
   const link = path.join(os.homedir(), '.local', 'bin', 'aos');
   try { if (fs.readlinkSync(link).endsWith('/brain/scripts/bin/aos')) { fs.unlinkSync(link); out.log(`removed ${link}`); } } catch { /* absent */ }
   try { fs.unlinkSync(configPath()); out.log(`removed ${configPath()}`); } catch { /* absent */ }
@@ -1220,6 +1246,10 @@ function persona(sub, flags) {
 
 function cost(sub, flags) {
   return require('./cost-cmd.js').run(sub, { budget: flags.budget, yes: !!flags.yes, hint: flags.fromLocal || process.env.AOS_REPO_HINT, io: console });
+}
+
+function graph(sub) {
+  return require('./graph-cmd.js').run(sub, { configDir: configDir(), io: console });
 }
 
 // ── updates ───────────────────────────────────────────────────────────────────
@@ -1284,6 +1314,7 @@ async function main(argv) {
     case 'terminal': return terminal(sub);
     case 'persona': return persona(sub, flags);
     case 'cost': return cost(sub, flags);
+    case 'graph': return graph(sub);
     case 'routines': return routines(sub, flags);
     case 'workspace': return workspace(sub, flags);
     case 'doctor': return doctor();
@@ -1314,7 +1345,7 @@ module.exports = {
   doctor, status, provider, main,
   init, repoRoot, productVersion, upgradeReexecTarget, copyTree, assertVaultOk, dailyNotesJson, buildUserConfig, linkLauncher, vendorRuntime,
   installPlugin, download, obsidianBundle, terminalInstall, personaInterview, checklist,
-  upgrade, uninstall, removeSchedules, terminal, persona, cost, routines, workspace, updateCheck, updateStatus, updateNotice,
+  upgrade, uninstall, removeSchedules, terminal, persona, cost, graph, routines, workspace, updateCheck, updateStatus, updateNotice,
   PROVIDERS, HOST_CHOICES, PLUGIN_ID, MARKETPLACE, REPO_SLUG, OBSIDIAN_PLUGIN_ID, DEFAULT_VAULT, RUNTIME_SCRIPTS, USAGE,
   VALUE_FLAGS, BOOL_FLAGS, NEGATABLE_FLAGS,
   UsageError, CheckFailed, out,

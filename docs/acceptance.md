@@ -11,6 +11,7 @@ absolute home path the installer prints. Criteria are spec §1; each block names
 - [ ] Obsidian installed (drag to Applications); opened once. `aos init` refuses to run without it.
 - [ ] Ollama installed (`ollama --version` prints a version). `aos init` refuses to run without it; it need not be serving.
 - [ ] `ls ~/.claude` shows no `agenticos.json`.
+- [ ] uv installed (`uv --version` prints a version) — `aos init` refuses to run without it; it installs the pinned graphify.
 - [ ] python3 present (`python3 --version` ≥ 3.9) — `aos init` refuses to run without it. `git` and `python3` come with the Command Line Tools; accept the install dialog if it appears.
 
 ## 1. Install in under ten minutes (criterion 1)

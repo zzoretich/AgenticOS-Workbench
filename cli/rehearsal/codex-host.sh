@@ -20,6 +20,9 @@ unset AOS_VAULT BRAIN_VAULT AOS_CONFIG CLAUDE_PROJECT_DIR AOS_HOST AOS_NO_CODEX 
 # mandatory-prereqs D6: the install gate needs Obsidian and Ollama present; same seams as first-run.sh.
 mkdir -p "$TMP/Obsidian.app"
 export AOS_OBSIDIAN_APP="$TMP/Obsidian.app" AOS_OLLAMA_BIN="$ROOT/cli/fixtures/fake-ollama.sh"
+# graphify spec D1: uv is a prerequisite too; the fake installs a fake graphify under the temp HOME.
+export AOS_UV_BIN="$ROOT/cli/fixtures/fake-uv.sh"
+unset XDG_DATA_HOME || true
 VAULT="$TMP/aos"
 SKILLS="$HOME/.agents/skills"
 PLUGIN="$ROOT/codex-plugin"
@@ -148,4 +151,5 @@ grep -q '^plugin marketplace remove agenticos-workbench$' "$FAKE_CODEX_LOG"
 [ ! -e "$CODEX_HOME/hooks.json" ]
 [ -f "$VAULT/MEMORY.md" ]
 [ ! -e "$CLAUDE_CONFIG_DIR/agenticos.json" ]
+[ ! -e "$HOME/.local/share/agenticos/graphify" ] || { echo "graphify tool dir left behind"; exit 1; }
 echo REHEARSAL-OK
