@@ -25,6 +25,8 @@ Guarded changes wait here for the user's sign-off. One file per proposal, `YYYY-
 
     **[Open the proposal in browser](file:///<vault>/brain/_index/proposals/<date>-<slug>.html)**
 
+The `recheck` must stay inside the read-only grammar, or nothing runs it and the review shows RECIPE-ERROR with the reason: commands from `true false exit test [ grep egrep fgrep ls wc head tail cat cmp diff cut tr stat git` (git only as `git [-C <dir>] [--no-pager] log|diff|show|status|ls-files|rev-parse|rev-list|cat-file|merge-base|describe …`, without `-c`, `--output`, `--ext-diff` or `--textconv`), joined by `|`, `&&` or `||`, optionally led by `!`, with `$HOME` as the only expansion. No `;`, `&`, redirections, `$(…)`, backticks, comments or other programs. `node brain/scripts/persona/ledger.js run-recipe '<recipe>'` shows whether a recipe passes.
+
 Every proposal also exists as an HTML page. `brain/scripts/persona/proposal-html.js <file>` renders it into `brain/_index/proposals/` and writes the link line under the title; run it right after filing (the vault scan renders anything missed). Never write or edit the link line by hand. The page stays after the proposal is decided, so the Proposals tab can still open it from the backlog and the history.
 
 Body sections, in order: **What** (the exact change, as a diff or full replacement text), **Why** (evidence from the journal or feedback memories), **Risk** (what could go wrong), and **Premises** — what was verified versus assumed:

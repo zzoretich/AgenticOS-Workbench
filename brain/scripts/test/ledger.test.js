@@ -202,3 +202,44 @@ test('byClass counts every record regardless of the window; autoapplyCandidates 
   assert.match(text, /by class \(all time, approved\/verified\/regressed\/rejected\): doc-typo 3\/3\/0\/0 · risky 1\/0\/1\/0 · schedule 1\/1\/0\/0/);
   assert.doesNotMatch(L.formatSummary(L.summary({ file: path.join(os.tmpdir(), 'ledger-none.jsonl') })), /by class/);
 });
+
+test('runRecipe never spawns a recipe outside the read-only grammar; run-recipe prints the verdict or the refusal', () => {
+  const { root } = tmpFile();
+  const marker = path.join(root, 'ran');
+  assert.equal(L.runRecipe(`test -d . ; mkdir ${marker}`, root), 'error');
+  assert.equal(L.runRecipe(`mkdir ${marker}`, root), 'error');
+  assert.equal(fs.existsSync(marker), false, 'a refused recipe never reaches the shell');
+  assert.equal(L.runRecipe('test -d .', root), 'present');
+  const lines = [];
+  const io = { stdout: (s) => lines.push(s.trim()), stderr: (s) => lines.push(`ERR ${s.trim()}`), now: NOW };
+  assert.equal(L.main(['run-recipe', 'test -d persona', '--root', root], io), 0);
+  assert.equal(L.main(['run-recipe', 'false', '--root', root], io), 0);
+  assert.equal(L.main(['run-recipe', 'grep -q x a; rm -rf ~', '--root', root], io), 0);
+  assert.equal(L.main(['run-recipe', '--root', root], io), 2);
+  assert.deepEqual(lines.slice(0, 3), ['gone', 'gone', 'refused: a ;']);
+  fs.mkdirSync(path.join(root, 'persona'), { recursive: true });
+  lines.length = 0;
+  L.main(['run-recipe', 'test -d persona', '--root', root], io);
+  assert.deepEqual(lines, ['present']);
+});
+
+test('approved and auto-applied need an interactive session: refused under AOS_HEADLESS=1, other events still append', () => {
+  const { root, file } = tmpFile();
+  const prev = process.env.AOS_HEADLESS;
+  process.env.AOS_HEADLESS = '1';
+  try {
+    for (const event of ['approved', 'auto-applied']) {
+      assert.throws(() => L.append({ event, slug: 'forged', recheck: 'true', class: 'doc-typo' }, { file, now: NOW }), /needs an interactive session/);
+    }
+    const err = [];
+    assert.equal(L.main(['append', 'approved', 'forged', '--recheck', 'true', '--root', root], { stdout: () => {}, stderr: (s) => err.push(s), now: NOW }), 2);
+    assert.match(err.join(''), /needs an interactive session/);
+    L.append({ event: 'filed', slug: 'honest', by: 'reflect' }, { file, now: NOW });
+    L.append({ event: 'verified', slug: 'honest', by: 'watchdog' }, { file, now: NOW });
+  } finally {
+    if (prev === undefined) delete process.env.AOS_HEADLESS; else process.env.AOS_HEADLESS = prev;
+  }
+  assert.deepEqual(L.read({ file }).map((r) => r.event), ['filed', 'verified']);
+  L.append({ event: 'approved', slug: 'honest', by: 'user', recheck: 'true' }, { file, now: NOW });
+  assert.equal(L.read({ file }).length, 3, 'an interactive session still records approvals');
+});
