@@ -135,4 +135,7 @@ test("the manifest carries every safe rerun the Fix Queue needs", () => {
   // scan-vault.js is the only writer of the embed-vault ledger key (scan-vault.js:449
   // withReport('embed-vault')), so it is also the only rerun that can clear the card.
   assert.deepEqual(PIPELINES_MANIFEST["embed-vault"].safeRerun, { script: "brain/scripts/scan-vault.js", args: ["--quiet"] });
+  assert.equal(PIPELINES_MANIFEST["graph-build"].short, "GRAPH");
+  assert.equal(PIPELINES_MANIFEST["graph-build"].staleMs, null);
+  assert.deepEqual(PIPELINES_MANIFEST["graph-build"].safeRerun, { script: "brain/scripts/graph-build.js", args: ["--quiet"] });
 });

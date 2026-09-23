@@ -17,6 +17,9 @@ export AOS_NO_CODEX=1
 # the positive path on a bare runner; python3 is real on both CI images.
 mkdir -p "$TMP/Obsidian.app"
 export AOS_OBSIDIAN_APP="$TMP/Obsidian.app" AOS_OLLAMA_BIN="$ROOT/cli/fixtures/fake-ollama.sh"
+# graphify spec D1/§5: uv is a prerequisite as well. The fake installs a fake graphify under the temp HOME, with no network.
+export AOS_UV_BIN="$ROOT/cli/fixtures/fake-uv.sh"
+unset XDG_DATA_HOME || true
 # FAKE_PLUGIN_PATH is NOT set yet: with it, fake-claude's `plugin list --json` reports the plugin as installed,
 # installPlugin() takes the "plugin already installed" branch, and the `plugin install` grep below would fail.
 unset AOS_VAULT BRAIN_VAULT AOS_CONFIG CLAUDE_PROJECT_DIR || true
@@ -32,12 +35,16 @@ for f in MEMORY.md AGENTICOS.md TODO.md .gitignore brain/config.json brain/_inde
     templates/decision-record.md templates/project-note.md .obsidian/daily-notes.json \
     brain/routines/monitor.md brain/routines/reflect.md brain/routines/sitrep.md \
     brain/scripts/package.json brain/scripts/bin/aos brain/scripts/cli/aos.js brain/scripts/routines/run-routine.js \
-    brain/scripts/node_modules/@modelcontextprotocol/sdk/package.json; do
+    brain/scripts/node_modules/@modelcontextprotocol/sdk/package.json .graphifyignore brain/graphify-out/graph.json; do
   [ -e "$VAULT/$f" ] || { echo "missing $f"; exit 1; }
 done
 [ -f "$CLAUDE_CONFIG_DIR/agenticos.json" ]
 grep -q '"provider": "none"' "$CLAUDE_CONFIG_DIR/agenticos.json"
 grep -q '^plugin install agenticos@agenticos-workbench$' "$FAKE_CLAUDE_LOG"
+[ -x "$HOME/.local/share/agenticos/graphify/bin/graphify" ] || { echo "graphify not installed into the tool dir"; exit 1; }
+
+echo "== graph"
+sh "$VAULT/brain/scripts/bin/aos" graph | grep -q '^5 nodes · 5 edges · 2 communities$'
 
 echo "== scan + compile through the launcher"
 AOS="$VAULT/brain/scripts/bin/aos"
@@ -85,7 +92,8 @@ echo "== doctor"
 # doctor's "plugin installed" check reads fake-claude's `plugin list --json`, which lists the plugin only while
 # FAKE_PLUGIN_PATH is set — so it is exported here, after init has already exercised the install path.
 export FAKE_PLUGIN_PATH="$ROOT/plugin"
-node "$ROOT/cli/aos.js" doctor
+node "$ROOT/cli/aos.js" doctor | tee "$TMP/doctor.txt"
+grep -Eq '^ok +uv installed ' "$TMP/doctor.txt" && grep -Eq '^ok +graphify [0-9.]+ ' "$TMP/doctor.txt" && grep -Eq '^ok +graph fresh ' "$TMP/doctor.txt"
 
 echo "== uninstall --keep-vault restores the config dir"
 node "$ROOT/cli/aos.js" uninstall --keep-vault --yes
@@ -93,4 +101,5 @@ AFTER=$(ls -A "$CLAUDE_CONFIG_DIR" | sort)
 [ "$BEFORE" = "$AFTER" ] || { echo "config dir changed: $AFTER"; exit 1; }
 [ -f "$VAULT/MEMORY.md" ]
 [ ! -e "$HOME/.local/bin/aos" ]
+[ ! -e "$HOME/.local/share/agenticos/graphify" ] || { echo "graphify tool dir left behind"; exit 1; }
 echo REHEARSAL-OK

@@ -4,6 +4,9 @@ brain/_index/*
 !brain/_index/scanner-config.json
 !brain/_index/MOC-*.md
 brain/scripts/node_modules/
+# the vault knowledge graph (aos graph) is a derived cache, rebuilt from the notes
+brain/graphify-out/
+brain/graphify-out.pre-aos/
 persona/journal/
 persona/STATE.md
 persona/answers.json

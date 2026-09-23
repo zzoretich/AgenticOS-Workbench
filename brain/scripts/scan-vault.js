@@ -478,6 +478,18 @@ async function main(report) {
     console.error('[scan-vault] embed-index failed (loud in ledger):', e.message);
   }
 
+  // Vault knowledge graph (spec 2026-09-23-graphify D5/D7): graphify's structural pass, inline — this process is
+  // already detached when a hook started it, and the pass takes a second or two. Disabled when off or not installed.
+  try {
+    const { buildStructural } = require('./graph-build.js');
+    await withReport('graph-build', async (r) => {
+      const g = await buildStructural({ report: r, cfg });
+      if (report && g.status === 'ok') report.wrote.push(`${path.relative(VAULT, g.out)}/graph.json (${g.nodes} nodes, ${g.edges} edges)`);
+    });
+  } catch (e) {
+    console.error('[scan-vault] graph-build failed (loud in ledger):', e.message);
+  }
+
   if (argv.has('--json')) {
     process.stdout.write(JSON.stringify(snapshot, null, 2));
     return;
