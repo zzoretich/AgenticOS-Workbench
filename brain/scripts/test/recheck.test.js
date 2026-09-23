@@ -124,3 +124,13 @@ test('CLI: record prints the pass, a review file is rechecked, usage exits 2, a 
   assert.equal(R.main([path.join(v, 'missing.json'), '--root', v], opts), 0);
   assert.match(o.err, /recheck: /);
 });
+
+test('CLI: without --root the review file is still the first argument (the flag-closer calls it that way)', () => {
+  const v = vault();
+  const collect = path.join(v, 'collect.json');
+  fs.writeFileSync(collect, JSON.stringify({ proposals: [{ slug: 'fix-thing', recheck: 'true' }] }));
+  const o = { out: '', err: '' };
+  assert.equal(R.main([collect], { stdout: (s) => { o.out += s; }, stderr: (s) => { o.err += s; }, now: NOW }), 0);
+  assert.equal(o.err, '');
+  assert.equal(JSON.parse(o.out).proposals[0].verdict, 'STILL-VALID');
+});

@@ -3,7 +3,7 @@ import type { DataAdapter, TAbstractFile } from "obsidian";
 import type AgenticOSPlugin from "../../main";
 import type { WorkbenchView } from "./WorkbenchView";
 import {
-  PROPOSALS_DIR, LEDGER_PATH, BACKLOG_PATH, CONFIRMATIONS_PATH, MIN_CONFIRMATIONS,
+  PROPOSALS_DIR, LEDGER_PATH, BACKLOG_PATH, CONFIRMATIONS_PATH, MIN_CONFIRMATIONS, PAGES_DIR, pageFor, pageForSlug,
   Proposal, LedgerRecord, LedgerRates, BacklogEntry,
   isProposalFile, parseProposal, parseLedger, ledgerRates, historyRows, parseBacklog, parseConfirmations, ageDays,
 } from "../data/proposals";
@@ -37,6 +37,7 @@ export class ProposalsTab {
   private rates: LedgerRates | null = null;
   private backlog: BacklogEntry[] = [];
   private streak: Record<string, number> = {};
+  private pages: string[] = [];               // file names in PAGES_DIR (spec 2026-09-22-proposal-pages D7)
   private expanded = new Set<string>();
   private collapsed = new Set<Group>();
   private md: Component | null = null;
@@ -49,7 +50,7 @@ export class ProposalsTab {
     this.host = host;
     if (!this.listenersRegistered) {
       this.listenersRegistered = true;
-      const hit = (p: string) => p === "persona" || p === PROPOSALS_DIR || p.startsWith(`${PROPOSALS_DIR}/`) || WATCHED.includes(p);
+      const hit = (p: string) => p === "persona" || p === PROPOSALS_DIR || p.startsWith(`${PROPOSALS_DIR}/`) || p.startsWith(`${PAGES_DIR}/`) || WATCHED.includes(p);
       const watch = (f: TAbstractFile, oldPath?: string) => { if (hit(f.path) || (oldPath !== undefined && hit(oldPath))) this.schedule(); };
       const vault = this.plugin.app.vault;
       this.view.registerEvent(vault.on("modify", (f) => watch(f)));
@@ -85,6 +86,7 @@ export class ProposalsTab {
     this.rates = ledgerRates(this.ledger, new Date());
     this.backlog = parseBacklog(await readOr(a, BACKLOG_PATH, "")).reverse();   // the file is newest last
     this.streak = parseConfirmations(await readOr(a, CONFIRMATIONS_PATH, null));
+    try { this.pages = (await a.list(PAGES_DIR)).files.map((f) => f.split("/").pop() ?? "").filter((n) => n.endsWith(".html")); } catch { this.pages = []; }
     this.view.setBadge("proposals", this.proposals.length);
     this.render();
   }
@@ -171,6 +173,9 @@ export class ProposalsTab {
     if (!open) return;
 
     const d = table.createDiv({ cls: "aos-pr-detail" });
+    const page = pageFor(p.name);
+    if (this.pages.includes(page.slice(PAGES_DIR.length + 1))) this.pageLink(d.createDiv({ cls: "aos-pr-open" }), page, "Open the proposal in browser");
+    else d.createDiv({ cls: "aos-pr-open aos-dim", text: "The proposal's HTML page appears after the next scan." });
     const meta = d.createDiv({ cls: "aos-pr-meta" });
     meta.createDiv({ text: `needs: ${p.decision}` });
     if (p.recheck) meta.createDiv({ cls: "aos-dim" }).createEl("code", { text: p.recheck });
@@ -209,6 +214,8 @@ export class ProposalsTab {
     const d = table.createDiv({ cls: "aos-pr-detail" });
     if (b.body && this.md) void MarkdownRenderer.renderMarkdown(b.body, d.createDiv({ cls: "aos-pr-md" }), BACKLOG_PATH, this.md);
     const links = d.createDiv({ cls: "aos-rt-rowactions" });
+    const page = pageForSlug(this.pages, b.slug);
+    if (page) { this.pageLink(links, page, "Open the proposal in browser"); links.createSpan({ cls: "aos-dim", text: " · " }); }
     const openFile = links.createEl("a", { text: "Open backlog", cls: "aos-link", href: "#" });
     openFile.addEventListener("click", (e) => { e.preventDefault(); void this.openFile(BACKLOG_PATH); });
   }
@@ -221,12 +228,33 @@ export class ProposalsTab {
     row.createSpan({ cls: "aos-rt-name", text: r.slug });
     row.createSpan({ cls: `aos-pill ${KIND_PILL[r.kind] ?? "aos-pill-dim"}`, text: r.kind });
     row.createSpan({ cls: "aos-dim aos-pr-age", text: `${r.ts.slice(0, 10)}${r.by ? ` · ${r.by}` : ""}` });
+    const page = pageForSlug(this.pages, r.slug);
+    if (page) this.pageLink(row, page, "page ↗").addClass("aos-pr-pagelink");
     if (r.note) row.setAttr("title", r.note);
   }
 
   private toggle(key: string): void {
     if (this.expanded.has(key)) this.expanded.delete(key); else this.expanded.add(key);
     this.render();
+  }
+
+  /** A link that opens a rendered proposal page in the OS default browser. */
+  private pageLink(parent: HTMLElement, page: string, text: string): HTMLAnchorElement {
+    const a = parent.createEl("a", { text, cls: "aos-link", href: "#", attr: { title: page } });
+    a.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); this.openPage(page); });
+    return a;
+  }
+
+  // The page lives in the gitignored brain/_index cache, not as a note: open it through the OS, as SpacesTab does.
+  private openPage(page: string): void {
+    const abs = `${this.plugin.vaultRoot()}/${page}`;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { shell } = require("electron");
+      void shell.openPath(abs).then((err: string) => { if (err) new Notice(`Cannot open ${page}: ${err}`); });
+    } catch {
+      new Notice(`Cannot open: ${page}`);
+    }
   }
 
   private async openFile(p: string): Promise<void> {

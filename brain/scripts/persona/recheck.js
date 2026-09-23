@@ -132,7 +132,7 @@ function record({ root, now = new Date(), run = runRecipe } = {}) {
 
 function main(argv, { stdout = (s) => process.stdout.write(s), stderr = (s) => process.stderr.write(s), now = new Date() } = {}) {
   const rootIx = argv.indexOf('--root');
-  const positional = argv.filter((a, i) => !a.startsWith('--') && i !== rootIx + 1);
+  const positional = argv.filter((a, i) => !a.startsWith('--') && (rootIx < 0 || i !== rootIx + 1));
   let root;
   try { root = defaultRoot(rootIx >= 0 ? argv[rootIx + 1] : null); } catch (e) { stderr(`recheck: ${e.message}\n`); return 2; }
   if (!root) { stderr('recheck: no vault — pass --root <vault> or run `aos init`\n'); return 2; }

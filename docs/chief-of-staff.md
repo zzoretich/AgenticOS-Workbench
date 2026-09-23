@@ -178,6 +178,14 @@ the finding to be gone. See `persona/proposals/README.md` in your vault. The Wor
 shows the pending files, the backlog and the ledger history read-only; its **Review in Claude** button starts
 this review in the Term tab.
 
+Every proposal shares one format — frontmatter, a `# ` title, the link line
+`**[Open the proposal in browser](file:///…)**`, then What / Why / Risk / Premises — and exists as an HTML page.
+`brain/scripts/persona/proposal-html.js` renders each file to `brain/_index/proposals/<date>-<slug>.html`
+(gitignored, kept after the decision) and owns the link line. The reflect duties and `/propose` run it right after
+filing, every vault scan renders anything missed, and the review renders before it decides. The Proposals tab opens
+a pending proposal's page, and a backlog or history entry's page, in the default browser. Proposals you or Claude
+write in a session go through `/propose`, so they land in the same tab and the same review.
+
 Every outcome lands in `persona/ledger.jsonl` (tracked, unlike `STATE.md`) through
 `brain/scripts/persona/ledger.js`: `filed` by a reflect, `approved` / `rejected` / `stale-dropped` by the
 review (an approval keeps the proposal's `recheck` recipe), and `verified` or `regressed` by the

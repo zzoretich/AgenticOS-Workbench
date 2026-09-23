@@ -867,7 +867,7 @@ test('init --host both wires the plugin and the Codex host; uninstall --host cod
   const r = aos(sb, ['init', '--host', 'both', '--vault', sb.vault, '--no-obsidian', '--provider', 'none', '--yes']);
   assert.equal(r.status, 0, r.stderr + r.stdout);
   assert.match(r.stdout, /preflight: hosts claude\+codex/);
-  assert.match(r.stdout, /hooks written · MCP added · skills 20 generated/);
+  assert.match(r.stdout, /hooks written · MCP added · skills 21 generated/);
   assert.match(r.stdout, /run \/hooks, and trust the AgenticOS entries once/);
   assert.match(r.stdout, /use \$wrap at the end/);
   const cfgPath = path.join(sb.cfg, 'agenticos.json');
@@ -893,7 +893,7 @@ test('init --host both wires the plugin and the Codex host; uninstall --host cod
   assert.match(dr.stdout, /ok\s+codex login/);
   assert.match(dr.stdout, /ok\s+codex hooks\s+5 of 5 events/);
   assert.match(dr.stdout, /ok\s+codex MCP declared/);
-  assert.match(dr.stdout, /ok\s+codex skills\s+20 generated/);
+  assert.match(dr.stdout, /ok\s+codex skills\s+21 generated/);
   const st = aos(sb, ['status']);
   assert.match(st.stdout, /^hosts\s+claude, codex$/m);
   assert.match(st.stdout, /^codex\s+bin=/m);
@@ -901,7 +901,7 @@ test('init --host both wires the plugin and the Codex host; uninstall --host cod
   // partial uninstall: the Codex wiring goes, the plugin, config, launcher and vault stay
   const part = aos(sb, ['uninstall', '--host', 'codex', '--yes']);
   assert.equal(part.status, 0, part.stderr + part.stdout);
-  assert.match(part.stdout, /codex host removed: hooks deleted \(5 entries\) · MCP removed · 20 skills deleted/);
+  assert.match(part.stdout, /codex host removed: hooks deleted \(5 entries\) · MCP removed · 21 skills deleted/);
   assert.match(part.stdout, /hosts now: claude$/m);
   assert.ok(!fs.existsSync(hooks));
   assert.ok(!fs.existsSync(path.join(skills, 'wrap')));
@@ -924,7 +924,7 @@ test('init --host both wires the plugin and the Codex host; uninstall --host cod
   const up2 = aos(sb, ['upgrade', '--no-obsidian', '--from-local', ROOT]);
   assert.equal(up2.status, 0, up2.stderr + up2.stdout);
   assert.match(up2.stdout, /re-wire the Codex host/);
-  assert.match(up2.stdout, /hooks unchanged · MCP present · skills 20 regenerated/);
+  assert.match(up2.stdout, /hooks unchanged · MCP present · skills 21 regenerated/);
   assert.ok(fs.existsSync(path.join(skills, 'remember', 'SKILL.md')), 'a deleted generated skill comes back on upgrade');
 
   // a full uninstall takes both hosts down

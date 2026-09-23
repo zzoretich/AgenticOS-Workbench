@@ -49,6 +49,8 @@ Run before tagging a release, on a vault created by `aos init` (not the develope
 - [ ] BACKLOG lists `persona/backlog.md` sections newest first; HISTORY lists ledger outcomes newest first (no `filed` rows) with ✓ / ✗ / ◇ / – marks, and the rates line reads `last 28 d · approval <x>% · accept <y>%` (or `n/a`), matching `node brain/scripts/persona/ledger.js summary`.
 - [ ] `Review in Claude ❯_` switches to Term with a new session in the vault running `claude "review persona flags"` — no extra blank shell beside it, and that session is the visible one even when other sessions were open.
 - [ ] On a vault without `persona/`, the tab shows only the "isn't set up — run `aos persona`" line.
+- [ ] Proposal pages: a freshly copied proposal's expanded row reads "The proposal's HTML page appears after the next scan"; run `node brain/scripts/persona/proposal-html.js` in the vault and, within a second, the row opens with a bold **Open the proposal in browser** that opens `brain/_index/proposals/<date>-<slug>.html` in the default browser. The page shows the kind pill, title, target, decision, recipe, the sections and the premise pills, with no console errors, in both light and dark system themes.
+- [ ] The proposal's Markdown now carries `**[Open the proposal in browser](file:///…)**` under its `# ` title, and a second run of the renderer prints `"skipped"` for it without touching the file. A BACKLOG entry and a HISTORY row whose slug has a page show **Open the proposal in browser** and `page ↗`.
 
 ## Spaces / Memory / Runs
 
