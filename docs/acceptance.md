@@ -38,7 +38,7 @@ Start a timer.
 - [ ] Stop Ollama; after 60 s, `aos scan-vault --quiet && aos status` shows `claude` (or `none` if not logged in).
 
 ## 3. Privacy gate (criterion 3)
-- [ ] `cd ~/AgenticOS-Workbench && npm run gate` → `privacy-gate: 0 violation(s)`, and `node tools/privacy-gate.js --json` prints `[]`. This is the pass condition: the gate scans every tracked and untracked-not-ignored file for every term in `tools/privacy-terms.json`.
+- [ ] `cd ~/AgenticOS-Workbench && npm run gate` → `privacy-gate: 0 violation(s)`, and `node tools/privacy-gate.js --json` prints `[]`. This is the pass condition: the gate scans every tracked and untracked-not-ignored file for every term `tools/privacy-terms.js` loads (the public `tools/privacy-terms.json` plus the maintainer's private list; `npm run gate -- --require-private` fails when the private list is missing).
 - [ ] Cross-check the exception table: `cat tools/privacy-exceptions.json` shows exactly five rows — the three gate data files (term `*`) plus the two example-agent-name exceptions spec §8.3 allows, for `cli/aos.js` and `docs/chief-of-staff.md` — and nothing else; a sixth row blocks the release. (The launcher and the CLI probe `$HOME`-relative node paths, and the GitHub source `zzoretich/AgenticOS-Workbench` — in `plugin/.claude-plugin/plugin.json`, `cli/aos.js`, `cli/aos.test.js`, `docs/install.md` and this file — is not a term, so none of those needs a row.)
 - [ ] GitHub Actions: the `ci` run for the release commit (it runs on every push to `main` and every pull request, on Ubuntu and macOS) shows its gate step green on both OSes; the `release` run for the `v*` tag (Ubuntu only) shows its own gate step green.
 

@@ -1,0 +1,70 @@
+name: privacy
+# The privacy gate with the owner's private terms, over the files, the commit messages and the pull request text, then
+# gitleaks over the same commits. `edited` reruns it when a PR title or body changes; ci.yml is not rerun for that.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  privacy:
+    runs-on: ubuntu-latest
+    env:
+      # One term per line (tools/privacy-terms.js). Sync: gh secret set AOS_PRIVACY_TERMS < tools/privacy-terms.local.txt
+      # A pull request from a fork gets no secrets, so it runs on the public terms and says so.
+      AOS_PRIVACY_TERMS: ${{ secrets.AOS_PRIVACY_TERMS }}
+      FORK: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+      GITLEAKS_VERSION: 8.30.1
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: commit range and mode
+        id: range
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$EVENT" = pull_request ]; then range="$BASE..$HEAD"
+          elif git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then range="$BEFORE..$SHA"
+          else range="$SHA^!"; fi
+          echo "range=$range" >> "$GITHUB_OUTPUT"
+          if [ "$FORK" = true ]; then echo "REQUIRE=" >> "$GITHUB_ENV"; else echo "REQUIRE=--require-private" >> "$GITHUB_ENV"; fi
+          echo "range $range · fork $FORK"
+      - name: privacy gate — files
+        run: node tools/privacy-gate.js $REQUIRE
+      - name: privacy gate — commit messages
+        if: ${{ !cancelled() }}
+        env:
+          RANGE: ${{ steps.range.outputs.range }}
+        run: git log --format='>> %h%n%B' "$RANGE" | node tools/privacy-gate.js --stdin commit-messages $REQUIRE
+      - name: privacy gate — pull request title and body
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: printf '%s\n\n%s\n' "$PR_TITLE" "$PR_BODY" | node tools/privacy-gate.js --stdin pull-request $REQUIRE
+      - name: gitleaks — commits in range
+        if: ${{ !cancelled() }}
+        env:
+          RANGE: ${{ steps.range.outputs.range }}
+        run: |
+          cd "$RUNNER_TEMP"
+          curl -fsSL -o gitleaks.tgz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tgz" | sha256sum -c -
+          tar -xzf gitleaks.tgz gitleaks
+          cd "$GITHUB_WORKSPACE"
+          "$RUNNER_TEMP/gitleaks" git --no-banner --redact --config .gitleaks.toml --log-opts="$RANGE" .

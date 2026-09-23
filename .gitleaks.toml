@@ -1,0 +1,34 @@
+# gitleaks rules for this repository: the default credential rules, plus what the privacy gate's term list cannot
+# express as plain substrings. Run by .github/workflows/privacy.yml over each push and pull request range.
+title = "AgenticOS Workbench"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "personal-email"
+description = "An email address other than a noreply or example address"
+regex = '''[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}'''
+keywords = ["@"]
+[[rules.allowlists]]
+regexTarget = "match"
+regexes = [
+  '''@users\.noreply\.github\.com$''',
+  '''^noreply@anthropic\.com$''',
+  '''@example\.(?:com|org|net)$''',
+]
+
+[[rules]]
+id = "claude-session-url"
+description = "A Claude Code session link"
+regex = '''claude\.ai/code/session_[A-Za-z0-9]+'''
+keywords = ["claude.ai/code/session_"]
+
+[[rules]]
+id = "home-path"
+description = "An absolute path under a real user's home directory"
+regex = '''/(?:Users|home)/[a-z][a-z0-9._-]{1,31}/'''
+keywords = ["users/", "home/"]
+[[rules.allowlists]]
+regexTarget = "match"
+regexes = ['''/(?:Users|home)/(?:runner|user|you|me|someone|example|name|username|test|node)/$''']
