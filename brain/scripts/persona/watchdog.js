@@ -13,8 +13,9 @@
  *
  * On a miss: one `- [ ] <date> duty '<slug>' MISSED — … (watchdog)` line directly under `## Flags` in STATE.md
  * (the same slot run-duty.sh uses for FAILED) and one OS notification, both once per (slug, due). The watchdog
- * removes its own MISSED line when that duty runs again; it never touches any other flag. Once a day it also
- * runs ledger.js verify and flags an approved proposal whose recheck exits 0 again as REGRESSED.
+ * removes its own MISSED line when that duty runs again; it never touches any other flag. Once a day the routine
+ * (never the SessionStart hook) also runs ledger.js verify and flags an approved proposal whose recheck exits 0 again
+ * as REGRESSED.
  *
  * State: brain/_index/persona-heartbeat.json (schema 1) — the HUD's source for a heartbeat pill.
  * Exit 0 always under --hook; as a routine, 1 only when the check itself throws.
@@ -166,7 +167,8 @@ function run({ hook = false, deps = defaultDeps() } = {}) {
 
   let verify = prev.verify || null, lastVerifyAt = prev.lastVerifyAt || null, regressedNow = [];
   const lastVerify = Date.parse(lastVerifyAt);
-  if (!Number.isFinite(lastVerify) || now - lastVerify >= VERIFY_EVERY_MS) {
+  // Only the heartbeat routine re-runs approved recipes: opening a session never executes one (recipe-guard D3).
+  if (!hook && (!Number.isFinite(lastVerify) || now - lastVerify >= VERIFY_EVERY_MS)) {
     try {
       verify = deps.ledger.verify({ file: deps.ledger.defaultFile(deps.vault), root: deps.vault, now });
       regressedNow = verify.regressed;
