@@ -860,13 +860,14 @@ function twoHostSandbox() {
   return sb;
 }
 
-test('init --host both wires the plugin and the Codex host; uninstall --host codex removes only the Codex wiring; upgrade re-wires it', () => {
+test('direct wiring (a Codex CLI without plugins): init --host both wires the plugin and the Codex host; uninstall --host codex removes only the Codex wiring; upgrade re-wires it', () => {
   const sb = twoHostSandbox();
+  sb.env.FAKE_CODEX_NO_PLUGINS = '1';
   const skills = path.join(sb.home, '.agents', 'skills');
   const hooks = path.join(sb.codexHome, 'hooks.json');
   const r = aos(sb, ['init', '--host', 'both', '--vault', sb.vault, '--no-obsidian', '--provider', 'none', '--yes']);
   assert.equal(r.status, 0, r.stderr + r.stdout);
-  assert.match(r.stdout, /preflight: hosts claude\+codex/);
+  assert.match(r.stdout, /preflight: hosts claude\+codex .*\(direct wiring\)/);
   assert.match(r.stdout, /hooks written · MCP added · skills 21 generated/);
   assert.match(r.stdout, /run \/hooks, and trust the AgenticOS entries once/);
   assert.match(r.stdout, /use \$wrap at the end/);
@@ -874,7 +875,7 @@ test('init --host both wires the plugin and the Codex host; uninstall --host cod
   const cfg = readJson(cfgPath);
   assert.deepEqual(cfg.hosts, {
     claude: { enabled: true, configDir: sb.cfg, bin: FAKE_CLAUDE },
-    codex: { enabled: true, home: sb.codexHome, bin: FAKE_CODEX },
+    codex: { enabled: true, home: sb.codexHome, bin: FAKE_CODEX, install: 'direct' },
   });
   assert.match(sb.log('FAKE_CLAUDE_LOG'), /^plugin install agenticos@agenticos-workbench$/m);
   assert.match(sb.log('FAKE_CODEX_LOG'), new RegExp(`^mcp add agenticos --env AOS_CONFIG=${cfgPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} --env AOS_HOST=codex -- sh ${path.join(sb.vault, 'brain', 'scripts', 'bin', 'aos').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} mcp-server$`, 'm'));
@@ -933,6 +934,115 @@ test('init --host both wires the plugin and the Codex host; uninstall --host cod
   assert.ok(!fs.existsSync(hooks));
   assert.match(sb.log('FAKE_CLAUDE_LOG'), /^plugin uninstall agenticos@agenticos-workbench$/m);
   assert.ok(!fs.existsSync(cfgPath));
+});
+
+// ── the Codex plugin (design 2026-09-23-codex-plugin D4–D6) ──────────────────
+/** 15 trusted [hooks.state] tables for our plugin's entries, the shape Codex writes after /hooks. */
+function trustAllPluginHooks(codexHome) {
+  const CH = require('./codex-host.js');
+  const keys = CH.HOOKS.flatMap(([event, cmds]) => cmds.map((_, i) => `${event.replace(/([a-z])([A-Z])/g, '$1_$2').toLowerCase()}:0:${i}`));
+  fs.appendFileSync(path.join(codexHome, 'config.toml'), keys.map((k) => `[hooks.state."agenticos@agenticos-workbench:hooks/hooks.json:${k}"]\ntrusted_hash = "sha256:00ff"\n`).join('\n'));
+}
+
+test('plugin mode: init --host both installs the agenticos Codex plugin and writes nothing into Codex\'s own config; doctor, status, upgrade, uninstall follow it', () => {
+  const sb = twoHostSandbox();
+  const skills = path.join(sb.home, '.agents', 'skills');
+  const hooks = path.join(sb.codexHome, 'hooks.json');
+  const cfgPath = path.join(sb.cfg, 'agenticos.json');
+  const r = aos(sb, ['init', '--host', 'both', '--vault', sb.vault, '--no-obsidian', '--provider', 'none', '--yes']);
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  assert.match(r.stdout, /preflight: hosts claude\+codex .*\(plugin\)/);
+  assert.match(r.stdout, /install the Codex plugin agenticos@agenticos-workbench from the agenticos-workbench marketplace/);
+  assert.match(r.stdout, /plugin agenticos@agenticos-workbench 0\.0\.0-fake installed from zzoretich\/AgenticOS-Workbench$/m);
+  assert.match(r.stdout, /trust the agenticos@agenticos-workbench entries once; they stay trusted across aos upgrade/);
+  assert.match(r.stdout, /use \$agenticos:wrap at the end/);
+  const log = sb.log('FAKE_CODEX_LOG');
+  assert.match(log, /^plugin marketplace add zzoretich\/AgenticOS-Workbench --json$/m);
+  assert.match(log, /^plugin add agenticos@agenticos-workbench --json$/m);
+  assert.doesNotMatch(log, /^mcp add /m, 'no direct MCP registration');
+  assert.ok(!fs.existsSync(hooks), 'nothing written into ~/.codex/hooks.json');
+  assert.ok(!fs.existsSync(path.join(skills, 'wrap')), 'no generated skills under ~/.agents/skills');
+  assert.equal(readJson(cfgPath).hosts.codex.install, 'plugin');
+  assert.match(sb.log('FAKE_CLAUDE_LOG'), /^plugin install agenticos@agenticos-workbench$/m, 'the Claude Code plugin is untouched');
+
+  // doctor: plugin rows; the untrusted hooks are a warning until /hooks, then ok
+  const dr = aos(sb, ['doctor'], { FAKE_PLUGIN_PATH: path.join(ROOT, 'plugin') });
+  assert.equal(dr.status, 0, dr.stdout + dr.stderr);
+  assert.match(dr.stdout, /ok\s+codex plugin\s+agenticos@agenticos-workbench 0\.0\.0-fake/);
+  assert.match(dr.stdout, /warn\s+codex hooks trusted\s+0 of 15 — open codex, run \/hooks/);
+  assert.match(dr.stdout, /ok\s+codex MCP declared\s+agenticos from the plugin/);
+  assert.doesNotMatch(dr.stdout, /codex direct wiring|codex skills|codex hooks\s+\d/);
+  trustAllPluginHooks(sb.codexHome);
+  assert.match(aos(sb, ['doctor'], { FAKE_PLUGIN_PATH: path.join(ROOT, 'plugin') }).stdout, /ok\s+codex hooks trusted\s+15 of 15$/m);
+  assert.match(aos(sb, ['status']).stdout, /^codex\s+bin=.* install=plugin$/m);
+
+  // upgrade --from-local switches the marketplace to this checkout and reinstalls its version
+  const up = aos(sb, ['upgrade', '--no-obsidian', '--from-local', ROOT]);
+  assert.equal(up.status, 0, up.stderr + up.stdout);
+  assert.match(up.stdout, /install or refresh the Codex plugin agenticos@agenticos-workbench, then remove any direct wiring/);
+  const version = readJson(path.join(ROOT, 'package.json')).version;
+  assert.match(up.stdout, new RegExp(`plugin agenticos@agenticos-workbench ${reEsc(version)} installed from ${reEsc(ROOT)}$`, 'm'));
+  assert.doesNotMatch(up.stdout, /trust the agenticos entries/, 'already the plugin: no new trust prompt');
+  assert.match(sb.log('FAKE_CODEX_LOG'), new RegExp(`^plugin marketplace remove agenticos-workbench\\nplugin marketplace add ${reEsc(ROOT)} --json$`, 'm'));
+
+  // partial uninstall: the plugin and its marketplace go, the Claude side stays
+  const part = aos(sb, ['uninstall', '--host', 'codex', '--yes']);
+  assert.equal(part.status, 0, part.stderr + part.stdout);
+  assert.match(part.stdout, /codex plugin removed: plugin removed · marketplace removed$/m);
+  assert.match(part.stdout, /hosts now: claude$/m);
+  assert.match(sb.log('FAKE_CODEX_LOG'), /^plugin remove agenticos@agenticos-workbench$/m);
+  assert.equal(readJson(cfgPath).hosts.codex.enabled, false);
+  assert.ok(!('install' in readJson(cfgPath).hosts.codex));
+  assert.doesNotMatch(sb.log('FAKE_CLAUDE_LOG'), /plugin uninstall/);
+});
+
+test('plugin mode: aos upgrade moves a direct install to the plugin and removes every piece of the direct wiring (D5)', () => {
+  const sb = twoHostSandbox();
+  const skills = path.join(sb.home, '.agents', 'skills');
+  const hooks = path.join(sb.codexHome, 'hooks.json');
+  const cfgPath = path.join(sb.cfg, 'agenticos.json');
+  // installed while the Codex CLI had no plugins
+  const r = aos(sb, ['init', '--host', 'codex', '--vault', sb.vault, '--no-obsidian', '--provider', 'none', '--yes'], { FAKE_CODEX_NO_PLUGINS: '1' });
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  assert.ok(fs.existsSync(hooks) && fs.existsSync(path.join(skills, 'wrap', 'SKILL.md')) && fs.existsSync(sb.env.FAKE_CODEX_STATE));
+  assert.equal(readJson(cfgPath).hosts.codex.install, 'direct');
+  // the CLI now installs plugins
+  const up = aos(sb, ['upgrade', '--no-obsidian', '--from-local', ROOT]);
+  assert.equal(up.status, 0, up.stderr + up.stdout);
+  assert.match(up.stdout, / installed from .* · direct wiring removed \(5 hook entries, the MCP registration, 21 skills\)$/m);
+  assert.match(up.stdout, /Codex asks once to trust the plugin's hooks: open codex, run \/hooks/);
+  assert.ok(!fs.existsSync(hooks));
+  assert.ok(!fs.existsSync(path.join(skills, 'wrap')));
+  assert.ok(!fs.existsSync(sb.env.FAKE_CODEX_STATE), 'the direct MCP registration is gone');
+  assert.equal(readJson(cfgPath).hosts.codex.install, 'plugin');
+  const dr = aos(sb, ['doctor']);
+  assert.match(dr.stdout, /ok\s+codex plugin/);
+  assert.doesNotMatch(dr.stdout, /codex direct wiring/);
+  // leftovers written by hand beside the plugin show up in doctor, and the next upgrade clears them
+  fs.writeFileSync(hooks, JSON.stringify(require('./codex-host.js').mergeHooks(null, { launcher: '/v/brain/scripts/bin/aos', config: cfgPath })));
+  assert.match(aos(sb, ['doctor']).stdout, /warn\s+codex direct wiring\s+still present beside the plugin: 5 hook events in /);
+  assert.equal(aos(sb, ['upgrade', '--no-obsidian', '--from-local', ROOT]).status, 0);
+  assert.ok(!fs.existsSync(hooks));
+  // full uninstall with the plugin in place
+  const full = aos(sb, ['uninstall', '--keep-vault', '--yes']);
+  assert.equal(full.status, 0, full.stderr + full.stdout);
+  assert.match(full.stdout, /codex plugin removed: plugin removed · marketplace removed$/m);
+});
+
+test('plugin mode: a plugin install that fails falls back to the direct wiring, and the next upgrade tries the plugin again', () => {
+  const sb = twoHostSandbox();
+  const cfgPath = path.join(sb.cfg, 'agenticos.json');
+  const r = aos(sb, ['init', '--host', 'codex', '--vault', sb.vault, '--no-obsidian', '--provider', 'none', '--yes'], { FAKE_CODEX_FAIL_PLUGIN: '1' });
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  assert.match(r.stderr + r.stdout, /codex plugin add failed .* run: codex plugin add agenticos@agenticos-workbench/);
+  assert.match(r.stderr + r.stdout, /the Codex plugin could not be installed; wiring Codex directly instead/);
+  assert.match(r.stdout, /hooks written · MCP added · skills 21 generated/);
+  assert.equal(readJson(cfgPath).hosts.codex.install, 'direct');
+  assert.match(r.stdout, /run \/hooks, and trust the AgenticOS entries once/, 'the checklist describes what was actually installed');
+  const up = aos(sb, ['upgrade', '--no-obsidian', '--from-local', ROOT]);
+  assert.equal(up.status, 0, up.stderr + up.stdout);
+  assert.equal(readJson(cfgPath).hosts.codex.install, 'plugin');
+  assert.ok(!fs.existsSync(path.join(sb.codexHome, 'hooks.json')));
 });
 
 test('init --host codex refuses without a codex CLI; --host auto picks whatever is installed and logged in', () => {

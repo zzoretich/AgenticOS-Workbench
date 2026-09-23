@@ -349,7 +349,20 @@ async function doctor() {
       add('MCP server answers', r.serverName === 'agenticos', `serverInfo.name=${r.serverName || '(none)'}`);
     } catch (e) { add('MCP server answers', false, e.message); }
   }
-  if (hosts.codex) {
+  if (hosts.codex && ((cfg.hosts || {}).codex || {}).install === 'plugin') {
+    // codex-plugin D6: the plugin, whether Codex trusts its hooks yet, its MCP server, and any direct wiring left beside it.
+    const cx = CH.codexPluginStatus({ cfg, launcher: vault ? scriptPath(vault, 'bin/aos') : null, run });
+    add('codex CLI', !!cx.bin, cx.bin || 'not found on PATH or in the usual install locations');
+    if (cx.bin) add('codex login', cx.loggedIn, 'codex login status');
+    add('codex plugin', cx.installed, cx.installed ? `${CH.PLUGIN_ID}${cx.version ? ` ${cx.version}` : ''}` : 'not installed — run: aos upgrade');
+    add('codex hooks trusted', cx.trusted >= cx.hooksTotal,
+      `${cx.trusted} of ${cx.hooksTotal}${cx.trusted < cx.hooksTotal ? ' — open codex, run /hooks, and trust the agenticos plugin entries (until then they do not run)' : ''}`, 'warn');
+    if (cx.bin) add('codex MCP declared', cx.mcp === 'ok', cx.mcp === 'ok' ? 'agenticos from the plugin (./bin/aos, AOS_HOST=codex)' : 'codex mcp list shows no agenticos server from the plugin — run: aos upgrade');
+    const d = cx.direct;
+    const left = [d.hookEvents && `${d.hookEvents} hook events in ${CH.hooksFile(cfg)}`, d.mcp && 'the MCP registration', d.skills && `${d.skills} skills under ${CH.skillsDir()}`].filter(Boolean);
+    if (left.length) add('codex direct wiring', false, `still present beside the plugin: ${left.join(', ')} — run: aos upgrade`, 'warn');
+    if (cx.memories) add('codex memories', true, 'Codex\'s built-in memories are on (separate from the vault; aos never touches them)', 'info');
+  } else if (hosts.codex) {
     const cx = CH.codexHostStatus({ cfg, launcher: vault ? scriptPath(vault, 'bin/aos') : null, run });
     add('codex CLI', !!cx.bin, cx.bin || 'not found on PATH or in the usual install locations');
     if (cx.bin) add('codex login', cx.loggedIn, 'codex login status');
@@ -465,7 +478,7 @@ function status() {
   if (hosts.claude) out.log(`claude     bin=${claudeState.bin || claudeBin(cfg) || 'not found'} login=${typeof claudeState.loggedIn === 'boolean' ? claudeState.loggedIn : 'unprobed'}`);
   if (hosts.codex) {
     const codexState = (state && state.codex) || {};
-    out.log(`codex      bin=${codexState.bin || codexBin(cfg) || 'not found'} login=${typeof codexState.loggedIn === 'boolean' ? codexState.loggedIn : 'unprobed'} home=${CH.codexHome(cfg)}`);
+    out.log(`codex      bin=${codexState.bin || codexBin(cfg) || 'not found'} login=${typeof codexState.loggedIn === 'boolean' ? codexState.loggedIn : 'unprobed'} home=${CH.codexHome(cfg)} install=${((cfg.hosts || {}).codex || {}).install || 'direct'}`);
   }
   out.log(`reasoner   model=${reasonerModel} provider=claude effort=${reasonerEffort}`);
   out.log(`spend      today (hooks) $${sumUsd(spend, isHookFeature).toFixed(4)} / cap $${hookCap}`);
@@ -654,6 +667,60 @@ function installPlugin(ctx, bin) {
   else if (inst.stdout.trim()) out.log(inst.stdout.trim());
 }
 
+/** "5 hook entries, the MCP registration, 21 skills" — what removeDirectWiring took out, or '' when nothing. */
+function directWiringSummary(d) {
+  return [d.hooks && `${d.hooks} hook entries`, d.mcp && 'the MCP registration', d.skills && `${d.skills} skills`].filter(Boolean).join(', ');
+}
+
+/**
+ * Wire the Codex host (init step 6b, upgrade) and record how in agenticos.json `hosts.codex.install`. Plugin mode
+ * (codex-plugin D4/D5): add the marketplace — this checkout under --from-local, else GitHub — install or reinstall
+ * agenticos@agenticos-workbench, and only then remove the direct wiring, so the two never run side by side. A plugin
+ * install that fails falls back to the direct wiring, so the host is never left unwired. Returns the mode installed.
+ */
+function wireCodex(ctx, { bin, mode, upgrade = false }) {
+  const { vault, repo, flags, written } = ctx;
+  const cfg = readJson(configPath());
+  const before = cfg && cfg.hosts && cfg.hosts.codex && cfg.hosts.codex.install;
+  let installed = mode;
+  if (mode === 'plugin') {
+    const source = flags.fromLocal ? path.resolve(flags.fromLocal) : REPO_SLUG;
+    const r = CH.installCodexPlugin({ bin, source, switchSource: !!flags.fromLocal, run, io: out });
+    if (r.state === 'installed') {
+      const gone = directWiringSummary(CH.removeDirectWiring({ cfg, bin, run }));
+      out.log(`   plugin ${CH.PLUGIN_ID}${r.version ? ` ${r.version}` : ''} installed from ${r.source}${gone ? ` · direct wiring removed (${gone})` : ''}`);
+      if (upgrade && before !== 'plugin') out.log('   Codex asks once to trust the plugin\'s hooks: open codex, run /hooks, and trust the agenticos entries');
+    } else {
+      out.warn('the Codex plugin could not be installed; wiring Codex directly instead (aos upgrade tries the plugin again)');
+      installed = 'direct';
+    }
+  }
+  if (installed === 'direct') {
+    const r = CH.installCodexHost({ cfg, launcher: scriptPath(vault, 'bin/aos'), config: configPath(), pluginDir: pluginSourceDir(vault, repo), bin, run, io: out });
+    if (upgrade) out.log(`   hooks ${r.hooksChanged ? 'rewritten' : 'unchanged'} · MCP ${r.mcp} · skills ${r.skills.written.length} regenerated`);
+    else {
+      written.push(r.hooksFile, ...r.skills.written.map((n) => path.join(r.skillsDir, n, 'SKILL.md')));
+      out.log(`   hooks ${r.hooksChanged ? 'written' : 'unchanged'} · MCP ${r.mcp} · skills ${r.skills.written.length} generated${r.skills.skipped.length ? `, ${r.skills.skipped.length} left alone (${r.skills.skipped.join(', ')})` : ''}`);
+    }
+  }
+  const next = readJson(configPath());
+  if (next && next.hosts && next.hosts.codex) { next.hosts.codex.install = installed; writeJson(configPath(), next); }
+  return installed;
+}
+
+/** Take the Codex host down whichever way it was wired: the plugin and its marketplace plus any direct leftovers, or the direct wiring. */
+function unwireCodex(cfg) {
+  const bin = codexBin(cfg);
+  if (bin && CH.codexPluginInstalled(bin, run)) {
+    const p = CH.removeCodexPlugin({ bin, run, io: out });
+    const gone = directWiringSummary(CH.removeDirectWiring({ cfg, bin, run }));
+    out.log(`codex plugin removed: plugin ${p.plugin} · marketplace ${p.marketplace}${gone ? ` · direct wiring removed (${gone})` : ''}`);
+    return;
+  }
+  const r = CH.removeCodexHost({ cfg, bin, run, io: out });
+  out.log(`codex host removed: hooks ${r.hooksFileState} (${r.hooksRemoved} entries) · MCP ${r.mcp} · ${r.skills.length} skills deleted`);
+}
+
 /** GET url → dest (follows ≤5 redirects). `getFn` is injectable so tests can drive stream failures without the network.
  *  Data lands in `<dest>.part` and is renamed over `dest` only once the stream has closed cleanly, so a failure
  *  (offline, DNS, timeout, HTTP error, mid-stream error) removes only the partial file: a bundle already installed
@@ -789,13 +856,18 @@ function checklist(ctx) {
   if (hosts.claude) {
     steps.push(`Add this line to your CLAUDE.md (${path.join(configDir(), 'CLAUDE.md')}); the installer never edits it:\n       @${path.join(vault, 'AGENTICOS.md')}`);
   }
+  const codexPlugin = ctx.codexInstall === 'plugin';
   if (hosts.codex) {
-    steps.push(`Open \`codex\`, run /hooks, and trust the AgenticOS entries once (${CH.hooksFile(readJson(configPath()))}); they only need re-trusting if the vault moves.`);
+    steps.push(codexPlugin
+      ? `Open \`codex\`, run /hooks, and trust the ${CH.PLUGIN_ID} entries once; they stay trusted across aos upgrade.`
+      : `Open \`codex\`, run /hooks, and trust the AgenticOS entries once (${CH.hooksFile(readJson(configPath()))}); they only need re-trusting if the vault moves.`);
   }
   steps.push(`Open the vault in Obsidian: "Open folder as vault" → ${vault}, then enable "Agentic OS" under Settings → Community plugins.`);
   steps.push(`Put ${path.join(os.homedir(), '.local', 'bin')} on your PATH, then run: aos doctor`);
   if (hosts.claude) steps.push('Start a new `claude` session; the first prompt receives <brain-context>. Use /wrap at the end.');
-  if (hosts.codex) steps.push(`Start a new \`codex\` session; every SessionStart receives the conventions and the first prompt <brain-context>. Skills live under ${CH.skillsDir()} — use $wrap at the end.`);
+  if (hosts.codex) steps.push(codexPlugin
+    ? 'Start a new `codex` session; every SessionStart receives the conventions and the first prompt <brain-context>. The skills come with the agenticos plugin — use $agenticos:wrap at the end.'
+    : `Start a new \`codex\` session; every SessionStart receives the conventions and the first prompt <brain-context>. Skills live under ${CH.skillsDir()} — use $wrap at the end.`);
   out.log('');
   out.log('Next steps:');
   steps.forEach((s, i) => out.log(`  ${i + 1}. ${s}`));
@@ -841,7 +913,10 @@ async function init(flags) {
     }
   }
   const hostLabel = [hosts.claude && 'claude', hosts.codex && 'codex'].filter(Boolean).join('+');
-  out.log(`preflight: hosts ${hostLabel} · claude ${bin ? bin : 'absent'} · codex ${cxBin ? cxBin : 'absent'}`);
+  // codex-plugin D4: the agenticos plugin where this Codex CLI installs plugins, else the direct wiring.
+  const cxMode = hosts.codex ? CH.codexInstallMode(cxBin, run) : null;
+  ctx.codexInstall = cxMode;
+  out.log(`preflight: hosts ${hostLabel} · claude ${bin ? bin : 'absent'} · codex ${cxBin ? cxBin : 'absent'}${cxMode ? ` (${cxMode === 'plugin' ? 'plugin' : 'direct wiring'})` : ''}`);
   // mandatory-prereqs D2: Obsidian, Ollama and python3 >= 3.9 are hard gates, checked before anything is written and not
   // waived by --provider none (that flag is about model calls, not tools). --no-obsidian only skips the HUD bundle step (D4).
   const obsApp = obsidianApp();
@@ -911,12 +986,10 @@ async function init(flags) {
 
   // 6. plugin (Claude Code host)
   if (hosts.claude && bin) await act(`register the ${MARKETPLACE} marketplace and install ${PLUGIN_ID}`, () => installPlugin(ctx, bin));
-  // 6b. Codex host: hooks.json, MCP registration, generated skills (design D3/D4)
-  if (hosts.codex) await act('wire the Codex host: hooks.json, the agenticos MCP server, and the skills under ~/.agents/skills', () => {
-    const r = CH.installCodexHost({ cfg: readJson(configPath()), launcher: scriptPath(vault, 'bin/aos'), config: configPath(), pluginDir: pluginSourceDir(vault, repo), bin: cxBin, run, io: out });
-    written.push(r.hooksFile, ...r.skills.written.map((n) => path.join(r.skillsDir, n, 'SKILL.md')));
-    out.log(`   hooks ${r.hooksChanged ? 'written' : 'unchanged'} · MCP ${r.mcp} · skills ${r.skills.written.length} generated${r.skills.skipped.length ? `, ${r.skills.skipped.length} left alone (${r.skills.skipped.join(', ')})` : ''}`);
-  });
+  // 6b. Codex host: the agenticos plugin (codex-plugin D4/D5), else hooks.json, MCP registration, generated skills (design D3/D4)
+  if (hosts.codex) await act(cxMode === 'plugin'
+    ? `install the Codex plugin ${CH.PLUGIN_ID} from the ${MARKETPLACE} marketplace and remove any direct wiring`
+    : 'wire the Codex host: hooks.json, the agenticos MCP server, and the skills under ~/.agents/skills', () => { ctx.codexInstall = wireCodex(ctx, { bin: cxBin, mode: cxMode }); });
 
   // 7. obsidian bundle (+ optional terminal deps)
   if (flags.obsidian !== false) await obsidianBundle(ctx);
@@ -1021,11 +1094,14 @@ async function upgrade(flags) {
     writeJson(configPath(), next);
     noteClaudeBinChange(vault, cfg.claude && cfg.claude.bin, next.claude.bin);
   });
-  if (hosts.codex) await act('re-wire the Codex host (hooks.json, MCP registration, regenerated skills)', () => {
-    const fresh = readJson(configPath());
-    const r = CH.installCodexHost({ cfg: fresh, launcher: scriptPath(vault, 'bin/aos'), config: configPath(), pluginDir: pluginSourceDir(vault, repo), bin: codexBin(fresh), run, io: out });
-    out.log(`   hooks ${r.hooksChanged ? 'rewritten' : 'unchanged'} · MCP ${r.mcp} · skills ${r.skills.written.length} regenerated`);
-  });
+  if (hosts.codex) {
+    // codex-plugin D4/D5: a direct install moves to the plugin as soon as this Codex CLI installs plugins.
+    const cbin = codexBin(readJson(configPath()));
+    const mode = CH.codexInstallMode(cbin, run);
+    await act(mode === 'plugin'
+      ? `install or refresh the Codex plugin ${CH.PLUGIN_ID}, then remove any direct wiring`
+      : 're-wire the Codex host (hooks.json, MCP registration, regenerated skills)', () => wireCodex(ctx, { bin: cbin, mode, upgrade: true }));
+  }
   await act('add any new default keys to brain/config.json (user values win)', () => {
     const defaults = readJson(path.join(repo, 'brain', 'scripts', 'config.default.json'), {});
     const p = path.join(vault, 'brain', 'config.json');
@@ -1076,8 +1152,7 @@ async function uninstall(flags) {
     if (!['claude', 'codex'].includes(flags.host)) throw new UsageError('uninstall --host takes claude or codex');
     if (!cfg || !cfg.vault) throw new CheckFailed(`no ${configPath()} — nothing to unwire`);
     if (flags.host === 'codex') {
-      const r = CH.removeCodexHost({ cfg, bin: codexBin(cfg), run, io: out });
-      out.log(`codex host removed: hooks ${r.hooksFileState} (${r.hooksRemoved} entries) · MCP ${r.mcp} · ${r.skills.length} skills deleted`);
+      unwireCodex(cfg);
     } else {
       const cbin = claudeBin(cfg);
       if (cbin) for (const args of [['plugin', 'uninstall', PLUGIN_ID], ['plugin', 'marketplace', 'remove', MARKETPLACE]]) {
@@ -1086,14 +1161,12 @@ async function uninstall(flags) {
       } else out.warn(`claude CLI not found; skipped: claude plugin uninstall ${PLUGIN_ID}`);
     }
     const next = buildUserConfig(cfg, { vault: cfg.vault, version: cfg.version, hosts: { claude: hosts.claude && flags.host !== 'claude', codex: hosts.codex && flags.host !== 'codex' } });
+    if (flags.host === 'codex') delete next.hosts.codex.install;
     writeJson(configPath(), next);
     out.log(`hosts now: ${[next.hosts.claude.enabled && 'claude', next.hosts.codex.enabled && 'codex'].filter(Boolean).join(', ') || 'none'}`);
     return 0;
   }
-  if (hosts.codex) {
-    const r = CH.removeCodexHost({ cfg, bin: codexBin(cfg), run, io: out });
-    out.log(`codex host removed: hooks ${r.hooksFileState} (${r.hooksRemoved} entries) · MCP ${r.mcp} · ${r.skills.length} skills deleted`);
-  }
+  if (hosts.codex) unwireCodex(cfg);
   const bin = hosts.claude ? claudeBin(cfg) : null;
   if (bin) {
     // Warn and continue (a teardown must finish), but never report a removal that did not happen.
