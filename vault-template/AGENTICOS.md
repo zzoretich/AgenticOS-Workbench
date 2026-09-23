@@ -23,6 +23,7 @@ Under Codex CLI every `/name` below is the skill `$name` (`$wrap`, `$remember`, 
 
 - `/remember <text>` — add to `SESSION.md`; tag `#promote` to make it permanent at wrap
 - `/todo <text>` — add a todo to `TODO.md` (Tasks syntax: `📅` due, `⏫ 🔼 🔽` priority, `#tags`); the Workbench To-Do tab lists and ticks them
+- `/propose <idea>` — file a proposal in `persona/proposals/` in the standard format, with an HTML page and an "Open the proposal in browser" link; the Workbench Proposals tab lists it and the `persona-flag-closer` review decides it
 - `/feedback` · `/pattern` · `/project` — write a memory of that type
 - `/wrap` — promote `#promote` items, extract this session's memories in-session (`wrap_session`), summarize into today's daily note, reset `SESSION.md`
 - `/brain` — show current state · `/scan` — refresh the dashboard
@@ -37,6 +38,7 @@ Under Codex CLI every `/name` below is the skill `$name` (`$wrap`, `$remember`, 
 - Projects live in `workspaces/<slug>/` (kebab-case), each with a `CLAUDE.md` and an identical `AGENTS.md` so both hosts read the same instructions. Create one with `aos workspace new <name>`, bring an existing folder in with `aos workspace adopt <path>`; never create project directories elsewhere. Every scan pins each host's sessions to their workspace and lists the rest (`aos workspace list`).
 - `MEMORY.md` bullets are `- [Title](brain/memory/<type>/<slug>.md) — description` under the H2 for that type; the H2 names are fixed.
 - `[[wiki-links]]` in Obsidian-facing files (daily notes, memory, MOCs); markdown `[text](path)` in Claude-facing files (this file, `MEMORY.md`, skills).
+- A proposal you write for the user to decide on — a change or an idea, asked for or offered — goes through `/propose`, never into a loose file elsewhere, so every proposal lives in the Proposals tab in one format with its HTML page. A plan for work you are already doing (plan mode, a workspace `PLAN.md`) is not a proposal.
 - `brain/_index/` is written only by scripts. In `BRAIN.md` the `## Last Session` block is the one hand-editable part; everything else is compiled from memory frontmatter (`pin: true`, `status/active`).
 - After any correction from the user: capture it with `/feedback` (include **Why** and **How to apply**). Rules surface through the `feedback_rules` tool; auto-drafted rules wait in `brain/memory/feedback/_drafts/` for the `feedback-review` skill.
 
