@@ -96,14 +96,62 @@ test('graph.timeoutSec kills a hung graphify', async () => {
   await assert.rejects(build(cfg({ timeoutSec: 1 })), /graphify update timed out after 1s/);
 });
 
-test('a build already holding the lock makes this one a skip', async () => {
-  fs.mkdirSync(GB.LOCK);
+// The graph lock names its owner; only a dead owner or one past its own deadline is broken (the 0.11.0 bug: a structural
+// scan's 3-minute idea of "stale" broke a live 30-minute semantic run's lock).
+const hold = (o = {}) => fs.writeFileSync(GB.LOCK, JSON.stringify({
+  schema: 1, mode: 'semantic', pid: process.pid, startedAt: new Date(Date.now() - 7 * 60_000).toISOString(),
+  until: new Date(Date.now() + 23 * 60_000).toISOString(), ...o,
+}));
+const deadPid = () => require('child_process').spawnSync(process.execPath, ['-e', '']).pid;
+
+test('a live semantic pass 7 minutes in keeps its lock: the structural pass skips and names it', async () => {
   try {
+    hold();
     const report = rep();
-    assert.deepEqual(await build(cfg(), report), { status: 'skipped', reason: 'build running' });
-    assert.equal(report.reason, 'build running');
-    assert.ok(!fs.existsSync(LOG));
-  } finally { fs.rmdirSync(GB.LOCK); }
+    const r = await build(cfg(), report);
+    assert.equal(r.status, 'skipped');
+    assert.match(r.reason, /^semantic pass running since \d\d:\d\d$/);
+    assert.equal(report.reason, r.reason);
+    assert.ok(!fs.existsSync(LOG), 'graphify did not run');
+    assert.equal(JSON.parse(fs.readFileSync(GB.LOCK, 'utf8')).mode, 'semantic', 'the live owner\'s lock is intact');
+  } finally { fs.rmSync(GB.LOCK, { force: true }); }
+});
+
+test('a lock whose owner died, or whose own deadline passed, is broken and taken; ours is released after', async () => {
+  try {
+    hold({ pid: deadPid() });
+    assert.equal((await build()).status, 'ok');
+    assert.ok(!fs.existsSync(GB.LOCK), 'released');
+    hold({ until: new Date(Date.now() - 1000).toISOString() });
+    assert.equal((await build()).status, 'ok');
+    assert.ok(!fs.existsSync(GB.LOCK));
+  } finally { fs.rmSync(GB.LOCK, { force: true }); }
+});
+
+test('an unreadable lock is honoured for a minute (caught mid-write), then broken', async () => {
+  try {
+    fs.writeFileSync(GB.LOCK, '');
+    const r = await build();
+    assert.equal(r.status, 'skipped');
+    assert.match(r.reason, /^another graph build running since \d\d:\d\d$/);
+    const old = new Date(Date.now() - 5 * 60_000);
+    fs.utimesSync(GB.LOCK, old, old);
+    assert.equal((await build()).status, 'ok');
+  } finally { fs.rmSync(GB.LOCK, { force: true }); }
+});
+
+test('a pass releases only its own lock, never one a waiter took after its deadline', async () => {
+  try {
+    const r = await GB.withGraphLock('structural', 1000, async () => {
+      assert.equal(GB.lockOwner().mode, 'structural');
+      hold({ mode: 'semantic', pid: process.ppid, id: 'theirs' });   // someone else's lock now (a different live process)
+      return 7;
+    });
+    assert.deepEqual(r, { value: 7 });
+    assert.equal(JSON.parse(fs.readFileSync(GB.LOCK, 'utf8')).mode, 'semantic', 'left in place');
+    const busy = await GB.withGraphLock('structural', 1000, async () => assert.fail('must not run'));
+    assert.equal(busy.busy.mode, 'semantic');
+  } finally { fs.rmSync(GB.LOCK, { force: true }); }
 });
 
 test('a structural pass keeps the semantic stamp of an earlier model pass', async () => {

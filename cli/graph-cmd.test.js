@@ -247,3 +247,24 @@ test('build --semantic refuses a provider opt-out, needs --yes off a terminal, a
   assert.equal(logs.pop(), 'graph: not run');
   assert.match(logs.join('\n'), /today \$0\.0000 of the \$1 graph budget/);
 });
+
+test('while a semantic pass holds the graph lock, doctor and status say it is running (not a finished run)', async () => {
+  const w = world();
+  const bin = placeGraphify(w.home, GC.PIN);
+  const out = path.join(w.vault, 'brain', 'graphify-out');
+  fs.mkdirSync(out, { recursive: true });
+  fs.mkdirSync(path.join(w.vault, 'brain', '_index'), { recursive: true });
+  fs.writeFileSync(path.join(out, GC.MARKER), JSON.stringify({ lastStructural: new Date().toISOString(), nodes: 5, edges: 4, lastSemanticRun: new Date().toISOString() }));
+  const lock = path.join(w.vault, 'brain', '_index', '.graph.lock.json');
+  const startedAt = new Date(Date.now() - 8 * 60_000).toISOString();
+  fs.writeFileSync(lock, JSON.stringify({ schema: 1, mode: 'semantic', pid: process.pid, startedAt, until: new Date(Date.now() + 60_000).toISOString() }));
+  const hm = new Date(startedAt).toTimeString().slice(0, 5);
+  const row = GC.doctorRows({ cfg: { graph: { bin } }, vault: w.vault }).find((r) => r.name === 'graph semantic');
+  assert.deepEqual(row, { name: 'graph semantic', ok: true, detail: `running since ${hm} · today $0.00 of $1`, level: 'warn' });
+  const logs = [];
+  fs.writeFileSync(path.join(w.configDir, 'agenticos.json'), JSON.stringify({ vault: w.vault, graph: { bin } }));
+  assert.equal(await GC.run(['status'], { configDir: w.configDir, io: { log: (m) => logs.push(m), error() {} } }), 0);
+  assert.match(logs.join('\n'), new RegExp(`^semantic   on \\(every 24 h, auto\\) · running since ${hm} · never run`, 'm'));
+  fs.writeFileSync(lock, JSON.stringify({ schema: 1, mode: 'semantic', pid: process.pid, startedAt, until: new Date(Date.now() - 1000).toISOString() }));
+  assert.equal(GC.semanticRunning(w.vault), null, 'past its deadline it is not running');
+});

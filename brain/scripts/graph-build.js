@@ -5,7 +5,7 @@
  * Structural pass: `graphify update <vault>` with GRAPHIFY_OUT=<vault>/<graph.out> — no model, no network, about
  * a second or two for a few hundred notes. scan-vault runs it inline as its `graph-build` stage (scan-vault is itself
  * detached when a hook fires it); `aos graph build` runs this file directly.
- *   - one lock (brain/_index/.graph.lock): two scans never run graphify on the same out dir at once
+ *   - one lock for both passes (brain/_index/.graph.lock.json, see withGraphLock): graphify never runs twice at once
  *   - graph.json → graph.json.prev before every run; graphify's own dated backups are off (GRAPHIFY_NO_BACKUP=1)
  *   - "Cannot read … for incremental merge" (a torn graph.json) → delete it and rebuild once (--force does not help)
  *   - the child env drops API-key variables, so graphify's backend auto-detect can never select a paid backend
@@ -22,15 +22,70 @@ const { spawnSync } = require('child_process');
 const { PATHS } = require('./lib/paths.js');
 const { loadConfig } = require('./lib/config.js');
 const { withReport } = require('./lib/pipeline-report.js');
-const { withLock } = require('./lib/snapshotLock.js');
 const G = require('./sdk/lib/graph.js');
 const { graphSpendToday } = require('./sdk/lib/spend-ledger.js');
 
-const LOCK = path.join(PATHS.INDEX, '.graph.lock');
+// One graph lock for both passes (D7): graphify's `extract` takes none of its own. The lock is a JSON file created with
+// O_EXCL that names its owner — the pass, its pid, when it started, and the deadline its own timeout sets — so a waiter
+// breaks it only when that pid is gone or that deadline has passed, never while a live pass is inside. (0.11.0 judged
+// staleness by the WAITER's timeout: a scan's 3-minute structural wait broke a 30-minute semantic run's lock.)
+const LOCK = path.join(PATHS.INDEX, '.graph.lock.json');
+const UNREADABLE_GRACE_MS = 60_000;   // a lock file caught between create and write (or torn) is honoured this long
 const SHIM_DIR = path.join(__dirname, 'bin', 'graph-shim');
 const SECRET_ENV = /(_API_KEY|_API_TOKEN)$|^(AWS|AZURE)_/;
 
 function isExecutable(p) { try { fs.accessSync(p, fs.constants.X_OK); return fs.statSync(p).isFile(); } catch { return false; } }
+
+function pidAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
+}
+
+/** The graph lock's owner ({ mode, pid, startedAt, until }) while a live pass holds it, else null. */
+function lockOwner(now = Date.now()) {
+  let st;
+  let raw;
+  try { st = fs.statSync(LOCK); raw = fs.readFileSync(LOCK, 'utf8'); } catch { return null; }
+  let o = null;
+  try { o = JSON.parse(raw); } catch { o = null; }
+  if (!o || typeof o !== 'object') {
+    return now - st.mtimeMs < UNREADABLE_GRACE_MS ? { mode: null, pid: null, startedAt: new Date(st.mtimeMs).toISOString(), until: null } : null;
+  }
+  return pidAlive(o.pid) && now < Date.parse(o.until) ? o : null;
+}
+
+/** Runs fn holding the graph lock → { value }; or { busy: owner } without running it while a live pass holds the lock. */
+async function withGraphLock(mode, timeoutMs, fn) {
+  const mine = { schema: 1, mode, pid: process.pid, id: require('crypto').randomUUID(), startedAt: new Date().toISOString(), until: new Date(Date.now() + timeoutMs + 60_000).toISOString() };
+  const create = () => {
+    let fd;
+    try { fd = fs.openSync(LOCK, 'wx'); } catch (e) { if (e.code === 'EEXIST') return false; throw e; }
+    try { fs.writeSync(fd, JSON.stringify(mine)); } finally { fs.closeSync(fd); }
+    return true;
+  };
+  if (!create()) {
+    const held = lockOwner();
+    if (held) return { busy: held };
+    fs.rmSync(LOCK, { force: true });   // its owner is gone, or past the deadline it set itself
+    if (!create()) return { busy: lockOwner() || { mode: null, startedAt: null } };
+  }
+  try {
+    return { value: await fn() };
+  } finally {
+    // Release only our own lock: past our deadline a waiter may have broken it and taken it.
+    try {
+      const o = JSON.parse(fs.readFileSync(LOCK, 'utf8'));
+      if (o.id === mine.id) fs.rmSync(LOCK, { force: true });
+    } catch { /* already gone */ }
+  }
+}
+
+/** "semantic pass running since 16:47" — the skip reason a busy lock gives, for the ledger and the HUD. */
+function busyReason(o) {
+  const what = o.mode === 'semantic' ? 'semantic pass' : o.mode === 'structural' ? 'structural pass' : 'another graph build';
+  const at = Date.parse(o.startedAt || '');
+  return `${what} running${at ? ` since ${new Date(at).toTimeString().slice(0, 5)}` : ''}`;
+}
 
 /** Why the structural pass will not run for this config ('graph off' | 'graphify missing'), or null. */
 function skipReason(cfg) {
@@ -93,12 +148,9 @@ async function buildStructural({ report, cfg = loadConfig(), vault = PATHS.VAULT
   const g = cfg.graph;
   const out = G.outDir(vault, g);
   const timeoutMs = Math.max(1, Number(g.timeoutSec) || 120) * 1000;
-  try {
-    return await withLock(LOCK, () => structural({ report, g, vault, out, timeoutMs, spawn, now }), { retries: 1, staleMs: timeoutMs + 60000 });
-  } catch (e) {
-    if (/could not acquire lock/.test(e.message)) { report.skip('build running'); return { status: 'skipped', reason: 'build running' }; }
-    throw e;
-  }
+  const r = await withGraphLock('structural', timeoutMs, () => structural({ report, g, vault, out, timeoutMs, spawn, now }));
+  if (r.busy) { const why = busyReason(r.busy); report.skip(why); return { status: 'skipped', reason: why }; }
+  return r.value;
 }
 
 // ── semantic pass ─────────────────────────────────────────────────────────────
@@ -193,12 +245,9 @@ async function buildSemantic({ report, cfg = loadConfig(), vault = PATHS.VAULT, 
   const g = cfg.graph;
   const out = G.outDir(vault, g);
   const timeoutMs = Math.max(1, Number((g.semantic || {}).timeoutSec) || 1800) * 1000;
-  try {
-    return await withLock(LOCK, () => semantic({ report, cfg, g, vault, out, timeoutMs, claudeBin: bin, spawn, now }), { retries: 1, staleMs: timeoutMs + 60000 });
-  } catch (e) {
-    if (/could not acquire lock/.test(e.message)) { report.skip('build running'); return { status: 'skipped', reason: 'build running' }; }
-    throw e;
-  }
+  const r = await withGraphLock('semantic', timeoutMs, () => semantic({ report, cfg, g, vault, out, timeoutMs, claudeBin: bin, spawn, now }));
+  if (r.busy) { const why = busyReason(r.busy); report.skip(why); return { status: 'skipped', reason: why }; }
+  return r.value;
 }
 
 /** scan-vault's kick: the pass in a detached process, which records its own `graph-semantic` report. */
@@ -226,4 +275,4 @@ if (require.main === module) {
     .catch((e) => { console.error('[graph-build]', e.message); process.exit(1); });
 }
 
-module.exports = { buildStructural, buildSemantic, semanticSkip, semanticState, spawnSemantic, skipReason, childEnv, LOCK, SHIM_DIR };
+module.exports = { buildStructural, buildSemantic, semanticSkip, semanticState, spawnSemantic, skipReason, childEnv, withGraphLock, lockOwner, busyReason, LOCK, SHIM_DIR };
