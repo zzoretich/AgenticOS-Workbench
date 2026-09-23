@@ -171,7 +171,7 @@ ${intro ? `<div class="intro">${toHtml(intro)}</div>\n` : ''}<dl class="meta">${
 <main>
 ${sections || '<p class="sub">This proposal has no sections yet.</p>'}
 </main>
-<footer>Rendered ${localDay(now)} from <code>persona/proposals/${esc(name)}</code>. The Markdown file is the source; decide it in a Claude session with “review persona flags”.</footer>
+<footer>Rendered ${localDay(now)} from <code>persona/proposals/${esc(name)}</code>. The Markdown file is the source; decide it in a Claude Code or Codex session with “review persona flags”.</footer>
 </body>
 </html>
 `;

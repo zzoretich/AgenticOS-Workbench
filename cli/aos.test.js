@@ -168,7 +168,7 @@ test('status and provider need a config; provider validates its argument', () =>
   const st = aos(sb, ['status']);
   assert.equal(st.status, 0, st.stderr);
   assert.match(st.stdout, /provider\s+mode=auto resolved=never resolved/);
-  assert.match(st.stdout, /spend\s+today \(hooks\) \$0\.0100 \/ cap \$0\.5/);
+  assert.match(st.stdout, /spend\s+today \(hooks\) \$0\.0100 \/ cap \$0\.5 \(claude\.perDayUsd\)/);
   assert.match(st.stdout, /spend\s+today \(duties\) \$2\.0000 \/ cap \$6/);
   assert.match(st.stdout, /spend\s+today \(reasoner\) \$0\.3000 \/ cap \$5/);
   assert.match(st.stdout, /^reasoner\s+model=claude-opus-5 provider=claude effort=medium$/m);
@@ -179,6 +179,12 @@ test('status and provider need a config; provider validates its argument', () =>
   assert.match(st.stdout, /auto-wrap\s+never/);
   assert.ok(!/^\s+(version|pipelines)\s/m.test(st.stdout), 'ledger envelope keys are not printed as rows');
   assert.match(st.stdout, /^claude\s+bin=.*login=unprobed$/m);
+
+  // Under the codex provider the hook calls are capped by codex.perDayUsd (provider.js codexBudget), and status says so.
+  const withCodex = { ...readJson(path.join(sb.cfg, 'agenticos.json')), codex: { perDayUsd: 0.3 } };
+  fs.writeFileSync(path.join(sb.cfg, 'agenticos.json'), JSON.stringify(withCodex, null, 2));
+  fs.writeFileSync(path.join(sb.vault, 'brain', '_index', 'provider-state.json'), JSON.stringify({ name: 'codex', reason: 'auto', checkedAt: ts }));
+  assert.match(aos(sb, ['status']).stdout, /spend\s+today \(hooks\) \$0\.0100 \/ cap \$0\.3 \(codex\.perDayUsd\)/);
 
   assert.equal(aos(sb, ['provider', 'bogus']).status, 2);
   const set = aos(sb, ['provider', 'ollama']);

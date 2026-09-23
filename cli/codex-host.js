@@ -198,9 +198,25 @@ function isPlugin(ctx) { return ctx.target === 'plugin'; }
 function invocation(ctx, name) { return isPlugin(ctx) ? `$${PLUGIN_NAME}:${name}` : `$${name}`; }
 function markerFor(ctx) { return isPlugin(ctx) ? PLUGIN_MARKER : GENERATED_MARKER; }
 
+/**
+ * Wording that names the session the skill runs in, and invocations of this plugin's own commands (`/name` or
+ * `/agenticos:name`) → the Codex forms. Applied to bodies and to frontmatter descriptions. Only "a/the/this/your Claude
+ * Code session" is the current session; a qualified phrase ("an interactive Claude Code session") names Claude Code on
+ * purpose and stays.
+ */
+function rewriteWording(text, ctx) {
+  const { names } = ctx;
+  let s = text.replace(/\b(a|the|this|your|each|every) Claude Code session/gi, (m, det) => `${det} Codex session`);
+  if (names && names.length) {
+    const alt = names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+    s = s.replace(new RegExp(`(^|[\\s(\`"'])/(?:${PLUGIN_NAME}:)?(${alt})(?![\\w/-])`, 'g'), (m, pre, n) => `${pre}${invocation(ctx, n)}`);
+  }
+  return s;
+}
+
 /** The Claude Code idioms a command or skill body uses → their Codex equivalents. */
 function rewriteBody(body, ctx) {
-  const { launcher, config, skillsDir: sdir, name, names } = ctx;
+  const { launcher, config, skillsDir: sdir, name } = ctx;
   const aos = isPlugin(ctx) ? `${PLUGIN_ROOT_REF}/bin/aos` : launcher;
   const skills = isPlugin(ctx) ? `${PLUGIN_ROOT_REF}/skills` : sdir;
   let s = body;
@@ -210,34 +226,36 @@ function rewriteBody(body, ctx) {
   if (!isPlugin(ctx)) s = s.replace(/\$\{CLAUDE_CONFIG_DIR:-(?:~|\$HOME)\/\.claude\}\/agenticos\.json/g, () => config);
   s = s.replace(/mcp__plugin_agenticos_agenticos__/g, 'mcp__agenticos__');
   s = s.replace(/\$ARGUMENTS/g, () => `the text the user wrote after \`${invocation(ctx, name)}\``);
-  s = s.replace(/Claude Code session/g, 'Codex session');
-  if (names && names.length) {
-    const alt = names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
-    s = s.replace(new RegExp(`(^|[\\s(\`])/(${alt})(?![\\w/-])`, 'g'), (m, pre, n) => `${pre}${invocation(ctx, n)}`);
-  }
-  return s;
+  // Claude Code tools Codex has no counterpart for, in the phrasings the sources use: a file tool is just "read the
+  // file"; a structured question becomes a question the host note explains how to ask.
+  s = s.replace(/ with the (?:Read|Edit|Write|Glob|Grep) tool\b/g, '');
+  s = s.replace(/\bAskUserQuestion(?: call)?\b/g, 'question');
+  return rewriteWording(s, ctx);
 }
 
 function hostNote(ctx) {
+  const ask = ctx.asks ? ' A question to the user is one message with its options numbered (where it says multiSelect, the user may pick several); wait for the reply before acting on it.' : '';
   if (isPlugin(ctx)) {
-    return `> Host: Codex CLI, through the \`${PLUGIN_NAME}\` plugin. Invoke as \`${invocation(ctx, ctx.name)}\`. \`${PLUGIN_ROOT_REF}\` is the plugin's folder, two levels above the folder that holds this SKILL.md; the \`aos\` launcher is \`${PLUGIN_ROOT_REF}/bin/aos\`. The tools of the \`agenticos\` MCP server are named \`mcp__agenticos__<tool>\`.\n\n`;
+    return `> Host: Codex CLI, through the \`${PLUGIN_NAME}\` plugin. Invoke as \`${invocation(ctx, ctx.name)}\`. \`${PLUGIN_ROOT_REF}\` is the plugin's folder, two levels above the folder that holds this SKILL.md; the \`aos\` launcher is \`${PLUGIN_ROOT_REF}/bin/aos\`. The tools of the \`agenticos\` MCP server are named \`mcp__agenticos__<tool>\`.${ask}\n\n`;
   }
-  return `> Host: Codex CLI. Invoke as \`${invocation(ctx, ctx.name)}\`. The \`aos\` launcher is \`${ctx.launcher}\`; the tools of the \`agenticos\` MCP server are named \`mcp__agenticos__<tool>\`.\n\n`;
+  return `> Host: Codex CLI. Invoke as \`${invocation(ctx, ctx.name)}\`. The \`aos\` launcher is \`${ctx.launcher}\`; the tools of the \`agenticos\` MCP server are named \`mcp__agenticos__<tool>\`.${ask}\n\n`;
 }
+
+const ASKS = /\bAskUserQuestion\b/;
 
 /** plugin/commands/<name>.md → a Codex SKILL.md. */
 function commandToSkill(name, text, ctx) {
   const { fm, body } = parseFrontmatter(text);
-  const description = fm.description || `AgenticOS ${name}`;
-  const c = { ...ctx, name };
+  const c = { ...ctx, name, asks: ASKS.test(body) };
+  const description = rewriteWording(fm.description || `AgenticOS ${name}`, c);
   return `---\nname: ${name}\ndescription: ${description}\n---\n${markerFor(c)}\n\n${hostNote(c)}${rewriteBody(body, c).replace(/^\n+/, '')}`;
 }
 
 /** plugin/skills/<name>/SKILL.md → the same skill with Codex wording, the marker and the host note. */
 function skillToCodex(name, text, ctx) {
   const { fm, raw, body } = parseFrontmatter(text);
-  const c = { ...ctx, name: fm.name || name };
-  const head = raw.replace(/Claude Code session/g, 'Codex session');
+  const c = { ...ctx, name: fm.name || name, asks: ASKS.test(body) };
+  const head = rewriteWording(raw, c);
   return `---\n${head}\n---\n${markerFor(c)}\n\n${hostNote(c)}${rewriteBody(body, c).replace(/^\n+/, '')}`;
 }
 
@@ -434,6 +452,27 @@ function installCodexPlugin({ bin, source, switchSource = false, run = defaultRu
   return { state: 'installed', version: j.version || null, installedPath: j.installedPath || null, source };
 }
 
+/**
+ * The agenticos-workbench marketplace's folder in this Codex (`codex plugin marketplace list --json` → `root`): the
+ * checkout it was added from, or Codex's snapshot of the repository for a git source. `aos upgrade` vendors from it
+ * when no Claude Code marketplace exists (a Codex-only machine); `refresh` fetches a git snapshot first so it vendors
+ * the current release. null when there is no binary, no such marketplace, or no root.
+ */
+function codexMarketplaceRoot({ bin, run = defaultRun, refresh = false } = {}) {
+  if (!bin) return null;
+  const find = () => {
+    const r = run(bin, ['plugin', 'marketplace', 'list', '--json'], { capture: true, allowFail: true });
+    const j = r.status === 0 ? safeParse(r.stdout) : null;
+    return (j && Array.isArray(j.marketplaces) && j.marketplaces.find((m) => m && m.name === MARKETPLACE)) || null;
+  };
+  let m = find();
+  if (m && refresh && m.marketplaceSource && m.marketplaceSource.sourceType === 'git') {
+    run(bin, ['plugin', 'marketplace', 'upgrade', MARKETPLACE], { capture: true, allowFail: true });
+    m = find() || m;
+  }
+  return m && typeof m.root === 'string' && m.root ? path.resolve(m.root) : null;
+}
+
 /** Uninstall the plugin and drop the marketplace. Returns { plugin, marketplace } as 'removed' | 'failed' | 'no-binary'. */
 function removeCodexPlugin({ bin, run = defaultRun, io = null }) {
   if (!bin) return { plugin: 'no-binary', marketplace: 'no-binary' };
@@ -515,6 +554,7 @@ function codexPluginStatus({ cfg, launcher, run = defaultRun, env = process.env,
 module.exports = {
   HOOKS, GENERATED_MARKER, PLUGIN_NAME, MARKETPLACE, PLUGIN_ID, PLUGIN_ROOT_REF, PLUGIN_MARKER,
   pluginHookCommand, pluginMcpServers, pluginHookCount, codexInstallMode, codexPluginInstalled, installCodexPlugin, removeCodexPlugin,
+  codexMarketplaceRoot,
   removeDirectWiring, trustedPluginHooks, codexPluginStatus,
   codexHome, hooksFile, skillsDir, codexBin, codexLoggedIn, memoriesEnabled,
   hookCommand, isOurs, mergeHooks, stripHooks, countOurEvents,

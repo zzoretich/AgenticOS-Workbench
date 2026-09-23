@@ -55,6 +55,12 @@ function fakeRun(state = {}) {
       }
       if (verb === 'upgrade') return state.mkt && !state.mkt.startsWith('/') ? ok('') : err('Error: marketplace `agenticos-workbench` is not configured as a Git marketplace');
       if (verb === 'remove') { if (!state.mkt) return err('Error: marketplace `agenticos-workbench` is not configured or installed'); state.mkt = null; return ok(''); }
+      if (verb === 'list') {
+        if (!state.mkt) return ok(JSON.stringify({ marketplaces: [] }));
+        const git = !state.mkt.startsWith('/');
+        const root = git ? '/codex-home/.tmp/marketplaces/agenticos-workbench' : state.mkt;
+        return ok(JSON.stringify({ marketplaces: [{ name: 'openai-bundled', root: '/bundled' }, { name: 'agenticos-workbench', root, marketplaceSource: { sourceType: git ? 'git' : 'local', source: state.mkt } }] }));
+      }
     }
     if (key === 'plugin add') {
       if (!state.mkt || state.failPluginAdd) return err('Error: plugin not found');
@@ -126,7 +132,7 @@ test('commandToSkill rewrites every Claude Code idiom and carries the marker', (
     'Then run /wrap, not brain/_index/wrap or /wrap-session. Also ${CLAUDE_PLUGIN_ROOT}/bin/aos alone. A Claude Code session ends.',
   ].join('\n');
   const out = CH.commandToSkill('remember', src, { ...CTX, skillsDir: '/home/demo/.agents/skills', names: ['remember', 'wrap'] });
-  assert.match(out, /^---\nname: remember\ndescription: Append a note; tag #promote to make it permanent at \/wrap\n---\n/);
+  assert.match(out, /^---\nname: remember\ndescription: Append a note; tag #promote to make it permanent at \$wrap\n---\n/, 'descriptions are rewritten too');
   assert.ok(out.split('\n')[4] === CH.GENERATED_MARKER, 'marker right under the frontmatter');
   assert.ok(!/allowed-tools|argument-hint/.test(out));
   assert.match(out, /Remember: \*\*the text the user wrote after `\$remember`\*\*/);
@@ -137,6 +143,28 @@ test('commandToSkill rewrites every Claude Code idiom and carries the marker', (
   assert.match(out, /Then run \$wrap, not brain\/_index\/wrap or \/wrap-session\./);
   assert.match(out, /Also \/vaults\/demo\/brain\/scripts\/bin\/aos alone\. A Codex session ends\./);
   assert.match(out, /> Host: Codex CLI\. Invoke as `\$remember`/);
+  assert.ok(!/question to the user is one message/.test(out), 'the question note only when the source asks');
+});
+
+test('Claude Code tools and host wording: file tools, AskUserQuestion, /agenticos:<name>, the current session only', () => {
+  const src = [
+    '---', 'name: review', 'description: Batch review. Use when the user says "review drafts" or "/agenticos:review".', '---', '',
+    '1. Read every draft with the Read tool at `<vault>/x.md`.',
+    '2. Ask ONE AskUserQuestion (multiSelect: true); group items 4 per AskUserQuestion call; then a follow-up AskUserQuestion.',
+    '3. Then /agenticos:wrap (or (/wrap)). At the end of a Claude Code session, run it.',
+    '4. The snapshot only refreshes from an interactive Claude Code session.',
+  ].join('\n');
+  const direct = CH.skillToCodex('review', src, { ...CTX, skillsDir: '/s', names: ['review', 'wrap'] });
+  assert.match(direct, /description: Batch review\. Use when the user says "review drafts" or "\$review"\./);
+  assert.match(direct, /1\. Read every draft at `<vault>\/x\.md`\./);
+  assert.match(direct, /2\. Ask ONE question \(multiSelect: true\); group items 4 per question; then a follow-up question\./);
+  assert.match(direct, /3\. Then \$wrap \(or \(\$wrap\)\)\. At the end of a Codex session, run it\./);
+  assert.match(direct, /4\. The snapshot only refreshes from an interactive Claude Code session\./, 'a qualified host phrase is kept');
+  assert.match(direct, /question to the user is one message with its options numbered/);
+  const plugin = CH.skillToCodex('review', src, { skillsDir: '/s', names: ['review', 'wrap'], target: 'plugin' });
+  assert.match(plugin, /"\$agenticos:review"/);
+  assert.match(plugin, /3\. Then \$agenticos:wrap \(or \(\$agenticos:wrap\)\)\./);
+  assert.ok(!/AskUserQuestion|Read tool|\/agenticos:/.test(plugin));
 });
 
 test('generateSkills turns the real plugin into 24 marked skills, copies skill scripts, and never overwrites a foreign skill', () => {
@@ -292,6 +320,17 @@ test('installCodexPlugin: a fresh install adds the marketplace and the plugin; a
   calls.length = 0;
   CH.installCodexPlugin({ bin: '/x/codex', source: 'owner/repo', run });
   assert.deepEqual(argvOf(calls), ['plugin marketplace add owner/repo --json', 'plugin marketplace upgrade agenticos-workbench', 'plugin add agenticos@agenticos-workbench --json']);
+});
+
+test('codexMarketplaceRoot: the checkout of a local marketplace, the refreshed snapshot of a git one, else null', () => {
+  const local = fakeRun({ mkt: '/checkout' });
+  assert.equal(CH.codexMarketplaceRoot({ bin: '/x/codex', run: local.run, refresh: true }), '/checkout');
+  assert.deepEqual(argvOf(local.calls), ['plugin marketplace list --json'], 'a local marketplace is read in place, never upgraded');
+  const git = fakeRun({ mkt: 'owner/repo' });
+  assert.equal(CH.codexMarketplaceRoot({ bin: '/x/codex', run: git.run, refresh: true }), '/codex-home/.tmp/marketplaces/agenticos-workbench');
+  assert.deepEqual(argvOf(git.calls), ['plugin marketplace list --json', 'plugin marketplace upgrade agenticos-workbench', 'plugin marketplace list --json']);
+  assert.equal(CH.codexMarketplaceRoot({ bin: '/x/codex', run: fakeRun().run }), null, 'no agenticos-workbench marketplace');
+  assert.equal(CH.codexMarketplaceRoot({ bin: null }), null);
 });
 
 test('installCodexPlugin keeps a marketplace from another source unless switchSource (an explicit --from-local)', () => {

@@ -5,6 +5,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import {
   VAULT_CONFIG_DEFAULTS, readAgenticosJson, readVaultConfig, dailyNoteLayout, readProviderState, deepMerge, personaName,
+  sessionHosts, invocation, invocationHint, reviewCommand,
 } from "./aosConfig";
 
 let vault: string;
@@ -113,4 +114,28 @@ test("personaName is the first H1 of persona/IDENTITY.md, null when the file or 
   fs.writeFileSync(path.join(vault, "persona", "IDENTITY.md"),
     "---\ntype: persona-identity\n---\n\n# Atlas\n\nAtlas is the chief of staff for this vault.\n\n## Voice\n\n# Not this one\n");
   assert.equal(personaName(vault), "Atlas");
+});
+
+test("sessionHosts and invocations follow the enabled hosts and the Codex install mode", () => {
+  assert.deepEqual(sessionHosts(null), ["claude"], "no config: Claude only (the pre-Codex default)");
+  assert.deepEqual(sessionHosts({}), ["claude"]);
+  const both = { hosts: { claude: { enabled: true }, codex: { enabled: true, install: "plugin" as const } } };
+  const codexOnly = { hosts: { claude: { enabled: false }, codex: { enabled: true } } };
+  const direct = { hosts: { codex: { enabled: true, install: "direct" as const } } };
+  assert.deepEqual(sessionHosts(both), ["claude", "codex"]);
+  assert.deepEqual(sessionHosts(codexOnly), ["codex"]);
+  assert.equal(invocation("wrap", "claude", both), "/wrap");
+  assert.equal(invocation("wrap", "codex", both), "$agenticos:wrap");
+  assert.equal(invocation("wrap", "codex", direct), "$wrap");
+  assert.equal(invocationHint("todo", null), "/todo");
+  assert.equal(invocationHint("todo", codexOnly), "$agenticos:todo");
+  assert.equal(invocationHint("todo", both), "/todo (Claude Code) or $agenticos:todo (Codex)");
+});
+
+test("reviewCommand opens the flag-closer in the user's first host, quoted so the shell keeps $agenticos", () => {
+  assert.deepEqual(reviewCommand(null), { host: "claude", label: "Review in Claude ❯_", command: 'claude "review persona flags"' });
+  assert.deepEqual(reviewCommand({ hosts: { claude: { enabled: false }, codex: { enabled: true } } }),
+    { host: "codex", label: "Review in Codex ❯_", command: "codex '$agenticos:persona-flag-closer'" });
+  assert.equal(reviewCommand({ hosts: { codex: { enabled: true, install: "direct" } } }).command, "codex '$persona-flag-closer'");
+  assert.equal(reviewCommand({ hosts: { claude: { enabled: true }, codex: { enabled: true } } }).host, "claude", "Claude first when both");
 });

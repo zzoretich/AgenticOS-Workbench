@@ -13,10 +13,10 @@ The cost module is opt-in. **First** read `cost.enabled` in
 
 ## What exists
 
-- `auto-cost` runs at every session end: it finds the session's transcript under `<claudeConfigDir>/projects/*/<session>.jsonl`, runs the analyzer, and patches `cost_usd` (with `cost_source`) into `brain/_index/agent-runs/runs.jsonl`. The pipeline ledger (`brain/_index/pipelines.json`, `auto-cost`) shows `ok`, `skipped` (no transcript), `disabled` (cost is off — `aos cost disable`, or never enabled), or `error` (analyzer failed).
+- `auto-cost` runs at every session end and patches `cost_usd` (with `cost_source`) into `brain/_index/agent-runs/runs.jsonl`, by the run's host: a Claude Code session's transcript under `<claudeConfigDir>/projects/*/<session>.jsonl` goes through the analyzer; a Codex session's rollout under `<codex home>/sessions/**/rollout-*.jsonl` is priced from its final token count (no analyzer, no python3). The pipeline ledger (`brain/_index/pipelines.json`, `auto-cost`) shows `ok`, `skipped` (no transcript), `disabled` (cost is off — `aos cost disable`, or never enabled), or `error` (analyzer failed).
 - `aos auto-cost --backfill` costs every completed session that still has `cost_usd: null`; `aos auto-cost --cost-one <session-uuid>` costs one.
 - `aos cost-budget` prints the anchored month-to-date: a real billed figure anchored at a point in time plus calibrated transcript costs for sessions that ended since. `aos cost-budget --anchor <usd>` re-anchors to a fresh billed number; `--budget <usd>` changes the monthly budget.
-- Headless provider spend (the `claude` provider's own calls) is separate: `aos status` shows today's hook spend against `claude.perDayUsd` and the persona's duty spend (`duty:*` ledger rows) against `persona.perDayUsd`, one line each.
+- Headless provider spend (the `claude` or `codex` provider's own calls) is separate: `aos status` shows today's hook spend against the resolved provider's cap (`claude.perDayUsd` or `codex.perDayUsd`) and the persona's duty spend (`duty:*` ledger rows) against `persona.perDayUsd`, one line each, plus the reasoner, routines and graph lines. Codex reports tokens, never dollars, so every Codex figure is an estimate from its token counts.
 
 ## Answering
 

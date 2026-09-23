@@ -44,7 +44,7 @@ Under Codex CLI every `/name` below is the plugin skill `$agenticos:name` (`$age
 
 ## Providers
 
-`provider` in `agenticos.json` (`aos provider <mode>`): `auto` (default) picks `ollama` when `127.0.0.1:11434` answers, else `claude` (headless `claude -p --model haiku`, capped per call and per day, ledgered in `brain/_index/provider-spend.jsonl`), else `codex` when Codex is a wired host (headless `codex exec`, spend estimated from its token counts, same caps and ledger), else `none`. Under `none`, background summaries are heuristic, session-end extraction is skipped, and `/wrap` does the extraction in-session. The Obsidian plugin never calls a model. `aos status` shows the resolved provider, today's spend (hook calls against `claude.perDayUsd`, persona duties against `persona.perDayUsd`), and the pipeline ledger.
+`provider` in `agenticos.json` (`aos provider <mode>`): `auto` (default) picks `ollama` when `127.0.0.1:11434` answers, else `claude` (headless `claude -p --model haiku`, capped per call and per day, ledgered in `brain/_index/provider-spend.jsonl`), else `codex` when Codex is a wired host (headless `codex exec`, spend estimated from its token counts, same caps and ledger), else `none`. Under `none`, background summaries are heuristic, session-end extraction is skipped, and `/wrap` does the extraction in-session. The Obsidian plugin never calls a model. `aos status` shows the resolved provider, today's spend (hook calls against the resolved provider's cap, `claude.perDayUsd` or `codex.perDayUsd`; persona duties against `persona.perDayUsd`), and the pipeline ledger.
 
 ## Routines
 

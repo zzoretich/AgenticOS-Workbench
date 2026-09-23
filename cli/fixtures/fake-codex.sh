@@ -40,6 +40,12 @@ case "$1 $2" in
       upgrade)
         if [ -n "$MSTATE" ] && [ -f "$MSTATE" ] && ! grep -q '^/' "$MSTATE"; then echo "Upgraded marketplace agenticos-workbench"
         else echo 'Error: marketplace `agenticos-workbench` is not configured as a Git marketplace' >&2; exit 1; fi ;;
+      list)
+        # A local source is its own root; a git source's snapshot root is FAKE_CODEX_MKT_ROOT (Codex keeps it under its home).
+        if [ -n "$MSTATE" ] && [ -f "$MSTATE" ]; then
+          SRC=$(cat "$MSTATE"); case "$SRC" in /*) ROOT="$SRC"; TYPE=local ;; *) ROOT="${FAKE_CODEX_MKT_ROOT:-}"; TYPE=git ;; esac
+          printf '{"marketplaces":[{"name":"agenticos-workbench","root":"%s","marketplaceSource":{"sourceType":"%s","source":"%s"}}]}\n' "$ROOT" "$TYPE" "$SRC"
+        else echo '{"marketplaces":[]}'; fi ;;
       remove)
         if [ -n "$MSTATE" ] && [ -f "$MSTATE" ]; then rm -f "$MSTATE"; echo 'Removed marketplace `agenticos-workbench`.'
         else echo 'Error: marketplace `agenticos-workbench` is not configured or installed' >&2; exit 1; fi ;;

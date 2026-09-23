@@ -4,6 +4,7 @@ import * as path from "path";
 import * as fs from "fs";
 import { CaptureModal } from "../ui/CaptureModal";
 import { MemoryType } from "./memoryWriter";
+import { invocation, readAgenticosJson, sessionHosts } from "./aosConfig";
 
 // Obsidian's spawn'd subprocesses don't inherit the user's shell PATH, so bare
 // "node" fails ENOENT. Search common install locations.
@@ -66,10 +67,14 @@ export const COMMAND_REGISTRY: SlashCommand[] = [
 
 export async function executeCommand(app: App, cmd: SlashCommand): Promise<void> {
   switch (cmd.kind) {
-    case "clipboard":
-      await navigator.clipboard.writeText(cmd.name);
-      new Notice(`Copied: ${cmd.name}`);
+    case "clipboard": {
+      // The palette lists Claude Code names; copy what this user's first host takes (Codex: $agenticos:<name>).
+      const cfg = readAgenticosJson();
+      const text = invocation(cmd.name.replace(/^\//, ""), sessionHosts(cfg)[0] || "claude", cfg);
+      await navigator.clipboard.writeText(text);
+      new Notice(`Copied: ${text}`);
       return;
+    }
 
     case "openFile": {
       if (!cmd.path) return;
