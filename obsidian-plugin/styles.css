@@ -1234,9 +1234,16 @@
   min-width: 56px; align-items: stretch;
 }
 .aos-wb-railbtn {
+  position: relative;
   text-align: center; padding: 7px 4px; border-radius: 4px; cursor: pointer;
   color: var(--aos-dim); font-family: var(--aos-mono);
 }
+.aos-wb-railbadge {
+  position: absolute; top: 2px; right: 2px; min-width: 14px; padding: 0 3px;
+  border-radius: 7px; background: var(--aos-amber); color: var(--aos-bg);
+  font-size: 9px; font-weight: 700; line-height: 14px; text-align: center;
+}
+.aos-wb-railbadge.is-empty { display: none; }
 .aos-wb-railbtn:hover { color: var(--aos-text); background: var(--aos-panel); }
 .aos-wb-railbtn.is-active { color: var(--aos-cyan); background: var(--aos-panel); }
 .aos-wb-railicon { font-size: 15px; line-height: 1.2; }
@@ -1817,3 +1824,22 @@
 .aos-rt-subhead { display: flex; align-items: baseline; gap: 10px; }
 .aos-rt-asof { margin-left: auto; letter-spacing: 0; font-size: 10px; display: flex; gap: 8px; }
 .aos-rt-name a.aos-link { color: var(--aos-text); }
+
+/* Proposals tab (spec 2026-09-22-todo-and-proposals-tabs D5/D6) — reuses the Routines head, subhead and table. */
+.aos-pr-rates { font-size: 10.5px; margin: -2px 0 8px; }
+.aos-pr-grouphead { cursor: pointer; user-select: none; }
+.aos-pr-grouphead:hover { color: var(--aos-text); }
+.aos-pr-row { gap: 10px; }
+.aos-pr-caret { flex: 0 0 10px; font-size: 10px; }
+.aos-pr-age { flex: 0 0 auto; font-family: var(--aos-mono); font-size: 10.5px; }
+.aos-pr-streak { font-family: var(--aos-mono); font-size: 10.5px; }
+.aos-pr-lint { font-size: 11px; }
+.aos-pr-mark { flex: 0 0 12px; text-align: center; }
+.aos-pr-event { flex: 0 0 96px; font-family: var(--aos-mono); font-size: 10.5px; }
+.aos-pr-detail { padding: 6px 12px 10px 30px; border-bottom: 1px solid var(--aos-border); font-size: 12px; }
+.aos-pr-meta { display: flex; flex-direction: column; gap: 2px; margin-bottom: 6px; font-size: 11px; }
+.aos-pr-md h4 { color: var(--aos-amber); font-family: var(--aos-mono); font-size: 10.5px; letter-spacing: 1px; text-transform: uppercase; margin: 8px 0 2px; }
+.aos-pr-md p { margin: 2px 0 6px; }
+.aos-pr-premises { margin: 6px 0; }
+.aos-pr-premise { display: flex; gap: 8px; align-items: baseline; font-size: 11px; padding: 2px 0; }
+.aos-pr-premise .aos-pill { flex: 0 0 auto; }
