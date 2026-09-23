@@ -726,6 +726,26 @@ test('aos graph: status names the pin and the graph; off/on toggle graph.enabled
   assert.equal(aos(sb, ['graph', 'frobnicate']).status, 2);
 });
 
+// graphify spec D5/D6/D10/D11: under provider none the foreground pass refuses; switched on it runs extract through the
+// vendored shim to the (fake) claude, ledgers a graph: row, and status, aos graph and doctor all show it.
+test('aos graph build --semantic: a provider opt-out refuses; switched on, it runs through the shim and shows everywhere', () => {
+  const sb = initialized();
+  const refused = aos(sb, ['graph', 'build', '--semantic', '--yes']);
+  assert.equal(refused.status, 1);
+  assert.match(refused.stderr, /provider is none — `aos graph semantic on` allows it anyway/);
+  assert.match(aos(sb, ['doctor'], { FAKE_PLUGIN_PATH: path.join(ROOT, 'plugin') }).stdout, /info\s+graph semantic\s+off under provider none/);
+  assert.equal(aos(sb, ['graph', 'semantic', 'on']).status, 0);
+  const envLog = path.join(sb.dir, 'claude-env.log');
+  const r = aos(sb, ['graph', 'build', '--semantic', '--yes'], { FAKE_CLAUDE_ENV_LOG: envLog });
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  assert.match(r.stdout, /^graph: semantic pass done · 3 nodes · 1 concepts · 1 inferred edges · \$0\.0040 in \d+ s$/m);
+  assert.equal(fs.readFileSync(envLog, 'utf8'), 'MAX_THINKING_TOKENS=0 AOS_HEADLESS=1 CLAUDECODE= ANTHROPIC_API_KEY=\n');
+  assert.match(aos(sb, ['status']).stdout, /^spend      today \(graph\) \$0\.0040 \/ cap \$1$/m);
+  assert.match(aos(sb, ['graph']).stdout, /^semantic   on \(every 24 h\) · last run \d+s ago · 1 concepts · today \$0\.0040 of \$1$/m);
+  assert.match(aos(sb, ['doctor'], { FAKE_PLUGIN_PATH: path.join(ROOT, 'plugin') }).stdout, /ok\s+graph semantic\s+last run \d+s ago · 1 concepts · today \$0\.00 of \$1/);
+  assert.equal(aos(sb, ['graph', 'status', '--semantic']).status, 2);
+});
+
 test('upgrade seeds brain/routines/ once and re-renders installed legacy duty plists through run-routine.js', () => {
   const sb = initialized();
   fs.rmSync(path.join(sb.vault, 'brain', 'routines'), { recursive: true, force: true });   // a vault from before routines existed

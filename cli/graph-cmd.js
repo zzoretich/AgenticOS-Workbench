@@ -1,9 +1,12 @@
 'use strict';
 /**
  * graph-cmd.js — `aos graph` and the graphify install step (spec 2026-09-23-graphify D1–D3, D8).
- *   (none) | status   the pinned and installed graphify, the last build, counts, hubs and communities
+ *   (none) | status   the pinned and installed graphify, the last build, the semantic pass, counts, hubs, communities
  *   build             a structural rebuild now (<vault>/brain/scripts/graph-build.js, inline)
+ *   build --semantic  the model pass now (D5/D6): says what it costs today, asks y/N (--yes skips), refuses when an
+ *                     explicit `ollama`/`none` provider opts out and `graph.semantic.enabled` is still "auto"
  *   on | off          graph.enabled in agenticos.json (off stops the scan-vault stage; the binary stays)
+ *   semantic on|off|auto  graph.semantic.enabled: the daily background model pass (D11)
  * install() is `aos init` step 5c and an `aos upgrade` step: `uv tool install graphifyy==<PIN>` into a tool dir
  * AgenticOS owns (never the user's own uv tools or PATH), then graph.bin in agenticos.json, the vault's
  * .graphifyignore when absent, and a one-time move of a graphify-out/ that no aos build wrote (it came from another
@@ -21,7 +24,7 @@ const PIN = '0.9.66';
 const PACKAGE = 'graphifyy';
 const PYTHON = '>=3.10';
 const MARKER = '.aos-graph.json';
-const USAGE = 'usage: aos graph [status | build | on | off]';
+const USAGE = 'usage: aos graph [status | build [--semantic [--yes]] | on | off | semantic on|off|auto]';
 
 function claudeConfigDir() { return path.resolve(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')); }
 function agenticosPath(configDir) { return process.env.AOS_CONFIG || path.join(configDir, 'agenticos.json'); }
@@ -66,7 +69,32 @@ function installedVersion(bin, exec = spawnSync) {
 function graphConfig({ vault, userCfg } = {}) {
   const defaults = readJson(path.join(__dirname, '..', 'config.default.json')) || readJson(path.join(__dirname, '..', 'brain', 'scripts', 'config.default.json')) || {};
   const vaultCfg = (vault && readJson(path.join(vault, 'brain', 'config.json'))) || {};
-  return { enabled: true, out: 'brain/graphify-out', staleDays: 7, ...(defaults.graph || {}), ...(vaultCfg.graph || {}), ...((userCfg && userCfg.graph) || {}) };
+  const layers = [defaults.graph, vaultCfg.graph, userCfg && userCfg.graph].map((x) => x || {});
+  const g = Object.assign({ enabled: true, out: 'brain/graphify-out', staleDays: 7 }, ...layers);
+  g.semantic = Object.assign({ enabled: 'auto', everyHours: 24, perDayUsd: 1 }, ...layers.map((x) => x.semantic || {}));
+  g.provider = (userCfg && userCfg.provider) || vaultCfg.provider || defaults.provider || 'auto';
+  return g;
+}
+/** D11, the same rule as graph-build.js semanticState: "auto" is off under an explicit ollama or none provider. */
+function semanticState(g) {
+  const v = g.semantic.enabled;
+  if (v === true) return { on: true, why: null, auto: false };
+  if (v === false) return { on: false, why: 'off (aos graph semantic on)', auto: false };
+  if (g.provider === 'none' || g.provider === 'ollama') return { on: false, why: `off under provider ${g.provider} (aos graph semantic on overrides)`, auto: true };
+  return { on: true, why: null, auto: true };
+}
+/** Today's graph:* spend from <vault>/brain/_index/provider-spend.jsonl (local calendar day). */
+function graphSpendToday(vault, now = new Date()) {
+  let raw = '';
+  try { raw = fs.readFileSync(path.join(vault, 'brain', '_index', 'provider-spend.jsonl'), 'utf8'); } catch { return 0; }
+  const day = (d) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  let sum = 0;
+  for (const line of raw.split('\n')) {
+    let r;
+    try { r = JSON.parse(line); } catch { continue; }
+    if (r && /^graph:/.test(String(r.feature || '')) && day(new Date(r.ts)) === day(now)) sum += Number(r.usd) || 0;
+  }
+  return Math.round(sum * 1e6) / 1e6;
 }
 function outDir(vault, g) { return path.resolve(vault, g.out || 'brain/graphify-out'); }
 
@@ -162,7 +190,20 @@ function doctorRows({ cfg, vault, exec = spawnSync, now = Date.now() } = {}) {
   const age = now - at;
   const fresh = age <= (Number(g.staleDays) || 7) * 86_400_000;
   rows.push({ name: 'graph fresh', ok: fresh, detail: `built ${ago(age)} ago · ${m.nodes} nodes · ${m.edges} edges${fresh ? '' : ` — older than ${g.staleDays} days, run aos graph build`}`, level: 'warn' });
+  rows.push(semanticRow({ g, m, vault, now }));
   return rows;
+}
+
+/** The `graph semantic` row: info while off or not yet run, warn on a failed last run, else ok with today's spend. */
+function semanticRow({ g, m, vault, now }) {
+  const st = semanticState(g);
+  const spend = `today $${graphSpendToday(vault, new Date(now)).toFixed(2)} of $${g.semantic.perDayUsd}`;
+  if (!st.on) return { name: 'graph semantic', ok: false, detail: st.why, level: 'info' };
+  if (!m || !m.lastSemanticRun) return { name: 'graph semantic', ok: false, detail: `not run yet — the next scan starts it (every ${g.semantic.everyHours} h, ${spend})`, level: 'info' };
+  if (m.lastSemanticError) return { name: 'graph semantic', ok: false, detail: `last run failed: ${m.lastSemanticError} — aos graph build --semantic`, level: 'warn' };
+  const last = Date.parse(m.lastSemantic || m.lastSemanticRun);
+  const partial = m.semanticIncomplete ? ` (partial${m.semanticPartialWhy ? `: ${m.semanticPartialWhy.slice(0, 120)}` : ''}; the rest follows on the next runs)` : '';
+  return { name: 'graph semantic', ok: true, detail: `last run ${ago(now - last)} ago${partial} · ${m.concepts ?? 0} concepts · ${spend}`, level: 'warn' };
 }
 
 function loadAgenticos(configDir) {
@@ -186,21 +227,57 @@ function status({ cfg, io, exec = spawnSync, now = Date.now() }) {
   const m = readJson(path.join(dir, MARKER));
   const built = m && Date.parse(m.lastStructural || m.builtAt);
   io.log(`graph      ${g.enabled === false ? 'off' : 'on'} · ${built ? `${m.mode || 'structural'} · built ${ago(now - built)} ago` : 'not built yet'} · ${path.relative(vault, dir)}`);
+  const st = semanticState(g);
+  const semLast = m && Date.parse(m.lastSemantic || '');
+  io.log(`semantic   ${st.on ? `on (every ${g.semantic.everyHours} h${st.auto ? ', auto' : ''})` : st.why} · ${semLast ? `last run ${ago(now - semLast)} ago${m.semanticIncomplete ? ' (partial)' : ''} · ${m.concepts ?? 0} concepts` : 'never run'}${m && m.lastSemanticError ? ` · last error: ${m.lastSemanticError}` : ''} · today $${graphSpendToday(vault, new Date(now)).toFixed(4)} of $${g.semantic.perDayUsd}`);
   const G = graphLib(vault);
   const block = G.pulse(G.loadGraph(path.join(dir, 'graph.json')));
   if (block) io.log(`\n${block}`);
   return 0;
 }
 
-function build({ cfg, configDir, io }) {
+function askYesNo(question) {
+  const rl = require('readline').createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((resolve) => rl.question(question, (a) => { rl.close(); resolve(/^y(es)?$/i.test(a.trim())); }));
+}
+
+/** The foreground model pass: policy (D11), what it costs, y/N, then graph-build.js --semantic --force inline. */
+async function buildSemantic({ cfg, configDir, io, yes, ask = askYesNo, isTTY = !!process.stdin.isTTY }) {
+  const g = graphConfig({ vault: cfg.vault, userCfg: cfg });
+  const st = semanticState(g);
+  if (!st.on && st.auto) {
+    io.error(`graph: the semantic pass sends note text to Claude on your login, and provider is ${g.provider} — \`aos graph semantic on\` allows it anyway`);
+    return 1;
+  }
+  const G = graphLib(cfg.vault);
+  const graph = G.loadGraph(path.join(outDir(cfg.vault, g), 'graph.json'));
+  const notes = graph ? new Set(graph.nodes.filter((n) => n.file_type === 'document' && n.source_file).map((n) => n.source_file)).size : null;
+  io.log(`graph: the semantic pass sends ${notes == null ? 'the vault\'s' : notes} notes' text to Claude (${(cfg.claude && cfg.claude.model) || 'haiku'}, on your login); only new or changed notes reach the model.`);
+  io.log(`graph: today $${graphSpendToday(cfg.vault).toFixed(4)} of the $${g.semantic.perDayUsd} graph budget; calls stop at the cap and the rest follows on later runs.`);
+  if (!yes) {
+    if (!isTTY) { io.error('graph: not a terminal — pass --yes to run the semantic pass without the prompt'); return 1; }
+    if (!(await ask('Run it now? [y/N] '))) { io.log('graph: not run'); return 0; }
+  }
+  return build({ cfg, configDir, io, args: ['--semantic', '--force'] });
+}
+
+function build({ cfg, configDir, io, args = [] }) {
   const script = path.join(cfg.vault, 'brain', 'scripts', 'graph-build.js');
   if (!fs.existsSync(script)) throw new Error(`${script} missing — run aos upgrade`);
-  const r = spawnSync(cfg.node || process.execPath, [script], {
+  const r = spawnSync(cfg.node || process.execPath, [script, ...args], {
     cwd: cfg.vault, stdio: 'inherit',
     env: { ...process.env, AOS_VAULT: cfg.vault, AOS_CONFIG: agenticosPath(configDir), AOS_DETACHED: '1' },
   });
   if (r.error) { io.error(`graph: ${r.error.message}`); return 1; }
   return typeof r.status === 'number' ? r.status : 1;
+}
+
+function setSemantic({ file, cfg, value, io }) {
+  cfg.graph = { ...(cfg.graph || {}), semantic: { ...((cfg.graph || {}).semantic || {}), enabled: value } };
+  writeJson(file, cfg);
+  io.log(value === true ? 'graph: semantic pass on (daily, on its own graph budget)'
+    : value === false ? 'graph: semantic pass off (the structural graph stays current)'
+      : 'graph: semantic pass auto (on unless the provider is ollama or none)');
 }
 
 function setEnabled({ file, cfg, on, io }) {
@@ -215,10 +292,13 @@ async function run(args, opts = {}) {
   const sub = args[0] || 'status';
   try {
     const configDir = opts.configDir || claudeConfigDir();
-    if (!['status', 'build', 'on', 'off'].includes(sub) || args.length > 1) { io.error(USAGE); return 2; }
+    const semanticArg = sub === 'semantic' ? { on: true, off: false, auto: 'auto' }[args[1]] : undefined;
+    const ok = (['status', 'build', 'on', 'off'].includes(sub) && args.length <= 1) || (sub === 'semantic' && semanticArg !== undefined && args.length === 2);
+    if (!ok || (opts.semantic && sub !== 'build')) { io.error(USAGE); return 2; }
     const { file, cfg } = loadAgenticos(configDir);
     if (sub === 'status') return status({ cfg, io });
-    if (sub === 'build') return build({ cfg, configDir, io });
+    if (sub === 'semantic') { setSemantic({ file, cfg, value: semanticArg, io }); return 0; }
+    if (sub === 'build') return opts.semantic ? buildSemantic({ cfg, configDir, io, yes: !!opts.yes, ask: opts.ask, isTTY: opts.isTTY }) : build({ cfg, configDir, io });
     setEnabled({ file, cfg, on: sub === 'on', io });
     return 0;
   } catch (e) {
@@ -229,5 +309,5 @@ async function run(args, opts = {}) {
 
 module.exports = {
   PIN, PACKAGE, PYTHON, MARKER, USAGE, uvBin, toolHome, toolDirs, installedVersion, graphConfig, outDir, seedIgnore, ensureGitignore, moveAside,
-  install, removeTools, doctorRows, status, build, setEnabled, run,
+  install, removeTools, doctorRows, semanticState, graphSpendToday, status, build, buildSemantic, setEnabled, setSemantic, run,
 };

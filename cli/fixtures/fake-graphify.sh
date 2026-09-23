@@ -34,5 +34,31 @@ case "$1" in
 JSON
     echo "[graphify update] wrote $out/graph.json: 5 nodes, 5 edges, 2 communities"
     ;;
+  extract)
+    # Like graphify's claude-cli backend: the prompt on stdin to whatever `claude` is first on PATH (the graph shim),
+    # one JSON envelope back. A failed call leaves the run incomplete, not failed (the worker passes --allow-partial).
+    [ -n "${FAKE_GRAPHIFY_SLEEP:-}" ] && exec sleep "$FAKE_GRAPHIFY_SLEEP"
+    if [ -n "${FAKE_GRAPHIFY_EXIT:-}" ]; then echo "${FAKE_GRAPHIFY_STDERR:-error: fake failure}" >&2; exit "$FAKE_GRAPHIFY_EXIT"; fi
+    [ -d "${2:-}" ] || { echo "error: path not found: ${2:-}" >&2; exit 1; }
+    out="${GRAPHIFY_OUT:-$2/graphify-out}"
+    mkdir -p "$out"
+    concept=''
+    if printf 'Extract a knowledge graph from these notes.\n' | claude -p --output-format json --no-session-persistence ${GRAPHIFY_CLAUDE_CLI_MODEL:+--model "$GRAPHIFY_CLAUDE_CLI_MODEL"} --json-schema '{"type":"object"}' > "$out/.fake-envelope.json"; then
+      concept=', {"id": "concept_memory", "label": "long-term memory", "file_type": "concept", "community": 0, "community_name": "Memory"}'
+      edge=', {"source": "memory_index", "target": "concept_memory", "relation": "describes", "confidence": "INFERRED", "weight": 0.8}'
+    else
+      echo "warning: semantic extraction is incomplete: 1 chunk(s) failed" >&2
+      edge=''
+    fi
+    cat > "$out/graph.json" <<JSON
+{"directed": false, "multigraph": false, "graph": {}, "nodes": [
+  {"id": "memory_index", "label": "MEMORY", "file_type": "document", "source_file": "MEMORY.md", "community": 0, "community_name": "Memory"},
+  {"id": "agenticos", "label": "AGENTICOS", "file_type": "document", "source_file": "AGENTICOS.md", "community": 0, "community_name": "Memory"}$concept
+], "links": [
+  {"source": "memory_index", "target": "agenticos", "relation": "references", "confidence": "EXTRACTED", "weight": 1.0, "source_file": "MEMORY.md"}$edge
+], "hyperedges": []}
+JSON
+    echo "[graphify extract] wrote $out/graph.json"
+    ;;
   *) exit 0 ;;
 esac

@@ -11,7 +11,9 @@
  *   --max-budget-usd       hard per-call cap
  *   --output-format json   one JSON object on stdout: result, structured_output, total_cost_usd, usage, duration_api_ms
  * The child always gets AOS_HEADLESS=1 (hook scripts exit at once — lib/hook-entry.js) and
- * never inherits CLAUDECODE. `--bare` is deliberately absent: it skips OAuth and fails for
+ * never inherits CLAUDECODE. A call that passes no `effort` also gets MAX_THINKING_TOKENS=0 (spec
+ * 2026-09-23-graphify D12): measured on a Haiku extraction, thinking was 82% of the output and the cost
+ * ($0.069 → $0.008); a caller that dials an effort (the reasoner) keeps its thinking. `--bare` is deliberately absent: it skips OAuth and fails for
  * logged-in users.
  */
 const fs = require('fs');
@@ -59,30 +61,33 @@ function resolveClaudeBin(opts = {}) {
 }
 
 const EFFORTS = ['low', 'medium', 'high'];
+/** No tools, none of the user's settings/hooks/CLAUDE.md, no MCP servers — shared with the graph shim (graph-claude.js). */
+const ISOLATION_FLAGS = ['--tools', '', '--setting-sources', '', '--strict-mcp-config'];
 
 /** `effort` (low|medium|high) becomes `--effort`; anything else is left off so the CLI default applies. */
 function buildArgs({ prompt, model, system, schema, maxBudgetUsd, effort }) {
   const args = ['-p', String(prompt ?? ''), '--model', String(model)];
   if (EFFORTS.includes(effort)) args.push('--effort', effort);
-  args.push('--tools', '', '--setting-sources', '',
-    '--strict-mcp-config', '--no-session-persistence', '--system-prompt', String(system ?? ''));
+  args.push(...ISOLATION_FLAGS, '--no-session-persistence', '--system-prompt', String(system ?? ''));
   if (schema) args.push('--json-schema', JSON.stringify(schema));
   args.push('--max-budget-usd', String(maxBudgetUsd), '--output-format', 'json');
   return args;
 }
 
-function headlessEnv(base = process.env) {
+/** The child env of every headless call; `thinking: false` adds MAX_THINKING_TOKENS=0 (D12). */
+function headlessEnv(base = process.env, { thinking = true } = {}) {
   const env = { ...base, AOS_HEADLESS: '1' };
   delete env.CLAUDECODE;
+  if (!thinking) env.MAX_THINKING_TOKENS = '0';
   return env;
 }
 
-function runClaude({ bin, args, cwd, timeoutMs, spawnFn }) {
+function runClaude({ bin, args, cwd, timeoutMs, spawnFn, env = headlessEnv() }) {
   return new Promise((resolve, reject) => {
     const started = Date.now();
     let child;
     try {
-      child = spawnFn(bin, args, { cwd, env: headlessEnv(), stdio: ['ignore', 'pipe', 'pipe'] });
+      child = spawnFn(bin, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
     } catch (e) { return reject(e); }
     let stdout = '';
     let stderr = '';
@@ -120,7 +125,8 @@ async function claudeCall({
   const exe = bin || resolveClaudeBin();
   if (!exe) throw new ProviderUnavailable('PROVIDER_UNREACHABLE', 'claude CLI not found on PATH or in ~/.local/bin', 'claude');
   const args = buildArgs({ prompt, model, system, schema, maxBudgetUsd, effort });
-  const { code, stdout, stderr, ms } = await runClaude({ bin: exe, args, cwd, timeoutMs, spawnFn: spawnFn || spawn });
+  const env = headlessEnv(process.env, { thinking: EFFORTS.includes(effort) });
+  const { code, stdout, stderr, ms } = await runClaude({ bin: exe, args, cwd, timeoutMs, spawnFn: spawnFn || spawn, env });
   let parsed = null;
   try { parsed = JSON.parse(stdout); } catch { parsed = null; }
   const obj = parsed && typeof parsed === 'object' ? parsed : null;
@@ -171,4 +177,4 @@ async function loginProbe(opts = {}) {
   } catch { return false; }
 }
 
-module.exports = { resolveClaudeBin, loginProbe, claudeCall, buildArgs, headlessEnv, NOT_LOGGED_IN, EFFORTS };
+module.exports = { resolveClaudeBin, loginProbe, claudeCall, buildArgs, headlessEnv, NOT_LOGGED_IN, EFFORTS, ISOLATION_FLAGS };

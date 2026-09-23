@@ -170,3 +170,80 @@ test('run: usage is exit 2; without a config it is exit 1; on/off write graph.en
   assert.equal(await GC.run(['on'], { configDir: w.configDir, io }), 0);
   assert.equal(cfgOf(w).graph.enabled, true);
 });
+
+// ── semantic pass (D5, D10, D11) ──────────────────────────────────────────────
+test('graphConfig deep-merges graph.semantic and reads the provider by config precedence', () => {
+  const w = world();
+  fs.writeFileSync(path.join(w.vault, 'brain', 'config.json'), JSON.stringify({ provider: 'ollama', graph: { semantic: { perDayUsd: 2 } } }));
+  const g = GC.graphConfig({ vault: w.vault, userCfg: { graph: { semantic: { enabled: false } } } });
+  assert.equal(g.semantic.enabled, false);
+  assert.equal(g.semantic.perDayUsd, 2, 'a nested user key never wipes the rest of graph.semantic');
+  assert.equal(g.semantic.everyHours, 24, 'defaults fill in');
+  assert.equal(g.provider, 'ollama');
+  assert.equal(GC.graphConfig({ vault: w.vault, userCfg: { provider: 'claude' } }).provider, 'claude', 'agenticos.json wins');
+});
+
+test('semanticState: auto follows the provider, true and false override it', () => {
+  const st = (enabled, provider) => GC.semanticState({ semantic: { enabled }, provider });
+  assert.equal(st('auto', 'auto').on, true);
+  assert.equal(st('auto', 'claude').on, true);
+  assert.match(st('auto', 'none').why, /^off under provider none/);
+  assert.equal(st('auto', 'ollama').on, false);
+  assert.equal(st(true, 'none').on, true);
+  assert.equal(st(false, 'claude').on, false);
+});
+
+test('aos graph semantic on|off|auto writes graph.semantic.enabled; anything else is usage', async () => {
+  const w = world();
+  const io = { log() {}, error() {} };
+  assert.equal(await GC.run(['semantic', 'on'], { configDir: w.configDir, io }), 0);
+  assert.equal(cfgOf(w).graph.semantic.enabled, true);
+  assert.equal(await GC.run(['semantic', 'off'], { configDir: w.configDir, io }), 0);
+  assert.equal(cfgOf(w).graph.semantic.enabled, false);
+  assert.equal(await GC.run(['semantic', 'auto'], { configDir: w.configDir, io }), 0);
+  assert.equal(cfgOf(w).graph.semantic.enabled, 'auto');
+  assert.equal(cfgOf(w).graph.enabled, true, 'the structural switch is untouched');
+  assert.equal(await GC.run(['semantic', 'sometimes'], { configDir: w.configDir, io }), 2);
+  assert.equal(await GC.run(['semantic'], { configDir: w.configDir, io }), 2);
+  assert.equal(await GC.run(['status'], { configDir: w.configDir, io, semantic: true }), 2, '--semantic belongs to build only');
+});
+
+test('the graph semantic doctor row: off, not yet run, failed, and ok with concepts and today\'s spend', () => {
+  const w = world();
+  const bin = placeGraphify(w.home, GC.PIN);
+  const out = path.join(w.vault, 'brain', 'graphify-out');
+  fs.mkdirSync(out, { recursive: true });
+  fs.mkdirSync(path.join(w.vault, 'brain', '_index'), { recursive: true });
+  const now = Date.parse('2026-09-23T12:00:00Z');
+  const marker = (m) => fs.writeFileSync(path.join(out, GC.MARKER), JSON.stringify({ lastStructural: '2026-09-23T11:00:00Z', nodes: 5, edges: 4, ...m }));
+  const row = (cfg) => GC.doctorRows({ cfg: { graph: { bin }, ...cfg }, vault: w.vault, now }).find((r) => r.name === 'graph semantic');
+  marker({});
+  assert.deepEqual(row({ provider: 'none' }), { name: 'graph semantic', ok: false, detail: 'off under provider none (aos graph semantic on overrides)', level: 'info' });
+  assert.match(row({}).detail, /^not run yet — the next scan starts it \(every 24 h, today \$0\.00 of \$1\)$/);
+  marker({ lastSemanticRun: '2026-09-23T09:00:00Z', lastSemanticError: 'graphify extract exited 2: x' });
+  assert.deepEqual(row({}), { name: 'graph semantic', ok: false, detail: 'last run failed: graphify extract exited 2: x — aos graph build --semantic', level: 'warn' });
+  marker({ lastSemanticRun: '2026-09-23T09:00:00Z', lastSemantic: '2026-09-23T09:05:00Z', concepts: 40, semanticIncomplete: true });
+  fs.writeFileSync(path.join(w.vault, 'brain', '_index', 'provider-spend.jsonl'),
+    JSON.stringify({ ts: new Date(now).toISOString(), feature: 'graph:semantic', usd: 0.25 }) + '\n' + JSON.stringify({ ts: new Date(now).toISOString(), feature: 'auto-wrap', usd: 0.4 }) + '\n');
+  const ok = row({});
+  assert.equal(ok.ok, true);
+  assert.equal(ok.detail, 'last run 3h ago (partial; the rest follows on the next runs) · 40 concepts · today $0.25 of $1');
+  assert.equal(GC.graphSpendToday(w.vault, new Date(now)), 0.25);
+});
+
+test('build --semantic refuses a provider opt-out, needs --yes off a terminal, and a "no" runs nothing', async () => {
+  const w = world();
+  const errs = [];
+  const logs = [];
+  const io = { log: (m) => logs.push(m), error: (m) => errs.push(m) };
+  const c = cfgOf(w);
+  fs.writeFileSync(path.join(w.configDir, 'agenticos.json'), JSON.stringify({ ...c, provider: 'none' }));
+  assert.equal(await GC.run(['build'], { configDir: w.configDir, io, semantic: true, yes: true }), 1);
+  assert.match(errs.pop(), /sends note text to Claude on your login, and provider is none — `aos graph semantic on` allows it anyway/);
+  fs.writeFileSync(path.join(w.configDir, 'agenticos.json'), JSON.stringify({ ...c, provider: 'claude' }));
+  assert.equal(await GC.run(['build'], { configDir: w.configDir, io, semantic: true, isTTY: false }), 1);
+  assert.match(errs.pop(), /pass --yes/);
+  assert.equal(await GC.run(['build'], { configDir: w.configDir, io, semantic: true, isTTY: true, ask: async () => false }), 0);
+  assert.equal(logs.pop(), 'graph: not run');
+  assert.match(logs.join('\n'), /today \$0\.0000 of the \$1 graph budget/);
+});

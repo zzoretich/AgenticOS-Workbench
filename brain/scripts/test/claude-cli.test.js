@@ -220,3 +220,19 @@ test('claudeCall forwards effort to the spawn', async () => {
   assert.equal(rows[0].feature, 'reason:ask');
   assert.equal(rows[0].model, 'claude-opus-5');
 });
+
+// graphify spec D12: thinking off for every call that dials no effort; a call that dials one (the reasoner) keeps it.
+test('headlessEnv adds MAX_THINKING_TOKENS=0 only when thinking is off', () => {
+  assert.ok(!('MAX_THINKING_TOKENS' in cli.headlessEnv({ HOME: '/h' })));
+  assert.equal(cli.headlessEnv({ HOME: '/h' }, { thinking: false }).MAX_THINKING_TOKENS, '0');
+  assert.deepEqual(cli.ISOLATION_FLAGS, ['--tools', '', '--setting-sources', '', '--strict-mcp-config']);
+});
+
+test('claudeCall turns thinking off without an effort and leaves it on with one (D12)', async () => {
+  const calls = [];
+  await cli.claudeCall({ prompt: 'p', feature: 'hook-test', bin: '/x/claude', spawnFn: fakeSpawn({ stdout: OK_REPLY }, calls) });
+  assert.equal(calls[0].opts.env.MAX_THINKING_TOKENS, '0', 'a hook call: no effort, no thinking');
+  await cli.claudeCall({ prompt: 'p', feature: 'reason:test', effort: 'medium', model: 'claude-opus-5', bin: '/x/claude', spawnFn: fakeSpawn({ stdout: OK_REPLY }, calls) });
+  assert.ok(!('MAX_THINKING_TOKENS' in calls[1].opts.env), 'the reasoner keeps its thinking');
+  assert.ok(calls[1].args.includes('--effort'));
+});

@@ -61,6 +61,8 @@ export const PIPELINES_MANIFEST: Record<string, PipelineManifestEntry> = {
   // graphify's structural pass (spec 2026-09-23-graphify D7): a scan-vault stage, ledgered `disabled` when the graph is
   // off or graphify is not installed. Freshness is `aos doctor`'s `graph fresh` row (graph.staleDays), so no window here.
   "graph-build":        { short: "GRAPH",    staleMs: null,                  safeRerun: { script: "brain/scripts/graph-build.js", args: ["--quiet"] } },
+  // The semantic pass (spec D5/D10): daily, capped, spends money — so no one-click rerun; `aos graph build --semantic` asks first.
+  "graph-semantic":     { short: "SEM",      staleMs: null,                  safeRerun: null },
 };
 const DIED_AFTER_MS = 10 * 60_000;
 
