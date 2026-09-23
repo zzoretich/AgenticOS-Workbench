@@ -21,6 +21,7 @@
   <a href="#installation">Installation</a> ·
   <a href="#screenshots">Screenshots</a> ·
   <a href="#your-first-session">First session</a> ·
+  <a href="#chief-of-staff">Chief of Staff</a> ·
   <a href="#everyday-commands">Commands</a> ·
   <a href="#how-it-works">How it works</a> ·
   <a href="#docs">Docs</a>
@@ -40,9 +41,9 @@ It works with **Claude Code alone**, with **Codex CLI alone**, or with both shar
 | <img src="docs/assets/icon-brain.svg" width="48" alt="" /> | **Memory that persists.** Facts, feedback rules, projects and references live in your vault as plain Markdown. Every new session opens with a compiled `<brain-context>` block; `/wrap` writes what the session learned. |
 | <img src="docs/assets/icon-recall.svg" width="48" alt="" /> | **Recall.** Hybrid search over memories, patterns and daily notes, exposed to Claude Code as the `agenticos` MCP server (`recall`, `memory_search`, `session_recall`, `feedback_rules`, …). |
 | <img src="docs/assets/icon-session.svg" width="48" alt="" /> | **Session capture.** Daily notes, working-memory summaries, telemetry with redaction on by default, and a pipeline ledger that shows what ran and when. |
-| <img src="docs/assets/icon-staff.svg" width="48" alt="" /> | **A Chief of Staff.** A named agent you interview once. Its identity rides along on every prompt; three scheduled duties (monitor, reflect, sitrep) keep the vault tidy and file proposals for anything that needs your sign-off. Kill switch included. |
+| <img src="docs/assets/icon-staff.svg" width="48" alt="" /> | **A Chief of Staff.** A named agent you interview once. Its identity and state ride along on every prompt; five scheduled duties and a heartbeat watchdog keep the vault honest, notice what changed and file proposals for anything that needs your sign-off. Guarded files never change without your approval, and there is a kill switch. [The whole layer →](#chief-of-staff) |
 | <img src="docs/assets/icon-session.svg" width="48" alt="" /> | **Routines.** Recurring actions as files — `brain/routines/<slug>.md` with a cron schedule and a kind (a persona duty, a headless prompt for Claude Code or Codex, or a command). One `aos routines sync` renders the launchd or cron schedules; the HUD tab shows next fire, last run and health, and edits the same files. The same tab lists, read-only, the routines your session hosts own: Codex app Automations and Claude Code cloud routines. |
-| <img src="docs/assets/icon-hud.svg" width="48" alt="" /> | **The Agentic OS HUD.** An Obsidian plugin: a Pulse row of pipeline LEDs, live agent runs, a memory graph, a fix queue, a routines tab, an optional chat tab and an optional embedded terminal. |
+| <img src="docs/assets/icon-hud.svg" width="48" alt="" /> | **The Agentic OS HUD.** An Obsidian plugin with seven tabs — Pulse (pipeline LEDs, live agent runs, the fix queue), Spaces, Memory (list or force graph), Runs, Routines, an optional Chat and an optional embedded terminal — plus a sidebar carrying the update and heartbeat pills. |
 | <img src="docs/assets/icon-cost.svg" width="48" alt="" /> | **Cost, opt-in.** A python analyzer that costs every session from its transcript, with a monthly budget in the HUD. Off unless you turn it on. |
 
 <a name="quick-start"></a>
@@ -167,7 +168,7 @@ The HUD on a demo vault: a user called Casey, an agent called Atlas, two workspa
 
 <p align="center">
   <img src="docs/assets/screens/graph.png" width="960" alt="The knowledge graph: memories, patterns, sessions and agents as a force graph" />
-  <br /><sub><b>Cortex.</b> Memories, patterns, sessions and agents as a force graph.</sub>
+  <br /><sub><b>Memory, in graph mode.</b> Memories, patterns, sessions and agents as a force graph.</sub>
 </p>
 
 <p align="center"><img src="docs/assets/divider.svg" width="960" alt="" /></p>
@@ -177,7 +178,122 @@ The HUD on a demo vault: a user called Casey, an agent called Atlas, two workspa
 
 Run `claude` in any directory and ask it *what do you know about me?* The first prompt arrives with `<brain-context>` (and your agent's `<persona>`). When you are done, `/wrap` extracts memories into `<vault>/brain/memory/` and adds a line to `MEMORY.md`. In a later session, *use the agenticos recall tool to search for …* answers from your own notes.
 
-Say `sitrep` for a one-action briefing on where your work stands, and `review persona flags` to walk through anything your agent has flagged or proposed. A heartbeat watches the agent itself: a duty that misses its schedule becomes a flag in your next session, an OS notification and a red pill in the HUD; an hourly tick (skipped when nothing changed, about a dollar a day at most) queues new corrections, failures and stalls; a short nightly reflect drains that queue into at most two proposals (brought forward the same day when the queue fills up); ideas you accept land in a backlog; every proposal outcome is kept in a ledger the agent reads before proposing again; and a class of change you have approved and kept three times can be proposed for auto-apply, which only your approval switches on.
+Then say `sitrep` for a one-action briefing on where your work stands, and `review persona flags` to walk through anything your agent has flagged or proposed. What it does between those two sentences — the hourly beat, the nightly reflect, the watchdog, the proposals protocol and how a class of change earns the right to apply itself — is the section below.
+
+<p align="center"><img src="docs/assets/divider.svg" width="960" alt="" /></p>
+
+<a name="chief-of-staff"></a>
+## <img src="docs/assets/icon-staff.svg" width="36" align="top" alt="" /> The Chief of Staff
+
+Installed by default, and the part of the Workbench least like a tool: a **named agent with one job
+description, a memory of its own decisions, and a contract about what it may change without asking.**
+You interview it once during the install (step 7 above). After that it rides along on every prompt
+and works on a schedule whether or not you are at the keyboard.
+
+This repository ships the machinery only. Its identity, state, playbook, journal, proposals and
+ledger are generated in your vault and never leave your machine — `agenticos.json` does not even
+record its name.
+
+### The interview
+
+`aos init`, and `aos persona` at any time, ask seven questions: its **name**, how it should
+**address you**, its **voice** in one line, **what to watch** most, and the **model**, **effort**
+and **schedule** for background duties. The answers are kept in `<vault>/persona/answers.json`, so
+`aos persona` re-runs prefilled and `aos persona rename <name>` re-renders every template. Where
+stdin is not a terminal: `aos init --persona-json answers.json`, or `aos persona --yes`.
+
+### What rides along on every prompt
+
+The `UserPromptSubmit` hook prepends a `<persona>` block ahead of the brain context: `IDENTITY.md`
+(who it is, its five prime directives, its model policy, its self-modification contract) and
+`STATE.md` (the current sitrep, open flags, pending proposals, the last duty runs), plus the morning
+sitrep while it is under 18 hours old. The agent that answers you in a fresh terminal already knows
+what it flagged at 22:00 last night.
+
+`aos persona off` writes `persona/DISABLED` — no injection, no duties, nothing deleted.
+
+### Its duties
+
+Each duty is a file: `brain/routines/<slug>.md`, carrying its own cron line, budget cap and tool
+allowlist in frontmatter. Change a cadence by editing the file and running `aos routines sync`.
+
+| Duty | Cadence | Cap (USD) | What it does |
+|---|---|---|---|
+| **tick** | hourly | 0.10 | The cheap beat, read-only. Queues what changed — a correction you made, a duty that failed, a repo whose planning idled, an approved fix that regressed, a flag left open a week — into `persona/queue.jsonl`. Skipped without a model call when a signature of the vault's inputs is unchanged, so a quiet hour costs nothing. |
+| **reflect-daily** | daily 22:00 | 0.50 | Drains that queue. Reads one evidence pack — the queue by type, the outcome ledger summary, each duty's fail streak, spend, the week's feedback and sessions — and files **at most two** proposals. Skipped when the queue is empty and today already drained; brought forward by the tick when the queue fills up. |
+| **monitor** | daily 13:00 | 2.00 | Duty health, vault drift, unfinished work, pending review counts; prepares one safe fix. |
+| **sitrep** | weekdays 07:45 | 2.00 | One page of where your work stands, leading with exactly **one** recommended action → `brain/_index/sitrep.md` and today's daily note. |
+| **reflect** | Sunday 18:00 | 2.00 | The long form, over 28 days: curates the playbook, promotes repeated corrections to feedback memories, writes the weekly reflection. |
+| **heartbeat** | every 30 min | — | Not a duty and never calls a model: `watchdog.js` projects every schedule forward and flags a duty that missed its window. |
+
+Duties run headless with `AOS_HEADLESS=1`, so your own hooks never fire inside one — through
+`claude -p`, or `codex exec` on a Codex-only machine. Every run is ledgered to
+`brain/_index/provider-spend.jsonl`; once today's duty rows reach `persona.perDayUsd` (6.00) the
+rest of the day is skipped, journalled and exit 0. **A duty never runs `git commit`** — anything it
+edits beyond its own state stays in the working tree for you to read.
+
+### Why the heartbeat exists
+
+The duty runner can only record a failure for a run it was started for, so a scheduler that dies
+takes the failure reporting down with it. The watchdog closes that gap from outside: it runs as its
+own routine *and* from the `SessionStart` hook (throttled to once per 30 minutes, silent), takes each
+duty's last run from `brain/_index/routines.json`, projects its schedule forward, and calls anything
+past `persona.watchdog.graceMinutes` (45, longer than a duty's own timeout) a **MISSED** duty.
+
+A miss becomes one line under `## Flags` in `STATE.md` — which the next session reads in its
+`<persona>` block — one OS notification, and a rose heartbeat pill in the HUD sidebar. It clears its
+own line once the duty runs again, and never touches a flag you closed by hand.
+
+### Nothing guarded changes without you
+
+`IDENTITY.md`, the duty files and their routines, the persona scripts, the schedules, and anything
+outside `persona/` are **guarded**. The agent changes them only by filing
+`persona/proposals/<date>-<slug>.md` with a premise table and a `recheck` recipe — a command that
+exits 0 for as long as the finding is still there. `review persona flags` re-runs every recipe before
+asking you anything, applies an approval exactly as written, re-runs the recipe expecting the finding
+to be gone, and commits one decision at a time.
+
+Every outcome is appended to `persona/ledger.jsonl` — `filed`, `approved`, `rejected`,
+`stale-dropped`, `auto-applied`, `verified`, `regressed`, `accepted`, `dismissed` — and both reflects
+read `ledger.js summary` before proposing, so a rejected idea is never filed at you twice and a
+regression counts as evidence against the fix that caused it. A proposal that is an idea rather than
+a change it can apply (`kind: workflow` or `product`) gets different verbs: **Accept** appends its
+What and Why to `persona/backlog.md`, **Dismiss** records the reason.
+
+### The loop, and how autonomy is earned
+
+```mermaid
+flowchart LR
+  T["tick · hourly<br/>notices what changed"] --> Q[("queue.jsonl")]
+  Q --> R["reflect · nightly<br/>files at most 2 proposals"]
+  R --> P[("proposals/")]
+  P --> Y["you · review persona flags<br/>approve · reject · accept · dismiss"]
+  Y --> L[("ledger.jsonl")]
+  L --> W["heartbeat · daily<br/>verified, or regressed"]
+  W -. "a regression is a new signal" .-> T
+  L -. "3 verified · no regression · no rejection" .-> A["auto-apply for that one class<br/>— a proposal you approve"]
+```
+
+Every step is deterministic except the two model runs that judge. The last link is the interesting
+one: a proposal may declare an `autoapply_class`, and once a class has `persona.autoapply.minVerified`
+(3) verified approvals with no regression and no rejection, the next reflect proposes the exact new
+`persona/autoapply.json` — a proposal you approve like any other. Only then is that *class* of change
+applied without a question, and only after the tick has confirmed the finding two days running.
+Until you approve one the whitelist is `[]` and the whole ladder is inert.
+
+Nothing ever asks you to rate anything. The evidence is whether a recheck stays clean, whether the
+duty metrics move, and whether your corrections on that topic stop.
+
+### Talking to it
+
+| | |
+|---|---|
+| *sitrep* · `/agenticos:persona-sitrep` | The morning page, rebuilt interactively when the cached one is stale. Internal work state only — it never fetches mail or calendars. |
+| *review persona flags* · `/agenticos:persona-flag-closer` | One pass over everything pending your judgment. Collection and re-verification are deterministic Node (zero tokens); the conversation is spent only on decisions. |
+| `aos persona` · `rename <name>` · `off` · `on` | Re-run the interview prefilled, rename the agent everywhere, flip the kill switch. |
+
+The full reference — the file-by-file layout of `<vault>/persona/`, every env override, the caps and
+the cron caveats — is [docs/chief-of-staff.md](docs/chief-of-staff.md).
 
 <a name="everyday-commands"></a>
 ## <img src="docs/assets/icon-commands.svg" width="36" align="top" alt="" /> Everyday commands
@@ -271,6 +387,7 @@ flowchart LR
 - **Runners.** Persona duties and `prompt` routines run through `claude -p` when Claude Code is wired and installed, otherwise through `codex exec` (workspace-write sandbox, our hooks off, the spend estimated from its token counts since Codex has no budget flag; the daily caps still gate every start). `persona.runner` and `routines.runner` pin one; `aos doctor` shows the choice. The HUD's Chat tab is the one surface that still needs the `claude` CLI.
 - **The vault** is an ordinary folder that is both an Obsidian vault and the agent's second brain. Its `workspaces/` folder is the home for project working directories of both hosts: a project is anything with a `README.md`, `CLAUDE.md`, `AGENTS.md`, `STATUS.md`, `PLAN.md` or `.git`, every scan pins each host's sessions to the workspace they ran in, and the Spaces tab lists whatever ran outside. `AGENTICOS.md` documents the layout and the three-file rule: `MEMORY.md` is the index, `brain/memory/<type>/` holds the content, `brain/_index/BRAIN.md` is the compiled bootstrap injected on the first turn.
 - **Providers.** `auto` picks Ollama when it answers, otherwise headless Claude (`claude -p --model haiku`, capped per call and per day, every call ledgered), otherwise headless Codex when Codex is a wired host (`codex exec`, read-only, hooks off, spend estimated from its token counts), otherwise `none`. Under `none` nothing calls a model in the background; summaries are heuristic and `/wrap` extracts memories inside your own session through the `wrap_session` tool. Start Ollama (`ollama serve`) and `auto` switches over on its own. One role is the exception: the **reasoner** behind `/ask-brain --local`, `/reflect-week`, `/consolidate-memory` and the HUD's Chat tab is a Claude model (`reasoner.model`, default `claude-opus-5`, with its own per-call and per-day caps) whatever `auto` resolved, and falls back to the local workhorse when Claude is unavailable.
+- **The Chief of Staff** is built out of the same two pieces: its duties are routine files that the runner starts, and its watchdog is a routine that never calls a model. What it may change on its own is a file contract, not a code path — see [The Chief of Staff](#chief-of-staff).
 - **The HUD** reads the same files: the pipeline ledger, live agent runs, the memory graph, provider state, spend, and your agent's identity and flags.
 
 <a name="privacy"></a>
@@ -291,7 +408,8 @@ obsidian-plugin    the Agentic OS HUD (TypeScript, esbuild)
 vault-template     the seed vault (AGENTICOS.md, MEMORY.md, brain/ incl. the three duty routines, persona templates incl. the heartbeat watchdog, hourly tick and nightly reflect routines)
 extras             the launchd schedule template, the cost analyzer, optional Ollama helpers
 tools              export-from-vault, the privacy gate, and the brand-asset generator behind docs/assets
-docs               install, chief of staff, cost, the Obsidian smoke checklist, the release acceptance runbook
+docs               install, chief of staff, cost, the Obsidian smoke checklist, the release acceptance runbook,
+                   and superpowers/ — the design spec and plan behind each shipped feature
 ```
 
 <a name="development"></a>
