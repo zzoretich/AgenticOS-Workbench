@@ -6,7 +6,7 @@ import * as path from "path";
 import { createRequire } from "module";
 import {
   PROPOSALS_DIR, LEDGER_PATH, CONFIRMATIONS_PATH, isProposalFile, parseProposal, parseLedger, ledgerRates,
-  historyRows, parseBacklog, parseConfirmations, ageDays, decisionFor,
+  historyRows, parseBacklog, parseConfirmations, ageDays, decisionFor, pageFor, pageForSlug,
 } from "./proposals";
 
 // The fixture vault is read by both sides: this module and the runtime scripts it mirrors.
@@ -122,4 +122,16 @@ test("ageDays counts local calendar days", () => {
   assert.equal(ageDays("2026-09-20", now), 2);
   assert.equal(ageDays("2026-08-31", now), 22);
   assert.equal(ageDays("(unspecified)", now), null);
+});
+
+test("pageFor matches proposal-html.js pagePath; pageForSlug finds the newest page for a slug, exactly", () => {
+  const htmlJs = req(path.join(REPO, "brain/scripts/persona/proposal-html.js"));
+  for (const name of fs.readdirSync(path.join(VAULT, PROPOSALS_DIR)).filter(isProposalFile)) {
+    assert.equal(pageFor(name), path.relative(VAULT, htmlJs.pagePath(VAULT, name)).split(path.sep).join("/"));
+  }
+  const pages = ["2026-09-01-trim-playbook.html", "2026-09-18-trim-playbook.html", "2026-09-18-trim-playbook-more.html", "notes.html", "2026-09-19-x.md"];
+  assert.equal(pageForSlug(pages, "trim-playbook"), "brain/_index/proposals/2026-09-18-trim-playbook.html");
+  assert.equal(pageForSlug(pages, "playbook"), null);
+  assert.equal(pageForSlug(pages, "x"), null);
+  assert.equal(pageForSlug([], "trim-playbook"), null);
 });
