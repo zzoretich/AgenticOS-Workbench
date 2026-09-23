@@ -8,8 +8,10 @@ import { RoutinesTab } from "./RoutinesTab";
 import { ChatTab } from "./ChatTab";
 import { TermTab } from "./TermTab";
 import { ProposalsTab } from "./ProposalsTab";
+import { TodoTab } from "./TodoTab";
 import { PROPOSALS_DIR } from "../data/proposals";
-import { badgeText, proposalBadge, touchesBadges } from "../data/badges";
+import { badgeText, proposalBadge, todoBadge, touchesBadges } from "../data/badges";
+import { TODO_PATH, localDay } from "../data/todos";
 
 export const VIEW_TYPE_WORKBENCH = "agentic-os-workbench";
 
@@ -17,6 +19,7 @@ interface RailTab { id: string; icon: string; label: string }
 
 const RAIL: RailTab[] = [
   { id: "pulse", icon: "◉", label: "Pulse" },
+  { id: "todo", icon: "☐", label: "To-Do" },
   { id: "proposals", icon: "⚖", label: "Proposals" },
   { id: "spaces", icon: "▣", label: "Spaces" },
   { id: "memory", icon: "◈", label: "Memory" },
@@ -122,6 +125,9 @@ export class WorkbenchView extends ItemView {
     let files: string[] = [];
     try { files = (await this.app.vault.adapter.list(PROPOSALS_DIR)).files; } catch { /* no persona/ yet */ }
     this.setBadge("proposals", proposalBadge(files));
+    let todo: string | null = null;
+    try { if (await this.app.vault.adapter.exists(TODO_PATH)) todo = await this.app.vault.adapter.read(TODO_PATH); } catch { /* unreadable: no badge */ }
+    this.setBadge("todo", todoBadge(todo, localDay(new Date())));
   }
 
   /** Opens a fresh Term session in the vault running `command`, and shows it (the Proposals tab's Review in Claude). */
@@ -148,6 +154,7 @@ export class WorkbenchView extends ItemView {
 
   private makeTab(id: string) {
     if (id === "pulse") return new PulseTab(this.plugin, this);
+    if (id === "todo") return new TodoTab(this.plugin, this);
     if (id === "proposals") return new ProposalsTab(this.plugin, this);
     if (id === "spaces") return new SpacesTab(this.plugin, this);
     if (id === "memory") return new MemoryTab(this.plugin, this);
