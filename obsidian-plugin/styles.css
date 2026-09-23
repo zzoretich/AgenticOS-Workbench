@@ -1864,3 +1864,6 @@
 }
 .aos-td-prio-btn:hover { color: var(--aos-cyan); }
 .aos-td-del:hover { color: var(--aos-rose); }
+.aos-pr-open { margin: 0 0 6px; font-size: 12px; }
+.aos-pr-open .aos-link { font-weight: 600; }
+.aos-pr-pagelink { flex: 0 0 auto; font-family: var(--aos-mono); font-size: 10.5px; }

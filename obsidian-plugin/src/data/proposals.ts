@@ -4,12 +4,15 @@
 // Mirrors, rule for rule: plugin/skills/persona-flag-closer/scripts/collect.js (frontmatter, premise
 // table, kinds, surfaces, lint), brain/scripts/persona/backlog.js (section shape),
 // brain/scripts/persona/ledger.js summary() (28-day rates) and brain/scripts/persona/recheck.js
-// readConfirmations(). proposals.test.ts runs both sides on the same fixtures.
+// readConfirmations(), and brain/scripts/persona/proposal-html.js pagePath() (spec 2026-09-22-proposal-pages D7).
+// proposals.test.ts runs both sides on the same fixtures.
 
 export const PROPOSALS_DIR = "persona/proposals";
 export const LEDGER_PATH = "persona/ledger.jsonl";
 export const BACKLOG_PATH = "persona/backlog.md";
 export const CONFIRMATIONS_PATH = "persona/flag-closer/confirmations.json";
+/** Where proposal-html.js renders each proposal's page: gitignored, and kept after the proposal is decided. */
+export const PAGES_DIR = "brain/_index/proposals";
 
 export const KINDS = ["self", "vault", "workflow", "product"];
 export const IDEA_KINDS = ["workflow", "product"];
@@ -41,6 +44,18 @@ export interface Proposal {
 /** A pending proposal is any .md in persona/proposals except its README. */
 export function isProposalFile(name: string): boolean {
   return name.endsWith(".md") && name !== "README.md";
+}
+
+/** proposal-html.js pagePath(): `<date>-<slug>.md` → `brain/_index/proposals/<date>-<slug>.html`. */
+export function pageFor(name: string): string {
+  return `${PAGES_DIR}/${name.replace(/\.md$/, "")}.html`;
+}
+
+/** The newest page for `slug` among the file names in PAGES_DIR — a page outlives its proposal file, so Backlog and
+ *  History rows find theirs by slug. Null when none was rendered. */
+export function pageForSlug(pages: string[], slug: string): string | null {
+  const hits = pages.filter((n) => /^\d{4}-\d{2}-\d{2}-/.test(n) && n.endsWith(".html") && n.slice(11, -5) === slug).sort();
+  return hits.length ? `${PAGES_DIR}/${hits[hits.length - 1]}` : null;
 }
 
 /** collect.js parseFrontmatter: flat `key: value`, double quotes stripped with \" and \\ unescaped. */

@@ -21,6 +21,12 @@ Guarded changes wait here for the user's sign-off. One file per proposal, `YYYY-
           then applied by the review without a question and ledgered `auto-applied`.>
     ---
 
+    # <Title — one line the user recognises>
+
+    **[Open the proposal in browser](file:///<vault>/brain/_index/proposals/<date>-<slug>.html)**
+
+Every proposal also exists as an HTML page. `brain/scripts/persona/proposal-html.js <file>` renders it into `brain/_index/proposals/` and writes the link line under the title; run it right after filing (the vault scan renders anything missed). Never write or edit the link line by hand. The page stays after the proposal is decided, so the Proposals tab can still open it from the backlog and the history.
+
 Body sections, in order: **What** (the exact change, as a diff or full replacement text), **Why** (evidence from the journal or feedback memories), **Risk** (what could go wrong), and **Premises** — what was verified versus assumed:
 
     ## Premises
