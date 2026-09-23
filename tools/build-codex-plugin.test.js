@@ -36,10 +36,10 @@ test('the build is byte-stable, and check reports missing, edited, stale and non
   assert.deepEqual(check(a, dir), [], 'write replaces the tree, stale files included');
 });
 
-test('22 skills: the 17 commands and 7 skills of plugin/, cost and wrap merged, each named, described and marked', () => {
+test('24 skills: the 17 commands and 9 skills of plugin/, cost and wrap merged, each named, described and marked', () => {
   const files = build();
   const skills = [...files.keys()].filter((k) => /^skills\/[^/]+\/SKILL\.md$/.test(k));
-  assert.equal(skills.length, 22);
+  assert.equal(skills.length, 24);
   const expected = new Set([
     ...fs.readdirSync(path.join(ROOT, 'plugin', 'commands')).filter((f) => f.endsWith('.md')).map((f) => f.slice(0, -3)),
     ...fs.readdirSync(path.join(ROOT, 'plugin', 'skills')),
@@ -54,7 +54,7 @@ test('22 skills: the 17 commands and 7 skills of plugin/, cost and wrap merged, 
     assert.match(text, new RegExp(`Invoke as \`\\$agenticos:${name}\``), `${k}: host note`);
     // Idioms Codex would hand to the model verbatim. A qualified host phrase ("an interactive Claude Code session")
     // names Claude Code on purpose and is allowed; the routines skill's cloud line is one.
-    const idiom = /CLAUDE_PLUGIN_ROOT|mcp__plugin_agenticos|\$ARGUMENTS|\b(?:[Aa]|[Tt]he|[Tt]his|[Yy]our|[Ee]ach|[Ee]very) Claude Code session|AskUserQuestion|with the (?:Read|Edit|Write|Glob|Grep) tool|(?:^|[\s(`"'])\/agenticos:|claude plugin install(?![^\n]*Codex)/.exec(text);
+    const idiom = /CLAUDE_PLUGIN_ROOT|mcp__plugin_agenticos|\$ARGUMENTS|\b(?:[Aa]|[Tt]he|[Tt]his|[Yy]our|[Ee]ach|[Ee]very) Claude Code session|AskUserQuestion|with the (?:Read|Edit|Write|Glob|Grep) tool|(?:^|[\s(`"'])\/agenticos:|claude plugin install(?![^\n]*Codex)|--host claude\b/.exec(text);
     assert.equal(idiom, null, `${k}: Claude-only idiom left: ${idiom && idiom[0]}`);
   }
   assert.match(files.get('skills/routines/SKILL.md').toString('utf8'), /refreshed from an interactive Claude Code session/, 'Claude Code cloud routines stay Claude Code');
