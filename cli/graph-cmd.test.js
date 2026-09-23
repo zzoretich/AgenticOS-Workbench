@@ -89,6 +89,19 @@ test('install refuses without uv, on a failed uv run, and when the result is not
   assert.deepEqual(cfgOf(w).graph, { enabled: true }, 'graph.bin is never recorded for a failed install');
 });
 
+test('ensureGitignore appends only the missing graph rules, once, and never creates a .gitignore', () => {
+  const w = world();
+  const g = { out: 'brain/graphify-out' };
+  assert.deepEqual(GC.ensureGitignore(w.vault, g), [], 'no .gitignore: not ours to create');
+  assert.ok(!fs.existsSync(path.join(w.vault, '.gitignore')));
+  fs.writeFileSync(path.join(w.vault, '.gitignore'), '**/graphify-out/\nbrain/graphify-out/');   // no trailing newline
+  assert.deepEqual(GC.ensureGitignore(w.vault, g), ['brain/graphify-out.pre-aos/']);
+  assert.equal(fs.readFileSync(path.join(w.vault, '.gitignore'), 'utf8'),
+    '**/graphify-out/\nbrain/graphify-out/\n# the vault knowledge graph (aos graph) is a derived cache, rebuilt from the notes\nbrain/graphify-out.pre-aos/\n');
+  assert.deepEqual(GC.ensureGitignore(w.vault, g), [], 'idempotent');
+  assert.deepEqual(GC.ensureGitignore(w.vault, { out: 'graph' }), ['graph/', 'graph.pre-aos/'], 'follows graph.out');
+});
+
 test('moveAside: a graph without our marker is renamed once; a marked graph and an empty dir stay', () => {
   const w = world();
   const g = { out: 'brain/graphify-out' };

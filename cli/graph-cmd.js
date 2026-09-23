@@ -78,6 +78,19 @@ function seedIgnore(vault, template) {
   return true;
 }
 
+/** Vaults seeded before the graph existed have no git rule for it (upgrade never re-seeds .gitignore): append the
+ *  missing ones for this out dir and its moved-aside twin. Never rewrites the file, never creates one. */
+function ensureGitignore(vault, g) {
+  const p = path.join(vault, '.gitignore');
+  let s;
+  try { s = fs.readFileSync(p, 'utf8'); } catch { return []; }
+  const rel = path.relative(vault, outDir(vault, g)).split(path.sep).join('/');
+  const have = new Set(s.split('\n').map((l) => l.trim()));
+  const add = [`${rel}/`, `${rel}.pre-aos/`].filter((r) => !have.has(r));
+  if (add.length) fs.appendFileSync(p, `${s === '' || s.endsWith('\n') ? '' : '\n'}# the vault knowledge graph (aos graph) is a derived cache, rebuilt from the notes\n${add.join('\n')}\n`);
+  return add;
+}
+
 /** A graph.json under the out dir with no aos marker was built by hand, from some other root: rename the dir once. */
 function moveAside(vault, g) {
   const dir = outDir(vault, g);
@@ -114,9 +127,10 @@ function install({ vault, configDir = claudeConfigDir(), uv = uvBin(), template,
   if (cfg) { cfg.graph = { ...(cfg.graph || {}), bin: d.graphify }; writeJson(file, cfg); }
   const g = graphConfig({ vault, userCfg: cfg });
   const seeded = vault ? seedIgnore(vault, template) : false;
+  const ignored = vault ? ensureGitignore(vault, g) : [];
   const moved = vault ? moveAside(vault, g) : null;
-  io.log(`graph: graphify ${action} (${d.graphify})${seeded ? '; seeded .graphifyignore' : ''}${moved ? `; moved a hand-built graph to ${path.relative(vault, moved)}` : ''}`);
-  return { bin: d.graphify, version: PIN, action, seeded, moved };
+  io.log(`graph: graphify ${action} (${d.graphify})${seeded ? '; seeded .graphifyignore' : ''}${ignored.length ? `; .gitignore += ${ignored.join(' ')}` : ''}${moved ? `; moved a hand-built graph to ${path.relative(vault, moved)}` : ''}`);
+  return { bin: d.graphify, version: PIN, action, seeded, ignored, moved };
 }
 
 /** uninstall: the tool dir is ours alone. Refuses any path that is not …/agenticos/graphify. */
@@ -214,6 +228,6 @@ async function run(args, opts = {}) {
 }
 
 module.exports = {
-  PIN, PACKAGE, PYTHON, MARKER, USAGE, uvBin, toolHome, toolDirs, installedVersion, graphConfig, outDir, seedIgnore, moveAside,
+  PIN, PACKAGE, PYTHON, MARKER, USAGE, uvBin, toolHome, toolDirs, installedVersion, graphConfig, outDir, seedIgnore, ensureGitignore, moveAside,
   install, removeTools, doctorRows, status, build, setEnabled, run,
 };

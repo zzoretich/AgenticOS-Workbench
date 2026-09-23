@@ -62,7 +62,7 @@ This change makes graphify part of what `aos init` installs:
   - check `<bin> --version` equals `graphify <pin>`, then record `graph.bin`;
   - write `.graphifyignore` if absent: `workspaces/`, `brain/scripts/`, `brain/_index/`, `brain/graphify-out/`, `brain/archive/`, `templates/`, `.obsidian/`;
   - start the first structural build detached.
-- `aos upgrade` reinstalls when the version is not the pin, and seeds `.graphifyignore` only if absent.
+- `aos upgrade` reinstalls when the version is not the pin, and seeds `.graphifyignore` only if absent. Because upgrade never re-seeds `.gitignore`, `install` appends any missing `brain/graphify-out/` and `brain/graphify-out.pre-aos/` rule to an existing one (it never rewrites or creates the file), so a vault that auto-commits never commits the graph.
 - An existing `brain/graphify-out/` without our marker (`.aos-graph.json`) is renamed once to `graphify-out.pre-aos/`, never deleted. It was built from some other root (D8).
 
 ### 4.2 Config

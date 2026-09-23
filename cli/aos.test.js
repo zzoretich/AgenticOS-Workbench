@@ -671,6 +671,8 @@ test('upgrade reinstalls graphify only on a version drift and moves a hand-built
   const binDir = path.join(sb.home, '.local', 'share', 'agenticos', 'graphify', 'bin');
   fs.writeFileSync(path.join(binDir, '.fake-graphify-version'), '0.9.1\n');
   fs.rmSync(path.join(sb.vault, '.graphifyignore'));
+  const gi = path.join(sb.vault, '.gitignore');
+  fs.writeFileSync(gi, fs.readFileSync(gi, 'utf8').replace(/^brain\/graphify-out(\.pre-aos)?\/\n/gm, ''));   // a vault seeded before the graph
   const out = path.join(sb.vault, 'brain', 'graphify-out');
   fs.rmSync(path.join(out, '.aos-graph.json'));
   fs.writeFileSync(sb.env.FAKE_UV_LOG, '');
@@ -679,6 +681,7 @@ test('upgrade reinstalls graphify only on a version drift and moves a hand-built
   assert.match(sb.log('FAKE_UV_LOG'), new RegExp(`^tool install --python >=3\\.10 --reinstall graphifyy==${reEsc(GRAPHIFY_PIN)}$`, 'm'));
   assert.match(r.stdout, new RegExp(`graph: graphify updated 0\\.9\\.1 → ${reEsc(GRAPHIFY_PIN)}.*seeded \\.graphifyignore.*moved a hand-built graph to brain/graphify-out\\.pre-aos`));
   assert.ok(fs.existsSync(path.join(sb.vault, '.graphifyignore')));
+  assert.match(fs.readFileSync(gi, 'utf8'), /^brain\/graphify-out\/\nbrain\/graphify-out\.pre-aos\/$/m, 'the graph rules are back in .gitignore');
   assert.ok(fs.existsSync(path.join(sb.vault, 'brain', 'graphify-out.pre-aos', 'graph.json')), 'moved aside, not deleted');
   assert.ok(fs.existsSync(path.join(out, '.aos-graph.json')), 'the rebuild wrote a marked graph');
 
