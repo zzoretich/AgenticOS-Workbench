@@ -66,7 +66,13 @@ test('precheck: runs on a queued signal, runs on an empty queue with no drain to
   assert.equal(p2.reason, 'queue empty and already drained today');
   assert.equal(state(v).skipped, 1);
   assert.equal(state(v).pending, null);
-  assert.equal(R.main(['precheck', '--root', v]), R.EXIT_SKIP, 'the CLI exit the runner keys on');
+  // The CLI path builds its own deps, so it reads the real clock — asserting its skip exit against the
+  // fixture's drain would only hold on the fixture's calendar day. Drain a second vault at the real now.
+  const live = vault({ queue: [line('correction', 'brain/memory/feedback/always-gate.md')] });
+  const liveDeps = { vault: live, now: () => new Date() };
+  R.precheck({ deps: liveDeps });
+  R.beat({ deps: liveDeps });
+  assert.equal(R.main(['precheck', '--root', live]), R.EXIT_SKIP, 'the CLI exit the runner keys on');
   // a new day with nothing queued still runs (the nightly pass reviews health and spend too)
   const p3 = R.precheck({ deps: d, now: at(DAY + 2 * HOUR) });
   assert.equal(p3.run, true);
