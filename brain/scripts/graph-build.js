@@ -131,8 +131,10 @@ function structural({ report, g, vault, out, timeoutMs, spawn, now }) {
   const o = G.overview(graph, { hubs: 0, communities: 0 });
   const prev = G.readMarker(out) || {};
   const at = now().toISOString();
+  // Every semantic field of the previous marker is kept — above all lastSemanticRun, the due check's clock. (0.11.1 and
+  // earlier kept only lastSemantic, so each scan made the daily semantic pass look due again.)
   const marker = {
-    mode: prev.lastSemantic ? 'semantic' : 'structural', builtAt: at, lastStructural: at,
+    ...prev, mode: prev.lastSemantic ? 'semantic' : 'structural', builtAt: at, lastStructural: at,
     lastSemantic: prev.lastSemantic || null, nodes: o.nodes, edges: o.edges, communities: o.communities, ms: Date.now() - t0,
   };
   G.writeMarker(out, marker);
