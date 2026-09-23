@@ -530,9 +530,10 @@ function isRepoRoot(d) {
   return !!d && exists(path.join(d, '.claude-plugin', 'marketplace.json')) &&
     exists(path.join(d, 'brain', 'scripts', 'package.json')) && isDir(path.join(d, 'vault-template'));
 }
-/** The checkout to vendor from: --from-local, this file's parent (repo run), or the marketplace clone. */
-function repoRoot(flags) {
-  const candidates = [flags.fromLocal, path.resolve(__dirname, '..'), path.join(configDir(), 'plugins', 'marketplaces', MARKETPLACE)];
+/** The checkout to vendor from: --from-local, this file's parent (repo run), the marketplace's own location (a local
+ *  directory marketplace, or the GitHub clone), else the default clone path. */
+function repoRoot(flags, marketplaceDir = null) {
+  const candidates = [flags.fromLocal, path.resolve(__dirname, '..'), marketplaceDir, path.join(configDir(), 'plugins', 'marketplaces', MARKETPLACE)];
   for (const c of candidates) if (isRepoRoot(c)) return path.resolve(c);
   throw new UsageError('cannot locate the AgenticOS-Workbench checkout (needs .claude-plugin/marketplace.json, brain/scripts, vault-template) — pass --from-local <repo-dir>');
 }
@@ -1086,17 +1087,31 @@ function upgradeReexecTarget(repo, self = __filename) {
   return target;
 }
 
+/** Where the `claude` CLI keeps the agenticos-workbench marketplace: its `installLocation` — the GitHub clone, or for a
+ *  marketplace added from a local directory (`aos init --from-local`) that checkout itself. null when unknown. */
+function marketplaceDir(bin) {
+  if (!bin) return null;
+  const arr = safeParse(run(bin, ['plugin', 'marketplace', 'list', '--json'], { capture: true, allowFail: true }).stdout);
+  const m = Array.isArray(arr) ? arr.find((x) => x && x.name === MARKETPLACE) : null;
+  return m && typeof m.installLocation === 'string' && m.installLocation ? path.resolve(m.installLocation) : null;
+}
+
 async function upgrade(flags) {
   const cfg = loadConfigOrThrow();
   const vault = cfg.vault;
   const bin = claudeBin(cfg);
   const clone = path.join(configDir(), 'plugins', 'marketplaces', MARKETPLACE);
   const reexeced = process.env.AOS_UPGRADE_REEXEC === '1';
-  if (!flags.fromLocal && bin && isDir(clone) && !reexeced) {
+  // The plugin follows its marketplace, so refresh both whenever that marketplace is what this upgrade vendors from: a
+  // plain upgrade (GitHub clone or local directory), or --from-local naming the directory the marketplace points at.
+  // --from-local with any other checkout keeps the installed plugin (a dev checkout is not what Claude Code installs).
+  const mktDir = reexeced ? null : (marketplaceDir(bin) || (isDir(clone) ? clone : null));
+  const followsMarketplace = !flags.fromLocal || (mktDir && path.resolve(flags.fromLocal) === mktDir);
+  if (bin && mktDir && !reexeced && followsMarketplace) {
     run(bin, ['plugin', 'marketplace', 'update', MARKETPLACE], { allowFail: true });
     run(bin, ['plugin', 'update', PLUGIN_ID], { allowFail: true });
   }
-  const repo = repoRoot(flags);
+  const repo = repoRoot(flags, mktDir);
   const target = reexeced ? null : upgradeReexecTarget(repo);
   if (target) {
     out.log(`upgrade: running the checkout's cli/aos.js (${target}) — the vendored copy is the one being replaced`);
