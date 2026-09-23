@@ -264,3 +264,14 @@ test('spawnSemantic starts a detached --semantic worker, and AOS_NO_SPAWN stops 
   assert.equal(GB.spawnSemantic({ spawnFn }), false);
   assert.equal(calls.length, 1);
 });
+
+test('a structural pass keeps the semantic run stamp, so the daily pass stays not-due across scans (0.11.2)', async () => {
+  const r = await semantic();
+  assert.equal(r.status, 'ok');
+  const before = JSON.parse(fs.readFileSync(path.join(OUT, '.aos-graph.json'), 'utf8'));
+  assert.equal((await build()).status, 'ok');
+  const after = JSON.parse(fs.readFileSync(path.join(OUT, '.aos-graph.json'), 'utf8'));
+  for (const k of ['lastSemanticRun', 'lastSemantic', 'semanticUsd', 'concepts', 'inferred']) assert.deepEqual(after[k], before[k], k);
+  assert.equal(after.mode, 'semantic');
+  assert.deepEqual(skip(scfg()), { status: 'skipped', reason: 'not due' }, 'a scan right after a run does not start another');
+});
