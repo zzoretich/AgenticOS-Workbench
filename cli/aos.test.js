@@ -11,6 +11,8 @@ const AOS = path.join(ROOT, 'cli', 'aos.js');
 const FAKE_CLAUDE = path.join(ROOT, 'cli', 'fixtures', 'fake-claude.sh');
 const FAKE_NPM = path.join(ROOT, 'cli', 'fixtures', 'fake-npm.sh');
 const FAKE_OLLAMA = path.join(ROOT, 'cli', 'fixtures', 'fake-ollama.sh');
+const FAKE_UV = path.join(ROOT, 'cli', 'fixtures', 'fake-uv.sh');
+const GRAPHIFY_PIN = require('./graph-cmd.js').PIN;
 
 /** Isolated sandbox: temp HOME + CLAUDE_CONFIG_DIR, fakes for claude and npm. Nothing touches ~/.claude. */
 function sandbox() {
@@ -31,6 +33,9 @@ function sandbox() {
     AOS_NPM_BIN: FAKE_NPM,
     AOS_OBSIDIAN_APP: obsidianApp,
     AOS_OLLAMA_BIN: FAKE_OLLAMA,
+    // graphify spec D1: uv is a prerequisite too; the fake installs a fake graphify into the sandboxed ~/.local/share.
+    AOS_UV_BIN: FAKE_UV,
+    FAKE_UV_LOG: path.join(dir, 'uv.log'),
     FAKE_CLAUDE_LOG: path.join(dir, 'claude.log'),
     FAKE_NPM_LOG: path.join(dir, 'npm.log'),
     FAKE_NPM_NODE_MODULES: path.join(ROOT, 'node_modules'),
@@ -43,6 +48,7 @@ function sandbox() {
     AOS_NO_CODEX: '1',
   };
   delete env.AOS_VAULT; delete env.BRAIN_VAULT; delete env.AOS_CONFIG; delete env.CLAUDE_PROJECT_DIR;
+  delete env.XDG_DATA_HOME;   // the graphify tool dir must land under the sandboxed HOME
   return { dir, home, cfg, vault: path.join(dir, 'vault'), env, log: (f) => { try { return fs.readFileSync(env[f], 'utf8'); } catch { return ''; } } };
 }
 function aos(sb, args, extraEnv = {}) {
@@ -70,6 +76,7 @@ test('doctor without agenticos.json fails that check and exits 1', () => {
   assert.match(r.stdout, new RegExp(`ok\\s+obsidian app\\s+${reEsc(sb.env.AOS_OBSIDIAN_APP)}`));
   assert.match(r.stdout, new RegExp(`ok\\s+ollama installed\\s+${reEsc(FAKE_OLLAMA)}`));
   assert.match(r.stdout, /ok\s+python3 >= 3\.9\s+3\.\d+/);
+  assert.match(r.stdout, new RegExp(`ok\\s+uv installed\\s+${reEsc(FAKE_UV)}`));
 });
 
 // mandatory-prereqs D2/D3/D5: each prerequisite has one env seam; '' means absent. init refuses before writing anything
@@ -78,6 +85,7 @@ const PREREQ_CASES = [
   { env: { AOS_OBSIDIAN_APP: '' }, initMsg: /Obsidian not found — install it from obsidian\.md/, row: /FAIL\s+obsidian app\s+not found/ },
   { env: { AOS_OLLAMA_BIN: '' }, initMsg: /ollama not found — install it from ollama\.com/, row: /FAIL\s+ollama installed\s+not found/ },
   { env: { AOS_PYTHON_BIN: '' }, initMsg: /python3 >= 3\.9 is required — python3 not found on PATH/, row: /FAIL\s+python3 >= 3\.9\s+python3 not found/ },
+  { env: { AOS_UV_BIN: '' }, initMsg: /uv not found — install it \(docs\.astral\.sh\/uv\)/, row: /FAIL\s+uv installed\s+not found/ },
 ];
 for (const c of PREREQ_CASES) {
   const name = Object.keys(c.env)[0];
@@ -232,7 +240,7 @@ test('init --dry-run prints the numbered plan and writes nothing', () => {
   assert.equal(r.status, 0, r.stderr);
   const lines = r.stdout.split('\n').filter((l) => l.startsWith('[dry-run] '));
   assert.deepEqual(lines.map((l) => l.replace(/^\[dry-run\] (\d+)\. (\S+).*/, '$1 $2')),
-    ['1 copy', '2 vendor', '3 write', '4 register', '5 run', '6 first']);
+    ['1 copy', '2 vendor', '3 write', '4 install', '5 register', '6 run', '7 first']);
   assert.ok(!fs.existsSync(sb.vault));
   assert.ok(!fs.existsSync(path.join(sb.cfg, 'agenticos.json')));
   assert.equal(sb.log('FAKE_NPM_LOG'), '');
@@ -276,7 +284,7 @@ test('init into a temp vault: seed set, vendored runtime, agenticos.json, plugin
   assert.deepEqual(readJson(path.join(v, '.obsidian', 'daily-notes.json')), { folder: String(new Date().getFullYear()), format: 'YYYY-MM-DD' });
 
   const cfg = readJson(path.join(sb.cfg, 'agenticos.json'));
-  assert.deepEqual(Object.keys(cfg), ['version', 'vault', 'node', 'claudeConfigDir', 'provider', 'claude', 'ollama', 'telemetry', 'cost', 'persona', 'hosts']);
+  assert.deepEqual(Object.keys(cfg), ['version', 'vault', 'node', 'claudeConfigDir', 'provider', 'claude', 'ollama', 'telemetry', 'cost', 'persona', 'graph', 'hosts']);
   // Design D1: a Claude-only install records exactly that; the Codex home is remembered for a later --host codex.
   assert.deepEqual(cfg.hosts, { claude: { enabled: true, configDir: sb.cfg, bin: FAKE_CLAUDE }, codex: { enabled: false, home: path.join(sb.home, '.codex') } });
   assert.equal(cfg.vault, v);
@@ -290,6 +298,14 @@ test('init into a temp vault: seed set, vendored runtime, agenticos.json, plugin
   assert.equal(cfg.claude.bin, FAKE_CLAUDE);
   assert.deepEqual(cfg.cost, { enabled: false });
   assert.deepEqual(cfg.persona, { enabled: true });
+  // graphify spec D2: the pinned graphify in a tool dir of our own, recorded; the seed ignore file; step 9's scan built the graph.
+  const graphBin = path.join(sb.home, '.local', 'share', 'agenticos', 'graphify', 'bin', 'graphify');
+  assert.deepEqual(cfg.graph, { enabled: true, bin: graphBin });
+  assert.match(sb.log('FAKE_UV_LOG'), new RegExp(`^tool install --python >=3\\.10 graphifyy==${reEsc(GRAPHIFY_PIN)}$`, 'm'));
+  assert.ok(fs.existsSync(path.join(v, '.graphifyignore')), '.graphifyignore seeded');
+  assert.equal(readJson(path.join(v, 'brain', 'graphify-out', 'graph.json')).nodes.length, 5, 'the first scan built the graph');
+  assert.equal(readJson(path.join(v, 'brain', 'graphify-out', '.aos-graph.json')).mode, 'structural');
+  assert.match(fs.readFileSync(path.join(v, '.gitignore'), 'utf8'), /^brain\/graphify-out\/$/m);
 
   // Contract §4.3: exactly one `npm install --omit=dev` in the vendored runtime; no lockfile step, no `npm ci`.
   const npmLog = sb.log('FAKE_NPM_LOG');
@@ -315,6 +331,7 @@ test('init into a temp vault: seed set, vendored runtime, agenticos.json, plugin
   assert.equal(again.status, 0, again.stderr);
   assert.match(fs.readFileSync(path.join(v, 'MEMORY.md'), 'utf8'), /Kept/);
   assert.match(fs.readFileSync(sessionPath, 'utf8'), /^updated: 2000-01-01$/m, 'a re-run never rewrites working memory');
+  assert.equal(sb.log('FAKE_UV_LOG').trim().split('\n').length, 1, 'graphify at the pin is kept, not reinstalled');
 
   // A re-run without --provider keeps the mode already set (e.g. by `aos provider ollama`), rather than resetting to auto.
   const cfgPath = path.join(sb.cfg, 'agenticos.json');
@@ -536,6 +553,8 @@ test('doctor passes on an initialized vault when the plugin is installed (MCP pr
   const r = aos(sb, ['doctor'], { FAKE_PLUGIN_PATH: path.join(ROOT, 'plugin') });
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.match(r.stdout, /ok\s+MCP server answers\s+serverInfo\.name=agenticos/);
+  assert.match(r.stdout, new RegExp(`ok\\s+graphify ${reEsc(GRAPHIFY_PIN)}\\s+.*agenticos/graphify/bin/graphify`));
+  assert.match(r.stdout, /ok\s+graph fresh\s+built \d+s ago · 5 nodes · 5 edges/);
   assert.match(r.stdout, /warn\s+obsidian plugin/);
   assert.match(r.stdout, /all checks passed/);
 });
@@ -645,6 +664,65 @@ test('upgrade re-vendors the runtime, migrates config, keeps memory', () => {
   assert.match(r.stdout, /Memory, notes and persona were not touched/);
 });
 
+// graphify spec D3/§4.1: upgrade reinstalls only on a version drift, seeds a missing .graphifyignore, and moves a graph no
+// aos build wrote aside exactly once; the index rebuild that follows writes a fresh, marked graph.
+test('upgrade reinstalls graphify only on a version drift and moves a hand-built graph aside once', () => {
+  const sb = initialized();
+  const binDir = path.join(sb.home, '.local', 'share', 'agenticos', 'graphify', 'bin');
+  fs.writeFileSync(path.join(binDir, '.fake-graphify-version'), '0.9.1\n');
+  fs.rmSync(path.join(sb.vault, '.graphifyignore'));
+  const out = path.join(sb.vault, 'brain', 'graphify-out');
+  fs.rmSync(path.join(out, '.aos-graph.json'));
+  fs.writeFileSync(sb.env.FAKE_UV_LOG, '');
+  const r = aos(sb, ['upgrade', '--no-obsidian', '--from-local', ROOT]);
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  assert.match(sb.log('FAKE_UV_LOG'), new RegExp(`^tool install --python >=3\\.10 --reinstall graphifyy==${reEsc(GRAPHIFY_PIN)}$`, 'm'));
+  assert.match(r.stdout, new RegExp(`graph: graphify updated 0\\.9\\.1 → ${reEsc(GRAPHIFY_PIN)}.*seeded \\.graphifyignore.*moved a hand-built graph to brain/graphify-out\\.pre-aos`));
+  assert.ok(fs.existsSync(path.join(sb.vault, '.graphifyignore')));
+  assert.ok(fs.existsSync(path.join(sb.vault, 'brain', 'graphify-out.pre-aos', 'graph.json')), 'moved aside, not deleted');
+  assert.ok(fs.existsSync(path.join(out, '.aos-graph.json')), 'the rebuild wrote a marked graph');
+
+  fs.writeFileSync(sb.env.FAKE_UV_LOG, '');
+  const again = aos(sb, ['upgrade', '--no-obsidian', '--from-local', ROOT]);
+  assert.equal(again.status, 0, again.stderr);
+  assert.equal(sb.log('FAKE_UV_LOG'), '', 'graphify at the pin is kept');
+  assert.deepEqual(fs.readdirSync(path.join(sb.vault, 'brain')).filter((f) => f.startsWith('graphify-out.pre-aos')), ['graphify-out.pre-aos'], 'moved once');
+});
+
+test('upgrade without uv warns about a graphify that needs installing and still finishes (upgrade is never gated)', () => {
+  const sb = initialized();
+  fs.writeFileSync(path.join(sb.home, '.local', 'share', 'agenticos', 'graphify', 'bin', '.fake-graphify-version'), '0.9.1\n');
+  const r = aos(sb, ['upgrade', '--no-obsidian', '--from-local', ROOT], { AOS_UV_BIN: '' });
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  assert.match(r.stderr, new RegExp(`warning: graph: uv not found .*graphify 0\\.9\\.1 is not the pinned ${reEsc(GRAPHIFY_PIN)}`));
+  const doc = aos(sb, ['doctor'], { AOS_UV_BIN: '', FAKE_PLUGIN_PATH: path.join(ROOT, 'plugin') });
+  assert.equal(doc.status, 1);
+  assert.match(doc.stdout, /FAIL\s+uv installed\s+not found/);
+  assert.match(doc.stdout, new RegExp(`warn\\s+graphify ${reEsc(GRAPHIFY_PIN)}\\s+installed 0\\.9\\.1, pinned`));
+});
+
+test('aos graph: status names the pin and the graph; off/on toggle graph.enabled; build rebuilds', () => {
+  const sb = initialized();
+  const st = aos(sb, ['graph']);
+  assert.equal(st.status, 0, st.stderr);
+  assert.match(st.stdout, new RegExp(`^graphify\\s+${reEsc(GRAPHIFY_PIN)} · `, 'm'));
+  assert.match(st.stdout, /^graph\s+on · structural · built \d+s ago · brain\/graphify-out$/m);
+  assert.match(st.stdout, /^5 nodes · 5 edges · 2 communities$/m);
+  assert.match(st.stdout, /\*\*Hubs:\*\* AGENTICOS \(3\)/);
+  assert.equal(aos(sb, ['graph', 'off']).status, 0);
+  assert.equal(readJson(path.join(sb.cfg, 'agenticos.json')).graph.enabled, false);
+  const doc = aos(sb, ['doctor'], { FAKE_PLUGIN_PATH: path.join(ROOT, 'plugin') });
+  assert.match(doc.stdout, /info\s+graph fresh\s+graph off \(aos graph on\)/);
+  const off = aos(sb, ['graph', 'build']);
+  assert.equal(off.status, 0, off.stderr);
+  assert.match(off.stdout, /^graph: disabled \(graph off\)$/m);
+  assert.equal(aos(sb, ['graph', 'on']).status, 0);
+  const b = aos(sb, ['graph', 'build']);
+  assert.equal(b.status, 0, b.stderr);
+  assert.match(b.stdout, /^graph: 5 nodes · 5 edges · 2 communities in \d+ ms → brain\/graphify-out$/m);
+  assert.equal(aos(sb, ['graph', 'frobnicate']).status, 2);
+});
+
 test('upgrade seeds brain/routines/ once and re-renders installed legacy duty plists through run-routine.js', () => {
   const sb = initialized();
   fs.rmSync(path.join(sb.vault, 'brain', 'routines'), { recursive: true, force: true });   // a vault from before routines existed
@@ -736,6 +814,8 @@ test('uninstall --keep-vault removes config, plugin, launcher link, duty schedul
   assert.match(log, /^plugin uninstall agenticos@agenticos-workbench$/m);
   assert.match(log, /^plugin marketplace remove agenticos-workbench$/m);
   assert.deepEqual(fs.readdirSync(sb.cfg), []);
+  assert.ok(!fs.existsSync(path.join(sb.home, '.local', 'share', 'agenticos', 'graphify')), 'the graphify tool dir is ours and goes');
+  assert.match(r.stdout, /removed .*agenticos\/graphify$/m);
 });
 
 test('uninstall deletes the vault only with the typed confirmation', () => {

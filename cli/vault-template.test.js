@@ -100,6 +100,13 @@ test('_gitignore carries the spec rules and is stored without the dot', () => {
     assert.ok(g.split('\n').includes(line), `missing rule ${line}`);
   }
   assert.ok(!fs.existsSync(path.join(T, '.gitignore')));
+  // graphify spec D8: the graph is a derived cache (and a hand-built one moved aside by aos stays out of git too).
+  for (const line of ['brain/graphify-out/', 'brain/graphify-out.pre-aos/']) assert.ok(g.split('\n').includes(line), `missing rule ${line}`);
+});
+
+test('.graphifyignore keeps code, caches, the graph itself and templates out of the vault graph', () => {
+  const rules = read('.graphifyignore').split('\n').filter((l) => l && !l.startsWith('#'));
+  assert.deepEqual(rules, ['workspaces/', 'brain/scripts/', 'brain/_index/', 'brain/graphify-out/', 'brain/graphify-out.pre-aos/', 'brain/archive/', 'templates/', '.obsidian/']);
 });
 
 test('brain/routines seeds the three duty routines (valid, guarded, enabled) and a README', () => {

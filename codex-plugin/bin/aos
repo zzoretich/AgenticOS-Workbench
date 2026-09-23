@@ -87,7 +87,7 @@ case "$NAME" in
   interview) SCRIPT=persona/interview.js ;;
   run-duty) exec sh "$VAULT/brain/scripts/persona/run-duty.sh" "$@" ;;
   run-routine) SCRIPT=routines/run-routine.js ;;
-  doctor|status|upgrade|uninstall|persona|cost|routines|workspace|terminal|provider|update-check|update-status|update-notice) SCRIPT=cli/aos.js; set -- "$NAME" "$@" ;;
+  doctor|status|upgrade|uninstall|persona|cost|graph|routines|workspace|terminal|provider|update-check|update-status|update-notice) SCRIPT=cli/aos.js; set -- "$NAME" "$@" ;;
   "") echo "usage: aos <name> [args...]" >&2; exit 64 ;;
   *) echo "aos: unknown script $NAME" >&2; exit 64 ;;
 esac
