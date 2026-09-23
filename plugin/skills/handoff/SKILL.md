@@ -1,0 +1,99 @@
+---
+name: handoff
+description: Recommend who should handle a task and run one scoped handoff when asked. Stay with the current agent, get a second opinion from the other provider, investigate a blocker, or delegate a bounded piece to a suitable model on Claude Code or Codex. Adapted from claudex-route. Use when the user asks "who should handle this", "get a second opinion on this", "I'm stuck, have another model look", "delegate this to a cheaper model", or "hand this off".
+---
+
+# Handoff
+
+Choose a useful next step for the task: keep it with the current agent, get a second opinion, investigate a blocker,
+or delegate a bounded piece of work. Give a brief recommendation before any requested execution. This skill does not
+start `/cross-review`, require a formal plan, or write review logs.
+
+## Understand the job
+
+Use the current conversation and just enough project context to identify the host, the current model when known, the
+desired outcome and the constraints. Consider ambiguity, code dependencies, how hard the result is to verify, context
+size, and cost or speed preferences; a short prompt can describe a difficult task. Keep explicit model and provider
+choices; never silently replace them with your preferred pairing.
+
+A request for advice is recommendation-only. A request to route and perform the work authorises the scoped handoff
+within the user's existing permissions. Invoking this skill does not by itself authorise implementation. Ask only when a
+missing fact changes the recommendation or the authorised work; otherwise state your assumption.
+
+## Choose the role before the model
+
+| Situation | Useful next step |
+|---|---|
+| Straightforward task, enough context, no reason to delegate | Stay with the current agent; skip the handoff overhead |
+| A consequential or ambiguous plan is ready | Have the other provider challenge requirements, assumptions and acceptance criteria before building |
+| An implementation is ready | Have the other provider inspect the relevant changes against the requirements, including test validity |
+| Repeated attempts have failed | Give another provider the reproduction, the evidence and the failed approaches; ask for a testable alternative explanation |
+| A separable task has clear inputs and acceptance checks | Delegate that piece to a suitable smaller model and inspect its result |
+| The user wants repeated planning, revision, building and independent inspection | Recommend `/cross-review`; start it only if the user asks for that workflow |
+
+The current agent keeps the user's requirements and coordinates. A different provider offers another perspective, not
+guaranteed correctness. A cheaper delegate does not need to be a peer reviewer of the whole architecture.
+
+## Select a practical candidate
+
+Start from what this machine can run: `sh "${CLAUDE_PLUGIN_ROOT}/bin/aos" cross-review preflight --host claude` shows
+each CLI's path, version and login without a model call. Listed, authenticated and proven runnable are three different
+things; if access or the active model is unknown, make the recommendation conditional and say what needs checking.
+Never launch paid comparison calls just to choose a model.
+
+Starting points **as of September 2026**, not a permanent leaderboard (refresh this table when it ages):
+
+| Model | Consider for |
+|---|---|
+| **GPT-5.6 Luna** (`gpt-5.6-luna`) | Narrow, repetitive tasks with explicit checks: fixtures, extraction, documentation updates, an isolated helper |
+| **GPT-5.6 Terra** (`gpt-5.6-terra`) | Bounded coding or investigation that needs more judgment and context than a Luna task |
+| **GPT-6 Astra** (`gpt-6-astra`), **Claude Fable 5.1** (`claude-fable-5-1`) | Ambiguous work, difficult debugging, a substantial independent review. From Codex, Fable is the cross-provider candidate; from Claude Code, Astra is |
+| **Claude Sonnet, Opus, or another available model** | When task fit, existing context, account access or the user's preference favours them; cross-provider delegation is optional |
+
+For price-sensitive choices or comparative claims, check the current official pages:
+[OpenAI models](https://developers.openai.com/api/docs/models),
+[Anthropic models](https://platform.claude.com/docs/en/about-claude/models/overview), and
+[Codex usage](https://learn.chatgpt.com/docs/pricing) for subscription allowances. API prices differ from subscription
+usage, and a task's cost also includes context transfer, reasoning, retries and your own verification. Never promise
+savings without evidence; if the sources cannot be checked, leave numbers out and label the assumption.
+
+## Return a short routing brief
+
+Normally under 200 words:
+
+- **Recommendation:** stay here, or a named provider and model for a specific role.
+- **Why:** one or two reasons tied to this task, plus a material uncertainty if there is one.
+- **Handoff:** the bounded assignment, the relevant files, the expected result, the permitted actions and how success
+  is checked. When staying here, the immediate next step instead.
+
+Offer at most one alternative when it helps a real trade-off. Do not interview the user, list a catalogue of models,
+or start a review loop. Never claim to have changed this conversation's model: a handoff is a separate session.
+
+## Run one handoff when asked
+
+Write a self-contained brief to a file outside the checkout: the goal, the relevant requirements and files, the
+constraints, the expected output and how it is verified. For debugging, include the failed attempts; for a code
+inspection, name the comparison baseline and the committed, staged, unstaged and untracked changes. The delegate does
+not inherit this conversation. Then:
+
+```sh
+sh "${CLAUDE_PLUGIN_ROOT}/bin/aos" cross-review handoff --host claude --provider <claude|codex> --model <model> --brief <brief file>
+```
+
+- **Read-only by default.** The delegate gets file reading and search only, with no shell, edits, MCP servers or
+  plugins, in a fresh unsaved session.
+- **`--write`** only when the user asked for edits. It needs a clean checkout (use a worktree when other work is in
+  progress) and never lets the delegate commit; the result lists `changedFiles`. Pause your own edits to those files
+  while it runs.
+- The same provider as this host is allowed (a smaller model for a narrow task) and is recorded as
+  `independence: "same-provider"`; say so when you report it.
+- A turn can take minutes: when your shell tool can run a command in the background, run it that way and keep the
+  user posted. Exit 0 is a completed turn; exit 1 is a failure to report, not to retry. An empty reply, a timeout or a
+  permission failure is never success. Stop and report a failed handoff rather than retrying, escalating to a larger
+  model or starting another round.
+
+Read `response` in the result, assess its findings against the evidence, inspect any edits, and run the appropriate
+checks within the existing authorization. Report the outcome, the checks actually run, the remaining uncertainty and
+the spend (`usd`). Distinguish the model requested (`requestedModel`) from the model observed (`observedModels`,
+empty when the CLI does not report one); never invent an observed identity. If a correction falls outside the
+requested work, recommend it without expanding scope. Finish after this one handoff and your verification.

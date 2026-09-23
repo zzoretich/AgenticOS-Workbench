@@ -57,15 +57,15 @@ test('MCP tools use the plugin-prefixed names Claude Code exposes for a plugin-d
   }
 });
 
-test('the seven plugin skills exist with frontmatter and are free of owner paths', () => {   // execution amendment 2026-09-15 (A32)
+test('the nine plugin skills exist with frontmatter and are free of owner paths', () => {   // execution amendment 2026-09-15 (A32)
   const SK = path.resolve(__dirname, '..', 'plugin', 'skills');
-  // final review Minor 18 (tests-12): iterating seven names never catches an EIGHTH skill directory shipping
+  // final review Minor 18 (tests-12): iterating the names never catches an extra skill directory shipping
   // by accident — pin the directory listing itself.
   assert.deepEqual(
     fs.readdirSync(SK, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort(),
-    ['cost', 'feedback-review', 'graph', 'persona-flag-closer', 'persona-sitrep', 'recall', 'wrap'],
-    'exactly seven plugin skills ship');
-  for (const name of ['recall', 'wrap', 'feedback-review', 'cost', 'persona-flag-closer', 'persona-sitrep', 'graph']) {
+    ['cost', 'cross-review', 'feedback-review', 'graph', 'handoff', 'persona-flag-closer', 'persona-sitrep', 'recall', 'wrap'],
+    'exactly nine plugin skills ship');
+  for (const name of ['recall', 'wrap', 'feedback-review', 'cost', 'persona-flag-closer', 'persona-sitrep', 'graph', 'cross-review', 'handoff']) {
     const text = fs.readFileSync(path.join(SK, name, 'SKILL.md'), 'utf8');
     const fm = /^---\n([\s\S]*?)\n---\n/.exec(text);
     assert.ok(fm, `${name}: frontmatter`);

@@ -230,6 +230,8 @@ function rewriteBody(body, ctx) {
   // file"; a structured question becomes a question the host note explains how to ask.
   s = s.replace(/ with the (?:Read|Edit|Write|Glob|Grep) tool\b/g, '');
   s = s.replace(/\bAskUserQuestion(?: call)?\b/g, 'question');
+  // The runner is told which host it runs in (spec 2026-09-23-cross-review D5): nothing in a Codex shell says so.
+  s = s.replace(/--host claude\b/g, '--host codex');
   return rewriteWording(s, ctx);
 }
 
