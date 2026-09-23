@@ -55,6 +55,8 @@ export interface VaultConfig {
   persona: { enabled: boolean; runner: "auto" | "claude" | "codex"; codexModel: string | null; perDutyUsd: number; perDayUsd: number; watchdog: { graceMinutes: number; notify: boolean }; tick: { flagAgeDays: number; earlyReflect: { corrections: number; dutyFailures: number } }; autoapply: { minVerified: number } };
   // Routines (brain/routines/*.md): caps for the prompt kind and the launchd labels the Routines tab lists read-only.
   routines: { enabled: boolean; runner: "auto" | "claude" | "codex"; codexModel: string | null; perRunUsd: number; perDayUsd: number; tools: string; externalLabels: string[] };
+  // Cross-review and handoff (spec 2026-09-23-cross-review D8): the HUD does not read these yet; mirrored so the defaults stay whole.
+  crossReview: { enabled: boolean; claudeModel: string | null; codexModel: string | null; effort: string | null; perCallUsd: number; perDayUsd: number; timeoutSec: number; rounds: number };
 }
 
 export interface ProviderState {
@@ -89,6 +91,7 @@ export const VAULT_CONFIG_DEFAULTS: VaultConfig = {
   graph: { enabled: true, out: "brain/graphify-out", timeoutSec: 120, staleDays: 7, semantic: { enabled: "auto", runner: "auto", everyHours: 24, perCallUsd: 0.25, perDayUsd: 1.0, tokenBudget: 20000, timeoutSec: 1800 } },
   persona: { enabled: true, runner: "auto", codexModel: null, perDutyUsd: 2.0, perDayUsd: 6.0, watchdog: { graceMinutes: 45, notify: true }, tick: { flagAgeDays: 7, earlyReflect: { corrections: 3, dutyFailures: 2 } }, autoapply: { minVerified: 3 } },
   routines: { enabled: true, runner: "auto", codexModel: null, perRunUsd: 2.0, perDayUsd: 6.0, tools: "Read,Glob,Grep", externalLabels: [] },
+  crossReview: { enabled: true, claudeModel: null, codexModel: null, effort: null, perCallUsd: 3.0, perDayUsd: 10.0, timeoutSec: 600, rounds: 5 },
 };
 
 export const PROVIDER_STATE_PATH = "brain/_index/provider-state.json";

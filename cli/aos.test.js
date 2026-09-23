@@ -567,6 +567,8 @@ test('doctor passes on an initialized vault when the plugin is installed (MCP pr
   assert.match(r.stdout, new RegExp(`ok\\s+graphify ${reEsc(GRAPHIFY_PIN)}\\s+.*agenticos/graphify/bin/graphify`));
   assert.match(r.stdout, /ok\s+graph fresh\s+built \d+s ago · 5 nodes · 5 edges/);
   assert.match(r.stdout, /warn\s+obsidian plugin/);
+  // cross-review spec D6: a Claude-only machine gets a warn row naming the same-provider fallback, never a failure.
+  assert.match(r.stdout, /warn\s+cross-review\s+same-provider only: codex CLI not found — the skill offers a labelled same-provider review$/m);
   assert.match(r.stdout, /all checks passed/);
 });
 
@@ -1031,6 +1033,9 @@ test('direct wiring (a Codex CLI without plugins): init --host both wires the pl
   assert.match(dr.stdout, /ok\s+codex hooks\s+5 of 5 events/);
   assert.match(dr.stdout, /ok\s+codex MCP declared/);
   assert.match(dr.stdout, /ok\s+codex skills\s+24 generated/);
+  assert.match(dr.stdout, /ok\s+cross-review\s+cross-provider \(claude and codex review each other\)$/m);
+  assert.match(aos(sb, ['doctor'], { FAKE_PLUGIN_PATH: path.join(ROOT, 'plugin'), FAKE_CODEX_LOGGED_OUT: '1' }).stdout,
+    /warn\s+cross-review\s+same-provider only: codex CLI not logged in/);
   const st = aos(sb, ['status']);
   assert.match(st.stdout, /^hosts\s+claude, codex$/m);
   assert.match(st.stdout, /^codex\s+bin=/m);

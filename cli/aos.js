@@ -390,6 +390,23 @@ async function doctor() {
       }
     } catch (e) { add('runner', false, e.message, 'warn'); }
   }
+  // cross-review spec D6: whether the other provider can review. Both CLIs installed and logged in → cross-provider; one →
+  // same-provider only (the skill offers a labelled same-provider review); none → nothing to run. Never a fail row: the
+  // rest of AgenticOS works without it. The CLIs count whether or not they are enabled hosts; the login probes are free.
+  if (vault) {
+    const vaultCfg = readJson(path.join(vault, 'brain', 'config.json'), {}) || {};
+    const xr = { ...(vaultCfg.crossReview || {}), ...((cfg && cfg.crossReview) || {}) };
+    if (xr.enabled === false) add('cross-review', true, 'off (crossReview.enabled=false)', 'info');
+    else {
+      const cb = claudeBin(cfg);
+      const xb = codexBin(cfg);
+      const ready = { claude: !!cb && claudeLoggedIn(cb), codex: !!xb && CH.codexLoggedIn(xb, run) };
+      const why = (h, b) => `${h} CLI ${b ? 'not logged in' : 'not found'}`;
+      if (ready.claude && ready.codex) add('cross-review', true, 'cross-provider (claude and codex review each other)', 'warn');
+      else if (ready.claude || ready.codex) add('cross-review', false, `same-provider only: ${ready.claude ? why('codex', xb) : why('claude', cb)} — the skill offers a labelled same-provider review`, 'warn');
+      else add('cross-review', false, 'no CLI ready: claude and codex are both missing or logged out', 'warn');
+    }
+  }
   if (vault) add('obsidian plugin', exists(path.join(vault, '.obsidian', 'plugins', OBSIDIAN_PLUGIN_ID, 'main.js')), `${vault}/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/main.js`, 'warn');
   // graphify spec §4.6: the pinned binary (fail when missing, warn on drift) and the graph's age (warn).
   if (cfg && vault) for (const row of graphCmd.doctorRows({ cfg, vault })) add(row.name, row.ok, row.detail, row.level);

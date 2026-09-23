@@ -38,7 +38,7 @@ ledgered on its own budget, ephemeral, and kept out of the brain's session colle
 | `cli/codex-host.js`, `tools/build-codex-plugin.test.js` | changed | 2 | `rewriteBody`: `--host claude` → `--host codex`; the idiom regex |
 | `codex-plugin/**` | generated | 2 | `npm run build:codex-plugin`, committed with its source |
 | `cli/plugin-commands.test.js`, `cli/plugin-manifests.test.js`, `cli/codex-host.test.js`, `tools/build-codex-plugin.js` | changed | 2 | Counts 7 → 9 skills, 22 → 24 Codex skills; the new launcher arm |
-| `cli/aos.js` | changed | 3 | Doctor row in both host blocks; `status` spend line for `cross-review:`; the "22 skills" comment → 24 |
+| `cli/aos.js` | changed | 3 | One host-neutral doctor row; `status` spend line for `cross-review:`; the "22 skills" comment → 24 |
 | `cli/aos.test.js` | changed | 3 | Doctor row: both CLIs present, one missing, logged out |
 | `vault-template/AGENTICOS.md` | changed | 3 | Vocabulary line `/cross-review` · `/handoff` with their `$agenticos:` forms |
 | `README.md`, `docs/install.md`, `docs/plugin-smoke.md` | changed | 3 | Everyday commands per host, counts, Hosts, smoke items per host per skill, credits |
@@ -59,15 +59,15 @@ ledgered on its own budget, ephemeral, and kept out of the brain's session colle
 
 ### Slice 2: plugin surfaces
 
-- [ ] `plugin/bin/aos` arm; `plugin-manifests.test.js`.
-- [ ] `cross-review` and `handoff` skills, host-neutral; their references and notices.
-- [ ] `rewriteBody` idiom and test regex; `npm run build:codex-plugin`; commit `codex-plugin/` with its source.
-- [ ] Count updates everywhere `parity-check.js` looks.
+- [x] `plugin/bin/aos` arm; `plugin-manifests.test.js`.
+- [x] `cross-review` and `handoff` skills, host-neutral; their references and notices.
+- [x] `rewriteBody` idiom and test regex; `npm run build:codex-plugin`; commit `codex-plugin/` with its source.
+- [x] Count updates everywhere `parity-check.js` looks.
 
 ### Slice 3: doctor, docs, verification
 
-- [ ] Doctor row plus tests; `aos status` spend line.
-- [ ] README, install, smoke, `AGENTICOS.md`.
+- [x] Doctor row plus tests; `aos status` spend line.
+- [x] README, install, smoke, `AGENTICOS.md`.
 - [ ] `npm run gate` · `npm test` · `parity-check.js --wip --rehearse` · `publish-check.js`.
 - [ ] **Ask first (spends):** one live smoke per direction on a disposable repo (a review and a consult handoff).
       Record the outcome of the Codex reviewer MCP override in spec §6.

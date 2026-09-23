@@ -79,8 +79,10 @@ beside AgenticOS as-is, it would work against the product rather than with it:
   Long calls: "when your shell tool can run a command in the background, do so and report progress".
 - **Skill `plugin/skills/handoff/`.** `SKILL.md` is route's text, adapted. It points to `/cross-review` where route
   pointed to Claude Code's loop, and executes via `aos cross-review handoff` (D13); `THIRD-PARTY-NOTICES.md`.
-- **Doctor.** One row in both host blocks: `cross-review  cross-provider (claude 2.1.281 · codex 0.156.1)`, or
-  `same-provider only: codex CLI not found`. It reuses the login rows already computed.
+- **Doctor.** One host-neutral row beside the runner rows, never a fail: `ok cross-review cross-provider (claude and
+  codex review each other)`, or `warn cross-review same-provider only: codex CLI not found` (or `not logged in`), or
+  `info … off` when `crossReview.enabled` is false. It counts a CLI whether or not it is a wired host, and uses the
+  free login probes (`claude auth status --json`, `codex login status`).
 
 ## 5. Host parity
 
