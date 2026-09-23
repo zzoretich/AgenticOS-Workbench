@@ -13,7 +13,7 @@ import { computeDelta, SnapshotDelta } from "../data/delta";
 import { buildMonthlyBudget, formatUSD, BudgetConfig } from "../data/cost";
 import { loadRunsForMonth, AgentRun } from "../data/runs";
 import { AnchorModal } from "../ui/AnchorModal";
-import { personaName, readVaultConfig } from "../data/aosConfig";
+import { personaName, readVaultConfig, invocationHint, readAgenticosJson } from "../data/aosConfig";
 import { TerminalPanel } from "../ui/TerminalPanel";
 import { COMMAND_REGISTRY, executeCommand } from "../data/commandRegistry";
 import { sweepLine } from "../data/maintenance";
@@ -196,7 +196,7 @@ export class PulseTab {
 
     // ── BRIEFING ──
     const ageMs = this.snapshot?.scannedAt ? Date.now() - new Date(this.snapshot.scannedAt).getTime() : Infinity;
-    const insights = buildBriefing(this.snapshot, { ageMs });
+    const insights = buildBriefing(this.snapshot, { ageMs, wrapHint: invocationHint("wrap", readAgenticosJson()) });
     const brief = composeBriefing(insights);
     if (brief.text) {
       // composeBriefing carries a numeric priority (0 critical .. 5 all-clear), not a

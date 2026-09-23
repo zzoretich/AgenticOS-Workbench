@@ -3,6 +3,7 @@ import type { TAbstractFile } from "obsidian";
 import type AgenticOSPlugin from "../../main";
 import type { WorkbenchView } from "./WorkbenchView";
 import { ConfirmModal } from "../ui/ConfirmModal";
+import { invocationHint, readAgenticosJson } from "../data/aosConfig";
 import {
   TODO_PATH, TODO_TEMPLATE, GROUPS, Priority, Todo, StaleTodoError, parseTodos, groupTodos, doneThisWeek, openTags, localDay, addDays,
   addTodo, toggleTodo, editTodo, removeTodo, withPriority, withDue, todoBadgeCount,
@@ -135,7 +136,7 @@ export class TodoTab {
         cls: "aos-inv-table aos-rt-table",
       }).createDiv({
         cls: "aos-inv-row aos-dim",
-        text: this.tagFilter ? `Nothing open tagged #${this.tagFilter}.` : "Nothing open — add one above, or run /todo <text> in any Claude session.",
+        text: this.tagFilter ? `Nothing open tagged #${this.tagFilter}.` : `Nothing open — add one above, or run ${invocationHint("todo", readAgenticosJson())} <text> in a session.`,
       });
     }
 

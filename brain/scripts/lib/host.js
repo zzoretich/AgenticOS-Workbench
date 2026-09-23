@@ -143,4 +143,23 @@ function findTranscript(host, sessionId, dirs) {
   return null;
 }
 
-module.exports = { HOSTS, resolveHost, enabledHosts, currentHost, isHookInvocation, hostDirs, findTranscript, codexHome, claudeConfigDir };
+/** How the user invokes a plugin command on `host`: Claude Code `/name`; Codex `$agenticos:name`, or `$name` when wired directly. */
+function invocation(name, host, { userConfig } = {}) {
+  if (host !== 'codex') return `/${name}`;
+  const cfg = userConfig === undefined ? defaultUserConfig() : userConfig;
+  const install = cfg && cfg.hosts && cfg.hosts.codex && cfg.hosts.codex.install;
+  return install === 'direct' ? `$${name}` : `$agenticos:${name}`;
+}
+
+/**
+ * The invocation for every enabled host, for text any of them may read (SESSION.md is shared): "/wrap",
+ * "$agenticos:wrap", or "/wrap (Claude Code) or $agenticos:wrap (Codex)". A config without `hosts` is Claude only.
+ */
+function invocationHint(name, { userConfig } = {}) {
+  const cfg = userConfig === undefined ? defaultUserConfig() : userConfig;
+  const hosts = enabledHosts(cfg);
+  if (hosts.length === 2) return `${invocation(name, 'claude', { userConfig: cfg })} (Claude Code) or ${invocation(name, 'codex', { userConfig: cfg })} (Codex)`;
+  return invocation(name, hosts[0] || 'claude', { userConfig: cfg });
+}
+
+module.exports = { HOSTS, resolveHost, enabledHosts, currentHost, isHookInvocation, hostDirs, findTranscript, codexHome, claudeConfigDir, invocation, invocationHint };

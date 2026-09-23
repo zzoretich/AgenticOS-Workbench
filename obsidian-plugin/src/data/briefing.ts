@@ -33,6 +33,8 @@ export interface BriefingContext {
   offline?: boolean;
   /** Milliseconds since snapshot scannedAt. */
   ageMs?: number;
+  /** How this user runs the wrap command (aosConfig invocationHint): "/wrap", "$agenticos:wrap", or both. */
+  wrapHint?: string;
 }
 
 export function buildBriefing(snapshot: Snapshot | null, ctx: BriefingContext = {}): BriefingInsight[] {
@@ -78,7 +80,7 @@ export function buildBriefing(snapshot: Snapshot | null, ctx: BriefingContext = 
   }
 
   if (snapshot.brain?.sessions && !snapshot.brain.sessions.todayPresent) {
-    add(2, "missing-today", `No session log for today yet. /wrap at day's end works too.`);
+    add(2, "missing-today", `No session log for today yet. ${ctx.wrapHint || "/wrap"} at day's end works too.`);
   }
 
   const dormant = snapshot.plans?.summary?.dormant || 0;

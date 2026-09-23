@@ -954,7 +954,7 @@ async function init(flags) {
     if (!exists(path.join(costSrc, 'analyze_transcript.py'))) throw new CheckFailed(`--cost: cost module sources not found at ${costSrc} (pass --from-local <repo-dir> carrying extras/cost, or run without --cost and \`aos cost enable\` later)`);
   }
   const oll = ollamaEndpoint(readJson(configPath()));
-  out.log(`preflight: ollama ${oll.host}:${oll.port} ${ollamaProbeSkipped() ? 'not probed (AOS_SKIP_OLLAMA_PROBE=1)' : (await httpProbe(`http://${oll.host}:${oll.port}/api/tags`)) ? 'reachable' : 'not reachable — run `ollama serve` (auto falls back to claude, then none until it answers)'}`);
+  out.log(`preflight: ollama ${oll.host}:${oll.port} ${ollamaProbeSkipped() ? 'not probed (AOS_SKIP_OLLAMA_PROBE=1)' : (await httpProbe(`http://${oll.host}:${oll.port}/api/tags`)) ? 'reachable' : 'not reachable — run `ollama serve` (auto falls back to claude, then codex, then none until it answers)'}`);
 
   // 2. vault path
   let vault = flags.vault ? path.resolve(flags.vault) : DEFAULT_VAULT;

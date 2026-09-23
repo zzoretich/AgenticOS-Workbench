@@ -7,9 +7,8 @@ import {
   Proposal, LedgerRecord, LedgerRates, BacklogEntry,
   isProposalFile, parseProposal, parseLedger, ledgerRates, historyRows, parseBacklog, parseConfirmations, ageDays,
 } from "../data/proposals";
+import { readAgenticosJson, reviewCommand } from "../data/aosConfig";
 
-/** What Review in Claude types into a fresh Term session: the persona-flag-closer skill's trigger phrase. */
-const REVIEW_COMMAND = 'claude "review persona flags"';
 const WATCHED = [LEDGER_PATH, BACKLOG_PATH, CONFIRMATIONS_PATH];
 const KIND_PILL: Record<string, string> = { self: "aos-pill-cyan", vault: "aos-pill-cyan", workflow: "aos-pill-green", product: "aos-pill-green" };
 const EVENT_MARK: Record<string, [string, string]> = {
@@ -27,7 +26,7 @@ const pct = (r: number | null) => (r === null ? "n/a" : `${Math.round(r * 100)}%
 /**
  * PROPOSALS — the Chief of Staff's pending proposals, accepted backlog and ledger history (spec
  * 2026-09-22-todo-and-proposals-tabs D5/D6). Read-only: every decision goes through the
- * persona-flag-closer skill, reached with Review in Claude. Parsing lives in src/data/proposals.ts.
+ * persona-flag-closer skill, reached with the Review button (Claude Code or Codex). Parsing lives in src/data/proposals.ts.
  */
 export class ProposalsTab {
   private host: HTMLElement | null = null;
@@ -106,9 +105,11 @@ export class ProposalsTab {
     head.createSpan({ cls: "aos-rt-title", text: "PROPOSALS" });
     head.createSpan({ cls: "aos-dim aos-rt-count", text: `${this.proposals.length} pending · ${this.backlog.length} in backlog` });
     const actions = head.createDiv({ cls: "aos-rt-actions" });
-    const review = actions.createEl("button", { cls: "aos-ws-action", text: "Review in Claude ❯_" });
-    review.setAttr("title", `Opens a Term session in the vault running: ${REVIEW_COMMAND}`);
-    review.addEventListener("click", () => this.view.runInTerm(REVIEW_COMMAND));
+    // The persona-flag-closer skill in the user's first host (Claude Code, else Codex): data/aosConfig.ts reviewCommand.
+    const rc = reviewCommand(readAgenticosJson());
+    const review = actions.createEl("button", { cls: "aos-ws-action", text: rc.label });
+    review.setAttr("title", `Opens a Term session in the vault running: ${rc.command}`);
+    review.addEventListener("click", () => this.view.runInTerm(rc.command));
 
     if (!this.personaPresent) {
       host.createDiv({ cls: "aos-rt-note aos-dim", text: "The Chief of Staff isn't set up — run `aos persona` to create it." });

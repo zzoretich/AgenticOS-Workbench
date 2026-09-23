@@ -92,3 +92,15 @@ test('findTranscript finds a claude transcript under any project slug', () => {
   assert.equal(findTranscript('claude', 'abc', dirs), t);
   assert.equal(findTranscript('claude', 'nope', dirs), null);
 });
+
+test('invocation and invocationHint: /name on Claude Code, $agenticos:name (plugin) or $name (direct) on Codex, both when both', () => {
+  const H = require('../lib/host.js');
+  const both = { hosts: { claude: { enabled: true }, codex: { enabled: true, install: 'plugin' } } };
+  const codexDirect = { hosts: { claude: { enabled: false }, codex: { enabled: true, install: 'direct' } } };
+  assert.equal(H.invocation('wrap', 'claude', { userConfig: both }), '/wrap');
+  assert.equal(H.invocation('wrap', 'codex', { userConfig: both }), '$agenticos:wrap');
+  assert.equal(H.invocation('wrap', 'codex', { userConfig: codexDirect }), '$wrap');
+  assert.equal(H.invocationHint('wrap', { userConfig: null }), '/wrap', 'no config: Claude only');
+  assert.equal(H.invocationHint('wrap', { userConfig: codexDirect }), '$wrap');
+  assert.equal(H.invocationHint('wrap', { userConfig: both }), '/wrap (Claude Code) or $agenticos:wrap (Codex)');
+});

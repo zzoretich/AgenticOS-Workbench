@@ -130,7 +130,7 @@ export class WorkbenchView extends ItemView {
     this.setBadge("todo", todoBadge(todo, localDay(new Date())));
   }
 
-  /** Opens a fresh Term session in the vault running `command`, and shows it (the Proposals tab's Review in Claude). */
+  /** Opens a fresh Term session in the vault running `command`, and shows it (the Proposals tab's Review button). */
   runInTerm(command: string): void {
     let id: string | null = null;
     try {
