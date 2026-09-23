@@ -366,7 +366,7 @@ test('trustedPluginHooks counts our [hooks.state] tables that carry a trusted_ha
     'trusted_hash = "sha256:bb22"',
     '[hooks.state."agenticos@agenticos-workbench:hooks/hooks.json:stop:0:2"]',
     'enabled = false',
-    '[hooks.state."/home/demo/.codex/hooks.json:stop:0:0"]',
+    '[hooks.state."/codex-home/hooks.json:stop:0:0"]',
     'trusted_hash = "sha256:cc33"',
     '[hooks.state."other@market:hooks/hooks.json:stop:0:0"]',
     'trusted_hash = "sha256:dd44"',
