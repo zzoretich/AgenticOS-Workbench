@@ -118,6 +118,9 @@ test('inputs: one pack — queue by type with titles, ledger summary, duty healt
   ] });
   const p = R.inputs({ deps: deps(v), days: 7 });
   assert.equal(p.schema, 1);
+  const pad = (n) => String(n).padStart(2, '0');
+  assert.equal(p.today, `${NOW.getFullYear()}-${pad(NOW.getMonth() + 1)}-${pad(NOW.getDate())}`, 'today is the LOCAL day the runner journals under');
+  assert.deepEqual(Object.keys(p).slice(0, 2), ['schema', 'today'], 'today leads the pack, ahead of the UTC stamps');
   assert.equal(p.days, 7);
   assert.equal(p.since, at(-7 * DAY).toISOString());
   assert.equal(p.lastDrainAt, null);
