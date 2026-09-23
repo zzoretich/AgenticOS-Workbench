@@ -27,7 +27,7 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci --ignore-scripts
-      - run: npm run gate
+      # The privacy gate runs once, with the private terms, in privacy.yml.
       - run: node --test tools/*.test.js cli/*.test.js
       - run: npm test -w brain/scripts
       - run: npm test -w obsidian-plugin
