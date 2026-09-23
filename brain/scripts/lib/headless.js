@@ -19,6 +19,18 @@
  *             hooks off, JSON events on stdout, the final message in outFile. Codex has no budget flag:
  *             the daily cap still gates the start and the spend is estimated afterwards (record-spend.js);
  *             the tools allowlist has no Codex form, the sandbox is the guard.
+ *   crossArgs(host, { mode, schema, schemaFile, outFile, model, effort, budget, mcpOff })  →  { argv }
+ *     one cross-review / handoff child (spec 2026-09-23-cross-review D4); the prompt always goes on stdin and the
+ *     child is always ephemeral (D3). No child in any mode gets an MCP server, a plugin or a connector: claude an
+ *     empty strict MCP config; codex every plugin off (that takes their MCP servers and connectors with it), each
+ *     server its config.toml declares switched off by name (`mcpOff`, from codexMcpServers()), web search off, and
+ *     our hooks plus its app/browser/computer/image tools off — measured live on codex-cli 0.156.1, where
+ *     `-c mcp_servers={}` merges instead of emptying. mode 'review' and 'consult' are read-only: claude runs in safe
+ *     mode (no CLAUDE.md, skills, plugins or hooks) with only Read/Glob/Grep, codex in the read-only sandbox; 'review'
+ *     adds the structured reply (claude --json-schema <schema JSON>, codex --output-schema <schemaFile>). mode 'build'
+ *     writes: claude acceptEdits with the user's own permissions, codex workspace-write. An effort the host's CLI does
+ *     not take is left off here; the runner refuses it before it gets this far.
+ *   codexMcpServers(home)  →  the names of the [mcp_servers.<name>] tables in <home>/config.toml ([] when unreadable).
  *   CLI: node lib/headless.js --resolve [--kind persona|routines]  prints `host<TAB>bin<TAB>model<TAB>codex home`,
  *        exit 3 (reason on stderr) when no runner resolves. run-duty.sh reads it.
  */
@@ -32,6 +44,15 @@ const CLAUDE_CANDIDATES = [path.join(os.homedir(), '.local', 'bin', 'claude'), '
 const CODEX_CANDIDATES = ['/opt/homebrew/bin/codex', '/usr/local/bin/codex', path.join(os.homedir(), '.local', 'bin', 'codex')];
 const CLAUDE_EFFORTS = ['low', 'medium', 'high'];
 const CODEX_EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh'];
+/** What `claude --effort` takes (Claude Code 2.1.281); runnerArgs keeps its narrower routine list. */
+const CROSS_CLAUDE_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
+const CROSS_MODES = ['review', 'consult', 'build'];
+/** The only tools a read-only claude child gets. */
+const READ_TOOLS = 'Read,Glob,Grep';
+/** Codex features no cross-review child gets: each is a way to act outside the shell sandbox (plugins carry the
+ *  connectors and their MCP servers). */
+const CODEX_OFF = ['hooks', 'plugins', 'apps', 'browser_use', 'computer_use', 'image_generation'];
+const EMPTY_MCP = '{"mcpServers":{}}';
 
 function isExecutableFile(p) {
   try { fs.accessSync(p, fs.constants.X_OK); return fs.statSync(p).isFile(); } catch { return false; }
@@ -130,6 +151,53 @@ function runnerArgs(host, { prompt = '', system = '', model, effort = 'medium', 
   return { argv, stdin: null };
 }
 
+/** A config key segment for `-c`: bare when TOML allows it, quoted otherwise. */
+function tomlKey(name) { return /^[A-Za-z0-9_-]+$/.test(name) ? name : JSON.stringify(name); }
+
+/** The servers <home>/config.toml declares ([mcp_servers.<name>] tables, not their sub-tables such as .env). */
+function codexMcpServers(home) {
+  let text = '';
+  try { text = fs.readFileSync(path.join(home, 'config.toml'), 'utf8'); } catch { return []; }
+  const names = [];
+  for (const line of text.split('\n')) {
+    const m = /^\s*\[\s*mcp_servers\s*\.\s*(?:"((?:[^"\\]|\\.)*)"|'([^']*)'|([A-Za-z0-9_-]+))\s*\]\s*(?:#.*)?$/.exec(line);
+    if (!m) continue;
+    const name = m[1] !== undefined ? JSON.parse(`"${m[1]}"`) : m[2] !== undefined ? m[2] : m[3];
+    if (!names.includes(name)) names.push(name);
+  }
+  return names;
+}
+
+/** { argv } for one cross-review child on `host` (module comment). Throws on an unknown mode. */
+function crossArgs(host, { mode, schema, schemaFile, outFile, model, effort, budget, mcpOff = [] } = {}) {
+  if (!CROSS_MODES.includes(mode)) throw new Error(`crossArgs: unknown mode ${mode}`);
+  const readOnly = mode !== 'build';
+  if (host === 'codex') {
+    const argv = ['exec', '-', '--ephemeral', '--skip-git-repo-check', '-s', readOnly ? 'read-only' : 'workspace-write'];
+    for (const f of CODEX_OFF) argv.push('-c', `features.${f}=false`);
+    for (const name of mcpOff) argv.push('-c', `mcp_servers.${tomlKey(name)}.enabled=false`);
+    argv.push('-c', 'web_search="disabled"', '-c', 'approval_policy="never"', '--json');
+    if (outFile) argv.push('-o', String(outFile));
+    if (model) argv.push('-m', String(model));
+    if (CODEX_EFFORTS.includes(effort)) argv.push('-c', `model_reasoning_effort="${effort}"`);
+    if (mode === 'review' && schemaFile) argv.push('--output-schema', String(schemaFile));
+    return { argv };
+  }
+  const argv = ['-p', '--output-format', 'json', '--no-session-persistence', '--permission-prompts', 'none',
+    '--strict-mcp-config', '--mcp-config', EMPTY_MCP, '--no-chrome'];
+  if (readOnly) {
+    argv.push('--safe-mode', '--tools', READ_TOOLS, '--allowedTools', READ_TOOLS, '--permission-mode', 'dontAsk');
+    if (mode === 'review' && schema) argv.push('--json-schema', typeof schema === 'string' ? schema : JSON.stringify(schema));
+  } else {
+    // The user's normal permissions: a denied proof command is a reported failure, never a reason to bypass them.
+    argv.push('--permission-mode', 'acceptEdits');
+  }
+  if (model) argv.push('--model', String(model));
+  if (CROSS_CLAUDE_EFFORTS.includes(effort)) argv.push('--effort', effort);
+  if (budget !== undefined && budget !== null && budget !== '') argv.push('--max-budget-usd', String(budget));
+  return { argv };
+}
+
 /** The child's env: headless, never CLAUDECODE, and the recorded Codex home unless the environment names one already. */
 function headlessEnv(base = process.env, { codexHome = null } = {}) {
   const env = { ...base, AOS_HEADLESS: '1' };
@@ -150,4 +218,4 @@ function main(argv) {
 
 if (require.main === module) process.exit(main(process.argv.slice(2)));
 
-module.exports = { resolveRunner, graphRunner, resolveBin, runnerArgs, headlessEnv, hostEnabled, codexHomeOf, HOSTS, CODEX_EFFORTS, CLAUDE_EFFORTS };
+module.exports = { resolveRunner, graphRunner, resolveBin, runnerArgs, crossArgs, codexMcpServers, headlessEnv, hostEnabled, codexHomeOf, HOSTS, CODEX_EFFORTS, CLAUDE_EFFORTS, CROSS_CLAUDE_EFFORTS, CROSS_MODES, CODEX_OFF };

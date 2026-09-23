@@ -390,6 +390,23 @@ async function doctor() {
       }
     } catch (e) { add('runner', false, e.message, 'warn'); }
   }
+  // cross-review spec D6: whether the other provider can review. Both CLIs installed and logged in → cross-provider; one →
+  // same-provider only (the skill offers a labelled same-provider review); none → nothing to run. Never a fail row: the
+  // rest of AgenticOS works without it. The CLIs count whether or not they are enabled hosts; the login probes are free.
+  if (vault) {
+    const vaultCfg = readJson(path.join(vault, 'brain', 'config.json'), {}) || {};
+    const xr = { ...(vaultCfg.crossReview || {}), ...((cfg && cfg.crossReview) || {}) };
+    if (xr.enabled === false) add('cross-review', true, 'off (crossReview.enabled=false)', 'info');
+    else {
+      const cb = claudeBin(cfg);
+      const xb = codexBin(cfg);
+      const ready = { claude: !!cb && claudeLoggedIn(cb), codex: !!xb && CH.codexLoggedIn(xb, run) };
+      const why = (h, b) => `${h} CLI ${b ? 'not logged in' : 'not found'}`;
+      if (ready.claude && ready.codex) add('cross-review', true, 'cross-provider (claude and codex review each other)', 'warn');
+      else if (ready.claude || ready.codex) add('cross-review', false, `same-provider only: ${ready.claude ? why('codex', xb) : why('claude', cb)} — the skill offers a labelled same-provider review`, 'warn');
+      else add('cross-review', false, 'no CLI ready: claude and codex are both missing or logged out', 'warn');
+    }
+  }
   if (vault) add('obsidian plugin', exists(path.join(vault, '.obsidian', 'plugins', OBSIDIAN_PLUGIN_ID, 'main.js')), `${vault}/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/main.js`, 'warn');
   // graphify spec §4.6: the pinned binary (fail when missing, warn on drift) and the graph's age (warn).
   if (cfg && vault) for (const row of graphCmd.doctorRows({ cfg, vault })) add(row.name, row.ok, row.detail, row.level);
@@ -435,17 +452,20 @@ async function doctor() {
 // Contract §3 spendToday semantics: ledger rows whose `feature` starts with `duty:` belong to the persona
 // (Plan 5's record-spend.js; gated by persona.perDayUsd), rows starting with `reason:` belong to the
 // reasoner role (gated by reasoner.perDayUsd), rows starting with `routine:` belong to prompt routines
-// (gated by routines.perDayUsd); every other row is a background hook call (gated by
-// claude.perDayUsd — spendToday in spend-ledger.js excludes both families the same way). One line per cap.
+// (gated by routines.perDayUsd), `graph:` to the vault graph's semantic pass (graph.semantic.perDayUsd) and
+// `cross-review:` to cross-review and handoff calls (crossReview.perDayUsd); every other row is a background hook
+// call (gated by claude.perDayUsd — spendToday in spend-ledger.js excludes the same families). One line per cap.
 const DUTY_FEATURE = /^duty:/;
 const REASON_FEATURE = /^reason:/;
 const ROUTINE_FEATURE = /^routine:/;
 const GRAPH_FEATURE = /^graph:/;
+const CROSS_REVIEW_FEATURE = /^cross-review:/;
 const isDutyFeature = (feature) => DUTY_FEATURE.test(feature);
 const isReasonFeature = (feature) => REASON_FEATURE.test(feature);
 const isRoutineFeature = (feature) => ROUTINE_FEATURE.test(feature);
 const isGraphFeature = (feature) => GRAPH_FEATURE.test(feature);
-const isHookFeature = (feature) => !DUTY_FEATURE.test(feature) && !REASON_FEATURE.test(feature) && !ROUTINE_FEATURE.test(feature) && !GRAPH_FEATURE.test(feature);
+const isCrossReviewFeature = (feature) => CROSS_REVIEW_FEATURE.test(feature);
+const isHookFeature = (feature) => ![DUTY_FEATURE, REASON_FEATURE, ROUTINE_FEATURE, GRAPH_FEATURE, CROSS_REVIEW_FEATURE].some((re) => re.test(feature));
 /** Today's provider-spend.jsonl rows (local calendar day) that carry a numeric usd; [] when the ledger is absent. */
 function spendRowsToday(file) {
   let raw = '';
@@ -478,6 +498,7 @@ function status() {
   const routineCap = num(cfg.routines, 'perDayUsd') ?? num(vaultCfg.routines, 'perDayUsd') ?? 6;
   const semOf = (c) => (c && c.graph && c.graph.semantic) || null;
   const graphCap = num(semOf(cfg), 'perDayUsd') ?? num(semOf(vaultCfg), 'perDayUsd') ?? 1;
+  const crossReviewCap = num(cfg.crossReview, 'perDayUsd') ?? num(vaultCfg.crossReview, 'perDayUsd') ?? 10;
   const str = (obj, key) => (obj && typeof obj[key] === 'string' && obj[key].trim() ? obj[key].trim() : undefined);
   // The reasoner role (sdk/lib/models.js): BRAIN_REASONER, then reasoner.model by config precedence, then the default.
   const reasonerModel = (process.env.BRAIN_REASONER || '').trim() || str(cfg.reasoner, 'model') || str(vaultCfg.reasoner, 'model') || 'claude-opus-5';
@@ -504,6 +525,7 @@ function status() {
   out.log(`spend      today (reasoner) $${sumUsd(spend, isReasonFeature).toFixed(4)} / cap $${reasonCap}`);
   out.log(`spend      today (routines) $${sumUsd(spend, isRoutineFeature).toFixed(4)} / cap $${routineCap}`);
   out.log(`spend      today (graph) $${sumUsd(spend, isGraphFeature).toFixed(4)} / cap $${graphCap}`);
+  out.log(`spend      today (cross-review) $${sumUsd(spend, isCrossReviewFeature).toFixed(4)} / cap $${crossReviewCap}`);
   // Ledger shape (lib/pipeline-report.js): { version: 1, pipelines: { <name>: { lastRun: {…} | null, history: [] } } }.
   const ledger = readJson(path.join(idx, 'pipelines.json'), {}) || {};
   const rows = Object.entries(ledger.pipelines || {}).map(([name, st]) => [name, (st && st.lastRun) || null]);
@@ -688,7 +710,7 @@ function installPlugin(ctx, bin) {
   else if (inst.stdout.trim()) out.log(inst.stdout.trim());
 }
 
-/** "5 hook entries, the MCP registration, 22 skills" — what removeDirectWiring took out, or '' when nothing. */
+/** "5 hook entries, the MCP registration, 24 skills" — what removeDirectWiring took out, or '' when nothing. */
 function directWiringSummary(d) {
   return [d.hooks && `${d.hooks} hook entries`, d.mcp && 'the MCP registration', d.skills && `${d.skills} skills`].filter(Boolean).join(', ');
 }

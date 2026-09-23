@@ -31,6 +31,7 @@ Under Codex CLI every `/name` below is the plugin skill `$agenticos:name` (`$age
 - `/cost` — session costing (only after `aos cost enable`)
 - `/aos doctor|status|provider|persona` — maintenance
 - `/routines [list|sync|run <slug>|enable <slug>|disable <slug>|next]` — the recurring actions (see Routines)
+- `/cross-review` — the other CLI (Claude Code ⇄ Codex) reviews a plan before you build, and inspects what was built · `/handoff` — recommend who should handle a task and run one scoped handoff; both go through `aos cross-review` on the `crossReview.perDayUsd` budget
 
 ## Conventions
 
