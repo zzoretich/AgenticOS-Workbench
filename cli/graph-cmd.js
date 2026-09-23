@@ -83,6 +83,17 @@ function semanticState(g) {
   if (g.provider === 'none' || g.provider === 'ollama') return { on: false, why: `off under provider ${g.provider} (aos graph semantic on overrides)`, auto: true };
   return { on: true, why: null, auto: true };
 }
+/** The semantic pass holding the graph lock right now ({ startedAt, … }), or null — the same rule as graph-build.js
+ *  lockOwner: a live pid inside its own deadline. */
+function semanticRunning(vault, now = Date.now()) {
+  let o;
+  try { o = JSON.parse(fs.readFileSync(path.join(vault, 'brain', '_index', '.graph.lock.json'), 'utf8')); } catch { return null; }
+  if (!o || o.mode !== 'semantic' || !(now < Date.parse(o.until))) return null;
+  try { process.kill(o.pid, 0); } catch (e) { if (e.code !== 'EPERM') return null; }
+  return o;
+}
+function hhmm(iso) { return new Date(Date.parse(iso)).toTimeString().slice(0, 5); }
+
 /** Today's graph:* spend from <vault>/brain/_index/provider-spend.jsonl (local calendar day). */
 function graphSpendToday(vault, now = new Date()) {
   let raw = '';
@@ -199,6 +210,8 @@ function semanticRow({ g, m, vault, now }) {
   const st = semanticState(g);
   const spend = `today $${graphSpendToday(vault, new Date(now)).toFixed(2)} of $${g.semantic.perDayUsd}`;
   if (!st.on) return { name: 'graph semantic', ok: false, detail: st.why, level: 'info' };
+  const running = semanticRunning(vault, now);
+  if (running) return { name: 'graph semantic', ok: true, detail: `running since ${hhmm(running.startedAt)} · ${spend}`, level: 'warn' };
   if (!m || !m.lastSemanticRun) return { name: 'graph semantic', ok: false, detail: `not run yet — the next scan starts it (every ${g.semantic.everyHours} h, ${spend})`, level: 'info' };
   if (m.lastSemanticError) return { name: 'graph semantic', ok: false, detail: `last run failed: ${m.lastSemanticError} — aos graph build --semantic`, level: 'warn' };
   const last = Date.parse(m.lastSemantic || m.lastSemanticRun);
@@ -229,7 +242,8 @@ function status({ cfg, io, exec = spawnSync, now = Date.now() }) {
   io.log(`graph      ${g.enabled === false ? 'off' : 'on'} · ${built ? `${m.mode || 'structural'} · built ${ago(now - built)} ago` : 'not built yet'} · ${path.relative(vault, dir)}`);
   const st = semanticState(g);
   const semLast = m && Date.parse(m.lastSemantic || '');
-  io.log(`semantic   ${st.on ? `on (every ${g.semantic.everyHours} h${st.auto ? ', auto' : ''})` : st.why} · ${semLast ? `last run ${ago(now - semLast)} ago${m.semanticIncomplete ? ' (partial)' : ''} · ${m.concepts ?? 0} concepts` : 'never run'}${m && m.lastSemanticError ? ` · last error: ${m.lastSemanticError}` : ''} · today $${graphSpendToday(vault, new Date(now)).toFixed(4)} of $${g.semantic.perDayUsd}`);
+  const running = semanticRunning(vault, now);
+  io.log(`semantic   ${st.on ? `on (every ${g.semantic.everyHours} h${st.auto ? ', auto' : ''})` : st.why} · ${running ? `running since ${hhmm(running.startedAt)} · ` : ''}${semLast ? `last run ${ago(now - semLast)} ago${m.semanticIncomplete ? ' (partial)' : ''} · ${m.concepts ?? 0} concepts` : 'never run'}${m && m.lastSemanticError ? ` · last error: ${m.lastSemanticError}` : ''} · today $${graphSpendToday(vault, new Date(now)).toFixed(4)} of $${g.semantic.perDayUsd}`);
   const G = graphLib(vault);
   const block = G.pulse(G.loadGraph(path.join(dir, 'graph.json')));
   if (block) io.log(`\n${block}`);
@@ -309,5 +323,5 @@ async function run(args, opts = {}) {
 
 module.exports = {
   PIN, PACKAGE, PYTHON, MARKER, USAGE, uvBin, toolHome, toolDirs, installedVersion, graphConfig, outDir, seedIgnore, ensureGitignore, moveAside,
-  install, removeTools, doctorRows, semanticState, graphSpendToday, status, build, buildSemantic, setEnabled, setSemantic, run,
+  install, removeTools, doctorRows, semanticState, semanticRunning, graphSpendToday, status, build, buildSemantic, setEnabled, setSemantic, run,
 };
