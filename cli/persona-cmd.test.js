@@ -89,3 +89,16 @@ test('runInterview with --yes reuses persona/answers.json (non-interactive re-ru
   assert.equal(r.answers.name, 'Atlas');
   assert.ok(r.kept.includes('STATE.md'));
 });
+
+test('on a Codex host the interview asks for the Codex duty model and stores it as persona.codexModel (lib/headless.js reads it)', async () => {
+  const w = world();
+  const cfgFile = path.join(w.configDir, 'agenticos.json');
+  fs.writeFileSync(cfgFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(cfgFile, 'utf8')), hosts: { codex: { enabled: true } } }));
+  fs.writeFileSync(path.join(w.vault, 'brain', 'config.json'), JSON.stringify({ persona: { runner: 'codex' } }));
+  fs.writeFileSync(w.answersFile, JSON.stringify({ ...ANSWERS, dutyCodexModel: 'gpt-5' }));
+  await P.runInterview({ configDir: w.configDir, answersFile: w.answersFile, io: w.io, schedule: false });
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(w.vault, 'brain', 'config.json'), 'utf8')).persona, { runner: 'codex', codexModel: 'gpt-5' });
+  const w2 = world();   // no Codex host: brain/config.json is left alone
+  await P.runInterview({ configDir: w2.configDir, answersFile: w2.answersFile, io: w2.io, schedule: false });
+  assert.ok(!fs.existsSync(path.join(w2.vault, 'brain', 'config.json')));
+});

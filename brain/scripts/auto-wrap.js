@@ -466,10 +466,10 @@ function extractOnce({ transcriptPath, sessionId, provider }) {
     await runAutoWrap({
       transcriptText: loadTranscriptText(transcriptPath),
       sessionId, chatFn, report, corrections: { enabled: true, chatFn },
-      // Only claude counts as "structured" here. Ollama also reports capabilities.structured,
-      // but that is grammar-constrained decoding by a small local model that still drifts to an
-      // empty result — the retry exists for exactly that case, so it stays on for ollama.
-      structured: provider.name === 'claude',
+      // Claude and Codex count as "structured" here (a real JSON Schema; codex-cli.js makes it strict). Ollama also
+      // reports capabilities.structured, but that is grammar-constrained decoding by a small local model that still
+      // drifts to an empty result — the retry exists for exactly that case, so it stays on for ollama.
+      structured: provider.name === 'claude' || provider.name === 'codex',
     });
   });
 }

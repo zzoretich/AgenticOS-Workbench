@@ -13,7 +13,7 @@
  *   node persona/interview.js [--vault <dir>] rename <name>
  *        (contract §4.3: the positional form; `aos interview rename <name>` through the launcher,
  *         which exports AOS_VAULT — no templates, no questions, prints the renameAgent result)
- * Answers file: { name, addressAs, voice, priorities, dutyModel, dutyEffort, schedule }
+ * Answers file: { name, addressAs, voice, priorities, dutyModel, dutyCodexModel, dutyEffort, schedule }
  * Templates default to ./templates next to this file (the copy `aos init` vendors into
  * <vault>/brain/scripts/persona/templates) and otherwise to <repo>/vault-template/persona.
  */
@@ -52,6 +52,8 @@ const QUESTIONS = [
   { key: 'voice', prompt: () => 'Voice, in one line', def: () => 'concise, direct, dry' },
   { key: 'priorities', prompt: () => 'What should it watch most? (comma-separated)', def: () => '' },
   { key: 'dutyModel', prompt: () => 'Model for background duties', def: (c) => c.defaultModel || 'haiku' },
+  // Asked only where Codex is a host: duties run through codex exec there, on this model (persona.codexModel).
+  { key: 'dutyCodexModel', prompt: () => 'Codex model for background duties (blank: your Codex default)', def: () => '', when: (c) => !!c.codex },
   { key: 'dutyEffort', prompt: () => 'Effort for background duties (low|medium|high)', def: () => 'medium' },
   { key: 'schedule', prompt: () => 'Schedule daily duties? (yes/no)', def: () => 'yes' },
 ];
@@ -81,6 +83,7 @@ function normalizeAnswers(raw, ctx = {}) {
     voice: String(a.voice || '').trim() || 'concise, direct, dry',
     priorities: toList(a.priorities),
     dutyModel: String(a.dutyModel || '').trim() || ctx.defaultModel || 'haiku',
+    dutyCodexModel: String(a.dutyCodexModel || '').trim() || null,
     dutyEffort,
     schedule: toBool(a.schedule, true),
   };
@@ -264,6 +267,7 @@ async function ask(ctx = {}, prefill = null, streams = { input: process.stdin, o
   const out = {};
   try {
     for (const item of QUESTIONS) {
+      if (item.when && !item.when(ctx)) continue;
       const pre = prefill && prefill[item.key] != null ? prefill[item.key] : null;
       const def = pre != null ? (Array.isArray(pre) ? pre.join(', ') : String(pre)) : (item.def ? item.def(ctx) : '');
       let v = '';

@@ -91,8 +91,9 @@ async function planDescribers(opts) {
   const p = opts.provider || await require('../sdk/lib/provider.js').getProvider('file-map');
   const viaProvider = (abs, rel) => describe(abs, rel, (o) => p.chat({ ...o, feature: 'file-map' }));
   if (p.name === 'ollama') return { budget: opts.budget ?? cfg.scan.fileMapBudget, heuristic: false, model: viaProvider };
-  if (p.name === 'claude') {
-    const cap = cfg.scan.fileMapBudgetUnderClaude ?? 0;
+  if (p.name === 'claude' || p.name === 'codex') {
+    // A paid provider maps files only when the user opted in for that provider (scan.fileMapBudgetUnder<Claude|Codex>).
+    const cap = (p.name === 'codex' ? cfg.scan.fileMapBudgetUnderCodex : cfg.scan.fileMapBudgetUnderClaude) ?? 0;
     return { budget: Math.min(opts.budget ?? Infinity, cap), heuristic: true, model: viaProvider };
   }
   return { budget: 0, heuristic: true, model: async () => null };

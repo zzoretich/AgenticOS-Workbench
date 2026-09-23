@@ -92,6 +92,8 @@ Run on a machine with the `codex` CLI logged in, after `aos init --host codex` (
 
 ## Chat (per provider)
 
+- [ ] `codex` (a Codex-only vault, `hosts.claude.enabled: false`): header says `· codex via ask.js (reasoner caps)`; a question answers with prose; `brain/_index/provider-spend.jsonl` gains a `reason:*` row with `provider: "codex"`; `aos status` shows `reasoner model=<reasoner.codexModel or codex default> provider=codex`.
+
 - [ ] `none`: the Chat rail button is absent; `Open Workbench: Chat` command shows the "no provider — run `aos provider`" hint.
 - [ ] `ollama` with no Claude login on record: header says `· local ask.js`; a question answers with prose (never a `<<<AOS_CONTEXT feature=ask>>>` block — that would mean `--local` was dropped from the spawn); the answer comes from the workhorse (the script's stderr notes the reasoner fallback); a failing `ask.js` (stop Ollama) shows its last stderr line, not `exit 1`.
 - [ ] `claude`, or `ollama` with a Claude login on record (`brain/_index/provider-state.json` `claude.loggedIn: true`): header says `· claude (claude-opus-5, capped)` (or the configured `reasoner.model`); a question answers with `$0.xxxx` in the turn meta; `brain/_index/provider-spend.jsonl` gains a `feature:"reason:chat"` row with the reasoner model; `aos status` counts it on the reasoner line, not the hooks line; with `claude` logged out the error reads `Not logged in …`.

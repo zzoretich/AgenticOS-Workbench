@@ -42,17 +42,18 @@ function heuristicInsight(entry) {
 
 // generateInsight(entry, { chatFn, model, provider, numPredict }) -> { insight, next }
 // chatFn injected → used as-is (tests). Otherwise the provider decides:
-//   ollama → chat; claude → chat only when scan.insightsUnderClaude; none → heuristic.
+//   ollama → chat; claude → chat only when scan.insightsUnderClaude; codex → only when scan.insightsUnderCodex; none → heuristic.
 async function generateInsight(entry, opts = {}) {
   let chatFn = opts.chatFn;
   let model = opts.model;
   if (!chatFn) {
     const p = opts.provider || await require('../sdk/lib/provider.js').getProvider('workspace-insights');
     const cfg = require('../lib/config.js').loadConfig();
-    const useModel = p.name === 'ollama' || (p.name === 'claude' && cfg.scan.insightsUnderClaude === true);
+    const useModel = p.name === 'ollama' || (p.name === 'claude' && cfg.scan.insightsUnderClaude === true)
+      || (p.name === 'codex' && cfg.scan.insightsUnderCodex === true);
     if (!useModel) return heuristicInsight(entry);
     chatFn = (o) => p.chat({ ...o, feature: 'workspace-insights' });
-    model = model || (p.name === 'claude' ? cfg.claude.model : require('../sdk/lib/models.js').role('workhorse').tag);
+    model = model || (p.name === 'claude' ? cfg.claude.model : p.name === 'codex' ? (p.model || 'codex-default') : require('../sdk/lib/models.js').role('workhorse').tag);
   }
   model = model || require('../sdk/lib/models.js').role('workhorse').tag;
   try {

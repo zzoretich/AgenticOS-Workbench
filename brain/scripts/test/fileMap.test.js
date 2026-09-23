@@ -188,6 +188,22 @@ test('provider claude: budget is scan.fileMapBudgetUnderClaude (default 0), rest
   fs.writeFileSync(CONFIG, JSON.stringify({ provider: 'none' }));
 });
 
+test('provider codex: its own opt-in, scan.fileMapBudgetUnderCodex (default 0); the Claude key does not open it', async () => {
+  resetAlpha();
+  fs.writeFileSync(CONFIG, JSON.stringify({ provider: 'none', scan: { fileMapBudgetUnderClaude: 5 } }));
+  let calls = [];
+  const CODEX = (c) => ({ ...CLAUDE(c), name: 'codex' });
+  await collectFileMaps({ provider: CODEX(calls) });
+  assert.equal(calls.length, 0);
+  fs.rmSync(MAPS_DIR, { recursive: true, force: true });
+  fs.writeFileSync(CONFIG, JSON.stringify({ provider: 'none', scan: { fileMapBudgetUnderCodex: 1 } }));
+  calls = [];
+  const out = await collectFileMaps({ provider: CODEX(calls) });
+  assert.equal(calls.length, 1);
+  assert.equal(out.described, 1);
+  fs.writeFileSync(CONFIG, JSON.stringify({ provider: 'none' }));
+});
+
 test('provider ollama: budget from scan.fileMapBudget, overflow stays pending (no heuristics)', async () => {
   resetAlpha();
   fs.writeFileSync(CONFIG, JSON.stringify({ provider: 'none', scan: { fileMapBudget: 1 } }));

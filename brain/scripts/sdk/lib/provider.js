@@ -17,10 +17,14 @@
  * only: spendToday() skips the persona's duty:* rows (persona.perDayUsd), the reasoner's
  * reason:* rows (reasoner.perDayUsd) and prompt routines' routine:* rows (routines.perDayUsd).
  *
- * Roles (models.js) can override the chain: getProviderForRole('reasoner') always resolves the
- * claude provider — built with reasoner.model, reasoner.perCallUsd and reasoner.perDayUsd — even
- * while Ollama is up, because the reasoner is a Claude model. `provider: none` still wins: it
- * means nothing calls a model. Every other role gets the global provider.
+ * Roles (models.js) can override the chain: getProviderForRole('reasoner') resolves a hosted model
+ * — built with the reasoner's own caps (reasoner.perCallUsd, reasoner.perDayUsd) — even while Ollama
+ * is up. Claude first (reasoner.model) when Claude Code is a host and logged in, else Codex
+ * (reasoner.codexModel → codex.model → the user's Codex default) when Codex is configured and
+ * logged in; an explicit `provider: codex` puts Codex first (spec 2026-09-23-codex-parity-gaps D1).
+ * `provider: none` still wins: it means nothing calls a model. Every other role gets the global provider.
+ * Codex calls that pass no effort use codex.effort (default low): the user's own Codex default may be
+ * a slow, expensive one, and a background summary needs none of it.
  *
  * State lives in brain/_index/provider-state.json, spend in
  * brain/_index/provider-spend.jsonl (spend-ledger.js).
@@ -122,12 +126,31 @@ function makeClaude(reason, budget, deps = {}) {
 }
 
 /** The Codex hook budget: codex.* keys, the same hook ledger sum, its own cap key in the error. */
+function codexEffort(cfg) {
+  const e = cfg.codex && cfg.codex.effort;
+  return codexCli.EFFORTS.includes(e) ? e : 'low';
+}
 function codexBudget(cfg, deps = {}) {
   const c = cfg.codex || {};
   return {
     model: role('codex', cfg).tag, perCallUsd: Number(c.perCallUsd) || 0.05, perDayUsd: Number(c.perDayUsd) || 0.5,
-    spent: deps.spendToday || spendToday, capKey: 'codex.perDayUsd', label: 'daily hook cap', effort: undefined,
+    spent: deps.spendToday || spendToday, capKey: 'codex.perDayUsd', label: 'daily hook cap', effort: codexEffort(cfg),
   };
+}
+/** The reasoner on Codex: the reasoner's caps and ledger family, reasoner.codexModel (else codex.model), reasoner.effort. */
+function reasonerCodexBudget(cfg, deps = {}) {
+  const r = cfg.reasoner || {};
+  const model = (typeof r.codexModel === 'string' && r.codexModel) || role('codex', cfg).tag;
+  const effort = codexCli.EFFORTS.includes(r.effort) ? r.effort : 'medium';
+  return {
+    model, perCallUsd: Number(r.perCallUsd) || 0.5, perDayUsd: Number(r.perDayUsd) || 5,
+    spent: deps.reasonSpendToday || reasonSpendToday, capKey: 'reasoner.perDayUsd', label: 'daily reasoner cap', effort,
+  };
+}
+/** Claude Code as a host: enabled, or a config that predates `hosts` (Claude only). */
+function claudeHostEnabled(cfg) {
+  const h = cfg.hosts && cfg.hosts.claude;
+  return !cfg.hosts || !!(h && h.enabled !== false);
 }
 
 /** Codex joins the auto chain only when `aos init --host codex` wired it (or a codex.bin was recorded). */
@@ -262,16 +285,35 @@ async function resolveProvider({ mode, feature = 'unknown', deps = {} } = {}) {
 async function resolveProviderForRole({ role: roleName, feature = 'unknown', deps = {} } = {}) {
   if (providerFor(roleName) !== 'claude') return resolveProvider({ feature, deps });
   const cfg = loadConfig();
-  if ((cfg.provider || 'auto') === 'none') return makeNone('forced');
+  const mode = cfg.provider || 'auto';
+  if (mode === 'none') return makeNone('forced');
   const now = deps.now ? deps.now() : Date.now();
   const iso = new Date(now).toISOString();
   const state = readState();
-  const budget = roleName === 'reasoner' ? reasonerBudget(cfg, deps) : hookBudget(cfg, deps);
-  const { loggedIn, bin } = await resolveClaudeLogin(state, now, iso, deps);
+  const reasoner = roleName === 'reasoner';
+  // Claude first unless the user chose Codex for background calls; Codex only for the reasoner, and only when configured.
+  const order = reasoner && mode === 'codex' ? ['codex', 'claude'] : ['claude', 'codex'];
+  const why = [];
+  for (const host of order) {
+    if (host === 'claude') {
+      if (!claudeHostEnabled(cfg) && reasoner) { why.push('claude host disabled'); continue; }
+      const budget = reasoner ? reasonerBudget(cfg, deps) : hookBudget(cfg, deps);
+      const { loggedIn, bin } = await resolveClaudeLogin(state, now, iso, deps);
+      if (!loggedIn) { why.push(bin ? 'claude-not-logged-in' : 'no-provider'); continue; }
+      writeState(state);
+      if (budget.spent() >= budget.perDayUsd) return makeNone(`${roleName}-daily-cap`);
+      return makeClaude(`role:${roleName}`, budget, deps);
+    }
+    if (!reasoner || !codexConfigured(cfg)) continue;
+    const { loggedIn, bin } = await resolveCodexLogin(state, now, iso, deps);
+    if (!loggedIn) { why.push(bin ? 'codex-not-logged-in' : 'no-codex'); continue; }
+    writeState(state);
+    const budget = reasonerCodexBudget(cfg, deps);
+    if (budget.spent() >= budget.perDayUsd) return makeNone(`${roleName}-daily-cap`);
+    return makeCodex(`role:${roleName}`, budget, deps);
+  }
   writeState(state);
-  if (!loggedIn) return makeNone(bin ? 'claude-not-logged-in' : 'no-provider');
-  if (budget.spent() >= budget.perDayUsd) return makeNone(`${roleName}-daily-cap`);
-  return makeClaude(`role:${roleName}`, budget, deps);
+  return makeNone(why.includes('claude-not-logged-in') ? 'claude-not-logged-in' : why.includes('codex-not-logged-in') ? 'codex-not-logged-in' : 'no-provider');
 }
 
 let memo = null;

@@ -21,6 +21,9 @@ const { SPEND_PATH, ProviderUnavailable } = require('../sdk/lib/spend-ledger.js'
 function fakeSpawn(reply, calls) {
   return (bin, args, opts) => {
     const rec = { bin, args, opts, stdin: '', stdinEnded: false, killed: null };
+    // The schema file is removed when the call ends: read it while the child "runs".
+    const si = args.indexOf('--output-schema');
+    if (si !== -1) rec.schema = JSON.parse(fs.readFileSync(args[si + 1], 'utf8'));
     calls.push(rec);
     const child = new EventEmitter();
     child.stdout = new PassThrough();
@@ -92,14 +95,14 @@ test('codexCall: system + prompt go to stdin and stdin is closed; events give te
   assert.equal(out.model, 'gpt-5-mini');
   assert.equal(calls[0].bin, '/x/codex');
   assert.equal(calls[0].args[0], 'exec');
-  assert.equal(calls[0].stdin, 'S\n\n---\n\nping');
+  // A free-form object (format:'json') cannot be a strict schema: it is asked for in words, not with --output-schema.
+  assert.equal(calls[0].stdin, 'S\n\n---\n\nping\n\nReply with one JSON object only: no prose before or after it, no code fences.');
+  assert.ok(!calls[0].args.includes('--output-schema'));
   assert.equal(calls[0].stdinEnded, true, 'an open stdin would hang codex exec forever');
   assert.equal(calls[0].opts.cwd, TMP);
   assert.equal(calls[0].opts.env.AOS_HEADLESS, '1');
   assert.ok(!('CLAUDECODE' in calls[0].opts.env));
   assert.deepEqual(calls[0].opts.stdio, ['pipe', 'pipe', 'pipe']);
-  const schemaArg = calls[0].args[calls[0].args.indexOf('--output-schema') + 1];
-  assert.ok(!fs.existsSync(schemaArg), 'the temp schema file is removed afterwards');
   const rows = fs.readFileSync(SPEND_PATH, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
   assert.equal(rows.length, 1);
   assert.equal(rows[0].provider, 'codex');
@@ -186,4 +189,34 @@ test('parseEvents tolerates junk lines and collects error items', () => {
   assert.deepEqual(r.errors, ['warned']);
   assert.equal(r.lastMessage, '{"word":"pong"}');
   assert.equal(r.usage.cachedInputTokens, 400);
+});
+
+test('a real schema goes to --output-schema in strict form; nulls of optional fields are dropped from the reply', async () => {
+  const schema = { type: 'object', properties: { conflict: { type: 'boolean' }, reason: { type: 'string' },
+    items: { type: 'array', items: { type: 'object', properties: { t: { type: 'string', enum: ['a', 'b'] } }, required: ['t'] } } }, required: ['conflict'] };
+  const reply = [{ type: 'item.completed', item: { type: 'agent_message', text: '{"conflict":true,"reason":null,"items":[{"t":"a"}]}' } },
+    { type: 'turn.completed', usage: { input_tokens: 10, cached_input_tokens: 0, output_tokens: 5 } }].map((e) => JSON.stringify(e)).join('\n') + '\n';
+  const calls = [];
+  const out = await cli.codexCall({ prompt: 'p', schema, bin: '/x/codex', spawnFn: fakeSpawn({ stdout: reply }, calls) });
+  assert.deepEqual(calls[0].schema, { type: 'object', additionalProperties: false, required: ['conflict', 'reason', 'items'], properties: {
+    conflict: { type: 'boolean' }, reason: { type: ['string', 'null'] },
+    items: { type: ['array', 'null'], items: { type: 'object', additionalProperties: false, required: ['t'], properties: { t: { type: 'string', enum: ['a', 'b'] } } } } } });
+  assert.equal(calls[0].stdin, 'p', 'nothing is appended when the schema carries the shape');
+  assert.deepEqual(out.structured, { conflict: true, items: [{ t: 'a' }] });
+  const schemaArg = calls[0].args[calls[0].args.indexOf('--output-schema') + 1];
+  assert.ok(!fs.existsSync(schemaArg), 'the temp schema file is removed afterwards');
+});
+
+test('strictSchema, dropNulls and parseJsonObject', () => {
+  assert.deepEqual(cli.strictSchema({ type: 'object', properties: { e: { type: 'string', enum: ['x'] } } }),
+    { type: 'object', properties: { e: { type: ['string', 'null'], enum: ['x', null] } }, required: ['e'], additionalProperties: false });
+  assert.deepEqual(cli.strictSchema({ type: 'object', properties: { o: { anyOf: [{ type: 'string' }, { type: 'number' }] } } }).properties.o,
+    { anyOf: [{ anyOf: [{ type: 'string' }, { type: 'number' }] }, { type: 'null' }] });
+  assert.equal(cli.isLooseSchema({ type: 'object' }), true);
+  assert.equal(cli.isLooseSchema({ type: 'object', properties: {} }), false);
+  assert.deepEqual(cli.dropNulls({ a: null, b: null }, { type: 'object', properties: { a: {}, b: {} }, required: ['b'] }), { b: null }, 'a required null stays');
+  assert.deepEqual(cli.parseJsonObject('{"k":1}'), { k: 1 });
+  assert.deepEqual(cli.parseJsonObject('Here it is:\n```json\n{"k":2}\n```'), { k: 2 });
+  assert.deepEqual(cli.parseJsonObject('Sure. {"k":3} Done.'), { k: 3 });
+  assert.equal(cli.parseJsonObject('no json here'), null);
 });

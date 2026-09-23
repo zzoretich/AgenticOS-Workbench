@@ -3,7 +3,7 @@ import type AgenticOSPlugin from "../../main";
 import type { WorkbenchView } from "./WorkbenchView";
 import { runAsk, isAskBusy, AskHandle, AskResult } from "../data/askSpawner";
 import { runClaudeAsk, chatRoute, CHAT_FEATURE } from "../data/claudeAsk";
-import { readProviderState, readVaultConfig } from "../data/aosConfig";
+import { readProviderState, readVaultConfig, type ProviderName } from "../data/aosConfig";
 
 // PORT of the old Assistant view's module-level constants (~7-8) — verbatim.
 const CHAT_LOG_PATH = "brain/_index/agentic-os-chat.jsonl";
@@ -123,11 +123,12 @@ export class ChatTab {
   }
 
   /** Provider the scripts last resolved (brain/_index/provider-state.json); missing state = none. */
-  private providerName(): "ollama" | "claude" | "none" {
+  private providerName(): ProviderName {
     return readProviderState(this.plugin.vaultRoot())?.name ?? "none";
   }
 
-  /** A question is a reasoner call: headless Claude when a login is known, else the script path (data/claudeAsk.ts chatRoute). */
+  /** A question is a reasoner call: headless Claude when a login is known, else the script path (data/claudeAsk.ts chatRoute),
+   *  where the reasoner falls back to Codex on a machine without Claude (provider.js resolveProviderForRole). */
   private route(): "claude" | "local" | "none" {
     return chatRoute(readProviderState(this.plugin.vaultRoot()));
   }
@@ -189,7 +190,7 @@ export class ChatTab {
     if (provider === "none") {
       const hint = host.createDiv({ cls: "aos-asst-nohint aos-dim" });
       hint.createSpan({ cls: "aos-title", text: "[ ASSISTANT ]" });
-      hint.createDiv({ text: "no provider — run `aos provider` (Ollama reachable or Claude Code logged in), then reopen the Workbench." });
+      hint.createDiv({ text: "no provider — run `aos provider` (Ollama reachable, or Claude Code or Codex logged in), then reopen the Workbench." });
       return;
     }
 
@@ -201,7 +202,8 @@ export class ChatTab {
     status.addClass(up ? "aos-pill-cyan" : "aos-pill-dim");
     status.textContent = up ? "live tail" : "idle";
     const reasonerModel = readVaultConfig(this.plugin.vaultRoot(), this.plugin.claudeConfigDir()).reasoner.model;
-    header.createSpan({ cls: "aos-dim aos-asst-mode", text: this.route() === "claude" ? ` · claude (${reasonerModel}, capped)` : " · local ask.js" });
+    const mode = this.route() === "claude" ? ` · claude (${reasonerModel}, capped)` : provider === "codex" ? " · codex via ask.js (reasoner caps)" : " · local ask.js";
+    header.createSpan({ cls: "aos-dim aos-asst-mode", text: mode });
 
     // history log
     const log = host.createDiv({ cls: "aos-asst-log" });

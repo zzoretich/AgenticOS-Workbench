@@ -185,6 +185,9 @@ test('status and provider need a config; provider validates its argument', () =>
   fs.writeFileSync(path.join(sb.cfg, 'agenticos.json'), JSON.stringify(withCodex, null, 2));
   fs.writeFileSync(path.join(sb.vault, 'brain', '_index', 'provider-state.json'), JSON.stringify({ name: 'codex', reason: 'auto', checkedAt: ts }));
   assert.match(aos(sb, ['status']).stdout, /spend\s+today \(hooks\) \$0\.0100 \/ cap \$0\.3 \(codex\.perDayUsd\)/);
+  // A Codex-only config: the reasoner is answered by Codex (provider.js resolveProviderForRole), on reasoner.codexModel.
+  fs.writeFileSync(path.join(sb.cfg, 'agenticos.json'), JSON.stringify({ ...withCodex, hosts: { claude: { enabled: false }, codex: { enabled: true } }, reasoner: { codexModel: 'gpt-5' } }, null, 2));
+  assert.match(aos(sb, ['status']).stdout, /^reasoner\s+model=gpt-5 provider=codex effort=medium$/m);
 
   assert.equal(aos(sb, ['provider', 'bogus']).status, 2);
   const set = aos(sb, ['provider', 'ollama']);
