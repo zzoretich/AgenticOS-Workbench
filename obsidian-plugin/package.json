@@ -1,6 +1,6 @@
 {
   "name": "agentic-os",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "description": "Agentic OS: Obsidian workbench for an AgenticOS vault",
   "private": true,
   "engines": {
