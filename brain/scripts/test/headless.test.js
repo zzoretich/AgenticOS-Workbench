@@ -81,3 +81,10 @@ test('--resolve prints host, bin, model and the recorded codex home (tab-separat
   assert.match(no.stderr, /no runner for routines/);
   assert.equal(spawnSync(process.execPath, [path.join(__dirname, '..', 'lib', 'headless.js')], { encoding: 'utf8', env }).status, 2);
 });
+
+test('a kind\'s own Codex model wins over codex.model (persona.codexModel, routines.codexModel)', () => {
+  const cfg = { hosts: { claude: { enabled: false }, codex: { enabled: true, bin: CODEX } }, codex: { model: 'gpt-5-mini' }, persona: { codexModel: 'gpt-5' } };
+  assert.equal(H.resolveRunner({ cfg, kind: 'persona', env: ENV, lookup: none, candidates: false }).model, 'gpt-5');
+  assert.equal(H.resolveRunner({ cfg, kind: 'routines', env: ENV, lookup: none, candidates: false }).model, 'gpt-5-mini');
+  assert.equal(H.resolveRunner({ cfg: { ...cfg, codex: {} }, kind: 'routines', env: ENV, lookup: none, candidates: false }).model, null, 'the user\'s Codex default');
+});

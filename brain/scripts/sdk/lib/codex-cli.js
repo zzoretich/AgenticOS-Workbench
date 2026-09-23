@@ -163,6 +163,73 @@ function parseEvents(stdout) {
   return { usage, lastMessage, errors };
 }
 
+// ── structured output ─────────────────────────────────────────────────────────
+// `--output-schema` goes to the Responses API in strict mode (codex_output_schema, strict: true): every object must set
+// additionalProperties:false and list every property as required, or the call fails with 400 invalid_json_schema
+// (measured live against codex-cli 0.156.1, spec 2026-09-23-codex-parity-gaps D2). The callers' schemas are ordinary
+// JSON Schema, so they are converted here, once, for every caller.
+
+/** A schema that only says "some JSON object" (format:'json'): strict mode cannot express it, so it is asked for in words. */
+function isLooseSchema(schema) {
+  return !!schema && typeof schema === 'object' && schema.type === 'object' && !schema.properties && !schema.items;
+}
+
+function nullable(s) {
+  if (typeof s.type === 'string') {
+    const out = { ...s, type: [s.type, 'null'] };
+    if (Array.isArray(s.enum) && !s.enum.includes(null)) out.enum = [...s.enum, null];
+    return out;
+  }
+  if (Array.isArray(s.type)) return s.type.includes('null') ? s : { ...s, type: [...s.type, 'null'] };
+  return { anyOf: [s, { type: 'null' }] };
+}
+
+/** An ordinary JSON Schema → the strict form: additionalProperties:false everywhere, every property required, an
+ *  originally optional one nullable instead (dropNulls takes those nulls out again). */
+function strictSchema(s) {
+  if (!s || typeof s !== 'object' || Array.isArray(s)) return s;
+  const out = { ...s };
+  if (out.type === 'object' || out.properties) {
+    const props = out.properties || {};
+    const req = new Set(Array.isArray(out.required) ? out.required : []);
+    out.properties = {};
+    for (const [k, v] of Object.entries(props)) out.properties[k] = req.has(k) ? strictSchema(v) : nullable(strictSchema(v));
+    out.required = Object.keys(props);
+    out.additionalProperties = false;
+  }
+  if (out.items) out.items = strictSchema(out.items);
+  for (const k of ['anyOf', 'oneOf', 'allOf']) if (Array.isArray(out[k])) out[k] = out[k].map(strictSchema);
+  return out;
+}
+
+/** The reply to a strict schema with the nulls of originally optional properties removed: the caller sees its own shape. */
+function dropNulls(value, schema) {
+  if (!schema || typeof schema !== 'object' || value == null) return value;
+  if (Array.isArray(value)) return schema.items ? value.map((v) => dropNulls(v, schema.items)) : value;
+  if (typeof value !== 'object' || !schema.properties) return value;
+  const req = new Set(Array.isArray(schema.required) ? schema.required : []);
+  const out = {};
+  for (const [k, v] of Object.entries(value)) {
+    if (v === null && !req.has(k)) continue;
+    out[k] = schema.properties[k] ? dropNulls(v, schema.properties[k]) : v;
+  }
+  return out;
+}
+
+/** The first JSON object in a reply: the whole text, a fenced block, or the span from the first "{" to the last "}". */
+function parseJsonObject(text) {
+  const t = String(text || '').trim();
+  const tries = [t];
+  const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence) tries.push(fence[1].trim());
+  const a = t.indexOf('{'); const b = t.lastIndexOf('}');
+  if (a !== -1 && b > a) tries.push(t.slice(a, b + 1));
+  for (const x of tries) { try { const v = JSON.parse(x); if (v && typeof v === 'object') return v; } catch { /* next */ } }
+  return null;
+}
+
+const JSON_ONLY = 'Reply with one JSON object only: no prose before or after it, no code fences.';
+
 /**
  * One headless call. Resolves { text, structured, usd, usage, ms, model }; every call that returned a
  * usage block is appended to the spend ledger (provider 'codex'), success or not. "Not logged in" on a
@@ -178,12 +245,14 @@ async function codexCall({
   const outFile = path.join(tmp, 'last-message.txt');
   let schemaFile = null;
   try {
-    if (schema) {
+    const loose = isLooseSchema(schema);
+    if (schema && !loose) {
       schemaFile = path.join(tmp, 'schema.json');
-      fs.writeFileSync(schemaFile, JSON.stringify(schema));
+      fs.writeFileSync(schemaFile, JSON.stringify(strictSchema(schema)));
     }
     const args = buildArgs({ model, effort, schemaFile, outFile });
-    const input = system ? `${system}\n\n---\n\n${prompt ?? ''}` : String(prompt ?? '');
+    const body = loose ? `${prompt ?? ''}\n\n${JSON_ONLY}` : String(prompt ?? '');
+    const input = system ? `${system}\n\n---\n\n${body}` : body;
     const { code, stdout, stderr, ms } = await runCodex({ bin: exe, args, input, cwd, timeoutMs, spawnFn: spawnFn || spawn });
     const { usage, lastMessage, errors } = parseEvents(stdout);
     let text = '';
@@ -202,7 +271,10 @@ async function codexCall({
       throw new Error(`codex exec exited ${code}: ${(errors.join(' | ') || stderr || stdout).trim().slice(0, 300)}`);
     }
     let structured = null;
-    if (schema && text) { try { structured = JSON.parse(text); } catch { structured = null; } }
+    if (schema && text) {
+      structured = parseJsonObject(text);
+      if (structured && !loose) structured = dropNulls(structured, schema);
+    }
     return { text, structured, usd, usage: usage || {}, ms, model: priced };
   } finally {
     try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* best effort */ }
@@ -225,4 +297,4 @@ function loginProbe(opts = {}) {
   });
 }
 
-module.exports = { resolveCodexBin, loginProbe, codexCall, buildArgs, headlessEnv, parseEvents, defaultModelFromConfig, NOT_LOGGED_IN, EFFORTS };
+module.exports = { resolveCodexBin, loginProbe, codexCall, buildArgs, headlessEnv, parseEvents, defaultModelFromConfig, strictSchema, dropNulls, parseJsonObject, isLooseSchema, NOT_LOGGED_IN, EFFORTS };

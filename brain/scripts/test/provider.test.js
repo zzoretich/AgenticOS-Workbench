@@ -323,3 +323,57 @@ test('forced codex: skips Ollama and claude, honours the codex daily cap with it
   assert.equal(capped.name, 'none');
   assert.equal(capped.reason, 'daily-cap');
 });
+
+// ---- the reasoner and the hook budget under Codex (spec 2026-09-23-codex-parity-gaps D1, D2) ----
+const codexLoggedIn = { resolveCodexBin: () => '/x/codex', codexLoginProbe: async () => true };
+const replyCall = (calls) => async (o) => { calls.push(o); return { text: 'deep', structured: null, usd: 0.01, usage: {}, ms: 1, model: 'gpt-5' }; };
+
+test('reasoner on a Codex-only machine: codex with the reasoner caps, reasoner.codexModel, reasoner.effort, reason:* ledger family', async () => {
+  fs.writeFileSync(CONFIG, JSON.stringify({ hosts: { claude: { enabled: false }, codex: { enabled: true } }, codex: { model: 'gpt-5-mini' }, reasoner: { codexModel: 'gpt-5', effort: 'high', perDayUsd: 2 } }));
+  const calls = [];
+  const p = await resolveProviderForRole({ role: 'reasoner', deps: { resolveClaudeBin: never, loginProbe: never, ...codexLoggedIn, codexCall: replyCall(calls) } });
+  assert.equal(p.name, 'codex');
+  assert.equal(p.reason, 'role:reasoner');
+  assert.equal(p.model, 'gpt-5');
+  assert.equal(await p.chat({ prompt: 'why?', feature: 'reason:ask' }), 'deep');
+  assert.equal(calls[0].model, 'gpt-5');
+  assert.equal(calls[0].effort, 'high');
+  assert.equal(calls[0].feature, 'reason:ask');
+  recordSpend({ feature: 'reason:ask', provider: 'codex', model: 'gpt-5', usd: 2, inputTokens: 1, outputTokens: 1, ms: 1 });
+  await assert.rejects(() => p.chat({ prompt: 'x' }), (e) => e.code === 'PROVIDER_CAP' && /reasoner\.perDayUsd/.test(e.message));
+  const capped = await resolveProviderForRole({ role: 'reasoner', deps: { resolveClaudeBin: never, loginProbe: never, ...codexLoggedIn } });
+  assert.equal(capped.name, 'none'); assert.equal(capped.reason, 'reasoner-daily-cap');
+});
+
+test('reasoner with both hosts: Claude first; Codex when Claude is not logged in; Codex first under provider codex; no reasoner.codexModel → codex.model', async () => {
+  const both = (extra = {}) => fs.writeFileSync(CONFIG, JSON.stringify({ hosts: { claude: { enabled: true }, codex: { enabled: true } }, codex: { model: 'gpt-5-mini' }, ...extra }));
+  both();
+  let p = await resolveProviderForRole({ role: 'reasoner', deps: { ...loggedIn, resolveCodexBin: never, codexLoginProbe: never } });
+  assert.equal(p.name, 'claude');
+  try { fs.unlinkSync(STATE_PATH); } catch {}
+  p = await resolveProviderForRole({ role: 'reasoner', deps: { resolveClaudeBin: () => '/x/claude', loginProbe: async () => false, ...codexLoggedIn } });
+  assert.equal(p.name, 'codex');
+  assert.equal(p.model, 'gpt-5-mini');
+  try { fs.unlinkSync(STATE_PATH); } catch {}
+  both({ provider: 'codex' });
+  p = await resolveProviderForRole({ role: 'reasoner', deps: { resolveClaudeBin: never, loginProbe: never, ...codexLoggedIn } });
+  assert.equal(p.name, 'codex', 'an explicit provider codex puts Codex first');
+  try { fs.unlinkSync(STATE_PATH); } catch {}
+  both();
+  p = await resolveProviderForRole({ role: 'reasoner', deps: { resolveClaudeBin: () => null, loginProbe: never, resolveCodexBin: () => '/x/codex', codexLoginProbe: async () => false } });
+  assert.equal(p.name, 'none'); assert.equal(p.reason, 'codex-not-logged-in');
+});
+
+test('codex hook calls without a think level use codex.effort, default low, never the user\'s Codex default', async () => {
+  codexOn();
+  const calls = [];
+  const deps = { ping: async () => false, resolveClaudeBin: () => null, loginProbe: never, ...codexLoggedIn, codexCall: replyCall(calls) };
+  let p = await resolveProvider({ mode: 'auto', deps });
+  await p.chat({ prompt: 'summarise' });
+  assert.equal(calls[0].effort, 'low');
+  fs.writeFileSync(CONFIG, JSON.stringify({ hosts: { codex: { enabled: true } }, codex: { effort: 'minimal' } }));
+  resetProviderCache();
+  p = await resolveProvider({ mode: 'auto', deps });
+  await p.chat({ prompt: 'summarise' });
+  assert.equal(calls[1].effort, 'minimal');
+});
