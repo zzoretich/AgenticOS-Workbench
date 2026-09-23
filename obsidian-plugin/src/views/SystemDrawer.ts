@@ -58,6 +58,7 @@ function renderInventorySection(
   makeChip(strip, `${inv?.counts.skills ?? 0} skills`, "aos-text-amber");
   makeChip(strip, `${caps?.commands.count ?? 0} commands`, "aos-dim");
   makeChip(strip, `${caps?.hooks.count ?? 0} hooks`, "aos-dim");
+  if (caps?.codex) makeChip(strip, `codex: ${caps.codex.skills} skills · ${caps.codex.prompts} prompts · ${caps.codex.hooks} hooks`, "aos-dim");
 
   const tabsRow = body.createDiv({ cls: "aos-inv-tabs" });
   const searchRow = body.createDiv({ cls: "aos-inv-search" });

@@ -57,6 +57,8 @@ export interface SnapshotConfig {
 export interface SnapshotCapabilities {
   agents: { count: number; gsd: number; custom: string[]; totalBytes: number };
   commands: { count: number; names: string[] };
+  // Codex's own inventory when it is a host (collectors/capabilities.js codexCapabilities); null or absent otherwise.
+  codex?: { skills: number; prompts: number; hooks: number } | null;
   skills: { count: number; gsd?: number; customCount?: number; custom?: string[]; missingSkillMd?: string[] };
   hooks: {
     count: number;
