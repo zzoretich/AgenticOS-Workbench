@@ -141,6 +141,15 @@ STATUS=$(node "$ROOT/cli/aos.js" status)
 echo "$STATUS" | grep -q '^codex .* install=plugin$'
 echo "$STATUS" | grep -q '^hosts      codex$'
 
+echo "== the graph's semantic pass runs through codex exec behind the claude shim (no claude on this machine)"
+# This vault runs with provider none (no model calls); an explicit `semantic on` is the documented override.
+node "$ROOT/cli/aos.js" graph semantic on > /dev/null
+GS=$(FAKE_CODEX_REPLY='{"nodes":[],"edges":[]}' node "$ROOT/cli/aos.js" graph build --semantic --yes)
+echo "$GS"
+echo "$GS" | grep -q "notes' text to Codex ("
+grep -q '"feature":"graph:semantic","provider":"codex"' "$VAULT/brain/_index/provider-spend.jsonl"
+node "$ROOT/cli/aos.js" graph semantic auto > /dev/null
+
 echo "== a plain upgrade from the vault's own launcher (no claude, no --from-local) finds the checkout through the Codex marketplace"
 UP2=$(node "$VAULT/brain/scripts/cli/aos.js" upgrade --no-obsidian)
 echo "$UP2" | grep -q "from $ROOT (v"
