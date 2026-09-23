@@ -452,6 +452,27 @@ function installCodexPlugin({ bin, source, switchSource = false, run = defaultRu
   return { state: 'installed', version: j.version || null, installedPath: j.installedPath || null, source };
 }
 
+/**
+ * The agenticos-workbench marketplace's folder in this Codex (`codex plugin marketplace list --json` → `root`): the
+ * checkout it was added from, or Codex's snapshot of the repository for a git source. `aos upgrade` vendors from it
+ * when no Claude Code marketplace exists (a Codex-only machine); `refresh` fetches a git snapshot first so it vendors
+ * the current release. null when there is no binary, no such marketplace, or no root.
+ */
+function codexMarketplaceRoot({ bin, run = defaultRun, refresh = false } = {}) {
+  if (!bin) return null;
+  const find = () => {
+    const r = run(bin, ['plugin', 'marketplace', 'list', '--json'], { capture: true, allowFail: true });
+    const j = r.status === 0 ? safeParse(r.stdout) : null;
+    return (j && Array.isArray(j.marketplaces) && j.marketplaces.find((m) => m && m.name === MARKETPLACE)) || null;
+  };
+  let m = find();
+  if (m && refresh && m.marketplaceSource && m.marketplaceSource.sourceType === 'git') {
+    run(bin, ['plugin', 'marketplace', 'upgrade', MARKETPLACE], { capture: true, allowFail: true });
+    m = find() || m;
+  }
+  return m && typeof m.root === 'string' && m.root ? path.resolve(m.root) : null;
+}
+
 /** Uninstall the plugin and drop the marketplace. Returns { plugin, marketplace } as 'removed' | 'failed' | 'no-binary'. */
 function removeCodexPlugin({ bin, run = defaultRun, io = null }) {
   if (!bin) return { plugin: 'no-binary', marketplace: 'no-binary' };
@@ -533,6 +554,7 @@ function codexPluginStatus({ cfg, launcher, run = defaultRun, env = process.env,
 module.exports = {
   HOOKS, GENERATED_MARKER, PLUGIN_NAME, MARKETPLACE, PLUGIN_ID, PLUGIN_ROOT_REF, PLUGIN_MARKER,
   pluginHookCommand, pluginMcpServers, pluginHookCount, codexInstallMode, codexPluginInstalled, installCodexPlugin, removeCodexPlugin,
+  codexMarketplaceRoot,
   removeDirectWiring, trustedPluginHooks, codexPluginStatus,
   codexHome, hooksFile, skillsDir, codexBin, codexLoggedIn, memoriesEnabled,
   hookCommand, isOurs, mergeHooks, stripHooks, countOurEvents,

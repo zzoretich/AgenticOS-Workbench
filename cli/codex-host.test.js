@@ -55,6 +55,12 @@ function fakeRun(state = {}) {
       }
       if (verb === 'upgrade') return state.mkt && !state.mkt.startsWith('/') ? ok('') : err('Error: marketplace `agenticos-workbench` is not configured as a Git marketplace');
       if (verb === 'remove') { if (!state.mkt) return err('Error: marketplace `agenticos-workbench` is not configured or installed'); state.mkt = null; return ok(''); }
+      if (verb === 'list') {
+        if (!state.mkt) return ok(JSON.stringify({ marketplaces: [] }));
+        const git = !state.mkt.startsWith('/');
+        const root = git ? '/codex-home/.tmp/marketplaces/agenticos-workbench' : state.mkt;
+        return ok(JSON.stringify({ marketplaces: [{ name: 'openai-bundled', root: '/bundled' }, { name: 'agenticos-workbench', root, marketplaceSource: { sourceType: git ? 'git' : 'local', source: state.mkt } }] }));
+      }
     }
     if (key === 'plugin add') {
       if (!state.mkt || state.failPluginAdd) return err('Error: plugin not found');
@@ -314,6 +320,17 @@ test('installCodexPlugin: a fresh install adds the marketplace and the plugin; a
   calls.length = 0;
   CH.installCodexPlugin({ bin: '/x/codex', source: 'owner/repo', run });
   assert.deepEqual(argvOf(calls), ['plugin marketplace add owner/repo --json', 'plugin marketplace upgrade agenticos-workbench', 'plugin add agenticos@agenticos-workbench --json']);
+});
+
+test('codexMarketplaceRoot: the checkout of a local marketplace, the refreshed snapshot of a git one, else null', () => {
+  const local = fakeRun({ mkt: '/checkout' });
+  assert.equal(CH.codexMarketplaceRoot({ bin: '/x/codex', run: local.run, refresh: true }), '/checkout');
+  assert.deepEqual(argvOf(local.calls), ['plugin marketplace list --json'], 'a local marketplace is read in place, never upgraded');
+  const git = fakeRun({ mkt: 'owner/repo' });
+  assert.equal(CH.codexMarketplaceRoot({ bin: '/x/codex', run: git.run, refresh: true }), '/codex-home/.tmp/marketplaces/agenticos-workbench');
+  assert.deepEqual(argvOf(git.calls), ['plugin marketplace list --json', 'plugin marketplace upgrade agenticos-workbench', 'plugin marketplace list --json']);
+  assert.equal(CH.codexMarketplaceRoot({ bin: '/x/codex', run: fakeRun().run }), null, 'no agenticos-workbench marketplace');
+  assert.equal(CH.codexMarketplaceRoot({ bin: null }), null);
 });
 
 test('installCodexPlugin keeps a marketplace from another source unless switchSource (an explicit --from-local)', () => {
