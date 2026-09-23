@@ -47,5 +47,5 @@ jobs:
       - run: npm ci --ignore-scripts
       - name: first-run rehearsal (aos init → scan → MCP recall → wrap_session → doctor → uninstall)
         run: sh cli/rehearsal/first-run.sh
-      - name: codex-host rehearsal (aos init --host codex → hooks run → doctor → uninstall)
+      - name: codex-host rehearsal (direct wiring → upgrade to the Codex plugin → plugin hooks and MCP run → doctor → uninstall)
         run: sh cli/rehearsal/codex-host.sh

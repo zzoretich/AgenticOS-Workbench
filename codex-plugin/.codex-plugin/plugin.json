@@ -1,0 +1,40 @@
+{
+  "name": "agenticos",
+  "version": "0.9.2",
+  "description": "AgenticOS Workbench plugin: injects brain context on every prompt, captures sessions into memory, streams telemetry, and exposes the vault through the agenticos MCP server. Requires `aos init` (see docs/install.md).",
+  "author": {
+    "name": "AgenticOS Workbench contributors"
+  },
+  "homepage": "https://github.com/zzoretich/AgenticOS-Workbench",
+  "repository": "https://github.com/zzoretich/AgenticOS-Workbench",
+  "license": "MIT",
+  "keywords": [
+    "memory",
+    "second-brain",
+    "obsidian",
+    "recall",
+    "session-capture",
+    "telemetry"
+  ],
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks.json",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "AgenticOS Workbench",
+    "shortDescription": "A second brain for Codex, shared with Claude Code",
+    "longDescription": "Persistent memory for Codex sessions in an Obsidian vault on your machine: brain context on every prompt, session capture into memory at the end, recall over the whole vault through the agenticos MCP server, and the same vocabulary as under Claude Code ($agenticos:wrap, $agenticos:remember, $agenticos:recall). Run `aos init` first; until then every hook and tool of this plugin exits quietly.",
+    "developerName": "AgenticOS Workbench contributors",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/zzoretich/AgenticOS-Workbench",
+    "defaultPrompt": [
+      "What did we decide about this project last time?",
+      "Show my brain state",
+      "Wrap this session into memory"
+    ]
+  }
+}

@@ -15,6 +15,7 @@ function repo() {
   w('obsidian-plugin/versions.json', { '1.2.0': '1.4.0' });
   w('plugin/.claude-plugin/plugin.json', { name: 'agenticos', version: '0.1.0' });
   w('.claude-plugin/marketplace.json', { name: 'agenticos-workbench', plugins: [{ name: 'agenticos', source: './plugin' }] });
+  w('codex-plugin/.codex-plugin/plugin.json', { name: 'agenticos', version: '0.1.0', skills: './skills/' });
   return r;
 }
 const read = (r, rel) => JSON.parse(fs.readFileSync(path.join(r, rel), 'utf8'));
@@ -23,7 +24,7 @@ test('bumpFiles rewrites every version surface (root package.json included) and 
   const r = repo();
   const out = bumpFiles(r, '1.3.0');
   assert.deepEqual(out.skipped, []);
-  assert.equal(out.updated.length, 6);
+  assert.equal(out.updated.length, 7);
   assert.equal(read(r, 'package.json').version, '1.3.0');
   assert.deepEqual(read(r, 'package.json').workspaces, ['obsidian-plugin']); // only .version is touched
   assert.equal(read(r, 'obsidian-plugin/manifest.json').version, '1.3.0');
@@ -31,6 +32,8 @@ test('bumpFiles rewrites every version surface (root package.json included) and 
   assert.deepEqual(read(r, 'obsidian-plugin/versions.json'), { '1.2.0': '1.4.0', '1.3.0': '1.4.0' });
   assert.equal(read(r, 'plugin/.claude-plugin/plugin.json').version, '1.3.0');
   assert.equal(read(r, '.claude-plugin/marketplace.json').plugins[0].version, '1.3.0');
+  assert.equal(read(r, 'codex-plugin/.codex-plugin/plugin.json').version, '1.3.0');
+  assert.equal(read(r, 'codex-plugin/.codex-plugin/plugin.json').skills, './skills/'); // only .version is touched
   // Idempotent over versions.json: bumping the same version twice must leave one row for it,
   // still last, so the following --check (and release.yml's tag gate) passes (Ruling A15).
   bumpFiles(r, '1.3.0');
@@ -41,7 +44,7 @@ test('bumpFiles rewrites every version surface (root package.json included) and 
 
 test('checkFiles lists mismatches before a bump and nothing after', () => {
   const r = repo();
-  assert.equal(checkFiles(r, '1.3.0').length, 6);
+  assert.equal(checkFiles(r, '1.3.0').length, 7);
   bumpFiles(r, '1.3.0');
   assert.deepEqual(checkFiles(r, '1.3.0'), []);
 });
@@ -51,14 +54,16 @@ test('checkFiles agrees with Plan 3: plugin.json and the root package.json share
   const bad = checkFiles(r, '0.1.0');
   assert.ok(!bad.some((b) => b.startsWith('package.json:')));
   assert.ok(!bad.some((b) => b.startsWith('plugin/.claude-plugin/plugin.json:')));
+  assert.ok(!bad.some((b) => b.startsWith('codex-plugin/.codex-plugin/plugin.json:')));
   assert.equal(bad.length, 4); // the three Obsidian surfaces + marketplace (no version yet)
 });
 
 test('missing Plan 3 files are reported as skipped, not fatal', () => {
   const r = repo();
   fs.rmSync(path.join(r, 'plugin'), { recursive: true });
+  fs.rmSync(path.join(r, 'codex-plugin'), { recursive: true });
   const out = bumpFiles(r, '1.3.0');
-  assert.deepEqual(out.skipped, ['plugin/.claude-plugin/plugin.json']);
+  assert.deepEqual(out.skipped, ['plugin/.claude-plugin/plugin.json', 'codex-plugin/.codex-plugin/plugin.json']);
 });
 
 test('an invalid version is rejected', () => {

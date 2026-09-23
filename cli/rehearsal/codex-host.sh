@@ -1,8 +1,14 @@
 #!/bin/sh
-# Codex-host rehearsal: a fresh HOME, Claude config dir and Codex home, `aos init --host codex` with the fake
-# codex CLI and NO claude, then the written hook commands run for real (SessionStart conventions, Stop `{}`),
-# doctor, and uninstall --keep-vault. Needs: node >= 20 and npm on PATH, network for `npm install` inside
-# the vendored runtime. Run from anywhere: sh cli/rehearsal/codex-host.sh
+# Codex-host rehearsal: a fresh HOME, Claude config dir and Codex home, the fake codex CLI and NO claude.
+#   1. `aos init --host codex` on a Codex CLI without plugins → the direct wiring; its hook commands run for real
+#      (SessionStart conventions, Stop `{}`, UserPromptSubmit context), doctor shows the direct rows.
+#   2. The CLI gains plugins; `aos upgrade` moves the host to the agenticos plugin (design 2026-09-23-codex-plugin)
+#      and removes every piece of the direct wiring. The plugin's own hooks/hooks.json commands then run for real the
+#      way Codex runs them (${PLUGIN_ROOT} set, no AOS_CONFIG: the launcher finds the config itself), and its MCP
+#      server answers `initialize` from the plugin folder. Doctor shows the plugin rows.
+#   3. uninstall --keep-vault removes the plugin and its marketplace.
+# Needs: node >= 20 and npm on PATH, network for `npm install` inside the vendored runtime.
+# Run from anywhere: sh cli/rehearsal/codex-host.sh
 set -eu
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 TMP=$(mktemp -d)
@@ -10,17 +16,31 @@ export HOME="$TMP/home" CLAUDE_CONFIG_DIR="$TMP/cfg" CODEX_HOME="$TMP/codex"
 mkdir -p "$HOME" "$CLAUDE_CONFIG_DIR" "$CODEX_HOME"
 printf 'model = "fake-model"\n' > "$CODEX_HOME/config.toml"
 export AOS_NO_CLAUDE=1 AOS_CODEX_BIN="$ROOT/cli/fixtures/fake-codex.sh" FAKE_CODEX_LOG="$TMP/codex.log" FAKE_CODEX_STATE="$TMP/codex-mcp.state"
-unset AOS_VAULT BRAIN_VAULT AOS_CONFIG CLAUDE_PROJECT_DIR AOS_HOST AOS_NO_CODEX || true
+unset AOS_VAULT BRAIN_VAULT AOS_CONFIG CLAUDE_PROJECT_DIR AOS_HOST AOS_NO_CODEX PLUGIN_ROOT || true
 # mandatory-prereqs D6: the install gate needs Obsidian and Ollama present; same seams as first-run.sh.
 mkdir -p "$TMP/Obsidian.app"
 export AOS_OBSIDIAN_APP="$TMP/Obsidian.app" AOS_OLLAMA_BIN="$ROOT/cli/fixtures/fake-ollama.sh"
 VAULT="$TMP/aos"
 SKILLS="$HOME/.agents/skills"
+PLUGIN="$ROOT/codex-plugin"
 
-echo "== init --host codex (no claude on this machine)"
-node "$ROOT/cli/aos.js" init --host codex --vault "$VAULT" --no-obsidian --provider none --persona-json "$ROOT/cli/fixtures/persona.json" --yes
+# hook_cmd <hooks.json> <event> <name-suffix> — the command of the first entry of <event> ending in <suffix>
+hook_cmd() {
+  node -e 'const d=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); const h=d.hooks[process.argv[2]].flatMap(g=>g.hooks).find(h=>h.command.endsWith(process.argv[3])); if(!h) throw new Error("no "+process.argv[3]); process.stdout.write(h.command)' "$1" "$2" "$3"
+}
+# run_hooks <hooks.json> <tag> — SessionStart conventions, Stop prints exactly {}, UserPromptSubmit injects <brain-context>.
+# <tag> keeps the session ids apart: <brain-context> goes only into the first prompt of a session.
+run_hooks() {
+  echo "{\"session_id\":\"reh-$2-1\",\"hook_event_name\":\"SessionStart\",\"source\":\"startup\"}" | sh -c "$(hook_cmd "$1" SessionStart inject-conventions)" | grep -q '<agenticos-conventions>'
+  OUT=$(echo "{\"session_id\":\"reh-$2-1\",\"hook_event_name\":\"Stop\",\"stop_hook_active\":false}" | sh -c "$(hook_cmd "$1" Stop update-session)")
+  [ "$OUT" = "{}" ] || { echo "Stop hook printed [$OUT], expected {}"; exit 1; }
+  echo "{\"session_id\":\"reh-$2-2\",\"hook_event_name\":\"UserPromptSubmit\",\"prompt\":\"hi\"}" | sh -c "$(hook_cmd "$1" UserPromptSubmit inject-context)" | grep -q '<brain-context>'
+}
 
-echo "== what init wrote"
+echo "== 1. init --host codex, a Codex CLI without plugins (no claude on this machine)"
+FAKE_CODEX_NO_PLUGINS=1 node "$ROOT/cli/aos.js" init --host codex --vault "$VAULT" --no-obsidian --provider none --persona-json "$ROOT/cli/fixtures/persona.json" --yes
+
+echo "== what init wrote: the direct wiring"
 [ -f "$CODEX_HOME/hooks.json" ]
 node -e '
 const d = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
@@ -39,31 +59,69 @@ node -e '
 const c = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
 if (!c.hosts || c.hosts.codex.enabled !== true || c.hosts.claude.enabled !== false) throw new Error("hosts: " + JSON.stringify(c.hosts));
 if (!c.hosts.codex.bin) throw new Error("codex bin not recorded");
+if (c.hosts.codex.install !== "direct") throw new Error("install: " + c.hosts.codex.install);
 ' "$CLAUDE_CONFIG_DIR/agenticos.json"
 [ ! -e "$CLAUDE_CONFIG_DIR/plugins" ] || { echo "the Claude plugin path was touched on a codex-only install"; exit 1; }
 
-echo "== the written hook commands run for real"
-CMD=$(node -e 'const d=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); const h=d.hooks.SessionStart.flatMap(g=>g.hooks).find(h=>/inject-conventions$/.test(h.command)); process.stdout.write(h.command)' "$CODEX_HOME/hooks.json")
-echo '{"session_id":"reh-1","hook_event_name":"SessionStart","source":"startup"}' | sh -c "$CMD" | grep -q '<agenticos-conventions>'
-STOP=$(node -e 'const d=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); const h=d.hooks.Stop.flatMap(g=>g.hooks).find(h=>/update-session$/.test(h.command)); process.stdout.write(h.command)' "$CODEX_HOME/hooks.json")
-OUT=$(echo '{"session_id":"reh-1","hook_event_name":"Stop","stop_hook_active":false}' | sh -c "$STOP")
-[ "$OUT" = "{}" ] || { echo "Stop hook printed [$OUT], expected {}"; exit 1; }
-PROMPT=$(node -e 'const d=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(d.hooks.UserPromptSubmit[0].hooks[0].command)' "$CODEX_HOME/hooks.json")
-echo '{"session_id":"reh-2","hook_event_name":"UserPromptSubmit","prompt":"hi"}' | sh -c "$PROMPT" | grep -q '<brain-context>'
+echo "== the direct hook commands run for real"
+run_hooks "$CODEX_HOME/hooks.json" direct
 
-echo "== doctor (codex rows, no claude rows)"
-DOC=$(node "$ROOT/cli/aos.js" doctor)
+echo "== doctor (direct codex rows, no claude rows)"
+DOC=$(FAKE_CODEX_NO_PLUGINS=1 node "$ROOT/cli/aos.js" doctor)
 echo "$DOC"
 echo "$DOC" | grep -q '^ok    codex CLI'
 echo "$DOC" | grep -q '^ok    codex login'
 echo "$DOC" | grep -q '^ok    codex hooks'
 echo "$DOC" | grep -q '^ok    codex MCP declared'
 echo "$DOC" | grep -q '^ok    codex skills'
-echo "$DOC" | grep -q '^ok    persona runner *codex'
-echo "$DOC" | grep -q '^ok    routines runner *codex'
 echo "$DOC" | grep -q 'all checks passed'
 ! echo "$DOC" | grep -q 'claude CLI'
 ! echo "$DOC" | grep -q 'plugin installed'
+
+echo "== 2. the Codex CLI now installs plugins: aos upgrade moves the host to the agenticos plugin"
+UP=$(node "$ROOT/cli/aos.js" upgrade --no-obsidian --from-local "$ROOT")
+echo "$UP"
+echo "$UP" | grep -q 'direct wiring removed (5 hook entries, the MCP registration, 21 skills)'
+echo "$UP" | grep -q 'open codex, run /hooks'
+grep -q "^plugin marketplace add $ROOT --json\$" "$FAKE_CODEX_LOG"
+grep -q '^plugin add agenticos@agenticos-workbench --json$' "$FAKE_CODEX_LOG"
+[ ! -e "$CODEX_HOME/hooks.json" ]
+[ ! -e "$SKILLS/wrap" ] && [ ! -e "$SKILLS/remember" ]
+[ ! -e "$FAKE_CODEX_STATE" ]
+node -e 'const c=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if (c.hosts.codex.install !== "plugin") throw new Error("install: " + c.hosts.codex.install)' "$CLAUDE_CONFIG_DIR/agenticos.json"
+
+echo "== the plugin's hook commands run for real, the way Codex runs them (\${PLUGIN_ROOT}, no AOS_CONFIG)"
+PLUGIN_ROOT="$PLUGIN" run_hooks "$PLUGIN/hooks/hooks.json" plugin
+
+echo "== the plugin's MCP server answers initialize from the plugin folder"
+node -e '
+const { spawn } = require("child_process");
+const env = { ...process.env, AOS_HOST: "codex" }; delete env.AOS_CONFIG;
+const child = spawn("sh", ["./bin/aos", "mcp-server"], { cwd: process.argv[1], env, stdio: ["pipe", "pipe", "inherit"] });
+const fail = (m) => { try { child.kill(); } catch {} console.error(m); process.exit(1); };
+const timer = setTimeout(() => fail("no initialize reply within 20 s"), 20000);
+let buf = "";
+child.stdout.on("data", (d) => {
+  buf += d; const i = buf.indexOf("\n"); if (i < 0) return;
+  const name = ((JSON.parse(buf.slice(0, i)).result || {}).serverInfo || {}).name;
+  clearTimeout(timer); child.kill();
+  if (name !== "agenticos") fail("serverInfo.name=" + name); else process.exit(0);
+});
+child.on("exit", (c) => fail("mcp-server exited " + c + " before answering"));
+child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "rehearsal", version: "0" } } }) + "\n");
+' "$PLUGIN"
+
+echo "== doctor (plugin rows)"
+DOC=$(node "$ROOT/cli/aos.js" doctor)
+echo "$DOC"
+echo "$DOC" | grep -q '^ok    codex plugin *agenticos@agenticos-workbench'
+echo "$DOC" | grep -q '^warn  codex hooks trusted *0 of 15'
+echo "$DOC" | grep -q '^ok    codex MCP declared *agenticos from the plugin'
+echo "$DOC" | grep -q '^ok    persona runner *codex'
+echo "$DOC" | grep -q '^ok    routines runner *codex'
+echo "$DOC" | grep -q 'all checks passed'
+! echo "$DOC" | grep -q 'codex direct wiring'
+! echo "$DOC" | grep -q 'claude CLI'
 
 echo "== a persona duty runs through codex exec (dry-run)"
 if [ -f "$VAULT/persona/duties/sitrep.md" ]; then
@@ -75,17 +133,19 @@ else
   echo "   (no sitrep duty in this vault; skipped)"
 fi
 
-echo "== status names the codex host"
+echo "== status names the codex host and its install"
 STATUS=$(node "$ROOT/cli/aos.js" status)
-echo "$STATUS" | grep -q '^codex '
+echo "$STATUS" | grep -q '^codex .* install=plugin$'
 echo "$STATUS" | grep -q '^hosts      codex$'
 
-echo "== uninstall --keep-vault reverses the codex wiring"
-node "$ROOT/cli/aos.js" uninstall --keep-vault --yes
+echo "== 3. uninstall --keep-vault removes the plugin and its marketplace"
+OUT=$(node "$ROOT/cli/aos.js" uninstall --keep-vault --yes)
+echo "$OUT"
+echo "$OUT" | grep -q '^codex plugin removed: plugin removed · marketplace removed$'
+grep -q '^plugin remove agenticos@agenticos-workbench$' "$FAKE_CODEX_LOG"
+grep -q '^plugin marketplace remove agenticos-workbench$' "$FAKE_CODEX_LOG"
+[ ! -e "$FAKE_CODEX_STATE.plugin" ] && [ ! -e "$FAKE_CODEX_STATE.mkt" ]
 [ ! -e "$CODEX_HOME/hooks.json" ]
-[ ! -e "$SKILLS/wrap" ] && [ ! -e "$SKILLS/remember" ]
-grep -q '^mcp remove agenticos$' "$FAKE_CODEX_LOG"
-[ ! -e "$FAKE_CODEX_STATE" ]
 [ -f "$VAULT/MEMORY.md" ]
 [ ! -e "$CLAUDE_CONFIG_DIR/agenticos.json" ]
 echo REHEARSAL-OK

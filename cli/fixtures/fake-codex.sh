@@ -6,10 +6,62 @@
 # registration written the 0.5.0 way (no host env) reads back as stale, exactly like the real CLI.
 # Knobs: FAKE_CODEX_LOGGED_OUT=1 makes `login status` report no login; FAKE_CODEX_FAIL_MCP=1 makes
 # `mcp add` fail, to exercise the allowFail path without touching the network.
+#
+# Plugins (design 2026-09-23-codex-plugin), answered the way Codex 0.155.1 did in the design spike: the marketplace
+# source lives in "$FAKE_CODEX_STATE.mkt", the installed plugin version in "$FAKE_CODEX_STATE.plugin" (read from
+# <source>/codex-plugin/.codex-plugin/plugin.json when the source is a checkout). `marketplace add` from the same
+# source reports alreadyAdded, from another source is refused; `marketplace upgrade` refuses a local source;
+# `mcp list` shows the plugin's server beside a direct registration. FAKE_CODEX_NO_PLUGINS=1 is a CLI that predates
+# plugins; FAKE_CODEX_FAIL_PLUGIN=1 makes `plugin add` fail.
 echo "$*" >> "${FAKE_CODEX_LOG:-/dev/null}"
 STATE="${FAKE_CODEX_STATE:-}"
+PSTATE="${STATE:+$STATE.plugin}"
+MSTATE="${STATE:+$STATE.mkt}"
+PLUGIN_SERVER='{"name":"agenticos","enabled":true,"transport":{"type":"stdio","command":"sh","args":["./bin/aos","mcp-server"],"env":{"AOS_HOST":"codex"},"cwd":"/fake/plugins/cache/agenticos-workbench/agenticos/."}}'
+if [ "$1" = "plugin" ] && [ "${FAKE_CODEX_NO_PLUGINS:-}" = "1" ]; then echo "error: unrecognized subcommand 'plugin'" >&2; exit 2; fi
 case "$1 $2" in
   "--version ") echo "codex-cli 0.0.0-fake" ;;
+  "plugin list")
+    if [ -n "$PSTATE" ] && [ -f "$PSTATE" ]; then
+      printf '{"installed":[{"pluginId":"agenticos@agenticos-workbench","name":"agenticos","marketplaceName":"agenticos-workbench","version":"%s","installed":true,"enabled":true}],"available":[]}\n' "$(sed -n 1p "$PSTATE")"
+    else
+      echo '{"installed":[],"available":[]}'
+    fi ;;
+  "plugin marketplace")
+    case "$3" in
+      add)
+        if [ -n "$MSTATE" ] && [ -f "$MSTATE" ]; then
+          if [ "$(cat "$MSTATE")" = "$4" ]; then echo '{"marketplaceName":"agenticos-workbench","alreadyAdded":true}'
+          else echo "Error: marketplace 'agenticos-workbench' is already added from a different source; remove it before adding this source" >&2; exit 1; fi
+        else
+          [ -n "$MSTATE" ] && printf '%s' "$4" > "$MSTATE"
+          echo '{"marketplaceName":"agenticos-workbench","alreadyAdded":false}'
+        fi ;;
+      upgrade)
+        if [ -n "$MSTATE" ] && [ -f "$MSTATE" ] && ! grep -q '^/' "$MSTATE"; then echo "Upgraded marketplace agenticos-workbench"
+        else echo 'Error: marketplace `agenticos-workbench` is not configured as a Git marketplace' >&2; exit 1; fi ;;
+      remove)
+        if [ -n "$MSTATE" ] && [ -f "$MSTATE" ]; then rm -f "$MSTATE"; echo 'Removed marketplace `agenticos-workbench`.'
+        else echo 'Error: marketplace `agenticos-workbench` is not configured or installed' >&2; exit 1; fi ;;
+    esac ;;
+  "plugin add")
+    if [ "${FAKE_CODEX_FAIL_PLUGIN:-}" = "1" ]; then echo "Error: fake: plugin add failed" >&2; exit 1; fi
+    SRC=""; [ -n "$MSTATE" ] && [ -f "$MSTATE" ] && SRC=$(cat "$MSTATE")
+    if [ -n "$MSTATE" ] && [ -z "$SRC" ]; then echo "Error: marketplace 'agenticos-workbench' is not configured" >&2; exit 1; fi
+    V=""; [ -f "$SRC/codex-plugin/.codex-plugin/plugin.json" ] && V=$(sed -n 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$SRC/codex-plugin/.codex-plugin/plugin.json" | head -n 1)
+    [ -n "$V" ] || V="0.0.0-fake"
+    [ -n "$PSTATE" ] && printf '%s\n' "$V" > "$PSTATE"
+    printf '{"pluginId":"agenticos@agenticos-workbench","name":"agenticos","marketplaceName":"agenticos-workbench","version":"%s","installedPath":"/fake/plugins/cache/agenticos-workbench/agenticos/%s"}\n' "$V" "$V" ;;
+  "plugin remove")
+    [ -n "$PSTATE" ] && rm -f "$PSTATE"
+    echo 'Removed plugin `agenticos` from marketplace `agenticos-workbench`.' ;;
+  "mcp list")
+    SEP=""; printf '['
+    if [ -n "$PSTATE" ] && [ -f "$PSTATE" ]; then printf '%s' "$PLUGIN_SERVER"; SEP=","; fi
+    if [ -n "$STATE" ] && [ -f "$STATE" ]; then
+      printf '%s{"name":"agenticos","enabled":true,"transport":{"type":"stdio","command":"sh","args":["%s","mcp-server"],"env":{"AOS_CONFIG":"x","AOS_HOST":"codex"}}}' "$SEP" "$(sed -n 1p "$STATE")"
+    fi
+    printf ']\n' ;;
   "login status")
     if [ "${FAKE_CODEX_LOGGED_OUT:-}" = "1" ]; then echo "Not logged in"; exit 1; fi
     echo "Logged in using ChatGPT" ;;
@@ -18,6 +70,8 @@ case "$1 $2" in
       LAUNCHER=$(sed -n 1p "$STATE"); HOSTENV=$(sed -n 2p "$STATE")
       if [ "$HOSTENV" = "AOS_HOST=codex" ]; then ENVJSON='{"AOS_CONFIG":"x","AOS_HOST":"codex"}'; else ENVJSON='{"AOS_CONFIG":"x"}'; fi
       printf '{"name":"agenticos","enabled":true,"transport":{"type":"stdio","command":"sh","args":["%s","mcp-server"],"env":%s}}\n' "$LAUNCHER" "$ENVJSON"
+    elif [ -n "$PSTATE" ] && [ -f "$PSTATE" ]; then
+      echo "$PLUGIN_SERVER"
     else
       echo "No MCP server named 'agenticos'" >&2
       exit 1
@@ -29,7 +83,9 @@ case "$1 $2" in
     while [ $# -gt 0 ] && [ "$1" != "--" ]; do shift; done
     [ -n "$STATE" ] && [ $# -ge 3 ] && printf '%s\n%s\n' "$3" "$HOSTENV" > "$STATE" ;;
   "mcp remove")
-    [ -n "$STATE" ] && rm -f "$STATE" ;;
+    # Like the real CLI: exit 0 either way, and never touches a plugin's server.
+    if [ -n "$STATE" ] && [ -f "$STATE" ]; then rm -f "$STATE"; echo "Removed global MCP server 'agenticos'."
+    else echo "No MCP server named 'agenticos' found."; fi ;;
   "exec -")
     # A headless run (lib/headless.js codex runner): the prompt is on stdin, the final message goes to the -o file,
     # the --json event stream to stdout. FAKE_CODEX_STDIN captures the prompt, FAKE_ARGS the argv (like fake-claude),

@@ -1,0 +1,20 @@
+{
+  "name": "agenticos-workbench",
+  "interface": {
+    "displayName": "AgenticOS Workbench"
+  },
+  "plugins": [
+    {
+      "name": "agenticos",
+      "source": {
+        "source": "local",
+        "path": "./codex-plugin"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
