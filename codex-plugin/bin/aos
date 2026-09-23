@@ -54,6 +54,9 @@ fi
 
 export AOS_VAULT="$VAULT"
 export AOS_CONFIG="$CONFIG"
+# The folder this launcher ships in: the Claude Code plugin, the Codex plugin, or <vault>/brain/scripts. The update
+# notice reads the plugin manifest there; Codex sets no CLAUDE_PLUGIN_ROOT.
+AOS_PLUGIN_ROOT=$(cd "$(dirname "$0")/.." 2>/dev/null && pwd) && export AOS_PLUGIN_ROOT
 
 NAME="${1:-}"
 [ $# -gt 0 ] && shift
