@@ -138,4 +138,6 @@ test("the manifest carries every safe rerun the Fix Queue needs", () => {
   assert.equal(PIPELINES_MANIFEST["graph-build"].short, "GRAPH");
   assert.equal(PIPELINES_MANIFEST["graph-build"].staleMs, null);
   assert.deepEqual(PIPELINES_MANIFEST["graph-build"].safeRerun, { script: "brain/scripts/graph-build.js", args: ["--quiet"] });
+  assert.equal(PIPELINES_MANIFEST["graph-semantic"].short, "SEM");
+  assert.equal(PIPELINES_MANIFEST["graph-semantic"].safeRerun, null, "a pass that spends money is never a one-click rerun");
 });

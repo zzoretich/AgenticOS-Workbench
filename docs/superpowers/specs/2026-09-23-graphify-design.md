@@ -75,7 +75,7 @@ This change makes graphify part of what `aos init` installs:
 ### 4.3 CLI verb `aos graph`
 | Command | Does |
 |---|---|
-| `aos graph` / `aos graph status` | Pin vs installed version, last structural and semantic runs, counts, top hubs, today's `graph:` spend against the cap, and notes whose semantic extraction returned nothing. |
+| `aos graph` / `aos graph status` | Pin vs installed version, last structural and semantic runs, counts, top hubs, today's `graph:` spend against the cap, and whether the last semantic run was partial. |
 | `aos graph build [--semantic] [--yes]` | Foreground run under the same lock. `--semantic` prints the pending note count and today's spend, then asks y/N (`--yes` skips). The shim's caps still apply. |
 | `aos graph on\|off` · `aos graph semantic on\|off\|auto` | Toggle `graph.enabled` / set `graph.semantic.enabled`. |
 
@@ -133,7 +133,9 @@ The verb is wired in four places: the `plugin/bin/aos` case line, the `main` swi
 | `ollama` backend (E) | Fails on a default Ollama (4096 context over `/v1`, thinking on). The workaround ran about 54 s per note. |
 | `claude-cli` + shim (G) | 3-note fixture: 2.2k in / 1.2k out, 0 thinking, 10.7 s, $0.008. Without `MAX_THINKING_TOKENS=0`: 10.9k thinking tokens, $0.069. |
 | Budget levers (H) | No USD cap, file cap or dry-run upstream. `MAX_RETRY_DEPTH=0` gives one call per chunk. |
-| Estimate | First semantic pass about $1 at Haiku list price (extrapolated from 250k corpus tokens); daily increments cost cents |
+| Estimate (pre-build) | First semantic pass about $1 at Haiku list price (extrapolated from 250k corpus tokens); daily increments cost cents |
+| Measured (slice 3, 30 real notes, real graphify + shim + Haiku) | First run: 2 calls, $0.21, 222 s, one chunk failed → partial. Next run re-sent only that chunk: 1 call, $0.018, 24 s → complete, 14 concepts. Total ≈ $0.008 per note, output-heavy (≈ 0.45 out/in), so a ~330-note vault's first pass is ≈ $2.5 and drains over about 3 days under the $1/day cap. |
+| D12 (a hook-shaped Haiku summary call) | Thinking on: $0.0027, 384 out (268 thinking), 4.7 s. Off: $0.0013, 108 out, 2.2 s. |
 
 ## 5. Testing
 - **Fixtures:**
@@ -180,7 +182,7 @@ Three PRs, each green on its own:
 
 ## 7. Out of scope
 - Semantic extraction through Ollama. It needs upstream to honour the context size over `/v1` and to allow turning thinking off, or a vault-local provider file.
-- Quarantining notes whose extraction always returns nothing. `status` lists them; each costs one small call per due run, inside the cap.
+- Listing or quarantining notes whose extraction always returns nothing. The marker records only that a run was partial (`semanticIncomplete`); each such note costs one small call per due run, inside the cap.
 - Graph neighbours as a `recall` RRF leg.
 - A graphify layer in the HUD graph mode.
 - `graphify export obsidian`.

@@ -489,6 +489,17 @@ async function main(report) {
   } catch (e) {
     console.error('[scan-vault] graph-build failed (loud in ledger):', e.message);
   }
+  // The semantic pass (D5/D10/D11): at most every graph.semantic.everyHours, on its own budget, in a detached process —
+  // a first pass can run for many minutes. "not due" is the common case and records nothing, so the ledger keeps the
+  // last real run; an off switch or a spent budget is recorded so the HUD says why.
+  try {
+    const gb = require('./graph-build.js');
+    const sk = gb.semanticSkip(cfg);
+    if (!sk) gb.spawnSemantic();
+    else if (sk.reason !== 'not due') await withReport('graph-semantic', async (r) => { if (sk.status === 'disabled') r.disable(sk.reason); else r.skip(sk.reason); });
+  } catch (e) {
+    console.error('[scan-vault] graph-semantic failed:', e.message);
+  }
 
   if (argv.has('--json')) {
     process.stdout.write(JSON.stringify(snapshot, null, 2));

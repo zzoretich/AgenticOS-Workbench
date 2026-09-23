@@ -4,6 +4,15 @@
 # Test knob: FAKE_CLAUDE_FAIL_INSTALL=1 makes `plugin install` print to stderr and exit 1, to
 # exercise installPlugin()'s allowFail path without touching the network.
 echo "$*" >> "${FAKE_CLAUDE_LOG:-/dev/null}"
+# `claude -p … --output-format json` (the graph shim's calls): read the prompt from stdin, answer one JSON envelope.
+# Knobs: FAKE_CLAUDE_ENV_LOG (the env the call saw), FAKE_CLAUDE_USD (its cost), FAKE_CLAUDE_P_EXIT (fail it).
+if [ "$1" = "-p" ]; then
+  [ -n "${FAKE_CLAUDE_ENV_LOG:-}" ] && echo "MAX_THINKING_TOKENS=${MAX_THINKING_TOKENS:-} AOS_HEADLESS=${AOS_HEADLESS:-} CLAUDECODE=${CLAUDECODE:-} ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:+set}" >> "$FAKE_CLAUDE_ENV_LOG"
+  cat > /dev/null
+  if [ -n "${FAKE_CLAUDE_P_EXIT:-}" ]; then echo "fake: -p failed" >&2; exit "$FAKE_CLAUDE_P_EXIT"; fi
+  printf '{"type":"result","subtype":"success","is_error":false,"result":"{}","structured_output":{"nodes":[],"edges":[]},"total_cost_usd":%s,"usage":{"input_tokens":1200,"cache_read_input_tokens":100,"output_tokens":300},"duration_api_ms":900}\n' "${FAKE_CLAUDE_USD:-0.004}"
+  exit 0
+fi
 case "$1 $2" in
   "--version ") echo "0.0.0-fake (Claude Code)" ;;
   "auth status") echo '{"loggedIn":true,"authMethod":"fake"}' ;;

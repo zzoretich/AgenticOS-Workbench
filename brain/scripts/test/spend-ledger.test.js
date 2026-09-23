@@ -8,7 +8,7 @@ const path = require('path');
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'spend-'));
 fs.mkdirSync(path.join(TMP, 'brain', '_index'), { recursive: true });
 process.env.BRAIN_VAULT = TMP;
-const { ProviderUnavailable, recordSpend, spendToday, reasonSpendToday, routineSpendToday, SPEND_PATH } = require('../sdk/lib/spend-ledger.js');
+const { ProviderUnavailable, recordSpend, spendToday, reasonSpendToday, routineSpendToday, graphSpendToday, SPEND_PATH } = require('../sdk/lib/spend-ledger.js');
 
 beforeEach(() => { try { fs.unlinkSync(SPEND_PATH); } catch {} });
 
@@ -91,4 +91,18 @@ test('routine:* rows are the routines cap\'s and never the hook cap\'s; routineS
   assert.equal(spendToday(), 0.01, 'the hook cap sees none of the three metered families');
   assert.equal(routineSpendToday(), 0.5, 'today\'s routine:* rows only');
   assert.equal(reasonSpendToday(), 0.4, 'reason rows unaffected');
+});
+
+test('graph:* rows are the graph cap\'s and never the hook cap\'s; graphSpendToday sums only them (graphify D10)', () => {
+  const now = new Date().toISOString();
+  const yesterday = new Date(Date.now() - 36 * 3600 * 1000).toISOString();
+  fs.writeFileSync(SPEND_PATH,
+    JSON.stringify({ ts: now, feature: 'graph:semantic', provider: 'claude', model: 'haiku', usd: 0.25 }) + '\n' +
+    JSON.stringify({ ts: now, feature: 'graph:semantic', provider: 'claude', model: 'haiku', usd: 0.05 }) + '\n' +
+    JSON.stringify({ ts: yesterday, feature: 'graph:semantic', provider: 'claude', model: 'haiku', usd: 3 }) + '\n' +
+    JSON.stringify({ ts: now, feature: 'routine:digest', provider: 'claude', model: 'haiku', usd: 0.2 }) + '\n' +
+    JSON.stringify({ ts: now, feature: 'auto-wrap', provider: 'claude', model: 'haiku', usd: 0.01 }) + '\n');
+  assert.equal(spendToday(), 0.01, 'the hook cap sees none of the four metered families');
+  assert.equal(graphSpendToday(), 0.3, 'today\'s graph:* rows only');
+  assert.equal(routineSpendToday(), 0.2, 'routine rows unaffected');
 });
