@@ -186,6 +186,14 @@ filing, every vault scan renders anything missed, and the review renders before 
 a pending proposal's page, and a backlog or history entry's page, in the default browser. Proposals you or Claude
 write in a session go through `/propose`, so they land in the same tab and the same review.
 
+**Recipes are read-only by grammar.** A duty writes proposals after reading text it did not write, and the tick, the
+watchdog and the review run their recipes, so every recipe passes `brain/scripts/persona/recipe.js` before a shell
+sees it: read-only programs (`grep`, `test`, `ls`, `wc`, `head`, `tail`, `cat`, `diff`, read-only `git`, …) joined
+by `|`, `&&`, `||`, with `$HOME` the only expansion. Anything else is never run and reviews as RECIPE-ERROR with the
+reason; `node brain/scripts/persona/ledger.js run-recipe '<recipe>'` checks one. Two more guards: `ledger.js`
+refuses `approved` and `auto-applied` under `AOS_HEADLESS=1`, so a duty cannot record an approval, and the
+`SessionStart` hook no longer re-runs approved recipes (the heartbeat still verifies once a day).
+
 Every outcome lands in `persona/ledger.jsonl` (tracked, unlike `STATE.md`) through
 `brain/scripts/persona/ledger.js`: `filed` by a reflect, `approved` / `rejected` / `stale-dropped` by the
 review (an approval keeps the proposal's `recheck` recipe), and `verified` or `regressed` by the

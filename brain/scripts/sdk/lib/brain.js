@@ -86,11 +86,20 @@ function listMemories() {
   });
 }
 
+function realOr(p) {
+  try { return fs.realpathSync(p); } catch { return p; }
+}
+
+/** A file inside the vault, else null. Containment is tested on real paths with path.relative, so a sibling folder
+ *  sharing the vault's name prefix, `..`, an absolute path elsewhere or a symlink out of the vault is refused
+ *  (recipe-guard D4). */
 function readMemory(relPath) {
-  const abs = path.isAbsolute(relPath) ? relPath : path.join(PATHS.VAULT, relPath);
-  const safe = path.resolve(abs);
-  if (!safe.startsWith(path.resolve(PATHS.VAULT))) return null;
-  return readIfExists(safe);
+  if (typeof relPath !== 'string' || !relPath) return null;
+  const vault = realOr(path.resolve(PATHS.VAULT));
+  const target = realOr(path.resolve(path.isAbsolute(relPath) ? relPath : path.join(PATHS.VAULT, relPath)));
+  const rel = path.relative(vault, target);
+  if (!rel || rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) return null;
+  return readIfExists(target);
 }
 
 function listPatterns() {

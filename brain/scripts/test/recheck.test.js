@@ -134,3 +134,12 @@ test('CLI: without --root the review file is still the first argument (the flag-
   assert.equal(o.err, '');
   assert.equal(JSON.parse(o.out).proposals[0].verdict, 'STILL-VALID');
 });
+
+test('a recipe outside the read-only grammar is RECIPE-ERROR with its reason, and neither the review nor record runs it', () => {
+  const v = vault({ 'bad-one': 'mkdir ran-it' });
+  const review = R.recheck({ proposals: [{ slug: 'bad-one', recheck: 'mkdir ran-it', autoapply_class: 'doc-typo' }] }, v, { now: NOW });
+  assert.equal(review.proposals[0].verdict, 'RECIPE-ERROR');
+  assert.equal(review.proposals[0].refused, "'mkdir' is not an allowed read-only command");
+  assert.equal(R.record({ root: v, now: NOW }).slugs['bad-one'], 0);
+  assert.equal(fs.existsSync(path.join(v, 'ran-it')), false);
+});

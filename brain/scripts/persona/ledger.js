@@ -12,7 +12,13 @@
  *                                        verdict yet; append `regressed` (exit 0 again) or, after 7 days clean,
  *                                        `verified`. Prints one JSON line.
  *   node ledger.js summary [--days N] [--json]
+ *   node ledger.js run-recipe '<recheck>'  run one recipe through the gate (the flag-closer's Approve and auto-apply
+ *                                        lanes): prints present | gone | error | refused: <reason>, exit 0
  *   Every verb takes --root <vault> (default: the resolved vault) or --file <path>.
+ *
+ * Recipes run only through runRecipe(), which refuses anything outside the read-only grammar in recipe.js before a
+ * shell sees it (spec 2026-09-23-recipe-guard-design D1). `approved` and `auto-applied` are refused under
+ * AOS_HEADLESS=1 — every duty runs headless, so only an interactive review can record an approval (D2).
  *
  * Line shape: { schema: 1, ts, event, slug, kind, target, by, class?, recheck?, commit?, note? }. `class` is the
  * proposal's autoapply_class (spec 2026-09-22-persona-earned-autonomy-design D3): summary counts per class over the
@@ -24,6 +30,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
+const { checkRecipe } = require('./recipe.js');
 
 const SCHEMA = 1;
 const EVENTS = ['filed', 'approved', 'rejected', 'stale-dropped', 'auto-applied', 'verified', 'regressed', 'accepted', 'dismissed'];
@@ -79,6 +86,9 @@ function validate(rec) {
 function append(rec, { file, now = new Date() } = {}) {
   const errors = validate(rec);
   if (errors.length) { const e = new Error(`invalid ledger event: ${errors.join('; ')}`); e.errors = errors; throw e; }
+  if (APPLIED.has(rec.event) && process.env.AOS_HEADLESS === '1') {
+    throw new Error(`${rec.event} needs an interactive session: a headless run (AOS_HEADLESS=1) never records an approval`);
+  }
   const r = { schema: SCHEMA, ts: now.toISOString(), event: rec.event, slug: rec.slug, kind: rec.kind || 'self', target: rec.target || null, by: rec.by || null };
   for (const k of ['class', 'recheck', 'commit', 'note']) if (rec[k]) r[k] = rec[k];
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -86,8 +96,10 @@ function append(rec, { file, now = new Date() } = {}) {
   return r;
 }
 
-/** Runs a recheck recipe the way the flag-closer does: exit 0 = the finding is present. */
+/** Runs a recheck recipe the way the flag-closer does: exit 0 = the finding is present. A recipe outside the read-only
+ *  grammar (recipe.js) is never spawned and reads as 'error'. */
 function runRecipe(cmd, cwd) {
+  if (!checkRecipe(cmd).ok) return 'error';
   try {
     execFileSync('/bin/sh', ['-c', cmd], { cwd, timeout: 15000, stdio: 'ignore' });
     return 'present';
@@ -226,13 +238,20 @@ function main(argv, { stdout = (s) => process.stdout.write(s), stderr = (s) => p
     } catch (e) { stderr(`ledger: ${e.message}\n`); return 2; }
   }
   if (verb === 'verify') { stdout(JSON.stringify(verify({ file, root, now })) + '\n'); return 0; }
+  if (verb === 'run-recipe') {
+    const cmd = positional[1];
+    if (!cmd) { stderr("usage: ledger.js run-recipe '<recheck>' [--root <vault>]\n"); return 2; }
+    const c = checkRecipe(cmd);
+    stdout(`${c.ok ? runRecipe(cmd, root) : `refused: ${c.reason}`}\n`);
+    return 0;
+  }
   if (verb === 'summary') {
     const days = Number(flags.days) > 0 ? Number(flags.days) : 28;
     const s = summary({ file, days, now });
     stdout(flags.json ? JSON.stringify(s, null, 2) + '\n' : formatSummary(s) + '\n');
     return 0;
   }
-  stderr('usage: ledger.js append|verify|summary [--root <vault>|--file <path>]\n');
+  stderr('usage: ledger.js append|verify|summary|run-recipe [--root <vault>|--file <path>]\n');
   return 2;
 }
 

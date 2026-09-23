@@ -25,6 +25,7 @@ const fs = require('fs');
 const path = require('path');
 const ledger = require('./ledger.js');
 const { parseFrontmatter } = require('./backlog.js');
+const { checkRecipe } = require('./recipe.js');
 
 const SCHEMA = 1;
 const MIN_CONFIRMATIONS = 2;
@@ -95,7 +96,11 @@ function tally(slugs, proposals) {
 function recheck(review, root, { record = false, now = new Date(), run = runRecipe } = {}) {
   const conf = readConfirmations(root);
   const config = loadConfig(root);
-  for (const p of review.proposals) p.verdict = p.recheck ? run(p.recheck, root) : 'NO-RECIPE';
+  for (const p of review.proposals) {
+    p.verdict = p.recheck ? run(p.recheck, root) : 'NO-RECIPE';
+    const c = p.recheck ? checkRecipe(p.recheck) : { ok: true };
+    if (!c.ok) p.refused = c.reason;   // RECIPE-ERROR because the grammar refused it (recipe-guard D5): it never ran
+  }
   const slugs = tally(conf.slugs, review.proposals);
   for (const p of review.proposals) {
     p.confirmations = slugs[p.slug];
