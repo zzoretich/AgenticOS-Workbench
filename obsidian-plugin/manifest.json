@@ -1,7 +1,7 @@
 {
   "id": "agentic-os",
   "name": "Agentic OS",
-  "version": "0.11.2",
+  "version": "0.11.3",
   "minAppVersion": "1.4.0",
   "description": "Workbench for your AgenticOS vault: live monitor of sessions, agents, memory, and health.",
   "author": "AgenticOS Workbench contributors",
