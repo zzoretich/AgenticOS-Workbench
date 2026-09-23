@@ -170,3 +170,14 @@ test('run: notify:false suppresses notifications but still flags; verify errors 
 test('osNotify: unsupported platform returns false and never throws', () => {
   assert.equal(W.osNotify('t', 'm', { platform: 'win32' }), false);
 });
+
+test('run: the SessionStart hook never runs recipes; the heartbeat routine still verifies once a day', () => {
+  const rows = [row('sitrep', '45 7 * * 1-5', { last: last(at(7, 45, 21)) })];
+  const f = fixture({ rows });
+  const out = W.run({ hook: true, deps: f.deps });
+  assert.equal(out.skipped, undefined);
+  assert.equal(f.calls.verify, 0, 'the hook path skips verify');
+  assert.equal(out.state.lastVerifyAt, null);
+  W.run({ deps: f.deps });
+  assert.equal(f.calls.verify, 1, 'the routine verifies');
+});
