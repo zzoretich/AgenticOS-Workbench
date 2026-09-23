@@ -87,6 +87,13 @@ test('AGENTICOS.md sections and .obsidian seeds', () => {
   assert.ok(!fs.existsSync(path.join(T, '.obsidian', 'daily-notes.json')), 'installer writes it');
 });
 
+test('TODO.md seeds an empty list with Open and Done', () => {
+  const t = read('TODO.md');
+  assert.match(t, /^# To-Do\n/);
+  assert.deepEqual(h2s(t), ['Open', 'Done']);
+  assert.ok(!/^- \[/m.test(t), 'no items in the seed');
+});
+
 test('_gitignore carries the spec rules and is stored without the dot', () => {
   const g = read('_gitignore');
   for (const line of ['brain/_index/*', '!brain/_index/scanner-config.json', '!brain/_index/MOC-*.md', 'persona/journal/', 'persona/STATE.md', 'persona/answers.json', 'persona/autoapply.json', 'persona/DISABLED', 'persona/flag-closer/', '.obsidian/workspace.json', '.obsidian/plugins/*/data.json', '.obsidian/plugins/*/node_modules/']) {

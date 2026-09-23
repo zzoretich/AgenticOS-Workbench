@@ -29,7 +29,7 @@ Spec: `docs/superpowers/specs/2026-09-22-todo-and-proposals-tabs-design.md` · B
 | `obsidian-plugin/src/views/TodoTab.ts` *(new)* | 2 | Quick-add, pickers, tick, edit, tag filter, Done-this-week (spec §4.4). |
 | `plugin/commands/todo.md` *(new)* | 2 | `/todo <text>` (spec §4.5). |
 | `vault-template/TODO.md` *(new)*, `vault-template/AGENTICOS.md` *(modify)* | 2 | Seed file; `/todo` in "Capture vocabulary". |
-| `cli/vault-template.test.js`, `cli/plugin-commands.test.js`, `cli/codex-host.test.js` *(modify)* | 2 | Seed assertion; 16 commands; 19 generated skills. |
+| `cli/vault-template.test.js`, `cli/plugin-commands.test.js`, `cli/codex-host.test.js`, `cli/aos.test.js`, `cli/rehearsal/first-run.sh` *(modify)* | 2 | Seed assertion; 16 commands and the embedded-seed check; 20 generated Codex skills (19 beside a foreign one); rehearsal checks `TODO.md`. |
 | `README.md`, `docs/plugin-smoke.md`, `docs/chief-of-staff.md` *(modify)* | 1, 2 | Tab lines, `/todo` row, "16 commands", smoke sections, a pointer to the Proposals tab. |
 
 ## Tasks — PR 1 `feat/proposals-tab`
@@ -68,7 +68,7 @@ Spec: `docs/superpowers/specs/2026-09-22-todo-and-proposals-tabs-design.md` · B
 
 ### Task 7 — `/todo` command and seed
 - [ ] `plugin/commands/todo.md`; `vault-template/TODO.md`; `AGENTICOS.md` vocabulary.
-- [ ] Count tests (16 / 19), `cli/vault-template.test.js`, README row and layout line.
+- [ ] Count tests (16 commands; Codex 20, or 19 beside a foreign skill), `cli/vault-template.test.js`, rehearsal, README row and layout line, `docs/install.md`.
 - [ ] Commit: `feat: /todo command and TODO.md seed`.
 
 ### Task 8 — Verify and publish PR 2

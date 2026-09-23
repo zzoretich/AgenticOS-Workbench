@@ -30,6 +30,17 @@ Run before tagging a release, on a vault created by `aos init` (not the develope
 - [ ] Command deck `/scan` spawns `scan-vault.js` with the resolved node (notice `▶ /scan`, then `✓ /scan: …`).
 - [ ] Heartbeat pill: absent on a vault whose watchdog never ran; after `aos routines run heartbeat` a green `♥ <age>` pill sits next to the update pill and its tooltip lists each duty with status, last run and next fire. Backdate `checkedAt` in `brain/_index/persona-heartbeat.json` by 2 h → amber within a second (the file is watched); set one duty's `status` to `missed` → rose with `· 1 missed` in the label.
 
+## To-Do
+
+- [ ] The To-Do rail button sits between Pulse and Proposals. On a vault without `TODO.md` the tab reads "Nothing open"; `open TODO.md` creates it from the seed (same text as `vault-template/TODO.md`) and opens it.
+- [ ] Quick-add: type `Renew passport #personal`, pick `⏫ high` and a date, press Enter → `- [ ] Renew passport ⏫ 📅 <date> #personal` is appended to the end of `## Open`; the input clears. Tokens typed inline (`Call dentist 🔽 📅 2026-10-01`) are kept as written.
+- [ ] Items group into OVERDUE (rose, with `<n>d late`) / TODAY (amber) / UPCOMING / SOMEDAY and sort 🔺 ⏫ 🔼 (none) 🔽 within a group. The badge counts overdue + today and updates within a second of an edit, **with another tab active** (edit `TODO.md` by hand to check).
+- [ ] Ticking a row moves it, with any indented lines under it, to the top of `## Done` as `- [x] … ✅ <today>`; `▸ DONE THIS WEEK` lists it; unticking there moves it back to the end of `## Open` without the ✅.
+- [ ] Double-click edits the whole line (tokens included); Enter saves, Escape cancels. The priority button cycles · → ⏫ → 🔼 → 🔽; the row's date picker sets or clears 📅; ✕ asks before deleting.
+- [ ] Tag chips filter the list (`all` clears); clicking a tag on a row filters by it.
+- [ ] Stale guard: open `TODO.md` in an editor, change an item's text, then (before the tab refreshes) tick the old row → the notice "TODO.md changed underneath — reloaded" and nothing is written. With a `/todo` capture landing while you type in quick-add, your draft survives the re-render.
+- [ ] Past local midnight, a TODAY item moves to OVERDUE within a minute without a reload.
+
 ## Proposals
 
 - [ ] The Proposals rail button sits right after Pulse. With `persona/proposals/` holding no proposal files the badge is hidden; copy any proposal into it (e.g. `2026-09-20-demo.md` with `kind: product`, `surface: hud`) and an amber `1` appears within a second, **with another tab active** — delete the file and it goes away.

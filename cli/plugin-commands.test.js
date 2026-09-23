@@ -6,9 +6,9 @@ const path = require('path');
 
 const DIR = path.resolve(__dirname, '..', 'plugin', 'commands');
 const EXPECTED = ['remember', 'feedback', 'pattern', 'project', 'wrap', 'brain', 'scan', 'ask-brain', 'reflect-week',
-  'consolidate-memory', 'compress', 'standup', 'cost', 'aos', 'routines'];
+  'consolidate-memory', 'compress', 'standup', 'cost', 'aos', 'routines', 'todo'];
 
-test('exactly the 15 contract commands exist', () => {
+test('exactly the 16 contract commands exist', () => {
   assert.deepEqual(fs.readdirSync(DIR).filter((f) => f.endsWith('.md')).map((f) => f.slice(0, -3)).sort(), [...EXPECTED].sort());
 });
 
@@ -22,6 +22,13 @@ test('every command has frontmatter with description and allowed-tools, and no a
     assert.ok(!/\/home\/|~\/\.claude\/brain|\/usr\/local\/bin/.test(text), `${name}: hardcoded path`);
     assert.ok(!/qwen|ollama run|token-goblin/i.test(text), `${name}: model or owner tooling name`);
   }
+});
+
+test('/todo creates a missing TODO.md with exactly the vault seed', () => {
+  const text = fs.readFileSync(path.join(DIR, 'todo.md'), 'utf8');
+  const block = /```markdown\n([\s\S]*?)```/.exec(text);
+  assert.ok(block, 'todo.md embeds the seed in a markdown fence');
+  assert.equal(block[1], fs.readFileSync(path.resolve(__dirname, '..', 'vault-template', 'TODO.md'), 'utf8'));
 });
 
 test('script-driven commands name the launcher and its fallback', () => {

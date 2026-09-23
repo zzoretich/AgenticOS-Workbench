@@ -1843,3 +1843,24 @@
 .aos-pr-premises { margin: 6px 0; }
 .aos-pr-premise { display: flex; gap: 8px; align-items: baseline; font-size: 11px; padding: 2px 0; }
 .aos-pr-premise .aos-pill { flex: 0 0 auto; }
+
+/* To-Do tab (spec 2026-09-22-todo-and-proposals-tabs D1–D4) — reuses the Routines head, subhead and table. */
+.aos-td-add { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; }
+.aos-td-add .aos-td-input { flex: 1 1 auto; min-width: 0; }
+.aos-td-add .aos-ws-action { margin-left: 0; }
+.aos-td-prio { width: auto; flex: 0 0 auto; }
+.aos-td-date { width: auto; flex: 0 0 auto; padding: 1px 4px; font-size: 10.5px; }
+.aos-td-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+.aos-td-tagchip, .aos-td-tag { cursor: pointer; }
+.aos-td-row { gap: 8px; }
+.aos-td-check { margin: 0; flex: 0 0 auto; cursor: pointer; }
+.aos-td-text { flex: 1 1 auto; min-width: 0; color: var(--aos-text); cursor: text; }
+.aos-td-edit { flex: 1 1 auto; min-width: 0; }
+.aos-td-row.is-done .aos-td-text { color: var(--aos-dim); text-decoration: line-through; }
+.aos-td-when { flex: 0 0 auto; font-family: var(--aos-mono); font-size: 10.5px; }
+.aos-td-prio-btn, .aos-td-del {
+  flex: 0 0 auto; background: transparent; border: none; box-shadow: none; padding: 0 4px;
+  color: var(--aos-dim); cursor: pointer; font-size: 12px;
+}
+.aos-td-prio-btn:hover { color: var(--aos-cyan); }
+.aos-td-del:hover { color: var(--aos-rose); }
