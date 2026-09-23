@@ -38,10 +38,12 @@
  *
  * State: brain/_index/persona-tick.json (schema 1). Every path is injectable; --root <vault> for the CLI.
  * Exit codes: precheck 3 = unchanged; 2 = usage or an invalid queue call; 0 otherwise (a failure inside precheck or
- * beat is reported on stderr and exits 0 so the duty still runs).
+ * beat is reported on stderr and exits 0 so the duty still runs). Under AOS_HEADLESS=1 (a duty) --root must be the
+ * vault, or it exits 2 (lib/pin-root.js, spec 2026-09-23-duty-write-scope-design D3).
  */
 const fs = require('fs');
 const path = require('path');
+const { assertPinned } = require('../lib/pin-root.js');
 
 const SCHEMA = 1;
 const TYPES = ['correction', 'duty-failure', 'repo-stall', 'regressed', 'flag-aged'];
@@ -359,6 +361,7 @@ function main(argv) {
   const arg = (flag) => { const i = argv.indexOf(flag); return i !== -1 ? argv[i + 1] : null; };
   const [verb, type] = positionals(argv);
   const out = (o) => process.stdout.write(JSON.stringify(o) + '\n');
+  try { assertPinned({ root: arg('--root') }); } catch (e) { process.stderr.write(`tick: ${e.message}\n`); return 2; }
   let deps;
   try { deps = defaultDeps(arg('--root')); } catch (e) { process.stderr.write(`tick: ${e.message}\n`); return 0; }
   try {

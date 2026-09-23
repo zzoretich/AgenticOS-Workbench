@@ -19,13 +19,15 @@
  * A page is rewritten when it is missing, older than its Markdown, or from an older renderer. The Markdown is rewritten
  * (temp file + rename) only when its link line is missing or points elsewhere, so a re-run changes nothing and the
  * tick's `proposals` signature moves once per filing. Prints one JSON line { schema, rendered, linked, skipped, errors }.
- * Exit 0 on every path but a usage error (2).
+ * Exit 0 on every path but a usage error (2). Under AOS_HEADLESS=1 (a duty) --root must be the vault and every named
+ * file must sit in <vault>/persona/proposals (lib/pin-root.js, spec 2026-09-23-duty-write-scope-design D3).
  */
 const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const { IDEA_KINDS, parseFrontmatter } = require('./backlog.js');
 const { toHtml, inline, esc } = require('../lib/markdown-html.js');
+const { assertPinned } = require('../lib/pin-root.js');
 
 const SCHEMA = 1;
 const RENDERER = '1';
@@ -214,10 +216,14 @@ function main(argv, { stdout = (s) => process.stdout.write(s), stderr = (s) => p
   if (rootIx >= 0 && (!argv[rootIx + 1] || argv[rootIx + 1].startsWith('--'))) { stderr(USAGE); return 2; }
   const positional = argv.filter((a, i) => rootIx < 0 || (i !== rootIx && i !== rootIx + 1));
   if (positional.some((a) => a.startsWith('--'))) { stderr(USAGE); return 2; }
+  const files = positional.length ? positional.map((p) => path.resolve(p)) : null;
   let root;
-  try { root = rootIx >= 0 ? path.resolve(argv[rootIx + 1]) : defaultRoot(); } catch (e) { stderr(`proposal-html: ${e.message}\n`); return 2; }
+  try {
+    assertPinned({ root: rootIx >= 0 ? argv[rootIx + 1] : null, within: files || [], withinRel: path.join('persona', 'proposals') });
+    root = rootIx >= 0 ? path.resolve(argv[rootIx + 1]) : defaultRoot();
+  } catch (e) { stderr(`proposal-html: ${e.message}\n`); return 2; }
   if (!root) { stderr('proposal-html: no vault — pass --root <vault> or run `aos init`\n'); return 2; }
-  stdout(JSON.stringify(render({ root, files: positional.length ? positional.map((p) => path.resolve(p)) : null, now })) + '\n');
+  stdout(JSON.stringify(render({ root, files, now })) + '\n');
   return 0;
 }
 

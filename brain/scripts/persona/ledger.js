@@ -14,7 +14,8 @@
  *   node ledger.js summary [--days N] [--json]
  *   node ledger.js run-recipe '<recheck>'  run one recipe through the gate (the flag-closer's Approve and auto-apply
  *                                        lanes): prints present | gone | error | refused: <reason>, exit 0
- *   Every verb takes --root <vault> (default: the resolved vault) or --file <path>.
+ *   Every verb takes --root <vault> (default: the resolved vault) or --file <path>; under AOS_HEADLESS=1 both must name
+ *   the vault and its own ledger (lib/pin-root.js, spec 2026-09-23-duty-write-scope-design D3).
  *
  * Recipes run only through runRecipe(), which refuses anything outside the read-only grammar in recipe.js before a
  * shell sees it (spec 2026-09-23-recipe-guard-design D1). `approved` and `auto-applied` are refused under
@@ -31,6 +32,7 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { checkRecipe } = require('./recipe.js');
+const { assertPinned } = require('../lib/pin-root.js');
 
 const SCHEMA = 1;
 const EVENTS = ['filed', 'approved', 'rejected', 'stale-dropped', 'auto-applied', 'verified', 'regressed', 'accepted', 'dismissed'];
@@ -227,7 +229,10 @@ function main(argv, { stdout = (s) => process.stdout.write(s), stderr = (s) => p
   const { flags, positional } = parseArgs(argv);
   const [verb, event, slug] = positional;
   let file;
-  try { file = flags.file || defaultFile(flags.root); } catch (e) { stderr(`ledger: ${e.message}\n`); return 2; }
+  try {
+    assertPinned({ root: flags.root, file: flags.file, fileRel: path.join('persona', 'ledger.jsonl') });
+    file = flags.file || defaultFile(flags.root);
+  } catch (e) { stderr(`ledger: ${e.message}\n`); return 2; }
   const root = flags.root || path.dirname(path.dirname(file));
   if (verb === 'append') {
     if (!event || !slug) { stderr('usage: ledger.js append <event> <slug> [--kind k] [--target t] [--by who] [--class c] [--recheck sh] [--commit sha] [--note text]\n'); return 2; }

@@ -231,9 +231,13 @@ test('approved and auto-applied need an interactive session: refused under AOS_H
     for (const event of ['approved', 'auto-applied']) {
       assert.throws(() => L.append({ event, slug: 'forged', recheck: 'true', class: 'doc-typo' }, { file, now: NOW }), /needs an interactive session/);
     }
+    // The CLI goes through the vault itself: a headless --root anywhere else is refused first (lib/pin-root.js).
     const err = [];
-    assert.equal(L.main(['append', 'approved', 'forged', '--recheck', 'true', '--root', root], { stdout: () => {}, stderr: (s) => err.push(s), now: NOW }), 2);
+    assert.equal(L.main(['append', 'approved', 'forged', '--recheck', 'true', '--root', require('../lib/paths.js').VAULT], { stdout: () => {}, stderr: (s) => err.push(s), now: NOW }), 2);
     assert.match(err.join(''), /needs an interactive session/);
+    err.length = 0;
+    assert.equal(L.main(['append', 'filed', 'forged', '--root', root], { stdout: () => {}, stderr: (s) => err.push(s), now: NOW }), 2);
+    assert.match(err.join(''), /is not the vault/);
     L.append({ event: 'filed', slug: 'honest', by: 'reflect' }, { file, now: NOW });
     L.append({ event: 'verified', slug: 'honest', by: 'watchdog' }, { file, now: NOW });
   } finally {
