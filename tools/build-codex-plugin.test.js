@@ -52,8 +52,13 @@ test('22 skills: the 17 commands and 7 skills of plugin/, cost and wrap merged, 
     assert.ok(text.includes(CH.PLUGIN_MARKER), `${k}: plugin marker`);
     assert.ok(!text.includes(CH.GENERATED_MARKER), `${k}: carries the direct-install marker`);
     assert.match(text, new RegExp(`Invoke as \`\\$agenticos:${name}\``), `${k}: host note`);
-    assert.ok(!/CLAUDE_PLUGIN_ROOT|mcp__plugin_agenticos|\$ARGUMENTS|Claude Code session/.test(text), `${k}: Claude-only idiom left`);
+    // Idioms Codex would hand to the model verbatim. A qualified host phrase ("an interactive Claude Code session")
+    // names Claude Code on purpose and is allowed; the routines skill's cloud line is one.
+    const idiom = /CLAUDE_PLUGIN_ROOT|mcp__plugin_agenticos|\$ARGUMENTS|\b(?:[Aa]|[Tt]he|[Tt]his|[Yy]our|[Ee]ach|[Ee]very) Claude Code session|AskUserQuestion|with the (?:Read|Edit|Write|Glob|Grep) tool|(?:^|[\s(`"'])\/agenticos:|claude plugin install(?![^\n]*Codex)/.exec(text);
+    assert.equal(idiom, null, `${k}: Claude-only idiom left: ${idiom && idiom[0]}`);
   }
+  assert.match(files.get('skills/routines/SKILL.md').toString('utf8'), /refreshed from an interactive Claude Code session/, 'Claude Code cloud routines stay Claude Code');
+  assert.match(files.get('skills/feedback-review/SKILL.md').toString('utf8'), /question to the user is one message/, 'a skill that asks explains how under Codex');
   const wrap = files.get('skills/wrap/SKILL.md').toString('utf8');
   assert.match(wrap, /## The `\$agenticos:wrap` procedure/, 'the command steps are appended to the skill of the same name');
   assert.match(wrap, /sh "<plugin root>\/bin\/aos" wrap-session/);
