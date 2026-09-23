@@ -304,14 +304,18 @@ function checkHost(host, deps) {
 
 function probe(bin, args) {
   const r = spawnSync(bin, args, { encoding: 'utf8', timeout: 15000, stdio: ['ignore', 'pipe', 'pipe'] });
-  return { ok: r.status === 0, out: `${r.stdout || ''}\n${r.stderr || ''}`.trim() };
+  return { ok: r.status === 0, stdout: r.stdout || '', out: `${r.stdout || ''}\n${r.stderr || ''}`.trim() };
 }
 function versionOf(bin) { const r = probe(bin, ['--version']); return r.ok && r.out ? r.out.split('\n')[0].trim() : null; }
 /** No model call: `claude auth status --json` / `codex login status`. */
 function loggedIn(provider, bin) {
   if (provider === 'claude') {
-    const r = probe(bin, ['auth', 'status', '--json']);
-    try { return !!JSON.parse(r.out.split('\n').find((l) => l.trim().startsWith('{')) || '{}').loggedIn; } catch { return false; }
+    // The real CLI pretty-prints this object over several lines: parse the whole of stdout, else the outermost braces.
+    const t = probe(bin, ['auth', 'status', '--json']).stdout;
+    for (const text of [t, t.slice(t.indexOf('{'), t.lastIndexOf('}') + 1)]) {
+      try { const j = JSON.parse(text); if (j && typeof j === 'object') return j.loggedIn === true; } catch { /* next */ }
+    }
+    return false;
   }
   const r = probe(bin, ['login', 'status']);
   return r.ok && /logged in/i.test(r.out) && !/not logged in/i.test(r.out);
@@ -487,9 +491,11 @@ async function turn(args, deps) {
       save(schemaFile, deps.strictSchema(REVIEW_SCHEMA));
     }
     const budget = provider === 'claude' ? (Number(sec.perCallUsd) || 3) : undefined;
-    const { argv } = deps.headless.crossArgs(provider, { mode: childMode, schema: REVIEW_SCHEMA, schemaFile, outFile: path.join(runDir, 'reply.txt'), model, effort, budget });
-    save(path.join(runDir, 'command.json'), [bin, ...argv]);
     const codexHome = deps.headless.codexHomeOf(deps.cfg);
+    // Every server the user's Codex config declares is switched off by name: `-c mcp_servers={}` does not empty them.
+    const mcpOff = provider === 'codex' ? deps.headless.codexMcpServers(codexHome || deps.env.CODEX_HOME || path.join(os.homedir(), '.codex')) : [];
+    const { argv } = deps.headless.crossArgs(provider, { mode: childMode, schema: REVIEW_SCHEMA, schemaFile, outFile: path.join(runDir, 'reply.txt'), model, effort, budget, mcpOff });
+    save(path.join(runDir, 'command.json'), [bin, ...argv]);
     const env = deps.headless.headlessEnv(deps.env, { codexHome });
     const code = await execute({ bin, argv, prompt, cwd: repo, env, runDir, timeoutSec });
     record.exitCode = code;

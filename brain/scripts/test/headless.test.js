@@ -102,37 +102,53 @@ test('graphRunner: a pinned runner, else an explicit provider, else Claude when 
   assert.equal(H.graphRunner({}, { bins: { claude: null, codex: '/b/codex' } }), null);
 });
 
-// Spec 2026-09-23-cross-review D4: every isolation flag is pinned, per host and mode.
-test('crossArgs: codex review is read-only, ephemeral, hooks and tool features off, strict schema file last', () => {
-  const r = H.crossArgs('codex', { mode: 'review', schemaFile: '/t/schema.json', outFile: '/t/reply.txt', model: 'gpt-6-astra', effort: 'high' });
-  assert.deepEqual(r.argv, ['exec', '-', '--ephemeral', '--skip-git-repo-check', '-s', 'read-only',
-    '-c', 'features.hooks=false', '-c', 'features.apps=false', '-c', 'features.browser_use=false', '-c', 'features.computer_use=false', '-c', 'features.image_generation=false',
-    '-c', 'approval_policy="never"', '--json', '-o', '/t/reply.txt', '-m', 'gpt-6-astra', '-c', 'model_reasoning_effort="high"', '--output-schema', '/t/schema.json']);
+// Spec 2026-09-23-cross-review D4: every isolation flag is pinned, per host and mode. No child in any mode gets a plugin,
+// a connector, an MCP server or web search (measured live on codex-cli 0.156.1: plugins carry the connectors, and
+// `-c mcp_servers={}` merges instead of emptying, so each declared server is switched off by name).
+const CODEX_ISOLATION = ['-c', 'features.hooks=false', '-c', 'features.plugins=false', '-c', 'features.apps=false', '-c', 'features.browser_use=false',
+  '-c', 'features.computer_use=false', '-c', 'features.image_generation=false'];
+const NO_MCP = ['--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--no-chrome'];
+
+test('crossArgs: codex review is read-only and ephemeral, every plugin, server, connector and web search off, strict schema last', () => {
+  const r = H.crossArgs('codex', { mode: 'review', schemaFile: '/t/schema.json', outFile: '/t/reply.txt', model: 'gpt-6-astra', effort: 'high', mcpOff: ['node_repl', 'odd.name'] });
+  assert.deepEqual(r.argv, ['exec', '-', '--ephemeral', '--skip-git-repo-check', '-s', 'read-only', ...CODEX_ISOLATION,
+    '-c', 'mcp_servers.node_repl.enabled=false', '-c', 'mcp_servers."odd.name".enabled=false',
+    '-c', 'web_search="disabled"', '-c', 'approval_policy="never"', '--json', '-o', '/t/reply.txt', '-m', 'gpt-6-astra', '-c', 'model_reasoning_effort="high"', '--output-schema', '/t/schema.json']);
   const consult = H.crossArgs('codex', { mode: 'consult', schemaFile: '/t/schema.json', outFile: '/t/r' }).argv;
   assert.ok(consult.includes('read-only') && !consult.includes('--output-schema'), 'consult: read-only, free-text reply');
   assert.ok(!consult.includes('-m'), 'no model: the user\'s Codex default');
 });
 
-test('crossArgs: codex build writes inside the workspace with our hooks off; an effort codex does not take is left off', () => {
-  const b = H.crossArgs('codex', { mode: 'build', outFile: '/t/r', effort: 'max' }).argv;
-  assert.deepEqual(b, ['exec', '-', '--ephemeral', '--skip-git-repo-check', '-s', 'workspace-write', '-c', 'features.hooks=false', '-c', 'approval_policy="never"', '--json', '-o', '/t/r']);
+test('crossArgs: a codex build writes inside the workspace with the same isolation; an effort codex does not take is left off', () => {
+  const b = H.crossArgs('codex', { mode: 'build', outFile: '/t/r', effort: 'max', mcpOff: ['node_repl'] }).argv;
+  assert.deepEqual(b, ['exec', '-', '--ephemeral', '--skip-git-repo-check', '-s', 'workspace-write', ...CODEX_ISOLATION,
+    '-c', 'mcp_servers.node_repl.enabled=false', '-c', 'web_search="disabled"', '-c', 'approval_policy="never"', '--json', '-o', '/t/r']);
 });
 
 test('crossArgs: claude review runs in safe mode with only Read/Glob/Grep, no MCP, no persistence, the schema inline', () => {
   const schema = { type: 'object', properties: { verdict: { type: 'string' } }, required: ['verdict'] };
   const r = H.crossArgs('claude', { mode: 'review', schema, model: 'claude-fable-5-1', effort: 'max', budget: 3 }).argv;
-  assert.deepEqual(r, ['-p', '--output-format', 'json', '--no-session-persistence', '--permission-prompts', 'none',
-    '--safe-mode', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--tools', 'Read,Glob,Grep', '--allowedTools', 'Read,Glob,Grep',
-    '--permission-mode', 'dontAsk', '--no-chrome', '--json-schema', JSON.stringify(schema),
-    '--model', 'claude-fable-5-1', '--effort', 'max', '--max-budget-usd', '3']);
+  assert.deepEqual(r, ['-p', '--output-format', 'json', '--no-session-persistence', '--permission-prompts', 'none', ...NO_MCP,
+    '--safe-mode', '--tools', 'Read,Glob,Grep', '--allowedTools', 'Read,Glob,Grep', '--permission-mode', 'dontAsk',
+    '--json-schema', JSON.stringify(schema), '--model', 'claude-fable-5-1', '--effort', 'max', '--max-budget-usd', '3']);
   const consult = H.crossArgs('claude', { mode: 'consult', schema }).argv;
   assert.ok(consult.includes('--safe-mode') && !consult.includes('--json-schema'), 'consult: read-only, free-text reply');
   assert.ok(!consult.includes('--model') && !consult.includes('--max-budget-usd'), 'unset model and budget are left to the CLI');
 });
 
-test('crossArgs: claude build uses acceptEdits with the user\'s permissions, never safe mode or a bypass', () => {
+test('crossArgs: claude build uses acceptEdits with the user\'s permissions and no MCP, never safe mode or a bypass', () => {
   const b = H.crossArgs('claude', { mode: 'build', effort: 'minimal', budget: 2.5 }).argv;
-  assert.deepEqual(b, ['-p', '--output-format', 'json', '--no-session-persistence', '--permission-prompts', 'none', '--permission-mode', 'acceptEdits', '--max-budget-usd', '2.5']);
+  assert.deepEqual(b, ['-p', '--output-format', 'json', '--no-session-persistence', '--permission-prompts', 'none', ...NO_MCP, '--permission-mode', 'acceptEdits', '--max-budget-usd', '2.5']);
   assert.ok(!b.includes('bypassPermissions') && !b.includes('--dangerously-skip-permissions'));
   assert.throws(() => H.crossArgs('claude', { mode: 'write' }), /unknown mode write/);
+});
+
+test('codexMcpServers: the [mcp_servers.<name>] tables of config.toml, quoted or bare, not their sub-tables', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-cx-home-'));
+  assert.deepEqual(H.codexMcpServers(home), [], 'no config.toml');
+  fs.writeFileSync(path.join(home, 'config.toml'), [
+    'model = "gpt-6-astra"', '[mcp_servers.node_repl]', 'command = "node"', '[mcp_servers.node_repl.env]', 'X = "1"',
+    '  [ mcp_servers."odd.name" ]  # quoted', "[mcp_servers.'lit']", '[mcp_servers.computer-use]', '[profiles.fast.mcp_servers.skip]', '[mcp_servers.node_repl]',
+  ].join('\n'));
+  assert.deepEqual(H.codexMcpServers(home), ['node_repl', 'odd.name', 'lit', 'computer-use']);
 });

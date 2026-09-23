@@ -18,9 +18,10 @@ isolates diffs; it is not an operating-system sandbox.
 
 ## Delegated build
 
-The Codex builder runs in its `workspace-write` sandbox with approvals off; the Claude builder runs with the user's
-normal permissions in `acceptEdits` mode, so a command that still needs approval is denied, not bypassed. Confirm that
-the proof commands are permitted before launching. Never answer a denial by switching permissions off. If the builder
+No builder gets an MCP server, a plugin, a connector or web search. The Codex builder runs in its `workspace-write`
+sandbox with approvals off; the Claude builder runs with the user's normal permissions in `acceptEdits` mode, so a
+command that still needs approval is denied, not bypassed. Confirm that the proof commands are permitted before
+launching. Never answer a denial by switching permissions off. If the builder
 cannot do some required work, report it, or have the already-authorised host do that part and log the authorship.
 
 A standalone work order the user asked for without plan review uses `--unreviewed-spec` in place of `--approval`;

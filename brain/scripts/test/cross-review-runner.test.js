@@ -19,7 +19,8 @@ const fs = require('fs'); const path = require('path'); const { spawn } = requir
 const argv = process.argv.slice(2);
 const codex = argv[0] === 'exec' || path.basename(process.argv[1]) === 'codex';
 if (argv.includes('--version')) { console.log(codex ? 'codex-cli 9.9.9' : '9.9.9 (Claude Code)'); process.exit(0); }
-if (argv[0] === 'auth') { console.log(JSON.stringify({ loggedIn: process.env.FAKE_LOGGED_OUT !== 'claude' })); process.exit(0); }
+// Pretty-printed over several lines, exactly like the real \`claude auth status --json\` (a one-line probe once misread it).
+if (argv[0] === 'auth') { console.log(JSON.stringify({ loggedIn: process.env.FAKE_LOGGED_OUT !== 'claude', authMethod: 'fake' }, null, 2)); process.exit(0); }
 if (argv[0] === 'login') { if (process.env.FAKE_LOGGED_OUT === 'codex') { console.log('Not logged in'); process.exit(1); } console.log('Logged in using ChatGPT'); process.exit(0); }
 const who = codex ? 'codex' : 'claude';
 const dir = process.env.FAKE_DIR;
@@ -73,6 +74,8 @@ function sandbox({ cfg = {} } = {}) {
   for (const n of ['claude', 'codex']) fs.writeFileSync(path.join(bins, n), FAKE, { mode: 0o755 });
   const fake = path.join(root, 'fake');
   fs.mkdirSync(fake);
+  fs.mkdirSync(path.join(root, 'codex-home'));
+  fs.writeFileSync(path.join(root, 'codex-home', 'config.toml'), '[mcp_servers.node_repl]\ncommand = "node"\n');
   const repo = path.join(root, 'repo with spaces');
   fs.mkdirSync(repo);
   execFileSync('git', ['init', '-q'], { cwd: repo });
@@ -167,6 +170,8 @@ test('review from claude: a read-only, ephemeral codex reviewer with a strict sc
   assert.equal(schema.additionalProperties, false);
   assert.deepEqual(schema.required, ['verdict', 'summary', 'findings', 'coverage', 'limitations']);
   assert.deepEqual(s.seen('codex', 'env.json'), { AOS_HEADLESS: '1', CLAUDECODE: null, CODEX_HOME: s.env.CODEX_HOME });
+  assert.ok(argv.includes('features.plugins=false') && argv.includes('web_search="disabled"'), 'no plugin, connector or web search');
+  assert.ok(argv.includes('mcp_servers.node_repl.enabled=false'), 'a server the Codex config declares is switched off by name');
   const prompt = s.seen('codex', 'prompt.txt');
   assert.match(prompt, /You are the independent reviewer/);
   assert.match(prompt, /<plan>\n# Plan\n\nCopy, verify, then delete\.\n\n<\/plan>/);
@@ -292,7 +297,9 @@ test('only one CLI: preflight says same-provider only; a labelled same-provider 
   assert.match(loggedOut.stdout, /claude CLI not logged in/);
   const both = s.run(['preflight', '--host', 'codex', '--json']);
   assert.equal(both.status, 0);
-  assert.equal(JSON.parse(both.stdout).independence, 'cross-provider');
+  const report = JSON.parse(both.stdout);
+  assert.equal(report.independence, 'cross-provider');
+  assert.equal(report.cli.claude.loggedIn, true, 'the multi-line auth status JSON reads as logged in');
 });
 
 // ── build and inspect ─────────────────────────────────────────────────────────
