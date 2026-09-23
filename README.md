@@ -414,7 +414,7 @@ flowchart LR
 - Your vault stays on your machine. Background calls go to your local Ollama or to your own Claude or Codex login; the cost analyzer runs with `--no-api`.
 - Telemetry redaction is on by default.
 - The vault graph's structural pass is local: it calls no model and runs without any API key in its environment. The daily semantic pass sends the text of new or changed notes to Claude, or to Codex where Codex is the host, on your own login, under its own $1/day cap; it is off when the provider is `ollama` or `none`, and `aos graph semantic off` turns it off anywhere.
-- This repository ships machinery, not content: the Chief of Staff's identity, state and playbook are generated for you at install. A privacy gate (`npm run gate`) runs in CI against a fixed term list so nothing personal can land here.
+- This repository ships machinery, not content: the Chief of Staff's identity, state and playbook are generated for you at install. A privacy gate (`npm run gate`) runs in CI against a public list of generic terms plus the maintainer's private list, which is kept out of the repository and reaches CI as a secret, and gitleaks checks every pushed commit, so nothing personal can land here.
 
 <a name="repository-layout"></a>
 ## <img src="docs/assets/icon-layout.svg" width="36" align="top" alt="" /> Repository layout
