@@ -19,7 +19,9 @@ PSTATE="${STATE:+$STATE.plugin}"
 MSTATE="${STATE:+$STATE.mkt}"
 PLUGIN_SERVER='{"name":"agenticos","enabled":true,"transport":{"type":"stdio","command":"sh","args":["./bin/aos","mcp-server"],"env":{"AOS_HOST":"codex"},"cwd":"/fake/plugins/cache/agenticos-workbench/agenticos/."}}'
 if [ "$1" = "plugin" ] && [ "${FAKE_CODEX_NO_PLUGINS:-}" = "1" ]; then echo "error: unrecognized subcommand 'plugin'" >&2; exit 2; fi
-case "$1 $2" in
+# sdk/lib/codex-cli.js puts `-` (stdin) last, lib/headless.js right after `exec`: both are the same headless run here.
+KEY="$1 $2"; [ "$1" = "exec" ] && KEY="exec -"
+case "$KEY" in
   "--version ") echo "codex-cli 0.0.0-fake" ;;
   "plugin list")
     if [ -n "$PSTATE" ] && [ -f "$PSTATE" ]; then
@@ -101,7 +103,10 @@ case "$1 $2" in
     [ -n "${FAKE_ARGS:-}" ] && printf '%s\n' "$@" > "$FAKE_ARGS"
     [ -n "${FAKE_JOURNAL:-}" ] && { mkdir -p "$(dirname "$FAKE_JOURNAL")"; printf '\n## 09:00 — duty: testduty\n- status: OK\n' >> "$FAKE_JOURNAL"; }
     OUTF=""; while [ $# -gt 0 ]; do [ "$1" = "-o" ] && OUTF="$2"; shift; done
-    [ -n "$OUTF" ] && printf 'fake reply\n' > "$OUTF"
-    printf '{"type":"thread.started","thread_id":"fake"}\n{"type":"item.completed","item":{"type":"agent_message","text":"fake reply"}}\n{"type":"turn.completed","usage":{"input_tokens":1200,"cached_input_tokens":0,"output_tokens":300}}\n' ;;
+    # FAKE_CODEX_REPLY is the final message (default "fake reply"); FAKE_CODEX_EXIT fails the run after the events.
+    REPLY="${FAKE_CODEX_REPLY:-fake reply}"
+    [ -n "$OUTF" ] && printf '%s\n' "$REPLY" > "$OUTF"
+    printf '{"type":"thread.started","thread_id":"fake"}\n{"type":"item.completed","item":{"type":"agent_message","text":"fake reply"}}\n{"type":"turn.completed","usage":{"input_tokens":1200,"cached_input_tokens":0,"output_tokens":300}}\n'
+    [ -n "${FAKE_CODEX_EXIT:-}" ] && exit "$FAKE_CODEX_EXIT" ;;
 esac
 exit 0

@@ -180,13 +180,29 @@ function removeTools(home = toolHome()) {
 }
 
 /** The graph lib that matches the vault's runtime: the vendored copy, else this checkout's. */
+/**
+ * The CLI that answers the semantic pass — lib/headless.js graphRunner from the vault's copy when installed: a pinned
+ * graph.semantic.runner, an explicit provider claude/codex, else Claude when it is a host, else Codex. null when
+ * neither CLI resolves (spec 2026-09-23-codex-parity-gaps D3).
+ */
+function semanticRunner(vault, cfg, g) {
+  const vendored = path.join(vault, 'brain', 'scripts', 'lib', 'headless.js');
+  const H = require(fs.existsSync(vendored) ? vendored : path.join(__dirname, '..', 'brain', 'scripts', 'lib', 'headless.js'));
+  return H.graphRunner({ ...(cfg || {}), provider: g.provider, graph: { ...((cfg && cfg.graph) || {}), semantic: g.semantic } });
+}
+/** "Claude (haiku, on your login)" / "Codex (gpt-5-mini, on your login)": who reads the notes. */
+function runnerLabel(runner, cfg) {
+  if (runner && runner.host === 'codex') return `Codex (${(cfg.codex && cfg.codex.model) || 'your Codex default model'}, on your login)`;
+  return `Claude (${(cfg.claude && cfg.claude.model) || 'haiku'}, on your login)`;
+}
+
 function graphLib(vault) {
   const vendored = path.join(vault, 'brain', 'scripts', 'sdk', 'lib', 'graph.js');
   return require(fs.existsSync(vendored) ? vendored : path.join(__dirname, '..', 'brain', 'scripts', 'sdk', 'lib', 'graph.js'));
 }
 
 /** `aos doctor` rows (name, ok, detail, level): the pinned binary, and whether the graph is fresh. */
-function doctorRows({ cfg, vault, exec = spawnSync, now = Date.now() } = {}) {
+function doctorRows({ cfg, vault, exec = spawnSync, now = Date.now(), runner } = {}) {
   const rows = [];
   const bin = cfg && cfg.graph && cfg.graph.bin;
   const v = installedVersion(bin, exec);
@@ -201,17 +217,19 @@ function doctorRows({ cfg, vault, exec = spawnSync, now = Date.now() } = {}) {
   const age = now - at;
   const fresh = age <= (Number(g.staleDays) || 7) * 86_400_000;
   rows.push({ name: 'graph fresh', ok: fresh, detail: `built ${ago(age)} ago · ${m.nodes} nodes · ${m.edges} edges${fresh ? '' : ` — older than ${g.staleDays} days, run aos graph build`}`, level: 'warn' });
-  rows.push(semanticRow({ g, m, vault, now }));
+  rows.push(semanticRow({ g, m, vault, now, runner: runner === undefined ? semanticRunner(vault, cfg, g) : runner }));
   return rows;
 }
 
 /** The `graph semantic` row: info while off or not yet run, warn on a failed last run, else ok with today's spend. */
-function semanticRow({ g, m, vault, now }) {
+function semanticRow({ g, m, vault, now, runner }) {
   const st = semanticState(g);
-  const spend = `today $${graphSpendToday(vault, new Date(now)).toFixed(2)} of $${g.semantic.perDayUsd}`;
+  const spend = `today $${graphSpendToday(vault, new Date(now)).toFixed(2)} of $${g.semantic.perDayUsd}${runner && runner.host === 'codex' ? ' · via codex' : ''}`;
   if (!st.on) return { name: 'graph semantic', ok: false, detail: st.why, level: 'info' };
+  // A pass holding the lock is running whatever this process can resolve; only then does a missing CLI matter.
   const running = semanticRunning(vault, now);
   if (running) return { name: 'graph semantic', ok: true, detail: `running since ${hhmm(running.startedAt)} · ${spend}`, level: 'warn' };
+  if (!runner) return { name: 'graph semantic', ok: false, detail: 'needs the claude or codex CLI (the model pass runs through one of them)', level: 'info' };
   if (!m || !m.lastSemanticRun) return { name: 'graph semantic', ok: false, detail: `not run yet — the next scan starts it (every ${g.semantic.everyHours} h, ${spend})`, level: 'info' };
   if (m.lastSemanticError) return { name: 'graph semantic', ok: false, detail: `last run failed: ${m.lastSemanticError} — aos graph build --semantic`, level: 'warn' };
   const last = Date.parse(m.lastSemantic || m.lastSemanticRun);
@@ -256,17 +274,19 @@ function askYesNo(question) {
 }
 
 /** The foreground model pass: policy (D11), what it costs, y/N, then graph-build.js --semantic --force inline. */
-async function buildSemantic({ cfg, configDir, io, yes, ask = askYesNo, isTTY = !!process.stdin.isTTY }) {
+async function buildSemantic({ cfg, configDir, io, yes, ask = askYesNo, isTTY = !!process.stdin.isTTY, runner }) {
   const g = graphConfig({ vault: cfg.vault, userCfg: cfg });
   const st = semanticState(g);
   if (!st.on && st.auto) {
-    io.error(`graph: the semantic pass sends note text to Claude on your login, and provider is ${g.provider} — \`aos graph semantic on\` allows it anyway`);
+    io.error(`graph: the semantic pass sends note text to a hosted model (Claude or Codex) on your login, and provider is ${g.provider} — \`aos graph semantic on\` allows it anyway`);
     return 1;
   }
+  const r = runner === undefined ? semanticRunner(cfg.vault, cfg, g) : runner;
+  if (!r) { io.error('graph: the semantic pass needs the claude or codex CLI (neither was found)'); return 1; }
   const G = graphLib(cfg.vault);
   const graph = G.loadGraph(path.join(outDir(cfg.vault, g), 'graph.json'));
   const notes = graph ? new Set(graph.nodes.filter((n) => n.file_type === 'document' && n.source_file).map((n) => n.source_file)).size : null;
-  io.log(`graph: the semantic pass sends ${notes == null ? 'the vault\'s' : notes} notes' text to Claude (${(cfg.claude && cfg.claude.model) || 'haiku'}, on your login); only new or changed notes reach the model.`);
+  io.log(`graph: the semantic pass sends ${notes == null ? 'the vault\'s' : notes} notes' text to ${runnerLabel(r, cfg)}; only new or changed notes reach the model.`);
   io.log(`graph: today $${graphSpendToday(cfg.vault).toFixed(4)} of the $${g.semantic.perDayUsd} graph budget; calls stop at the cap and the rest follows on later runs.`);
   if (!yes) {
     if (!isTTY) { io.error('graph: not a terminal — pass --yes to run the semantic pass without the prompt'); return 1; }
@@ -312,7 +332,7 @@ async function run(args, opts = {}) {
     const { file, cfg } = loadAgenticos(configDir);
     if (sub === 'status') return status({ cfg, io });
     if (sub === 'semantic') { setSemantic({ file, cfg, value: semanticArg, io }); return 0; }
-    if (sub === 'build') return opts.semantic ? buildSemantic({ cfg, configDir, io, yes: !!opts.yes, ask: opts.ask, isTTY: opts.isTTY }) : build({ cfg, configDir, io });
+    if (sub === 'build') return opts.semantic ? buildSemantic({ cfg, configDir, io, yes: !!opts.yes, ask: opts.ask, isTTY: opts.isTTY, runner: opts.runner }) : build({ cfg, configDir, io });
     setEnabled({ file, cfg, on: sub === 'on', io });
     return 0;
   } catch (e) {

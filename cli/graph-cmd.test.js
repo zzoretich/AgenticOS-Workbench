@@ -216,10 +216,13 @@ test('the graph semantic doctor row: off, not yet run, failed, and ok with conce
   fs.mkdirSync(path.join(w.vault, 'brain', '_index'), { recursive: true });
   const now = Date.parse('2026-09-23T12:00:00Z');
   const marker = (m) => fs.writeFileSync(path.join(out, GC.MARKER), JSON.stringify({ lastStructural: '2026-09-23T11:00:00Z', nodes: 5, edges: 4, ...m }));
-  const row = (cfg) => GC.doctorRows({ cfg: { graph: { bin }, ...cfg }, vault: w.vault, now }).find((r) => r.name === 'graph semantic');
+  const CLAUDE = { host: 'claude', bin: '/x/claude' };
+  const row = (cfg, runner = CLAUDE) => GC.doctorRows({ cfg: { graph: { bin }, ...cfg }, vault: w.vault, now, runner }).find((r) => r.name === 'graph semantic');
   marker({});
   assert.deepEqual(row({ provider: 'none' }), { name: 'graph semantic', ok: false, detail: 'off under provider none (aos graph semantic on overrides)', level: 'info' });
   assert.match(row({}).detail, /^not run yet — the next scan starts it \(every 24 h, today \$0\.00 of \$1\)$/);
+  assert.match(row({}, { host: 'codex', bin: '/x/codex' }).detail, /today \$0\.00 of \$1 · via codex\)$/);
+  assert.deepEqual(row({}, null), { name: 'graph semantic', ok: false, detail: 'needs the claude or codex CLI (the model pass runs through one of them)', level: 'info' });
   marker({ lastSemanticRun: '2026-09-23T09:00:00Z', lastSemanticError: 'graphify extract exited 2: x' });
   assert.deepEqual(row({}), { name: 'graph semantic', ok: false, detail: 'last run failed: graphify extract exited 2: x — aos graph build --semantic', level: 'warn' });
   marker({ lastSemanticRun: '2026-09-23T09:00:00Z', lastSemantic: '2026-09-23T09:05:00Z', concepts: 40, semanticIncomplete: true });
@@ -239,12 +242,18 @@ test('build --semantic refuses a provider opt-out, needs --yes off a terminal, a
   const c = cfgOf(w);
   fs.writeFileSync(path.join(w.configDir, 'agenticos.json'), JSON.stringify({ ...c, provider: 'none' }));
   assert.equal(await GC.run(['build'], { configDir: w.configDir, io, semantic: true, yes: true }), 1);
-  assert.match(errs.pop(), /sends note text to Claude on your login, and provider is none — `aos graph semantic on` allows it anyway/);
+  assert.match(errs.pop(), /sends note text to a hosted model \(Claude or Codex\) on your login, and provider is none — `aos graph semantic on` allows it anyway/);
   fs.writeFileSync(path.join(w.configDir, 'agenticos.json'), JSON.stringify({ ...c, provider: 'claude' }));
-  assert.equal(await GC.run(['build'], { configDir: w.configDir, io, semantic: true, isTTY: false }), 1);
+  const runner = { host: 'claude', bin: '/x/claude' };
+  assert.equal(await GC.run(['build'], { configDir: w.configDir, io, semantic: true, isTTY: false, runner: null }), 1);
+  assert.match(errs.pop(), /needs the claude or codex CLI/);
+  assert.equal(await GC.run(['build'], { configDir: w.configDir, io, semantic: true, isTTY: false, runner }), 1);
   assert.match(errs.pop(), /pass --yes/);
-  assert.equal(await GC.run(['build'], { configDir: w.configDir, io, semantic: true, isTTY: true, ask: async () => false }), 0);
+  assert.equal(await GC.run(['build'], { configDir: w.configDir, io, semantic: true, isTTY: true, ask: async () => false, runner }), 0);
   assert.equal(logs.pop(), 'graph: not run');
+  assert.match(logs.join('\n'), /notes' text to Claude \(haiku, on your login\)/);
+  await GC.run(['build'], { configDir: w.configDir, io, semantic: true, isTTY: true, ask: async () => false, runner: { host: 'codex', bin: '/x/codex' } });
+  assert.match(logs.join('\n'), /notes' text to Codex \(your Codex default model, on your login\)/);
   assert.match(logs.join('\n'), /today \$0\.0000 of the \$1 graph budget/);
 });
 

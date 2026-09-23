@@ -87,3 +87,46 @@ test('without AOS_GRAPH_CLAUDE_BIN the shim refuses (it must never find itself o
   assert.equal(shim.main(GRAPHIFY_ARGV, { env: { PATH: '/bin' }, spawn: () => { throw new Error('spawned'); }, readStdin: () => '', out: sink(), err }), 127);
   assert.match(err.text, /AOS_GRAPH_CLAUDE_BIN is not set/);
 });
+
+// ── the Codex leg (spec 2026-09-23-codex-parity-gaps D3/D4): same argv from graphify, the answer from codex exec.
+function runCodex(argv, { call, env = {}, input = 'the prompt' } = {}) {
+  const calls = [];
+  const out = sink();
+  const err = sink();
+  const codexCall = call || (async (o) => { calls.push(o); return { text: '{"nodes":[]}', usage: { inputTokens: 1000, cachedInputTokens: 400, outputTokens: 60 }, usd: 0.004, ms: 900, model: 'gpt-5-mini' }; });
+  return Promise.resolve(shim.main(argv, { env: { AOS_GRAPH_RUNNER: 'codex', AOS_GRAPH_CODEX_BIN: '/x/codex', ...env }, readStdin: () => input, out, err, codexCall, mkTemp: () => fs.mkdtempSync(path.join(os.tmpdir(), 'gcx-')) }))
+    .then((code) => ({ code, calls, out: out.text, err: err.text }));
+}
+
+test('codex leg: one codex call per graphify call, answered as the claude result envelope graphify parses', async () => {
+  const r = await runCodex(GRAPHIFY_ARGV);
+  assert.equal(r.code, 0);
+  assert.equal(r.calls.length, 1);
+  assert.equal(r.calls[0].prompt, 'the prompt');
+  assert.equal(r.calls[0].system, shim.SYSTEM);
+  assert.equal(r.calls[0].effort, 'low');
+  assert.equal(r.calls[0].feature, 'graph:semantic', 'codexCall ledgers the row under the graph family');
+  assert.equal(r.calls[0].bin, '/x/codex');
+  const env = JSON.parse(r.out);
+  assert.equal(env.type, 'result');
+  assert.equal(env.result, '{"nodes":[]}');
+  assert.deepEqual(env.usage, { input_tokens: 600, cache_read_input_tokens: 400, cache_creation_input_tokens: 0, output_tokens: 60 });
+  assert.deepEqual(Object.keys(env.modelUsage), ['gpt-5-mini']);
+  assert.equal(env.stop_reason, 'end_turn');
+});
+
+test('codex leg: --help and --version answer locally; the cap refuses; a failed call or a missing binary fails the chunk', async () => {
+  const help = await runCodex(['--help'], { call: async () => { throw new Error('must not be called'); } });
+  assert.equal(help.code, 0);
+  assert.match(help.out, /codex exec/);
+  fs.writeFileSync(SPEND_PATH, JSON.stringify({ ts: new Date().toISOString(), feature: 'graph:semantic', provider: 'codex', usd: 0.5 }) + '\n');
+  const capped = await runCodex(GRAPHIFY_ARGV, { call: async () => { throw new Error('must not be called'); } });
+  assert.equal(capped.code, 1);
+  assert.match(capped.err, /graph budget is spent/);
+  fs.unlinkSync(SPEND_PATH);
+  const failed = await runCodex(GRAPHIFY_ARGV, { call: async () => { throw new Error('codex exec exited 1: boom'); } });
+  assert.equal(failed.code, 1);
+  assert.equal(failed.out, '', 'nothing graphify could parse as an answer');
+  const noBin = await runCodex(GRAPHIFY_ARGV, { env: { AOS_GRAPH_CODEX_BIN: '' } });
+  assert.equal(noBin.code, 127);
+});
