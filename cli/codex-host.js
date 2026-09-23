@@ -394,6 +394,11 @@ function pluginList(bin, run) {
 }
 /** 'plugin' when this Codex CLI installs plugins (`codex plugin list --json` answers with a list), else 'direct'. */
 function codexInstallMode(bin, run = defaultRun) { return bin && pluginList(bin, run) ? 'plugin' : 'direct'; }
+/** Whether agenticos@agenticos-workbench is installed in this Codex. */
+function codexPluginInstalled(bin, run = defaultRun) {
+  const list = bin ? pluginList(bin, run) : null;
+  return !!(list && list.installed.some((p) => p && p.pluginId === PLUGIN_ID && p.installed !== false));
+}
 
 /**
  * Add the marketplace and install (or reinstall) the plugin. `source` is a local checkout or owner/repo. An existing
@@ -509,7 +514,7 @@ function codexPluginStatus({ cfg, launcher, run = defaultRun, env = process.env,
 
 module.exports = {
   HOOKS, GENERATED_MARKER, PLUGIN_NAME, MARKETPLACE, PLUGIN_ID, PLUGIN_ROOT_REF, PLUGIN_MARKER,
-  pluginHookCommand, pluginMcpServers, pluginHookCount, codexInstallMode, installCodexPlugin, removeCodexPlugin,
+  pluginHookCommand, pluginMcpServers, pluginHookCount, codexInstallMode, codexPluginInstalled, installCodexPlugin, removeCodexPlugin,
   removeDirectWiring, trustedPluginHooks, codexPluginStatus,
   codexHome, hooksFile, skillsDir, codexBin, codexLoggedIn, memoriesEnabled,
   hookCommand, isOurs, mergeHooks, stripHooks, countOurEvents,
