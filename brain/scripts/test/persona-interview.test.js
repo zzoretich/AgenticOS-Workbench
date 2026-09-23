@@ -29,6 +29,9 @@ test('normalizeAnswers validates and coerces', () => {
   assert.equal(a.schedule, false);
   // execution amendment 2026-09-15 (A28): names are 2–40 chars, so the short fixtures are 'Ab', not 'A'.
   assert.equal(I.normalizeAnswers({ name: 'Ab' }, { defaultModel: 'sonnet' }).dutyModel, 'sonnet');
+  assert.equal(I.normalizeAnswers({ name: 'Ab' }, {}).dutyCodexModel, null, 'blank → the user\'s Codex default');
+  assert.equal(I.normalizeAnswers({ name: 'Ab', dutyCodexModel: ' gpt-5 ' }, {}).dutyCodexModel, 'gpt-5');
+  assert.equal(I.QUESTIONS.find((q) => q.key === 'dutyCodexModel').when({ codex: false }), false, 'asked only where Codex is a host');
   assert.equal(I.normalizeAnswers({ name: 'Ab' }, {}).schedule, true);
   assert.throws(() => I.normalizeAnswers({}, {}), /name is required/);
   assert.throws(() => I.normalizeAnswers({ name: 'Ab', dutyEffort: 'max' }, {}), /dutyEffort/);
