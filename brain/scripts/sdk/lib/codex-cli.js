@@ -53,6 +53,14 @@ function recordedBin() {
   return typeof b === 'string' && b ? b : null;
 }
 
+/** agenticos.json `hosts.codex.home` (what `aos init` recorded), or null: headless calls use the same Codex home. */
+function recordedHome() {
+  let cfg = null;
+  try { cfg = loadConfig(); } catch { return null; }
+  const h = cfg && cfg.hosts && cfg.hosts.codex && cfg.hosts.codex.home;
+  return typeof h === 'string' && h ? h : null;
+}
+
 /** Recorded path (while it is still an executable file) → PATH (`command -v codex`) → the usual install
  *  locations, else null. opts.recorded / opts.lookup / opts.candidates override the probes (tests). */
 function resolveCodexBin(opts = {}) {
@@ -89,9 +97,11 @@ function buildArgs({ model, effort, schemaFile, outFile }) {
   return args;
 }
 
-function headlessEnv(base = process.env) {
+/** Headless, never CLAUDECODE, and the recorded Codex home unless the environment names one already. */
+function headlessEnv(base = process.env, codexHome = recordedHome()) {
   const env = { ...base, AOS_HEADLESS: '1' };
   delete env.CLAUDECODE;
+  if (codexHome && !env.CODEX_HOME) env.CODEX_HOME = codexHome;
   return env;
 }
 

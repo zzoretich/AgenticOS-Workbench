@@ -114,7 +114,7 @@ function plan(routine, cfg, deps) {
     const model = r.host === 'codex' ? r.model : spec.model;
     const outFile = r.host === 'codex' ? path.join(require('os').tmpdir(), `aos-routine-${routine.slug}-${process.pid}.txt`) : null;
     const { argv, stdin } = runnerArgs(r.host, { ...spec, model, outFile });
-    return { cmd: r.bin, args: argv, stdin, env: headlessEnv(deps.env), feature: `routine:${routine.slug}`, runner: r.host, model, outFile };
+    return { cmd: r.bin, args: argv, stdin, env: headlessEnv(deps.env, { codexHome: r.home }), feature: `routine:${routine.slug}`, runner: r.host, model, outFile };
   }
   const argv = routine.argv.map(a => expandArgv(a, deps));
   return { cmd: argv[0], args: argv.slice(1), env: { ...deps.env }, feature: null };

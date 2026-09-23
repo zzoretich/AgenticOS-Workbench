@@ -21,3 +21,6 @@ delete process.env.AOS_HEADLESS;
 // Never the developer's real ~/.claude: the collectors and the orphan sweep (which deletes) read PATHS.CLAUDE_CONFIG_DIR,
 // so every brain test process gets a private, empty Claude config dir unless a test pins its own.
 if (!process.env.CLAUDE_CONFIG_DIR) process.env.CLAUDE_CONFIG_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-test-cfg-'));
+// The same for Codex: its config.toml names the default model that pricing reads, and its sessions are what the host
+// collectors scan. A developer with Codex installed must see what CI sees.
+if (!process.env.CODEX_HOME) process.env.CODEX_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-test-codex-'));
