@@ -79,8 +79,11 @@ did not write (commit subjects, correction quotes, journal lines), and today it 
 | Codex only (plugin · direct) | nothing new; scheduled duties | cwd `persona/` + `--add-dir` roots, pinned script roots, guard | sandbox refuses the write; a guarded change → restored, FAILED flag, notification |
 | Both | nothing new | the host `persona.runner` resolves to | as above for that host |
 
-The one difference: under Codex the persona trust files are writable *during* a run and restored after it (D4/D6);
-under Claude they are never writable. Recorded in D4, and closed by moving trust state out of the vault (below).
+The one difference: under Codex the persona trust files in `persona/` (`IDENTITY.md`, `duties/`, `autoapply.json`,
+`flag-closer/`, `repos.json`, `ledger.jsonl`) are writable *during* a run and restored after it (D4/D6); under Claude
+they are never writable. Routine files are not in that set: a live vault keeps every routine, the heartbeat's command
+`argv` included, in `brain/routines/` (the template's `persona/routines/` is copied there at install), which is denied
+under Claude and outside every Codex root. Closed fully by moving trust state out of the vault (below).
 
 ## 6. Testing
 
@@ -101,7 +104,7 @@ under Claude they are never writable. Recorded in D4, and closed by moving trust
 
 ## 7. Out of scope (the rest of Proposal 1)
 
-Moving the runtime and the trust state out of the vault (closes the Codex mid-run window: a command routine such as
-the 30-minute heartbeat that fires *during* a Codex duty reads the live routine file); structured checks in place of
+Moving the runtime and the trust state out of the vault (closes the Codex window in which a trust file is changed
+during a run and read before the check restores it, e.g. by a second duty starting meanwhile); structured checks in place of
 shell recipes; `brain/_index` stays writable to Codex duties (BRAIN.md injection persistence, the S5 class);
 prompt routines keep their own `tools:` (read-only by default).

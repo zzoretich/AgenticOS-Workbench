@@ -87,6 +87,8 @@ spent. A duty never runs `git commit`: `STATE.md`
 and `journal/` are ignored by the vault's `.gitignore`, and anything else it edits (inside its write
 scope, below) stays in the working tree for you to review. Env: `PERSONA_MODEL`, `PERSONA_EFFORT`, `PERSONA_LOG_DIR`,
 `PERSONA_TOOLS`, `PERSONA_WRITES`, `PERSONA_MAX_USD`, `PERSONA_TIMEOUT`, `PERSONA_CLAUDE_BIN`, `AOS_NODE`.
+`PERSONA_NAME` is set by the schedules (plists and cron lines) so that `aos persona rename` has
+something to re-render; the runner takes the name from `IDENTITY.md` and never reads it.
 
 ### What a duty may write
 
@@ -105,14 +107,14 @@ what it can write, on both hosts (`docs/superpowers/specs/2026-09-23-duty-write-
   refuses `brain/scripts/`, `workspaces/`, `.obsidian/` and the vault's `.git`. A file entry grants its folder
   (Codex roots are folders); a file at the vault root cannot be granted.
 - **Both**: the persona scripts a duty may call refuse a `--root`, `--file` or file argument outside the vault under
-  `AOS_HEADLESS=1`. Before the run, `persona/duty-guard.js` copies `IDENTITY.md`, `duties/`, `routines/`,
-  `autoapply.json`, `flag-closer/` and `repos.json` to `agenticos-duty-guard/` next to `agenticos.json`; after it,
-  any of them the duty added, changed or removed is restored, the duty's version kept in
+  `AOS_HEADLESS=1`. Before the run, `persona/duty-guard.js` copies the persona's trust files (`IDENTITY.md`,
+  `duties/`, `autoapply.json`, `flag-closer/`, `repos.json`) to `agenticos-duty-guard/` next to `agenticos.json`;
+  after it, any of them the duty added, changed or removed is restored, the duty's version kept in
   `persona/journal/logs/guard-<duty>-<time>/`, `ledger.jsonl` keeps only appended `filed` events, `STATE.md` gets a
-  flag and the run ends FAILED. Under Codex those files are writable during the run and restored after it; under
-  Claude Code they are never writable.
-`PERSONA_NAME` is set by the schedules (plists and cron lines) so that `aos persona rename` has
-something to re-render; the runner takes the name from `IDENTITY.md` and never reads it.
+  flag and the run ends FAILED. Under Codex those files sit in the duty's workspace, so they are writable during the
+  run and restored after it; under Claude Code they are never writable.
+- **Routine files** (`brain/routines/`, schedules, `tools:`, a command routine's `argv`) are outside every duty's
+  reach on both hosts: denied under Claude Code, outside every Codex root.
 
 Each duty is a routine file, `brain/routines/<duty>.md` (`kind: duty`, `guarded: true`, a five-field
 cron `schedule:`). Its schedule is rendered from that file through `extras/schedule/launchd/routine.plist.tmpl`
