@@ -96,6 +96,7 @@ test("chatRoute: claude when the scripts saw a login or resolved claude; local f
   assert.equal(chatRoute({ ...base, name: "ollama", claude: { loggedIn: false, checkedAt: "" } }), "local");
   assert.equal(chatRoute({ ...base, name: "ollama", claude: { loggedIn: true, checkedAt: "" } }), "claude", "Ollama up but the reasoner is a Claude model");
   assert.equal(chatRoute({ ...base, name: "claude" }), "claude");
+  assert.equal(chatRoute({ ...base, name: "codex" }), "local", "Codex-only: the script path, where the reasoner falls back to Codex");
 });
 
 test("a failed recall still asks, with no CONTEXT block", async () => {

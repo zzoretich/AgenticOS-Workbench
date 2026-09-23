@@ -493,7 +493,12 @@ function status() {
     const codexState = (state && state.codex) || {};
     out.log(`codex      bin=${codexState.bin || codexBin(cfg) || 'not found'} login=${typeof codexState.loggedIn === 'boolean' ? codexState.loggedIn : 'unprobed'} home=${CH.codexHome(cfg)} install=${((cfg.hosts || {}).codex || {}).install || 'direct'}`);
   }
-  out.log(`reasoner   model=${reasonerModel} provider=claude effort=${reasonerEffort}`);
+  // The host that answers the reasoner (sdk/lib/provider.js resolveProviderForRole): Claude when it is a host and not known
+  // to be logged out, else Codex when it is a host; an explicit provider codex puts Codex first.
+  const loggedOut = (h) => !!(state && state[h] && state[h].loggedIn === false);
+  const reasonerHost = (cfg.provider === 'codex' ? ['codex', 'claude'] : ['claude', 'codex']).find((h) => hosts[h] && !loggedOut(h)) || 'none';
+  const codexReasonerModel = str(cfg.reasoner, 'codexModel') || str(vaultCfg.reasoner, 'codexModel') || str(cfg.codex, 'model') || str(vaultCfg.codex, 'model') || 'codex-default';
+  out.log(`reasoner   model=${reasonerHost === 'codex' ? codexReasonerModel : reasonerModel} provider=${reasonerHost} effort=${reasonerEffort}`);
   out.log(`spend      today (hooks) $${sumUsd(spend, isHookFeature).toFixed(4)} / cap $${hookCap} (${hookKey}.perDayUsd)`);
   out.log(`spend      today (duties) $${sumUsd(spend, isDutyFeature).toFixed(4)} / cap $${dutyCap}`);
   out.log(`spend      today (reasoner) $${sumUsd(spend, isReasonFeature).toFixed(4)} / cap $${reasonCap}`);

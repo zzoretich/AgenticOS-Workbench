@@ -41,20 +41,20 @@ export interface VaultConfig {
   recallRoots: string[];
   quickLinks: string[];
   roster: { orchestrators: Record<string, OrchestratorEntry> };
-  scan: { fileMapBudget: number; embedBudget: number; fileMapBudgetUnderClaude: number; insightsUnderClaude: boolean; autoSweepOrphans: boolean };
+  scan: { fileMapBudget: number; embedBudget: number; fileMapBudgetUnderClaude: number; insightsUnderClaude: boolean; fileMapBudgetUnderCodex: number; insightsUnderCodex: boolean; autoSweepOrphans: boolean };
   provider: ProviderMode;
   claude: { model: string; perCallUsd: number; perDayUsd: number };
-  codex: { model: string | null; perCallUsd: number; perDayUsd: number };
-  // The reasoner role: a Claude model with its own caps (reason:* ledger rows), used by the Chat tab.
-  reasoner: { model: string; perCallUsd: number; perDayUsd: number; effort: string };
+  codex: { model: string | null; effort: string; perCallUsd: number; perDayUsd: number };
+  // The reasoner role: a Claude model with its own caps (reason:* ledger rows), used by the Chat tab; codexModel when Codex answers it.
+  reasoner: { model: string; codexModel: string | null; perCallUsd: number; perDayUsd: number; effort: string };
   ollama: { host: string; port: number };
   telemetry: { enabled: boolean; redact: boolean; retentionDays: number; staleAfterMinutes: number };
   updates: { check: boolean; intervalHours: number };
   cost: { enabled: boolean; monthlyBudget: number | null };
   graph: { enabled: boolean; out: string; timeoutSec: number; staleDays: number; semantic: { enabled: boolean | "auto"; everyHours: number; perCallUsd: number; perDayUsd: number; tokenBudget: number; timeoutSec: number } };
-  persona: { enabled: boolean; runner: "auto" | "claude" | "codex"; perDutyUsd: number; perDayUsd: number; watchdog: { graceMinutes: number; notify: boolean }; tick: { flagAgeDays: number; earlyReflect: { corrections: number; dutyFailures: number } }; autoapply: { minVerified: number } };
+  persona: { enabled: boolean; runner: "auto" | "claude" | "codex"; codexModel: string | null; perDutyUsd: number; perDayUsd: number; watchdog: { graceMinutes: number; notify: boolean }; tick: { flagAgeDays: number; earlyReflect: { corrections: number; dutyFailures: number } }; autoapply: { minVerified: number } };
   // Routines (brain/routines/*.md): caps for the prompt kind and the launchd labels the Routines tab lists read-only.
-  routines: { enabled: boolean; runner: "auto" | "claude" | "codex"; perRunUsd: number; perDayUsd: number; tools: string; externalLabels: string[] };
+  routines: { enabled: boolean; runner: "auto" | "claude" | "codex"; codexModel: string | null; perRunUsd: number; perDayUsd: number; tools: string; externalLabels: string[] };
 }
 
 export interface ProviderState {
@@ -77,18 +77,18 @@ export const VAULT_CONFIG_DEFAULTS: VaultConfig = {
     "- Daily logs: `<year>/<year>-<month>/<date>.md`",
   ],
   roster: { orchestrators: {} },
-  scan: { fileMapBudget: 40, embedBudget: 40, fileMapBudgetUnderClaude: 0, insightsUnderClaude: false, autoSweepOrphans: false },
+  scan: { fileMapBudget: 40, embedBudget: 40, fileMapBudgetUnderClaude: 0, insightsUnderClaude: false, fileMapBudgetUnderCodex: 0, insightsUnderCodex: false, autoSweepOrphans: false },
   provider: "auto",
   claude: { model: "haiku", perCallUsd: 0.05, perDayUsd: 0.5 },
-  codex: { model: null, perCallUsd: 0.05, perDayUsd: 0.5 },
-  reasoner: { model: "claude-opus-5", perCallUsd: 0.5, perDayUsd: 5.0, effort: "medium" },
+  codex: { model: null, effort: "low", perCallUsd: 0.05, perDayUsd: 0.5 },
+  reasoner: { model: "claude-opus-5", codexModel: null, perCallUsd: 0.5, perDayUsd: 5.0, effort: "medium" },
   ollama: { host: "127.0.0.1", port: 11434 },
   telemetry: { enabled: true, redact: true, retentionDays: 30, staleAfterMinutes: 30 },
   updates: { check: true, intervalHours: 24 },
   cost: { enabled: false, monthlyBudget: null },
   graph: { enabled: true, out: "brain/graphify-out", timeoutSec: 120, staleDays: 7, semantic: { enabled: "auto", everyHours: 24, perCallUsd: 0.25, perDayUsd: 1.0, tokenBudget: 20000, timeoutSec: 1800 } },
-  persona: { enabled: true, runner: "auto", perDutyUsd: 2.0, perDayUsd: 6.0, watchdog: { graceMinutes: 45, notify: true }, tick: { flagAgeDays: 7, earlyReflect: { corrections: 3, dutyFailures: 2 } }, autoapply: { minVerified: 3 } },
-  routines: { enabled: true, runner: "auto", perRunUsd: 2.0, perDayUsd: 6.0, tools: "Read,Glob,Grep", externalLabels: [] },
+  persona: { enabled: true, runner: "auto", codexModel: null, perDutyUsd: 2.0, perDayUsd: 6.0, watchdog: { graceMinutes: 45, notify: true }, tick: { flagAgeDays: 7, earlyReflect: { corrections: 3, dutyFailures: 2 } }, autoapply: { minVerified: 3 } },
+  routines: { enabled: true, runner: "auto", codexModel: null, perRunUsd: 2.0, perDayUsd: 6.0, tools: "Read,Glob,Grep", externalLabels: [] },
 };
 
 export const PROVIDER_STATE_PATH = "brain/_index/provider-state.json";
