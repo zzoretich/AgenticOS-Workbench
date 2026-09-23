@@ -143,8 +143,50 @@ test('a duty that journals succeeds with exit 0', () => {
   assert.equal(r.status, 0, r.stderr);
   assert.match(fs.readFileSync(path.join(s.logDir, 'duty-testduty.log'), 'utf8'), /duty=testduty done \(exit 0\)/);
   const args = fs.readFileSync(argsFile, 'utf8');
-  assert.match(args, /^--append-system-prompt\nToday is \d{4}-\d{2}-\d{2} \(local time \d{2}:\d{2}\)\. This run's journal file is .*\/persona\/journal\/\d{4}-\d{2}-\d{2}\.md\.\n\n# Atlas\n/m, 'the system prompt opens with the date and journal path (a post-midnight duty otherwise journals into yesterday)');
+  assert.match(args, /^--append-system-prompt\nToday is \d{4}-\d{2}-\d{2} \(local time \d{2}:\d{2}\)\. This run's journal file is .*\/persona\/journal\/\d{4}-\d{2}-\d{2}\.md\. Use this date and time for every date you write; timestamps in tool output are UTC\.\n\n# Atlas\n/m, 'the system prompt opens with the date and journal path (a post-midnight duty otherwise journals into yesterday)');
   assert.ok(!fs.readFileSync(path.join(s.vault, 'persona', 'STATE.md'), 'utf8').includes('FAILED'));
+});
+
+/** A TZ whose local day differs from the UTC day right now: UTC-12 before 12:00 UTC, UTC+14 from then on. */
+function offDayTz() {
+  const h = new Date().getUTCHours();
+  const [tz, offsetH] = h < 12 ? ['Etc/GMT+12', -12] : ['Etc/GMT-14', 14];
+  const day = new Date(Date.now() + offsetH * 3600e3).toISOString().slice(0, 10);
+  return { tz, day, utcDay: new Date().toISOString().slice(0, 10) };
+}
+
+test('the duty prompt arrives with <today YYYY-MM-DD>, <today>, <YYYY-MM-DD> and <HH:MM> filled with the LOCAL day and time', () => {
+  const s = sandbox();
+  const { tz, day, utcDay } = offDayTz();
+  assert.notEqual(day, utcDay);
+  fs.writeFileSync(path.join(s.vault, 'persona', 'duties', 'testduty.md'),
+    'Append to `journal/<today YYYY-MM-DD>.md`:\n## <HH:MM> — duty: testduty\nSTATE line `<today> OK` · sitrep <YYYY-MM-DD> · keep <date> and <slug>\n');
+  const journal = path.join(s.vault, 'persona', 'journal', `${day}.md`);
+  const argsFile = path.join(s.vault, 'claude-args.txt');
+  const r = run(['testduty'], { ...s.env, TZ: tz, FAKE_JOURNAL: journal, FAKE_ARGS: argsFile });
+  assert.equal(r.status, 0, r.stderr);
+  const prompt = fs.readFileSync(argsFile, 'utf8').split('\n--model\n')[0];
+  assert.ok(prompt.includes(`journal/${day}.md`), 'the journal path names the local day, not the UTC day');
+  assert.match(prompt, /^## \d{2}:\d{2} — duty: testduty$/m);
+  assert.ok(prompt.includes(`\`${day} OK\``) && prompt.includes(`sitrep ${day}`));
+  assert.ok(!/<today|<YYYY-MM-DD>|<HH:MM>/.test(prompt), 'no date placeholder is left for the model to guess');
+  assert.ok(prompt.includes('keep <date> and <slug>'), 'other placeholders are left alone');
+});
+
+test('an entry filed under the UTC day still meets the contract, with a log line naming the misfiled journal', () => {
+  const s = sandbox();
+  const { tz, day, utcDay } = offDayTz();
+  const utcJournal = path.join(s.vault, 'persona', 'journal', `${utcDay}.md`);
+  const r = run(['testduty'], { ...s.env, TZ: tz, FAKE_JOURNAL: utcJournal });
+  assert.equal(r.status, 0, r.stderr);
+  const log = fs.readFileSync(path.join(s.logDir, 'duty-testduty.log'), 'utf8');
+  assert.match(log, new RegExp(`journal entry landed in .*${utcDay}\\.md \\(the UTC day\\)`));
+  assert.match(log, /duty=testduty done \(exit 0\)/);
+  assert.ok(!fs.existsSync(path.join(s.vault, 'persona', 'journal', `${day}.md`)), 'no runner FAILED entry in the local journal');
+  assert.ok(!fs.readFileSync(path.join(s.vault, 'persona', 'STATE.md'), 'utf8').includes('FAILED'));
+  // A second run that journals nowhere still fails: the UTC fallback is a before/after delta too.
+  const r2 = run(['testduty'], { ...s.env, TZ: tz });
+  assert.equal(r2.status, 1);
 });
 
 test('the daily duty cap (persona.perDayUsd over duty:* rows) skips the duty with exit 0, a log line and a SKIPPED journal entry', () => {

@@ -76,7 +76,18 @@ MAX_USD="${PERSONA_MAX_USD:-}"     # empty → persona.perDutyUsd from --check b
 PERSONA_TOOLS="${PERSONA_TOOLS:-Read,Write,Edit,Glob,Grep,Bash(git status:*),Bash(git log:*),Bash(git diff:*),Bash(date:*),Bash(ls:*),Bash(grep:*),Bash(wc:*),Bash(tail:*),Bash(head:*),Bash($NODE $VAULT/brain/scripts/persona/sitrep-state.js:*),Bash($NODE $VAULT/brain/scripts/persona/scan-arsenal.js:*),Bash($NODE $VAULT/brain/scripts/persona/ledger.js:*),Bash($NODE $VAULT/brain/scripts/persona/reflect.js:*),Bash(node $VAULT/brain/scripts/persona/sitrep-state.js:*),Bash(node $VAULT/brain/scripts/persona/scan-arsenal.js:*),Bash(node $VAULT/brain/scripts/persona/ledger.js:*),Bash(node $VAULT/brain/scripts/persona/reflect.js:*),Bash($NODE brain/scripts/persona/reflect.js:*),Bash(node brain/scripts/persona/reflect.js:*),Bash($NODE brain/scripts/persona/ledger.js:*),Bash(node brain/scripts/persona/ledger.js:*)}"
 RECORD="$SCRIPT_DIR/record-spend.js"     # sibling: repo checkout in tests, <vault>/brain/scripts/persona/ when installed
 TODAY="$(date +%Y-%m-%d)"
+NOW="$(date +%H:%M)"
 JOURNAL="$PERSONA/journal/$TODAY.md"
+# The UTC day's journal, when it differs from the local one (the last hours of every local day west of UTC):
+# a model that dates its entry from the UTC timestamps in tool output files it there. Counted by the contract
+# check below so a misfiled entry is a log warning, not a FAILED duty.
+UTC_JOURNAL="$PERSONA/journal/$(date -u +%Y-%m-%d).md"
+[ "$UTC_JOURNAL" = "$JOURNAL" ] && UTC_JOURNAL=""
+# duty_entries <file>: journal headers this duty wrote in <file> (0 when the file is missing).
+duty_entries() {
+  c=$(grep -c "duty: $DUTY" "$1" 2>/dev/null || true)
+  echo "${c:-0}"
+}
 
 if [ -f "$PERSONA/DISABLED" ]; then
   echo "persona DISABLED — skipping duty '$DUTY'"
@@ -114,8 +125,14 @@ fi
 # Hooks do not run under AOS_HEADLESS=1, so the persona is injected here instead.
 # The date line pins "today": a duty running just after midnight otherwise infers the date from STATE.md and the
 # journal (both still yesterday's), appends its entry to yesterday's file, and the contract check below reads FAILED.
-SYSTEM="$( { echo "Today is $TODAY (local time $(date +%H:%M)). This run's journal file is $JOURNAL."; echo; cat "$PERSONA/IDENTITY.md" 2>/dev/null; echo; echo '---'; cat "$PERSONA/STATE.md" 2>/dev/null; } )"
-PROMPT="$(cat "$DUTY_FILE")"
+SYSTEM="$( { echo "Today is $TODAY (local time $NOW). This run's journal file is $JOURNAL. Use this date and time for every date you write; timestamps in tool output are UTC."; echo; cat "$PERSONA/IDENTITY.md" 2>/dev/null; echo; echo '---'; cat "$PERSONA/STATE.md" 2>/dev/null; } )"
+# The date line alone is not enough: a duty file says "append to journal/<today YYYY-MM-DD>.md" and "## <HH:MM>", and
+# a small model fills those from the UTC ISO timestamps its scripts print — after 20:00 EDT that is tomorrow's file.
+# So the placeholders arrive already filled with the local day and time. Literal index() replace, not gsub: no regex.
+PROMPT="$(awk -v today="$TODAY" -v now="$NOW" '
+  function fill(s, from, to,   out, i) { out = ""; while ((i = index(s, from)) > 0) { out = out substr(s, 1, i - 1) to; s = substr(s, i + length(from)) } return out s }
+  { s = fill($0, "<today YYYY-MM-DD>", today); s = fill(s, "<today>", today); s = fill(s, "<YYYY-MM-DD>", today); print fill(s, "<HH:MM>", now) }
+' "$DUTY_FILE")"
 
 if [ "$DRY_RUN" = "--dry-run" ]; then
   if [ "$RUNNER" = "codex" ]; then
@@ -178,7 +195,8 @@ if [ -n "$HELPER" ] && [ -f "$HELPER" ] && [ -n "$NODE" ] && [ -x "$NODE" ]; the
 fi
 
 echo "[$(date)] duty=$DUTY runner=$RUNNER model=$MODEL effort=$EFFORT budget=$MAX_USD start" >> "$LOG"
-BEFORE_COUNT=$(grep -c "duty: $DUTY" "$JOURNAL" 2>/dev/null || true); BEFORE_COUNT=${BEFORE_COUNT:-0}
+BEFORE_COUNT=$(duty_entries "$JOURNAL")
+UTC_BEFORE=0; [ -n "$UTC_JOURNAL" ] && UTC_BEFORE=$(duty_entries "$UTC_JOURNAL")
 OUT="$(mktemp "${TMPDIR:-/tmp}/duty-$DUTY.XXXXXX")"
 
 IN=""
@@ -217,8 +235,13 @@ fi
 rm -f "$OUT" "$OUT.msg"; [ -n "$IN" ] && rm -f "$IN"
 
 # Duty contract check: the duty must have added a NEW journal entry this run
-# (a plain grep would match a prior run's watchdog entry and self-satisfy).
-AFTER_COUNT=$(grep -c "duty: $DUTY" "$JOURNAL" 2>/dev/null || true); AFTER_COUNT=${AFTER_COUNT:-0}
+# (a plain grep would match a prior run's watchdog entry and self-satisfy). An entry filed under the UTC day
+# still counts — the duty did its work — but it is logged so the misfiling is visible.
+AFTER_COUNT=$(duty_entries "$JOURNAL")
+if [ "$AFTER_COUNT" -le "$BEFORE_COUNT" ] && [ -n "$UTC_JOURNAL" ] && [ "$(duty_entries "$UTC_JOURNAL")" -gt "$UTC_BEFORE" ]; then
+  echo "[$(date)] duty=$DUTY journal entry landed in $UTC_JOURNAL (the UTC day), not $JOURNAL — counted" >> "$LOG"
+  AFTER_COUNT=$((BEFORE_COUNT + 1))
+fi
 if [ "$AFTER_COUNT" -le "$BEFORE_COUNT" ]; then
   {
     echo ""
