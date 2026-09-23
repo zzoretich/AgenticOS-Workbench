@@ -160,6 +160,14 @@ export class TerminalPanel {
     b?.term.focus();
   }
 
+  /** Makes a pool session the visible one — also for a session created outside the panel (WorkbenchView.runInTerm). */
+  activate(id: string): void {
+    if (!this.plugin.terminalPool.get(id)) return;
+    this.activeId = id;
+    this.renderTabs();
+    this.ensureBindingForActive();
+  }
+
   async createNewSession(): Promise<void> {
     try {
       const sess = this.plugin.terminalPool.create();
@@ -205,11 +213,7 @@ export class TerminalPanel {
         e.stopPropagation();
         this.plugin.terminalPool.remove(s.id);
       });
-      tab.addEventListener("click", () => {
-        this.activeId = s.id;
-        this.renderTabs();
-        this.ensureBindingForActive();
-      });
+      tab.addEventListener("click", () => { this.activate(s.id); });
     }
   }
 

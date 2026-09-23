@@ -1,0 +1,13 @@
+{"schema":1,"ts":"2026-08-01T10:00:00.000Z","event":"filed","slug":"ancient","kind":"self","target":"x","by":"reflect"}
+{"schema":1,"ts":"2026-08-02T10:00:00.000Z","event":"rejected","slug":"ancient","kind":"self","target":"x","by":"user","note":"out of the 28-day window"}
+{"schema":1,"ts":"2026-09-10T09:00:00.000Z","event":"filed","slug":"quiet-hooks","kind":"self","target":"hooks","by":"reflect"}
+{"schema":1,"ts":"2026-09-11T09:00:00.000Z","event":"approved","slug":"quiet-hooks","kind":"self","target":"hooks","by":"user","recheck":"true","commit":"abc1234"}
+{"schema":1,"ts":"2026-09-12T09:00:00.000Z","event":"filed","slug":"loud-wrap","kind":"vault","target":"wrap","by":"reflect"}
+{"schema":1,"ts":"2026-09-13T09:00:00.000Z","event":"rejected","slug":"loud-wrap","kind":"vault","target":"wrap","by":"user","note":"too noisy"}
+not json at all
+{"schema":1,"ts":"2026-09-14T09:00:00.000Z","event":"filed","slug":"idea-one","kind":"workflow","target":"standup","by":"reflect"}
+{"schema":1,"ts":"2026-09-15T09:00:00.000Z","event":"accepted","slug":"idea-one","kind":"workflow","target":"standup","by":"user"}
+{"schema":1,"ts":"2026-09-16T09:00:00.000Z","event":"filed","slug":"idea-two","kind":"product","target":"hud","by":"reflect"}
+{"schema":1,"ts":"2026-09-17T09:00:00.000Z","event":"dismissed","slug":"idea-two","kind":"product","target":"hud","by":"user","note":"duplicate"}
+{"schema":1,"ts":"2026-09-18T09:00:00.000Z","event":"verified","slug":"quiet-hooks","kind":"self","target":"hooks","by":"watchdog"}
+{"schema":1,"ts":"2026-09-18T09:00:00.000Z","event":"filed","slug":"trim-playbook","kind":"self","target":"persona/PLAYBOOK.md","by":"reflect"}
