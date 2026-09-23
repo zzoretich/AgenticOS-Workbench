@@ -100,7 +100,7 @@ npm run setup
 2. **Seed the vault** — the template files, a `brain/config.json` with the shipped defaults, and Obsidian's daily-notes settings. Existing files are kept.
 3. **Vendor the runtime** — the scripts, the `aos` subcommands, the persona templates and the schedule and cost sources into `<vault>/brain/scripts`, plus a symlink at `~/.local/bin/aos`.
 4. **Write `~/.claude/agenticos.json`** — the vault path, the node, `claude` and `codex` binaries it resolved, the enabled hosts, the provider (`auto`), spend caps, telemetry and feature flags. Honours `CLAUDE_CONFIG_DIR`.
-5. **Wire the hosts** — Claude Code: the plugin (hooks, the MCP server, slash commands and skills) from this repository's marketplace. Codex CLI: five hook entries in `~/.codex/hooks.json`, `codex mcp add agenticos`, and the 15 commands plus 6 skills generated as Codex skills under `~/.agents/skills/` (`$wrap`, `$remember`, …).
+5. **Wire the hosts** — Claude Code: the plugin (hooks, the MCP server, slash commands and skills) from this repository's marketplace. Codex CLI: five hook entries in `~/.codex/hooks.json`, `codex mcp add agenticos`, and the 16 commands plus 6 skills generated as Codex skills under `~/.agents/skills/` (`$wrap`, `$remember`, …).
 6. **Copy the Obsidian bundle** — into `<vault>/.obsidian/plugins/agentic-os/`, building it from the checkout when needed.
 7. **The Chief of Staff interview** — name your agent (say, *Atlas*), how it addresses you, its voice, what it should watch, the model and effort for background duties, and whether to schedule the daily duties.
 8. **First scan** — compiles `BRAIN.md`, builds the recall index.
@@ -320,6 +320,7 @@ Every runtime script is also reachable as `aos <name>` — `aos scan-vault`, `ao
 | Command | Does |
 |---|---|
 | `/remember <text>` | Append a note to this session's working memory; tag it `#promote` to make it permanent at `/wrap`. |
+| `/todo <text>` | Add a todo to `TODO.md`: "by Friday" becomes a 📅 due date, "urgent" a ⏫ priority, `#tags` stay; the Workbench To-Do tab shows it. |
 | `/wrap` | Session-end protocol: promote `#promote` items, extract this session's memories, summarise into today's daily note. |
 | `/feedback` · `/pattern` · `/project` | Capture a feedback rule, a decision pattern, or project context as a permanent memory. |
 | `/brain` · `/scan` | Show the current brain state; refresh the dashboard caches (full scan, `BRAIN.md`, recall index). |
@@ -403,7 +404,7 @@ flowchart LR
 ```
 brain/scripts      the runtime that gets vendored into your vault (hooks, collectors, recall, MCP server, persona)
 cli                the installer and the aos subcommands (persona, schedule, routines, cost, the Codex host) + two install rehearsals
-plugin             the Claude Code plugin: hooks.json, .mcp.json, bin/aos, 15 commands, 6 skills (also the source of the generated Codex skills)
+plugin             the Claude Code plugin: hooks.json, .mcp.json, bin/aos, 16 commands, 6 skills (also the source of the generated Codex skills)
 obsidian-plugin    the Agentic OS HUD (TypeScript, esbuild)
 vault-template     the seed vault (AGENTICOS.md, MEMORY.md, brain/ incl. the three duty routines, persona templates incl. the heartbeat watchdog, hourly tick and nightly reflect routines)
 extras             the launchd schedule template, the cost analyzer, optional Ollama helpers

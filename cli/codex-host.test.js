@@ -100,7 +100,7 @@ test('commandToSkill rewrites every Claude Code idiom and carries the marker', (
   assert.match(out, /> Host: Codex CLI\. Invoke as `\$remember`/);
 });
 
-test('generateSkills turns the real plugin into 21 marked skills, copies skill scripts, and never overwrites a foreign skill', () => {
+test('generateSkills turns the real plugin into 22 marked skills, copies skill scripts, and never overwrites a foreign skill', () => {
   const dir = tmp('aos-skills-');
   fs.mkdirSync(path.join(dir, 'brain'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'brain', 'SKILL.md'), '---\nname: brain\ndescription: the user\'s own brain skill\n---\nmine\n');
@@ -108,8 +108,8 @@ test('generateSkills turns the real plugin into 21 marked skills, copies skill s
   const r = CH.generateSkills({ pluginDir: PLUGIN, dir, launcher: LAUNCHER, config: CONFIG, io: { warn: (m) => warnings.push(m) } });
   assert.deepEqual(r.skipped, ['brain']);
   assert.equal(warnings.length, 1);
-  assert.equal(r.written.length, 18, 'fifteen commands and six skills, two shared names (wrap, cost), one foreign (brain)');
-  assert.equal(CH.countGenerated(dir), 18);
+  assert.equal(r.written.length, 19, 'sixteen commands and six skills, two shared names (wrap, cost), one foreign (brain)');
+  assert.equal(CH.countGenerated(dir), 19);
   assert.equal(fs.readFileSync(path.join(dir, 'brain', 'SKILL.md'), 'utf8').trim().endsWith('mine'), true);
   for (const name of r.written) {
     const text = fs.readFileSync(path.join(dir, name, 'SKILL.md'), 'utf8');
@@ -141,7 +141,7 @@ test('installCodexHost writes hooks.json, registers the MCP server once, generat
   assert.equal(r.mcp, 'added');
   assert.equal(state.registered, LAUNCHER);
   assert.ok(calls.some((c) => c.join(' ') === `/x/codex mcp add agenticos --env AOS_CONFIG=${CONFIG} --env AOS_HOST=codex -- sh ${LAUNCHER} mcp-server`));
-  assert.equal(r.skills.written.length, 19);
+  assert.equal(r.skills.written.length, 20);
   const doc = JSON.parse(fs.readFileSync(r.hooksFile, 'utf8'));
   assert.equal(CH.countOurEvents(doc), 5);
   // second run: present, unchanged
@@ -153,14 +153,14 @@ test('installCodexHost writes hooks.json, registers the MCP server once, generat
   assert.equal(st.loggedIn, true);
   assert.equal(st.hookEvents, 5);
   assert.equal(st.mcp, 'ok');
-  assert.equal(st.skills, 19);
+  assert.equal(st.skills, 20);
   assert.equal(st.memories, false);
   const rm = CH.removeCodexHost({ cfg: {}, bin: '/x/codex', run, env, dir });
   assert.equal(rm.hooksFileState, 'deleted');
   assert.equal(rm.hooksRemoved, 5);
   assert.equal(rm.mcp, 'removed');
   assert.equal(state.registered, null);
-  assert.equal(rm.skills.length, 19);
+  assert.equal(rm.skills.length, 20);
   assert.ok(!fs.existsSync(r.hooksFile));
   assert.equal(CH.codexHostStatus({ cfg: {}, launcher: LAUNCHER, run, env: { ...env, AOS_CODEX_BIN: '/x/codex' }, dir }).hookEvents, 0);
 });

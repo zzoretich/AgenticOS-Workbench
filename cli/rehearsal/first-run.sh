@@ -26,7 +26,7 @@ echo "== init"
 node "$ROOT/cli/aos.js" init --vault "$VAULT" --no-obsidian --provider none --persona-json "$ROOT/cli/fixtures/persona.json" --yes
 
 echo "== seed set"
-for f in MEMORY.md AGENTICOS.md .gitignore brain/config.json brain/_index/SESSION.md brain/_index/BRAIN.md \
+for f in MEMORY.md AGENTICOS.md TODO.md .gitignore brain/config.json brain/_index/SESSION.md brain/_index/BRAIN.md \
     brain/_index/MOC-reference.md brain/_index/MOC-projects.md brain/_index/MOC-patterns.md brain/_index/scanner-config.json \
     brain/memory/user/profile.md brain/patterns/README.md templates/daily-note.md templates/meeting-note.md \
     templates/decision-record.md templates/project-note.md .obsidian/daily-notes.json \

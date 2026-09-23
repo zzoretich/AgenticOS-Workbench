@@ -22,6 +22,7 @@ How it runs (automatic, via the `agenticos` Claude Code plugin, or the hook entr
 Under Codex CLI every `/name` below is the skill `$name` (`$wrap`, `$remember`, …) and the MCP tools are `mcp__agenticos__<tool>`.
 
 - `/remember <text>` — add to `SESSION.md`; tag `#promote` to make it permanent at wrap
+- `/todo <text>` — add a todo to `TODO.md` (Tasks syntax: `📅` due, `⏫ 🔼 🔽` priority, `#tags`); the Workbench To-Do tab lists and ticks them
 - `/feedback` · `/pattern` · `/project` — write a memory of that type
 - `/wrap` — promote `#promote` items, extract this session's memories in-session (`wrap_session`), summarize into today's daily note, reset `SESSION.md`
 - `/brain` — show current state · `/scan` — refresh the dashboard

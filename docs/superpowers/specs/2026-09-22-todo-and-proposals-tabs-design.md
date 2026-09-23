@@ -106,7 +106,9 @@ from the tags in use, and a collapsed "Done this week (n)" group. Live refresh o
   line (natural dates such as "by Oct 1" become `📅 YYYY-MM-DD`; "urgent" or "!" becomes `⏫`), append it
   under `## Open` in `<vault>/TODO.md` (creating the file from the seed shape if missing), confirm in one line.
 - `vault-template/TODO.md` seed; `vault-template/AGENTICOS.md` capture vocabulary gains `/todo`.
-- Counts: `cli/plugin-commands.test.js` → 16 commands; `cli/codex-host.test.js` → 19 skills; README
+- Counts: `cli/plugin-commands.test.js` → 16 commands (plus a test that the command's embedded seed equals
+  `vault-template/TODO.md`); generated Codex skills 19 → 20 (18 → 19 with a foreign skill) in
+  `cli/codex-host.test.js` and `cli/aos.test.js`; `cli/rehearsal/first-run.sh` checks the seeded `TODO.md`; README
   "Everyday commands" row and the "16 commands, 6 skills" layout line; `cli/vault-template.test.js` asserts the seed.
 
 ## 5. Testing
