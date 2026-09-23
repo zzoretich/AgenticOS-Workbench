@@ -33,7 +33,7 @@ updated: ${now.toISOString().slice(0, 10)}
 }
 
 function table(entries) {
-  const rows = entries.map(e => `| ${e.name} | ${e.description.replace(/\|/g, '\\|')} | |`);
+  const rows = entries.map(e => `| ${e.name}${e.host === 'codex' ? ' (Codex)' : ''} | ${e.description.replace(/\|/g, '\\|')} | |`);
   return ['| Name | Description | Notes |', '|---|---|---|', ...rows].join('\n');
 }
 

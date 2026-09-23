@@ -88,3 +88,24 @@ test('runModelFor reads the newest matching run record, else null', () => {
   assert.equal(runModelFor('zzz', RUNS), null);
   assert.equal(runModelFor('a', path.join(VAULT, 'no-runs.jsonl')), null);
 });
+
+test('hostForRun: AOS_HOST from a hook, else the host the run record carries, else the detection chain', () => {
+  const { hostForRun } = require('../auto-cost.js');
+  fs.writeFileSync(RUNS, JSON.stringify({ id: 'sess-cx', session_id: 'cx', host: 'codex' }) + '\n' + JSON.stringify({ id: 'sess-cl', session_id: 'cl', host: 'claude' }) + '\n');
+  assert.equal(hostForRun('cx', '', {}, RUNS), 'codex', 'a manual --cost-one on a both-hosts machine follows the record');
+  assert.equal(hostForRun('cl', '', {}, RUNS), 'claude');
+  assert.equal(hostForRun('cx', '', { AOS_HOST: 'claude' }, RUNS), 'claude', 'a hook says which host it is');
+  assert.equal(hostForRun('none', '', {}, RUNS), 'claude', 'no record, no hint: the default');
+});
+
+test('backfill costs a Codex run from its rollout (by the run record\'s host), not only Claude transcripts', () => {
+  const { backfill } = require('../auto-cost.js');
+  rolloutCopy(path.join(process.env.CODEX_HOME, 'sessions', '2026', '09', '21'));
+  fs.writeFileSync(RUNS, JSON.stringify({ id: `sess-${SID}`, session_id: SID, script: 'session', cost_usd: null, host: 'codex', model: 'gpt-5-mini' }) + '\n');
+  const report = { counts: {} };
+  backfill(report);
+  assert.equal(report.counts.costed, 1);
+  const row = JSON.parse(fs.readFileSync(RUNS, 'utf8').trim());
+  assert.equal(row.cost_source, 'codex-rollout');
+  assert.equal(row.cost_usd, priceUsd('gpt-5-mini', { inputTokens: 56562, cachedInputTokens: 48384, outputTokens: 420 }));
+});
