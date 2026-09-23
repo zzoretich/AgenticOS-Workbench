@@ -61,6 +61,9 @@ sh "$AOS" routines next sitrep | grep -q '^sitrep: Weekdays at 07:45'
 echo "== MCP recall over stdio"
 node "$ROOT/cli/rehearsal/mcp-call.js" recall '{"query":"workbench vault profile"}' | grep -q 'brain/memory/user/profile.md'
 
+echo "== graph_overview over stdio (the graph init's first scan built)"
+node "$ROOT/cli/rehearsal/mcp-call.js" graph_overview '{}' | grep -Eq '"nodes": ?5'
+
 echo "== wrap_session writes a memory and a MEMORY.md line"
 node "$ROOT/cli/rehearsal/mcp-call.js" wrap_session '{"facts":["The first-run rehearsal ran."],"decisions":[],"feedback":[],"threads":[],"candidates":[{"type":"reference","title":"Rehearsal marker","description":"Written by the CI first-run rehearsal through wrap_session.","body":"This memory proves that wrap_session writes through the shared memory writer. It was created by cli/rehearsal/first-run.sh in a throwaway vault. It is safe to delete."}]}' | grep -Eq '"written": ?1'
 [ -f "$VAULT/brain/memory/reference/rehearsal-marker.md" ]

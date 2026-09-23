@@ -57,15 +57,15 @@ test('MCP tools use the plugin-prefixed names Claude Code exposes for a plugin-d
   }
 });
 
-test('the six plugin skills exist with frontmatter and are free of owner paths', () => {   // execution amendment 2026-09-15 (A32)
+test('the seven plugin skills exist with frontmatter and are free of owner paths', () => {   // execution amendment 2026-09-15 (A32)
   const SK = path.resolve(__dirname, '..', 'plugin', 'skills');
-  // final review Minor 18 (tests-12): iterating six names never catches a SEVENTH skill directory shipping
+  // final review Minor 18 (tests-12): iterating seven names never catches an EIGHTH skill directory shipping
   // by accident — pin the directory listing itself.
   assert.deepEqual(
     fs.readdirSync(SK, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort(),
-    ['cost', 'feedback-review', 'persona-flag-closer', 'persona-sitrep', 'recall', 'wrap'],
-    'exactly six plugin skills ship');
-  for (const name of ['recall', 'wrap', 'feedback-review', 'cost', 'persona-flag-closer', 'persona-sitrep']) {
+    ['cost', 'feedback-review', 'graph', 'persona-flag-closer', 'persona-sitrep', 'recall', 'wrap'],
+    'exactly seven plugin skills ship');
+  for (const name of ['recall', 'wrap', 'feedback-review', 'cost', 'persona-flag-closer', 'persona-sitrep', 'graph']) {
     const text = fs.readFileSync(path.join(SK, name, 'SKILL.md'), 'utf8');
     const fm = /^---\n([\s\S]*?)\n---\n/.exec(text);
     assert.ok(fm, `${name}: frontmatter`);
@@ -77,6 +77,9 @@ test('the six plugin skills exist with frontmatter and are free of owner paths',
   assert.match(fs.readFileSync(path.join(SK, 'wrap', 'SKILL.md'), 'utf8'), /wrap_session/);
   assert.match(fs.readFileSync(path.join(SK, 'feedback-review', 'SKILL.md'), 'utf8'), /feedback_rules/);
   assert.match(fs.readFileSync(path.join(SK, 'cost', 'SKILL.md'), 'utf8'), /cost\.enabled/);
+  for (const tool of ['graph_overview', 'graph_query', 'graph_neighbors', 'graph_path']) {
+    assert.match(fs.readFileSync(path.join(SK, 'graph', 'SKILL.md'), 'utf8'), new RegExp(`mcp__plugin_agenticos_agenticos__${tool}`));
+  }
   // MCP tools are named as Claude Code exposes them for a plugin-declared server (contract §0).
   for (const name of ['recall', 'wrap', 'feedback-review']) {
     const text = fs.readFileSync(path.join(SK, name, 'SKILL.md'), 'utf8');

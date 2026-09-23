@@ -110,7 +110,7 @@ The verb is wired in four places: the `plugin/bin/aos` case line, the `main` swi
 `lib/graph.js` does the following:
 - loads `graph.json` (networkx node-link) and caches it by mtime;
 - builds an undirected adjacency map;
-- resolves a name by id, then label, then case-folded label, then best substring.
+- resolves a name by id, then title or vault-relative path (exact, case-folded, normalized, then shortest containing title). A title beats a path, and on a path the note's page node beats its headings, which share its `source_file`.
 
 | Tool | Returns |
 |---|---|
