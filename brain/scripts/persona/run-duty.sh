@@ -196,7 +196,8 @@ if [ -n "$HELPER" ] && [ -f "$HELPER" ] && [ -n "$NODE" ] && [ -x "$NODE" ]; the
   fi
 fi
 
-echo "[$(date)] duty=$DUTY runner=$RUNNER model=$MODEL effort=$EFFORT budget=$MAX_USD start" >> "$LOG"
+LOG_MODEL="$MODEL"; [ "$RUNNER" = "codex" ] && LOG_MODEL="${CODEX_MODEL:-codex-default}"
+echo "[$(date)] duty=$DUTY runner=$RUNNER model=$LOG_MODEL effort=$EFFORT budget=$MAX_USD start" >> "$LOG"
 BEFORE_COUNT=$(duty_entries "$JOURNAL")
 UTC_BEFORE=0; [ -n "$UTC_JOURNAL" ] && UTC_BEFORE=$(duty_entries "$UTC_JOURNAL")
 OUT="$(mktemp "${TMPDIR:-/tmp}/duty-$DUTY.XXXXXX")"

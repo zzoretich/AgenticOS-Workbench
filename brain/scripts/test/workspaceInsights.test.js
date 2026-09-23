@@ -74,6 +74,22 @@ test('provider claude → heuristic unless scan.insightsUnderClaude is on', asyn
   fs.writeFileSync(PATHS.CONFIG_JSON, JSON.stringify({ provider: 'none' }));
 });
 
+test('provider codex → heuristic unless scan.insightsUnderCodex is on; the insight names the codex model', async () => {
+  const fs = require('fs');
+  const { PATHS } = require('../lib/paths.js');
+  let calls = 0;
+  const CODEX = { name: 'codex', reason: 'forced', model: 'gpt-5-mini', capabilities: { chat: true, embed: false, structured: true }, chat: async () => { calls++; return 'INSIGHT: Codex says.\nNEXT: NONE'; } };
+  fs.writeFileSync(PATHS.CONFIG_JSON, JSON.stringify({ provider: 'none', scan: { insightsUnderClaude: true } }));
+  assert.equal((await generateInsight(ENTRY, { provider: CODEX })).insight.model, 'heuristic', 'the Claude opt-in does not open Codex');
+  assert.equal(calls, 0);
+  fs.writeFileSync(PATHS.CONFIG_JSON, JSON.stringify({ provider: 'none', scan: { insightsUnderCodex: true } }));
+  const on = await generateInsight(ENTRY, { provider: CODEX });
+  assert.equal(calls, 1);
+  assert.equal(on.insight.text, 'Codex says.');
+  assert.equal(on.insight.model, 'gpt-5-mini');
+  fs.writeFileSync(PATHS.CONFIG_JSON, JSON.stringify({ provider: 'none' }));
+});
+
 test('provider ollama → chats with the workhorse tag and the feature label', async () => {
   let seen;
   const OLLAMA = { name: 'ollama', reason: 'forced', capabilities: { chat: true, embed: true, structured: true }, chat: async (o) => { seen = o; return 'INSIGHT: Fine.\nNEXT: Ship.'; } };

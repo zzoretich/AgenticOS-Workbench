@@ -47,16 +47,26 @@ function resolveCtx(opts = {}) {
     configDir, vault,
     node: opts.node || cfg.node || 'node',
     defaultModel: opts.defaultModel || (cfg.claude && cfg.claude.model) || 'haiku',
+    codex: !!(cfg.hosts && cfg.hosts.codex && cfg.hosts.codex.enabled),
   };
+}
+
+/** The Codex duty model lives where lib/headless.js reads it: persona.codexModel in <vault>/brain/config.json. */
+function writeCodexModel(vault, model) {
+  const file = path.join(vault, 'brain', 'config.json');
+  let cfg = {};
+  try { cfg = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+  cfg.persona = { ...(cfg.persona || {}), codexModel: model || null };
+  fs.writeFileSync(file, JSON.stringify(cfg, null, 2) + '\n');
 }
 
 const SKIP_MSG = 'persona: no --persona-json and no terminal interview (--yes, or stdin is not a TTY) and no stored persona/answers.json; skipping the interview (run `aos persona` later)';
 
 async function runInterview(opts = {}) {
   const io = opts.io || console;
-  const { configDir, vault, node, defaultModel } = resolveCtx(opts);
+  const { configDir, vault, node, defaultModel, codex } = resolveCtx(opts);
   const interview = interviewModule(vault);
-  const ctx = { defaultModel, exampleName: opts.exampleName || 'Atlas' };
+  const ctx = { defaultModel, codex, exampleName: opts.exampleName || 'Atlas' };
   let raw;
   if (opts.answersFile) raw = JSON.parse(fs.readFileSync(opts.answersFile, 'utf8'));
   else {
@@ -73,6 +83,7 @@ async function runInterview(opts = {}) {
   }
   const r = interview.writePersona({ vault, configDir, templatesDir: opts.templatesDir || templatesDir(), answers, node });
   io.log(`persona: wrote ${r.written.join(', ')}${r.kept.length ? ` (kept ${r.kept.join(', ')})` : ''}`);
+  if (codex) writeCodexModel(vault, answers.dutyCodexModel);
   let sched = null;
   if (answers.schedule && opts.schedule !== false) {
     const vars = schedule.scheduleVars({ vault, configDir, node, model: answers.dutyModel, effort: answers.dutyEffort, agentName: answers.name });

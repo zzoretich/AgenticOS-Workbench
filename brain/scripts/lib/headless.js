@@ -11,8 +11,8 @@
  *     else codex on the same test. A config without `hosts` (pre-0.5.0) means claude only.
  *     Binaries: PERSONA_CLAUDE_BIN (persona only) / AOS_CODEX_BIN → the recorded hosts.<h>.bin (or the
  *     legacy claude.bin) → `command -v` → the usual install locations; AOS_NO_CLAUDE / AOS_NO_CODEX hide one.
- *     model: the model to pass — routine/duty model for claude, cfg.codex.model (null = the user's Codex
- *     default) for codex, because a routine's `model` is a Claude alias by contract.
+ *     model: the model to pass — routine/duty model for claude; for codex cfg.<kind>.codexModel, else cfg.codex.model
+ *     (null = the user's Codex default), because a routine's `model` is a Claude alias by contract.
  *   runnerArgs(host, { prompt, system, model, effort, tools, budget, outFile })  →  { argv, stdin }
  *     claude: the `claude -p` recipe every duty and prompt routine used before (budget enforced by the CLI).
  *     codex:  `codex exec -` with the prompt (system text first) on stdin, workspace-write sandbox, our
@@ -87,7 +87,9 @@ function resolveRunner({ cfg, kind = 'routines', env = process.env, lookup, cand
     if (pref === 'auto' && !hostEnabled(c, h)) { why.push(`${h} host disabled`); continue; }
     const bin = resolveBin(h, { cfg: c, env, kind, lookup, candidates });
     if (!bin) { why.push(`${h} CLI not found`); continue; }
-    const model = h === 'codex' ? ((c.codex && typeof c.codex.model === 'string' && c.codex.model) || null) : null;
+    // A kind's own Codex model (persona.codexModel, routines.codexModel), else codex.model, else the user's Codex default.
+    const str = (v) => (typeof v === 'string' && v ? v : null);
+    const model = h === 'codex' ? (str(section.codexModel) || str(c.codex && c.codex.model)) : null;
     const home = h === 'codex' ? codexHomeOf(c) : null;
     return { host: h, bin, model, home, reason: pref === 'auto' ? 'auto' : `${kind}.runner=${pref}` };
   }
