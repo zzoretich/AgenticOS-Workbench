@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "agenticos": {
+      "command": "sh",
+      "args": [
+        "./bin/aos",
+        "mcp-server"
+      ],
+      "cwd": ".",
+      "env": {
+        "AOS_HOST": "codex"
+      },
+      "env_vars": [
+        "AOS_CONFIG",
+        "CLAUDE_CONFIG_DIR"
+      ]
+    }
+  }
+}

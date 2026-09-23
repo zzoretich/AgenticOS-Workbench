@@ -14,7 +14,16 @@ const CONFIG = '/cfg/agenticos.json';
 const CTX = { launcher: LAUNCHER, config: CONFIG };
 const tmp = (p) => fs.mkdtempSync(path.join(os.tmpdir(), p));
 
-/** A fake `run`: records calls; `mcp get` answers from `state.registered`, `mcp add` sets it, `mcp remove` clears it. */
+const ok = (stdout = '') => ({ status: 0, stdout, stderr: '' });
+const err = (stderr, status = 1) => ({ status, stdout: '', stderr });
+const PLUGIN_SERVER = { name: 'agenticos', transport: { type: 'stdio', command: 'sh', args: ['./bin/aos', 'mcp-server'], env: { AOS_HOST: 'codex' }, cwd: '/cache/agenticos/1.0.0/.' } };
+
+/**
+ * A fake `run`: records calls. `mcp get` answers from `state.registered`, `mcp add` sets it, `mcp remove` clears it.
+ * The `plugin` verbs answer the way Codex 0.155.1 did in the design spike: a marketplace added again from the same
+ * source reports alreadyAdded, from another source is refused; `marketplace upgrade` refuses a local source;
+ * `state.noPlugins` makes the CLI predate plugins. `mcp list` shows the plugin's server and a direct registration.
+ */
 function fakeRun(state = {}) {
   const calls = [];
   const run = (cmd, args) => {
@@ -23,11 +32,41 @@ function fakeRun(state = {}) {
     if (key === 'login status') return state.loggedOut ? { status: 1, stdout: 'Not logged in\n', stderr: '' } : { status: 0, stdout: 'Logged in using ChatGPT\n', stderr: '' };
     if (key === 'mcp get') return state.registered ? { status: 0, stdout: JSON.stringify({ name: 'agenticos', transport: { type: 'stdio', command: 'sh', args: [state.registered, 'mcp-server'], env: state.hostEnv ? { AOS_CONFIG: CONFIG, AOS_HOST: 'codex' } : { AOS_CONFIG: CONFIG } } }), stderr: '' } : { status: 1, stdout: '', stderr: 'no such server' };
     if (key === 'mcp add') { if (state.failAdd) return { status: 1, stdout: '', stderr: 'boom' }; state.registered = args[args.indexOf('--') + 2]; state.hostEnv = args.includes('AOS_HOST=codex'); return { status: 0, stdout: '', stderr: '' }; }
-    if (key === 'mcp remove') { state.registered = null; state.hostEnv = false; return { status: 0, stdout: '', stderr: '' }; }
+    if (key === 'mcp remove') {
+      const had = !!state.registered;
+      state.registered = null; state.hostEnv = false;
+      return ok(had ? "Removed global MCP server 'agenticos'.\n" : "No MCP server named 'agenticos' found.\n");
+    }
+    if (key === 'mcp list') {
+      const arr = [];
+      if (state.installed) arr.push(PLUGIN_SERVER);
+      if (state.registered) arr.push({ name: 'agenticos', transport: { type: 'stdio', command: 'sh', args: [state.registered, 'mcp-server'], env: { AOS_CONFIG: CONFIG, AOS_HOST: 'codex' } } });
+      return ok(JSON.stringify(arr));
+    }
+    if (args[0] === 'plugin' && state.noPlugins) return err("error: unrecognized subcommand 'plugin'", 2);
+    if (key === 'plugin list') return ok(JSON.stringify({ installed: state.installed ? [{ pluginId: 'agenticos@agenticos-workbench', version: '1.0.0', installed: true, enabled: true }] : [], available: [] }));
+    if (key === 'plugin marketplace') {
+      const [, , verb, arg] = args;
+      if (verb === 'add') {
+        if (state.failMarketplace) return err('Error: could not clone');
+        if (!state.mkt) { state.mkt = arg; return ok(JSON.stringify({ marketplaceName: 'agenticos-workbench', alreadyAdded: false })); }
+        if (state.mkt === arg) return ok(JSON.stringify({ marketplaceName: 'agenticos-workbench', alreadyAdded: true }));
+        return err("Error: marketplace 'agenticos-workbench' is already added from a different source; remove it before adding this source");
+      }
+      if (verb === 'upgrade') return state.mkt && !state.mkt.startsWith('/') ? ok('') : err('Error: marketplace `agenticos-workbench` is not configured as a Git marketplace');
+      if (verb === 'remove') { if (!state.mkt) return err('Error: marketplace `agenticos-workbench` is not configured or installed'); state.mkt = null; return ok(''); }
+    }
+    if (key === 'plugin add') {
+      if (!state.mkt || state.failPluginAdd) return err('Error: plugin not found');
+      state.installed = true;
+      return ok(JSON.stringify({ pluginId: 'agenticos@agenticos-workbench', name: 'agenticos', version: '1.0.0', installedPath: '/cache/agenticos/1.0.0' }));
+    }
+    if (key === 'plugin remove') { state.installed = false; return ok('Removed plugin `agenticos`.'); }
     return { status: 0, stdout: '', stderr: '' };
   };
   return { run, calls, state };
 }
+const argvOf = (calls) => calls.map((c) => c.slice(1).join(' '));
 
 test('mergeHooks writes the five events through the launcher with AOS_HOST=codex, SessionEnd under the 3 s cap, and is idempotent', () => {
   const doc = CH.mergeHooks(null, CTX);
@@ -226,4 +265,133 @@ test('a 0.5.0 MCP registration (launcher right, no AOS_HOST env) reads as stale 
   assert.equal(CH.mcpState({ bin: null, run, launcher: LAUNCHER }), 'no-binary');
   assert.equal(CH.mcpState({ bin: '/x/codex', run, launcher: '/elsewhere/aos' }), 'missing');
   assert.deepEqual(CH.mcpAddArgs({ config: CONFIG, launcher: LAUNCHER }).slice(0, 7), ['mcp', 'add', 'agenticos', '--env', `AOS_CONFIG=${CONFIG}`, '--env', 'AOS_HOST=codex']);
+});
+
+// ── the Codex plugin (design 2026-09-23-codex-plugin D4–D6) ──────────────────
+test('codexInstallMode: plugin when `codex plugin list --json` answers with a list, otherwise direct', () => {
+  assert.equal(CH.codexInstallMode('/x/codex', fakeRun().run), 'plugin');
+  assert.equal(CH.codexInstallMode('/x/codex', fakeRun({ noPlugins: true }).run), 'direct');
+  assert.equal(CH.codexInstallMode('/x/codex', () => ok('')), 'direct', 'a CLI that exits 0 without a list is not trusted to have plugins');
+  assert.equal(CH.codexInstallMode(null, fakeRun().run), 'direct');
+});
+
+test('the plugin wiring names nothing on this machine: ${PLUGIN_ROOT} in hooks, a relative launcher for MCP', () => {
+  assert.equal(CH.pluginHookCommand('inject-context'), 'env AOS_HOST=codex sh "${PLUGIN_ROOT}/bin/aos" inject-context');
+  assert.ok(CH.isOurs(CH.pluginHookCommand('x')), 'the same AOS_HOST prefix as direct entries');
+  assert.deepEqual(CH.pluginMcpServers().mcpServers.agenticos.args, ['./bin/aos', 'mcp-server']);
+  assert.equal(CH.pluginMcpServers().mcpServers.agenticos.cwd, '.');
+  assert.equal(CH.pluginHookCount(), 15);
+});
+
+test('installCodexPlugin: a fresh install adds the marketplace and the plugin; a re-run refreshes a git marketplace first', () => {
+  const { run, calls, state } = fakeRun();
+  const r = CH.installCodexPlugin({ bin: '/x/codex', source: 'owner/repo', run });
+  assert.deepEqual(r, { state: 'installed', version: '1.0.0', installedPath: '/cache/agenticos/1.0.0', source: 'owner/repo' });
+  assert.deepEqual(argvOf(calls), ['plugin marketplace add owner/repo --json', 'plugin add agenticos@agenticos-workbench --json']);
+  assert.equal(state.installed, true);
+  calls.length = 0;
+  CH.installCodexPlugin({ bin: '/x/codex', source: 'owner/repo', run });
+  assert.deepEqual(argvOf(calls), ['plugin marketplace add owner/repo --json', 'plugin marketplace upgrade agenticos-workbench', 'plugin add agenticos@agenticos-workbench --json']);
+});
+
+test('installCodexPlugin keeps a marketplace from another source unless switchSource (an explicit --from-local)', () => {
+  const { run, calls, state } = fakeRun({ mkt: '/checkout' });
+  const kept = CH.installCodexPlugin({ bin: '/x/codex', source: 'owner/repo', run });
+  assert.equal(kept.state, 'installed');
+  assert.equal(state.mkt, '/checkout', 'upgrade without --from-local keeps the source the user chose');
+  assert.ok(argvOf(calls).includes('plugin marketplace upgrade agenticos-workbench'));
+  calls.length = 0;
+  const switched = CH.installCodexPlugin({ bin: '/x/codex', source: '/other-checkout', switchSource: true, run });
+  assert.equal(switched.state, 'installed');
+  assert.equal(state.mkt, '/other-checkout');
+  assert.deepEqual(argvOf(calls), [
+    'plugin marketplace add /other-checkout --json', 'plugin marketplace remove agenticos-workbench',
+    'plugin marketplace add /other-checkout --json', 'plugin add agenticos@agenticos-workbench --json',
+  ]);
+});
+
+test('installCodexPlugin reports failure with the command to run, and installs nothing half-way', () => {
+  const warnings = [];
+  const io = { warn: (m) => warnings.push(m) };
+  const a = fakeRun({ failMarketplace: true });
+  assert.deepEqual(CH.installCodexPlugin({ bin: '/x/codex', source: 'owner/repo', run: a.run, io }), { state: 'failed', source: 'owner/repo' });
+  assert.match(warnings[0], /marketplace add failed .* run: codex plugin marketplace add owner\/repo/);
+  assert.ok(!argvOf(a.calls).some((c) => c.startsWith('plugin add')));
+  const b = fakeRun({ failPluginAdd: true });
+  assert.equal(CH.installCodexPlugin({ bin: '/x/codex', source: 'owner/repo', run: b.run, io }).state, 'failed');
+  assert.match(warnings[1], /codex plugin add failed .* run: codex plugin add agenticos@agenticos-workbench/);
+});
+
+test('removeCodexPlugin uninstalls and drops the marketplace; a second run is still clean', () => {
+  const { run, state } = fakeRun();
+  CH.installCodexPlugin({ bin: '/x/codex', source: 'owner/repo', run });
+  assert.deepEqual(CH.removeCodexPlugin({ bin: '/x/codex', run }), { plugin: 'removed', marketplace: 'removed' });
+  assert.equal(state.installed, false);
+  assert.equal(state.mkt, null);
+  assert.deepEqual(CH.removeCodexPlugin({ bin: '/x/codex', run }), { plugin: 'removed', marketplace: 'removed' });
+  assert.deepEqual(CH.removeCodexPlugin({ bin: null, run }), { plugin: 'no-binary', marketplace: 'no-binary' });
+});
+
+test('removeDirectWiring takes out what a direct install wrote (hooks, MCP registration, skills) and nothing else (D5)', () => {
+  const home = tmp('aos-codex-home5-');
+  const dir = tmp('aos-skills5-');
+  const env = { CODEX_HOME: home };
+  const foreign = { hooks: [{ type: 'command', command: 'say done' }] };
+  fs.writeFileSync(path.join(home, 'hooks.json'), JSON.stringify({ hooks: { Stop: [foreign] } }));
+  const { run, state } = fakeRun();
+  CH.installCodexHost({ cfg: {}, launcher: LAUNCHER, config: CONFIG, pluginDir: PLUGIN, bin: '/x/codex', run, env, dir });
+  CH.installCodexPlugin({ bin: '/x/codex', source: 'owner/repo', run });
+  assert.deepEqual(CH.removeDirectWiring({ cfg: {}, bin: '/x/codex', run, env, dir }), { hooks: 5, mcp: true, skills: 21 });
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(home, 'hooks.json'), 'utf8')), { hooks: { Stop: [foreign] } });
+  assert.equal(state.registered, null);
+  assert.equal(state.installed, true, 'the plugin stays');
+  assert.deepEqual(CH.removeDirectWiring({ cfg: {}, bin: '/x/codex', run, env, dir }), { hooks: 0, mcp: false, skills: 0 });
+  // a hooks.json that held only our entries is deleted
+  const home2 = tmp('aos-codex-home6-');
+  CH.installCodexHost({ cfg: {}, launcher: LAUNCHER, config: CONFIG, pluginDir: PLUGIN, bin: null, run, env: { CODEX_HOME: home2 }, dir });
+  assert.equal(CH.removeDirectWiring({ cfg: {}, bin: null, run, env: { CODEX_HOME: home2 }, dir }).hooks, 5);
+  assert.ok(!fs.existsSync(path.join(home2, 'hooks.json')));
+});
+
+test('trustedPluginHooks counts our [hooks.state] tables that carry a trusted_hash, and nothing else', () => {
+  const home = tmp('aos-codex-trust-');
+  const env = { CODEX_HOME: home };
+  assert.equal(CH.trustedPluginHooks({}, env), 0, 'no config.toml');
+  fs.writeFileSync(path.join(home, 'config.toml'), [
+    'model = "x"',
+    '[hooks.state]',
+    '[hooks.state."agenticos@agenticos-workbench:hooks/hooks.json:session_start:0:0"]',
+    'trusted_hash = "sha256:aa11"',
+    '[hooks.state."agenticos@agenticos-workbench:hooks/hooks.json:stop:0:1"]',
+    'trusted_hash = "sha256:bb22"',
+    '[hooks.state."agenticos@agenticos-workbench:hooks/hooks.json:stop:0:2"]',
+    'enabled = false',
+    '[hooks.state."/home/demo/.codex/hooks.json:stop:0:0"]',
+    'trusted_hash = "sha256:cc33"',
+    '[hooks.state."other@market:hooks/hooks.json:stop:0:0"]',
+    'trusted_hash = "sha256:dd44"',
+    '[plugins."agenticos@agenticos-workbench"]',
+    'enabled = true',
+  ].join('\n'));
+  assert.equal(CH.trustedPluginHooks({}, env), 2);
+});
+
+test('codexPluginStatus reports the plugin, its MCP server and any direct wiring left behind', () => {
+  const home = tmp('aos-codex-home7-');
+  const dir = tmp('aos-skills7-');
+  const env = { CODEX_HOME: home, AOS_CODEX_BIN: '/x/codex' };
+  const { run } = fakeRun();
+  const before = CH.codexPluginStatus({ cfg: {}, launcher: LAUNCHER, run, env, dir });
+  assert.equal(before.installed, false);
+  assert.equal(before.mcp, 'missing');
+  assert.equal(before.hooksTotal, 15);
+  CH.installCodexHost({ cfg: {}, launcher: LAUNCHER, config: CONFIG, pluginDir: PLUGIN, bin: '/x/codex', run, env, dir });
+  CH.installCodexPlugin({ bin: '/x/codex', source: 'owner/repo', run });
+  const both = CH.codexPluginStatus({ cfg: {}, launcher: LAUNCHER, run, env, dir });
+  assert.equal(both.installed, true);
+  assert.equal(both.version, '1.0.0');
+  assert.equal(both.mcp, 'ok');
+  assert.deepEqual(both.direct, { hookEvents: 5, mcp: true, skills: 21 });
+  CH.removeDirectWiring({ cfg: {}, bin: '/x/codex', run, env, dir });
+  assert.deepEqual(CH.codexPluginStatus({ cfg: {}, launcher: LAUNCHER, run, env, dir }).direct, { hookEvents: 0, mcp: false, skills: 0 });
 });

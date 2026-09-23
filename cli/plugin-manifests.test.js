@@ -75,6 +75,61 @@ test('claude plugin validate accepts the plugin and the marketplace (skipped wit
   }
 });
 
+// ── the Codex plugin (design 2026-09-23-codex-plugin): codex-plugin/, generated; tools/build-codex-plugin.test.js pins the build ──
+const CODEX_HOOK_RE = /^env AOS_HOST=codex sh "\$\{PLUGIN_ROOT\}\/bin\/aos" ([a-z-]+)((?: --[a-z-]+)*)$/;
+
+test('.agents/plugins/marketplace.json is the same marketplace, pointing Codex at ./codex-plugin', () => {
+  const m = read('.agents/plugins/marketplace.json');
+  assert.equal(m.name, read('.claude-plugin/marketplace.json').name);
+  assert.equal(m.interface.displayName, 'AgenticOS Workbench');
+  assert.deepEqual(m.plugins, [{
+    name: 'agenticos',
+    source: { source: 'local', path: './codex-plugin' },
+    policy: { installation: 'AVAILABLE', authentication: 'ON_INSTALL' },
+    category: 'Productivity',
+  }]);
+});
+
+test('the Codex plugin manifest carries the repo version and the neutral author, and its paths exist', () => {
+  const p = read('codex-plugin/.codex-plugin/plugin.json');
+  assert.equal(p.name, 'agenticos');
+  assert.equal(p.version, read('package.json').version);
+  assert.equal(p.author.name, 'AgenticOS Workbench contributors');
+  assert.deepEqual([p.skills, p.hooks, p.mcpServers], ['./skills/', './hooks/hooks.json', './.mcp.json']);
+  for (const rel of [p.skills, p.hooks, p.mcpServers]) assert.ok(fs.existsSync(path.join(ROOT, 'codex-plugin', rel)), rel);
+  assert.ok(!('commands' in p), 'codex-plugin has no commands/ for Codex to migrate');
+  assert.ok(!fs.existsSync(path.join(ROOT, 'codex-plugin', 'commands')));
+});
+
+test('the Codex plugin hooks mirror HOOKS through ${PLUGIN_ROOT}/bin/aos with AOS_HOST=codex, SessionEnd under the 3 s cap', () => {
+  const h = read('codex-plugin/hooks/hooks.json').hooks;
+  const { HOOKS } = require('./codex-host.js');
+  assert.deepEqual(Object.keys(h), HOOKS.map(([ev]) => ev));
+  const shim = fs.readFileSync(path.join(ROOT, 'codex-plugin', 'bin', 'aos'), 'utf8');
+  for (const [event, cmds] of HOOKS) {
+    const got = h[event].flatMap((g) => g.hooks.map((x) => {
+      const m = CODEX_HOOK_RE.exec(x.command);
+      assert.ok(m, `bad hook command: ${x.command}`);
+      assert.equal(x.type, 'command');
+      assert.match(shim, new RegExp(`(^|[|(])\\s*${m[1]}[)|]`, 'm'), `bin/aos does not dispatch ${m[1]}`);
+      return [m[1] + m[2], x.timeout];
+    }));
+    assert.deepEqual(got, cmds);
+    for (const [, timeout] of got) assert.equal(timeout, event === 'SessionEnd' ? 3 : 10);
+  }
+});
+
+test('the Codex plugin ships the same launcher, executable, and starts the MCP server from its own folder', () => {
+  const src = path.join(ROOT, 'plugin', 'bin', 'aos');
+  const dst = path.join(ROOT, 'codex-plugin', 'bin', 'aos');
+  assert.ok(fs.readFileSync(dst).equals(fs.readFileSync(src)), 'codex-plugin/bin/aos differs from plugin/bin/aos — run: npm run build:codex-plugin');
+  assert.ok(fs.statSync(dst).mode & 0o111, 'codex-plugin/bin/aos is not executable');
+  // Codex expands no variable in MCP args; "./bin/aos" with cwd "." resolves in the installed plugin folder (spec §2).
+  assert.deepEqual(read('codex-plugin/.mcp.json'), {
+    mcpServers: { agenticos: { command: 'sh', args: ['./bin/aos', 'mcp-server'], cwd: '.', env: { AOS_HOST: 'codex' }, env_vars: ['AOS_CONFIG', 'CLAUDE_CONFIG_DIR'] } },
+  });
+});
+
 test('bin/aos dispatches every hook and CLI name the manifests reference', () => {
   const shim = fs.readFileSync(path.join(ROOT, 'plugin', 'bin', 'aos'), 'utf8');
   const h = read('plugin/hooks/hooks.json').hooks;

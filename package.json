@@ -16,6 +16,7 @@
     "gate": "node tools/privacy-gate.js",
     "export": "node tools/export-from-vault.js",
     "setup": "node cli/aos.js init",
-    "version:bump": "node tools/bump-version.js"
+    "version:bump": "node tools/bump-version.js",
+    "build:codex-plugin": "node tools/build-codex-plugin.js"
   }
 }
