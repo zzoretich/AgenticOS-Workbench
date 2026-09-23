@@ -1,4 +1,4 @@
-import { ItemView, WorkspaceLeaf } from "obsidian";
+import { ItemView, TAbstractFile, WorkspaceLeaf } from "obsidian";
 import type AgenticOSPlugin from "../../main";
 import { PulseTab } from "./PulseTab";
 import { SpacesTab } from "./SpacesTab";
@@ -7,6 +7,8 @@ import { RunsTab } from "./RunsTab";
 import { RoutinesTab } from "./RoutinesTab";
 import { ChatTab } from "./ChatTab";
 import { TermTab } from "./TermTab";
+import { PROPOSALS_DIR } from "../data/proposals";
+import { badgeText, proposalBadge, touchesBadges } from "../data/badges";
 
 export const VIEW_TYPE_WORKBENCH = "agentic-os-workbench";
 
@@ -28,6 +30,8 @@ export class WorkbenchView extends ItemView {
   private drawerHost!: HTMLElement;
   private railEl!: HTMLElement;
   private clockTimer: number | null = null;
+  private badgeEls: Record<string, HTMLElement> = {};
+  private badgeTimer: number | null = null;
   private tabs: Partial<Record<string, { mount(h: HTMLElement): void; refresh(): Promise<void>; unmount(): void }>> = {};
   private activeTab = "pulse";
 
@@ -79,12 +83,55 @@ export class WorkbenchView extends ItemView {
       const b = this.railEl.createDiv({ cls: "aos-wb-railbtn", attr: { "data-tab": tab.id, "aria-label": tab.label } });
       b.createDiv({ text: tab.icon, cls: "aos-wb-railicon" });
       b.createDiv({ text: tab.label, cls: "aos-wb-raillabel" });
+      this.badgeEls[tab.id] = b.createDiv({ cls: "aos-wb-railbadge" });
       b.addEventListener("click", () => this.onRailClick(tab));
     }
     this.contentHost = body.createDiv({ cls: "aos-wb-content" });
     this.drawerHost = body.createDiv({ cls: "aos-wb-drawer" });
 
     this.setTab("pulse");
+
+    // rail badges (spec 2026-09-22-todo-and-proposals-tabs D7): recomputed on any vault event under a watched
+    // path, whichever tab is active — tabs are built lazily, so they cannot own this.
+    const onPath = (f: TAbstractFile, oldPath?: string) => {
+      if (touchesBadges(f.path) || (oldPath !== undefined && touchesBadges(oldPath))) this.scheduleBadges();
+    };
+    this.registerEvent(this.app.vault.on("create", (f) => onPath(f)));
+    this.registerEvent(this.app.vault.on("modify", (f) => onPath(f)));
+    this.registerEvent(this.app.vault.on("delete", (f) => onPath(f)));
+    this.registerEvent(this.app.vault.on("rename", (f, oldPath) => onPath(f, oldPath)));
+    void this.refreshBadges();
+  }
+
+  /** Shows `n` on a rail button; 0 hides the badge. */
+  setBadge(id: string, n: number): void {
+    const el = this.badgeEls[id];
+    if (!el) return;
+    el.textContent = badgeText(n);
+    el.toggleClass("is-empty", el.textContent === "");
+  }
+
+  private scheduleBadges(): void {
+    if (this.badgeTimer !== null) window.clearTimeout(this.badgeTimer);
+    this.badgeTimer = window.setTimeout(() => { this.badgeTimer = null; void this.refreshBadges(); }, 250);
+  }
+
+  async refreshBadges(): Promise<void> {
+    let files: string[] = [];
+    try { files = (await this.app.vault.adapter.list(PROPOSALS_DIR)).files; } catch { /* no persona/ yet */ }
+    this.setBadge("proposals", proposalBadge(files));
+  }
+
+  /** Opens a fresh Term session in the vault running `command`, and shows it (the Proposals tab's Review in Claude). */
+  runInTerm(command: string): void {
+    let id: string | null = null;
+    try {
+      const sess = this.plugin.terminalPool.create({ cwd: this.plugin.vaultRoot() });
+      sess.write(`${command}\r`);
+      id = sess.id;
+    } catch { /* no terminal support: the Term tab renders its install hint */ }
+    this.setTab("term");
+    if (id) (this.tabs.term as TermTab | undefined)?.showSession(id);
   }
 
   private registerDomListenerClock(el: HTMLElement): void {
@@ -122,6 +169,7 @@ export class WorkbenchView extends ItemView {
 
   async onClose(): Promise<void> {
     if (this.clockTimer !== null) window.clearInterval(this.clockTimer);
+    if (this.badgeTimer !== null) window.clearTimeout(this.badgeTimer);
     for (const tab of Object.values(this.tabs)) tab?.unmount();
     this.tabs = {};
   }

@@ -1234,9 +1234,16 @@
   min-width: 56px; align-items: stretch;
 }
 .aos-wb-railbtn {
+  position: relative;
   text-align: center; padding: 7px 4px; border-radius: 4px; cursor: pointer;
   color: var(--aos-dim); font-family: var(--aos-mono);
 }
+.aos-wb-railbadge {
+  position: absolute; top: 2px; right: 2px; min-width: 14px; padding: 0 3px;
+  border-radius: 7px; background: var(--aos-amber); color: var(--aos-bg);
+  font-size: 9px; font-weight: 700; line-height: 14px; text-align: center;
+}
+.aos-wb-railbadge.is-empty { display: none; }
 .aos-wb-railbtn:hover { color: var(--aos-text); background: var(--aos-panel); }
 .aos-wb-railbtn.is-active { color: var(--aos-cyan); background: var(--aos-panel); }
 .aos-wb-railicon { font-size: 15px; line-height: 1.2; }

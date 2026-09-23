@@ -24,7 +24,7 @@ The Workbench rail has seven tabs, but two things the owner acts on every day ha
 | D5 | The Proposals tab lists three groups: **Pending** (the files in `persona/proposals/`), **Backlog** (sections of `persona/backlog.md`), **History** (`persona/ledger.jsonl` outcomes, newest first, with the 28-day approval and accept rates). | Pending only; an inbox of every draft awaiting sign-off (feedback drafts, consolidation drafts). | Pending alone is empty most days. The other drafts have their own review flows and would blur this one. |
 | D6 | The Proposals tab is read-only. A pending row expands to What / Why / Risk / Premises, kind, surface, target, age, lint and the recheck streak. One header button, **Review in Claude**, opens the Term tab running `claude "review persona flags"`; each row has **Open file**. | Accept/Dismiss/Close-stale buttons in the HUD; every verb in the HUD via a headless run; no action at all. | `persona-flag-closer` owns the ledger append, backlog append and the per-decision commit. A second implementation in TypeScript would drift, and the plugin never calls a model. |
 | D7 | Rail order becomes Pulse, **To-Do**, **Proposals**, Spaces, Memory, Runs, Routines, Chat, Term. Each new button carries a count badge (open todos overdue or due today; pending proposals) that refreshes on vault events, whether or not the tab is mounted. Pulse is unchanged. | Badges plus a Pulse row; end of rail without badges. | The badge is the glance; Pulse already carries enough rows. |
-| D8 | One spec, two PRs: `feat/proposals-tab` first (read-only, adds the badge support and `TermTab.run`), then `feat/todo-tab`. | One PR for both; spec only. | Each PR stays reviewable in one sitting; the second reuses the first's rail work. |
+| D8 | One spec, two PRs: `feat/proposals-tab` first (read-only, adds the badge support and `runInTerm`), then `feat/todo-tab`. | One PR for both; spec only. | Each PR stays reviewable in one sitting; the second reuses the first's rail work. |
 
 ## 3. What already exists (at `2f3f6a9`)
 
@@ -56,8 +56,10 @@ The Workbench rail has seven tabs, but two things the owner acts on every day ha
 - `src/data/badges.ts` (pure): `todoBadge(text, today)` and `proposalBadge(fileNames)`. WorkbenchView computes
   both on open and on vault `create | modify | delete | rename` of `TODO.md` or `persona/proposals/*`
   (250 ms debounce), independent of the active tab.
-- `TermTab.run(command)`: switches to the Term tab, creates a session with `cwd` = vault, then writes
-  `command + "\r"`. The pool, panel and pty stay unchanged.
+- `WorkbenchView.runInTerm(command)`: creates a pool session with `cwd` = `vaultRoot()` and writes
+  `command + "\r"` *before* switching to the Term tab (so the panel's "ensure one session" does not add a
+  blank shell), then `TermTab.showSession(id)` → a new public `TerminalPanel.activate(id)`, which the
+  panel's own tab click now uses too. The pool and pty stay unchanged.
 
 ### 4.2 Proposals tab (PR 1)
 
@@ -67,7 +69,7 @@ The Workbench rail has seven tabs, but two things the owner acts on every day ha
   `{ approvalRate, acceptRate }` using `ledger.js summary`'s formula; `streaks(json)` → slug → n.
 - `src/views/ProposalsTab.ts` (thin): three collapsible groups. Pending rows show slug, kind chip, surface,
   age, `confirmed n d`, and lint in amber; expanding renders the sections as Markdown via
-  `MarkdownRenderer`. Header: counts plus **Review in Claude** (`TermTab.run('claude "review persona flags"')`).
+  `MarkdownRenderer`. Header: counts plus **Review in Claude** (`runInTerm('claude "review persona flags"')`).
 - No `persona/` folder → a one-line hint ("The Chief of Staff isn't set up — run `aos persona`"), tab still shown.
   An empty Pending group reads "Nothing pending — the Chief of Staff files proposals from its reflect duties."
 

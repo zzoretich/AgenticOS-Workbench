@@ -23,4 +23,5 @@ export class TermTab {
   async refresh(): Promise<void> { this.panel?.focus(); }
   unmount(): void { this.panel?.unmount(); this.panel = null; this.host = null; }
   newSession(): void { this.panel?.createNewSession(); }
+  showSession(id: string): void { this.panel?.activate(id); }
 }
