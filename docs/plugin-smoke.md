@@ -30,6 +30,15 @@ Run before tagging a release, on a vault created by `aos init` (not the develope
 - [ ] Command deck `/scan` spawns `scan-vault.js` with the resolved node (notice `▶ /scan`, then `✓ /scan: …`).
 - [ ] Heartbeat pill: absent on a vault whose watchdog never ran; after `aos routines run heartbeat` a green `♥ <age>` pill sits next to the update pill and its tooltip lists each duty with status, last run and next fire. Backdate `checkedAt` in `brain/_index/persona-heartbeat.json` by 2 h → amber within a second (the file is watched); set one duty's `status` to `missed` → rose with `· 1 missed` in the label.
 
+## Proposals
+
+- [ ] The Proposals rail button sits right after Pulse. With `persona/proposals/` holding no proposal files the badge is hidden; copy any proposal into it (e.g. `2026-09-20-demo.md` with `kind: product`, `surface: hud`) and an amber `1` appears within a second, **with another tab active** — delete the file and it goes away.
+- [ ] PENDING lists each file with slug, target, kind pill, surface, age and, when `persona/flag-closer/confirmations.json` counts it, `confirmed <n>d` (green at 2+). A proposal missing its `recheck` or premise table shows `⚠ <n>` with the reasons in the tooltip.
+- [ ] Clicking a row expands `needs: approve / reject` (or `accept → backlog / dismiss` for workflow/product), the recipe, What / Why / Risk rendered as Markdown and the premise table; `Open file` opens the proposal in a new tab. Group heads (`▾ PENDING`, `▾ BACKLOG`, `▾ HISTORY`) collapse and expand.
+- [ ] BACKLOG lists `persona/backlog.md` sections newest first; HISTORY lists ledger outcomes newest first (no `filed` rows) with ✓ / ✗ / ◇ / – marks, and the rates line reads `last 28 d · approval <x>% · accept <y>%` (or `n/a`), matching `node brain/scripts/persona/ledger.js summary`.
+- [ ] `Review in Claude ❯_` switches to Term with a new session in the vault running `claude "review persona flags"` — no extra blank shell beside it, and that session is the visible one even when other sessions were open.
+- [ ] On a vault without `persona/`, the tab shows only the "isn't set up — run `aos persona`" line.
+
 ## Spaces / Memory / Runs
 
 - [ ] Spaces lists workspaces from `snapshot.json`; insight footer says `local` when no model tag is present.

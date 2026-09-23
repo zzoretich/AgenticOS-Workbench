@@ -64,9 +64,10 @@ The Workbench rail has seven tabs, but two things the owner acts on every day ha
 ### 4.2 Proposals tab (PR 1)
 
 - `src/data/proposals.ts` (pure, tested): `parseProposal(name, text)` → `{ slug, filed, kind, surface, target,
-  recheck, autoapplyClass, sections: { what, why, risk }, premises[], lint[] }` with `collect.js`'s rules;
-  `parseBacklog(text)` → sections; `parseLedger(text, now)` → rows newest first plus
-  `{ approvalRate, acceptRate }` using `ledger.js summary`'s formula; `streaks(json)` → slug → n.
+  recheck, autoapplyClass, what, why, risk, premises[], lint[], decision }` with `collect.js`'s rules;
+  `parseBacklog(text)` → sections; `parseLedger(text)` → records, `ledgerRates(records, now)` →
+  `{ approvalRate, acceptRate }` by `ledger.js summary`'s formula, `historyRows(records)` → outcomes newest
+  first; `parseConfirmations(json)` → slug → n. The tests run the runtime scripts on the same fixture vault.
 - `src/views/ProposalsTab.ts` (thin): three collapsible groups. Pending rows show slug, kind chip, surface,
   age, `confirmed n d`, and lint in amber; expanding renders the sections as Markdown via
   `MarkdownRenderer`. Header: counts plus **Review in Claude** (`runInTerm('claude "review persona flags"')`).

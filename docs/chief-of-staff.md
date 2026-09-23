@@ -174,7 +174,9 @@ any miss; the tooltip lists each duty with its status, last run and next fire.
 Guarded files (IDENTITY.md, duties and their routine files — `guarded: true`, which the Routines tab confirms before changing — persona scripts, schedules, anything outside `persona/`)
 change only through `persona/proposals/YYYY-MM-DD-<slug>.md` with a `recheck` recipe and a
 premise table; approval applies the change exactly as written and re-runs the recipe expecting
-the finding to be gone. See `persona/proposals/README.md` in your vault.
+the finding to be gone. See `persona/proposals/README.md` in your vault. The Workbench's Proposals tab
+shows the pending files, the backlog and the ledger history read-only; its **Review in Claude** button starts
+this review in the Term tab.
 
 Every outcome lands in `persona/ledger.jsonl` (tracked, unlike `STATE.md`) through
 `brain/scripts/persona/ledger.js`: `filed` by a reflect, `approved` / `rejected` / `stale-dropped` by the

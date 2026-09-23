@@ -7,6 +7,7 @@ import { RunsTab } from "./RunsTab";
 import { RoutinesTab } from "./RoutinesTab";
 import { ChatTab } from "./ChatTab";
 import { TermTab } from "./TermTab";
+import { ProposalsTab } from "./ProposalsTab";
 import { PROPOSALS_DIR } from "../data/proposals";
 import { badgeText, proposalBadge, touchesBadges } from "../data/badges";
 
@@ -16,6 +17,7 @@ interface RailTab { id: string; icon: string; label: string }
 
 const RAIL: RailTab[] = [
   { id: "pulse", icon: "◉", label: "Pulse" },
+  { id: "proposals", icon: "⚖", label: "Proposals" },
   { id: "spaces", icon: "▣", label: "Spaces" },
   { id: "memory", icon: "◈", label: "Memory" },
   { id: "runs", icon: "≣", label: "Runs" },
@@ -146,6 +148,7 @@ export class WorkbenchView extends ItemView {
 
   private makeTab(id: string) {
     if (id === "pulse") return new PulseTab(this.plugin, this);
+    if (id === "proposals") return new ProposalsTab(this.plugin, this);
     if (id === "spaces") return new SpacesTab(this.plugin, this);
     if (id === "memory") return new MemoryTab(this.plugin, this);
     if (id === "runs") return new RunsTab(this.plugin, this);

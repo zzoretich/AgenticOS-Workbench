@@ -19,8 +19,8 @@ Spec: `docs/superpowers/specs/2026-09-22-todo-and-proposals-tabs-design.md` · B
 | `obsidian-plugin/src/views/WorkbenchView.ts` *(modify)* | 1 | Two `RAIL` entries after Pulse, `makeTab` arms, `setBadge(id, n)`, a vault-event badge refresher (250 ms debounce). |
 | `obsidian-plugin/src/data/badges.ts` + `.test.ts` *(new)* | 1 | `proposalBadge(names)`; `todoBadge(text, today)` lands in PR 2. |
 | `obsidian-plugin/src/views/TermTab.ts`, `src/ui/TerminalPanel.ts` *(modify)* | 1 | `showSession(id)` → public `TerminalPanel.activate(id)`; `WorkbenchView.runInTerm(command)` creates the session first. |
-| `obsidian-plugin/src/data/proposals.ts` + `.test.ts` *(new)* | 1 | `parseProposal`, `parseBacklog`, `parseLedger` (+ rates), `streaks` (spec §4.2). |
-| `obsidian-plugin/src/data/fixtures/proposals/*` *(new)* | 1 | One proposal per kind, a lint-failing one, a ledger, a backlog, a confirmations file (both shapes). |
+| `obsidian-plugin/src/data/proposals.ts` + `.test.ts` *(new)* | 1 | `parseProposal`, `parseBacklog`, `parseLedger`, `ledgerRates`, `historyRows`, `parseConfirmations` (spec §4.2). |
+| `obsidian-plugin/src/data/fixtures/proposals-vault/persona/*` *(new)* | 1 | Four proposals (clean, product, every lint path), a ledger with a corrupt line, confirmations; the backlog is written by `backlog.js` in the test. |
 | `obsidian-plugin/src/views/ProposalsTab.ts` *(new)* | 1 | Pending / Backlog / History groups; Review in Claude; Open file; no-persona hint. |
 | `obsidian-plugin/main.ts` *(modify)* | 1, 2 | `proposals` then `todo` in the `open-workbench-<t>` loop (display name "To-Do" for `todo`). |
 | `obsidian-plugin/styles.css` *(modify)* | 1, 2 | `.aos-wb-railbadge`, proposal rows and chips; todo rows, groups, filter row. |
@@ -36,7 +36,7 @@ Spec: `docs/superpowers/specs/2026-09-22-todo-and-proposals-tabs-design.md` · B
 
 ### Task 1 — Proposals data layer
 - [ ] `proposals.ts` mirroring `collect.js` kinds, surfaces and lint; `parseLedger` rates match `ledger.js summary` on the fixture.
-- [ ] `streaks()` reads `{ schema: 1, slugs }` and the legacy flat shape.
+- [ ] `parseConfirmations()` reads `{ schema: 1, slugs }` and the legacy flat shape.
 - [ ] Commit: `feat(hud): proposals data layer`.
 
 ### Task 2 — Rail badges and runInTerm
