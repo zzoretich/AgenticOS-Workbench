@@ -248,8 +248,10 @@ function inputs({ deps = defaultDeps(), now = deps.now(), days = DEFAULT_DAYS } 
   } catch (e) { console.error(`[reflect] ledger summary failed: ${e.message}`); }
   let autoapply = { classes: [], minVerified: null, candidates: [] };
   try { autoapply = autoapplySection(deps, ledger, records); } catch (e) { console.error(`[reflect] autoapply section failed: ${e.message}`); }
+  // `today` leads the pack: the ISO stamps below are UTC, and a model dating its journal entry from generatedAt
+  // files it under tomorrow for the last local hours of every day west of UTC.
   return {
-    schema: SCHEMA, days: d, since: new Date(since).toISOString(), generatedAt: now.toISOString(),
+    schema: SCHEMA, today: localDay(now), days: d, since: new Date(since).toISOString(), generatedAt: now.toISOString(),
     lastDrainAt: readState(deps).lastDrainAt,
     queue: queueSection(deps),
     ledger,
