@@ -435,17 +435,20 @@ async function doctor() {
 // Contract §3 spendToday semantics: ledger rows whose `feature` starts with `duty:` belong to the persona
 // (Plan 5's record-spend.js; gated by persona.perDayUsd), rows starting with `reason:` belong to the
 // reasoner role (gated by reasoner.perDayUsd), rows starting with `routine:` belong to prompt routines
-// (gated by routines.perDayUsd); every other row is a background hook call (gated by
-// claude.perDayUsd — spendToday in spend-ledger.js excludes both families the same way). One line per cap.
+// (gated by routines.perDayUsd), `graph:` to the vault graph's semantic pass (graph.semantic.perDayUsd) and
+// `cross-review:` to cross-review and handoff calls (crossReview.perDayUsd); every other row is a background hook
+// call (gated by claude.perDayUsd — spendToday in spend-ledger.js excludes the same families). One line per cap.
 const DUTY_FEATURE = /^duty:/;
 const REASON_FEATURE = /^reason:/;
 const ROUTINE_FEATURE = /^routine:/;
 const GRAPH_FEATURE = /^graph:/;
+const CROSS_REVIEW_FEATURE = /^cross-review:/;
 const isDutyFeature = (feature) => DUTY_FEATURE.test(feature);
 const isReasonFeature = (feature) => REASON_FEATURE.test(feature);
 const isRoutineFeature = (feature) => ROUTINE_FEATURE.test(feature);
 const isGraphFeature = (feature) => GRAPH_FEATURE.test(feature);
-const isHookFeature = (feature) => !DUTY_FEATURE.test(feature) && !REASON_FEATURE.test(feature) && !ROUTINE_FEATURE.test(feature) && !GRAPH_FEATURE.test(feature);
+const isCrossReviewFeature = (feature) => CROSS_REVIEW_FEATURE.test(feature);
+const isHookFeature = (feature) => ![DUTY_FEATURE, REASON_FEATURE, ROUTINE_FEATURE, GRAPH_FEATURE, CROSS_REVIEW_FEATURE].some((re) => re.test(feature));
 /** Today's provider-spend.jsonl rows (local calendar day) that carry a numeric usd; [] when the ledger is absent. */
 function spendRowsToday(file) {
   let raw = '';
@@ -478,6 +481,7 @@ function status() {
   const routineCap = num(cfg.routines, 'perDayUsd') ?? num(vaultCfg.routines, 'perDayUsd') ?? 6;
   const semOf = (c) => (c && c.graph && c.graph.semantic) || null;
   const graphCap = num(semOf(cfg), 'perDayUsd') ?? num(semOf(vaultCfg), 'perDayUsd') ?? 1;
+  const crossReviewCap = num(cfg.crossReview, 'perDayUsd') ?? num(vaultCfg.crossReview, 'perDayUsd') ?? 10;
   const str = (obj, key) => (obj && typeof obj[key] === 'string' && obj[key].trim() ? obj[key].trim() : undefined);
   // The reasoner role (sdk/lib/models.js): BRAIN_REASONER, then reasoner.model by config precedence, then the default.
   const reasonerModel = (process.env.BRAIN_REASONER || '').trim() || str(cfg.reasoner, 'model') || str(vaultCfg.reasoner, 'model') || 'claude-opus-5';
@@ -504,6 +508,7 @@ function status() {
   out.log(`spend      today (reasoner) $${sumUsd(spend, isReasonFeature).toFixed(4)} / cap $${reasonCap}`);
   out.log(`spend      today (routines) $${sumUsd(spend, isRoutineFeature).toFixed(4)} / cap $${routineCap}`);
   out.log(`spend      today (graph) $${sumUsd(spend, isGraphFeature).toFixed(4)} / cap $${graphCap}`);
+  out.log(`spend      today (cross-review) $${sumUsd(spend, isCrossReviewFeature).toFixed(4)} / cap $${crossReviewCap}`);
   // Ledger shape (lib/pipeline-report.js): { version: 1, pipelines: { <name>: { lastRun: {…} | null, history: [] } } }.
   const ledger = readJson(path.join(idx, 'pipelines.json'), {}) || {};
   const rows = Object.entries(ledger.pipelines || {}).map(([name, st]) => [name, (st && st.lastRun) || null]);

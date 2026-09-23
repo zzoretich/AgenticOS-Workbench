@@ -8,7 +8,7 @@ const path = require('path');
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'spend-'));
 fs.mkdirSync(path.join(TMP, 'brain', '_index'), { recursive: true });
 process.env.BRAIN_VAULT = TMP;
-const { ProviderUnavailable, recordSpend, spendToday, reasonSpendToday, routineSpendToday, graphSpendToday, SPEND_PATH } = require('../sdk/lib/spend-ledger.js');
+const { ProviderUnavailable, recordSpend, spendToday, reasonSpendToday, routineSpendToday, graphSpendToday, crossReviewSpendToday, SPEND_PATH } = require('../sdk/lib/spend-ledger.js');
 
 beforeEach(() => { try { fs.unlinkSync(SPEND_PATH); } catch {} });
 
@@ -105,4 +105,18 @@ test('graph:* rows are the graph cap\'s and never the hook cap\'s; graphSpendTod
   assert.equal(spendToday(), 0.01, 'the hook cap sees none of the four metered families');
   assert.equal(graphSpendToday(), 0.3, 'today\'s graph:* rows only');
   assert.equal(routineSpendToday(), 0.2, 'routine rows unaffected');
+});
+
+test('cross-review:* rows are the cross-review cap\'s and never the hook cap\'s; crossReviewSpendToday sums only them (cross-review D7)', () => {
+  const now = new Date().toISOString();
+  const yesterday = new Date(Date.now() - 36 * 3600 * 1000).toISOString();
+  fs.writeFileSync(SPEND_PATH,
+    JSON.stringify({ ts: now, feature: 'cross-review:review', provider: 'codex', model: 'gpt-6-astra', usd: 1.2 }) + '\n' +
+    JSON.stringify({ ts: now, feature: 'cross-review:handoff', provider: 'claude', model: 'claude-fable-5-1', usd: 0.3 }) + '\n' +
+    JSON.stringify({ ts: yesterday, feature: 'cross-review:build', provider: 'codex', model: 'gpt-6-astra', usd: 4 }) + '\n' +
+    JSON.stringify({ ts: now, feature: 'graph:semantic', provider: 'claude', model: 'haiku', usd: 0.25 }) + '\n' +
+    JSON.stringify({ ts: now, feature: 'auto-wrap', provider: 'claude', model: 'haiku', usd: 0.01 }) + '\n');
+  assert.equal(spendToday(), 0.01, 'the hook cap sees none of the five metered families');
+  assert.equal(crossReviewSpendToday(), 1.5, 'today\'s cross-review:* rows only');
+  assert.equal(graphSpendToday(), 0.25, 'graph rows unaffected');
 });

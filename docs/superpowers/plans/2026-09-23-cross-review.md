@@ -29,7 +29,7 @@ ledgered on its own budget, ephemeral, and kept out of the brain's session colle
 | `brain/scripts/config.default.json` | changed | 1 | `crossReview` block (D8) |
 | `brain/scripts/test/cross-review-runner.test.js` | new | 1 | Port of upstream `tests/test_runner.py` onto fake CLIs, plus handoff cases |
 | `brain/scripts/test/headless.test.js`, `test/spend-ledger.test.js` | changed | 1 | `crossArgs` per host and mode; the `cross-review:` family |
-| `cli/fixtures/fake-claude.sh`, `cli/fixtures/fake-codex.sh` | changed | 1 | Structured replies for `--json-schema` / `--output-schema`; failure and timeout modes |
+| (in the test) one fake CLI for both providers | new | 1 | Upstream's pattern: `exec` in argv means codex; `FAKE_CASE` picks the case. The shared `cli/fixtures` fakes stay untouched |
 | `plugin/bin/aos` | changed | 2 | `cross-review) SCRIPT=cross-review/runner.js ;;` |
 | `plugin/skills/cross-review/SKILL.md` | new | 2 | Host-neutral phases 0–3, roles table, runner commands with `--host claude`, D6 and D10 |
 | `plugin/skills/cross-review/references/build.md`, `CONTEXT-FORMAT.md`, `ADR-FORMAT.md` | new | 2 | Adapted from upstream; host-neutral (copied to Codex verbatim) |
@@ -47,15 +47,15 @@ ledgered on its own budget, ephemeral, and kept out of the brain's session colle
 
 ### Slice 1: runtime (no user-visible surface yet)
 
-- [ ] `spend-ledger.js`: the `cross-review:` family plus tests.
-- [ ] `config.default.json`: the `crossReview` block; check that the config collector merges it on upgrade.
-- [ ] `headless.js` `crossArgs()`, with tests pinning each isolation flag per host and mode.
-- [ ] Fixtures: fake claude returns `structured_output` for `--json-schema`; fake codex writes the `-o` file and a
-      `thread.started` / `turn.completed` stream; `FAKE_*_MODE=fail|empty|hang|malformed`.
-- [ ] `runner.js`: port function by function, test first (upstream test names kept as comments for traceability).
-- [ ] `handoff` verb: consult vs `--write`, the same-provider label, an empty reply failing.
-- [ ] Cap gate: refuse when `crossReviewSpendToday() >= crossReview.perDayUsd`, naming the key.
-- [ ] Artifacts under `brain/_index/cross-review/runs/<id>/`, the tmp fallback, and a `runs.jsonl` row with `schema: 1`.
+- [x] `spend-ledger.js`: the `cross-review:` family plus tests.
+- [x] `config.default.json`: the `crossReview` block; check that the config collector merges it on upgrade.
+- [x] `headless.js` `crossArgs()`, with tests pinning each isolation flag per host and mode.
+- [x] Fake CLI (test-local, both providers): structured replies, `-o` file and event stream, and the failure,
+      timeout, mutate, commit and blank cases.
+- [x] `runner.js`: port function by function, test first (upstream test names kept as comments for traceability).
+- [x] `handoff` verb: consult vs `--write`, the same-provider label, an empty reply failing.
+- [x] Cap gate: refuse when `crossReviewSpendToday() >= crossReview.perDayUsd`, naming the key.
+- [x] Artifacts under `brain/_index/cross-review/runs/<id>/`, the tmp fallback, and a `runs.jsonl` row with `schema: 1`.
 
 ### Slice 2: plugin surfaces
 

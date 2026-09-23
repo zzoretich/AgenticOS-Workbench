@@ -155,6 +155,7 @@ test('status and provider need a config; provider validates its argument', () =>
     `${JSON.stringify({ ts, feature: 'session-summary', provider: 'claude', model: 'haiku', usd: 0.01 })}\n` +
     `${JSON.stringify({ ts, feature: 'duty:monitor', provider: 'claude', model: 'haiku', usd: 2 })}\n` +
     `${JSON.stringify({ ts, feature: 'reason:ask', provider: 'claude', model: 'claude-opus-5', usd: 0.3 })}\n` +
+    `${JSON.stringify({ ts, feature: 'cross-review:review', provider: 'codex', model: 'gpt-6-astra', usd: 1.25 })}\n` +
     `${JSON.stringify({ ts: '2020-01-01T00:00:00.000Z', feature: 'x', provider: 'claude', model: 'haiku', usd: 5 })}\n`);
   // Real ledger shape (lib/pipeline-report.js): { version, pipelines: { name: { lastRun, history } } }.
   fs.writeFileSync(path.join(sb.vault, 'brain', '_index', 'pipelines.json'), JSON.stringify({
@@ -171,6 +172,7 @@ test('status and provider need a config; provider validates its argument', () =>
   assert.match(st.stdout, /spend\s+today \(hooks\) \$0\.0100 \/ cap \$0\.5 \(claude\.perDayUsd\)/);
   assert.match(st.stdout, /spend\s+today \(duties\) \$2\.0000 \/ cap \$6/);
   assert.match(st.stdout, /spend\s+today \(reasoner\) \$0\.3000 \/ cap \$5/);
+  assert.match(st.stdout, /spend\s+today \(cross-review\) \$1\.2500 \/ cap \$10/);
   assert.match(st.stdout, /^reasoner\s+model=claude-opus-5 provider=claude effort=medium$/m);
   assert.ok(!/today \(hooks\) \$2\./.test(st.stdout), 'duty spend never counts against the hook cap');
   assert.ok(!/today \(hooks\) \$0\.31/.test(st.stdout), 'reasoner spend never counts against the hook cap');
