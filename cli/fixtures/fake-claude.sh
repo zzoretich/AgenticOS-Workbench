@@ -13,6 +13,15 @@ if [ "$1" = "-p" ]; then
   printf '{"type":"result","subtype":"success","is_error":false,"result":"{}","structured_output":{"nodes":[],"edges":[]},"total_cost_usd":%s,"usage":{"input_tokens":1200,"cache_read_input_tokens":100,"output_tokens":300},"duration_api_ms":900}\n' "${FAKE_CLAUDE_USD:-0.004}"
   exit 0
 fi
+# `plugin marketplace list --json`: FAKE_MARKETPLACE_DIR registers agenticos-workbench as a local directory marketplace.
+if [ "$1 $2 $3" = "plugin marketplace list" ]; then
+  if [ -n "${FAKE_MARKETPLACE_DIR:-}" ]; then
+    printf '[{"name":"agenticos-workbench","source":"directory","path":"%s","installLocation":"%s"}]\n' "$FAKE_MARKETPLACE_DIR" "$FAKE_MARKETPLACE_DIR"
+  else
+    echo '[]'
+  fi
+  exit 0
+fi
 case "$1 $2" in
   "--version ") echo "0.0.0-fake (Claude Code)" ;;
   "auth status") echo '{"loggedIn":true,"authMethod":"fake"}' ;;

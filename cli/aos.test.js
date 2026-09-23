@@ -793,6 +793,28 @@ test('upgrade seeds brain/routines/ once and re-renders installed legacy duty pl
   }
 });
 
+// A marketplace added from a local checkout (`aos init --from-local`) has no clone under plugins/marketplaces/: plain
+// `aos upgrade` vendors from the directory the claude CLI reports and refreshes the plugin from it.
+test('plain aos upgrade through the vendored CLI follows a directory marketplace, and refreshes the plugin from it', () => {
+  const sb = initialized();
+  const vendored = path.join(sb.vault, 'brain', 'scripts', 'cli', 'aos.js');
+  const up = (args, env = {}) => spawnSync(process.execPath, [vendored, 'upgrade', '--no-obsidian', ...args], { encoding: 'utf8', env: { ...sb.env, ...env }, cwd: sb.dir });
+  const lost = up([]);
+  assert.equal(lost.status, 2, 'no marketplace known and no clone: the old error');
+  assert.match(lost.stderr, /cannot locate the AgenticOS-Workbench checkout/);
+  fs.writeFileSync(sb.env.FAKE_CLAUDE_LOG, '');
+  const r = up([], { FAKE_MARKETPLACE_DIR: ROOT });
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  assert.match(r.stdout, new RegExp(`upgrading ${reEsc(sb.vault)} from ${reEsc(ROOT)}`));
+  assert.match(sb.log('FAKE_CLAUDE_LOG'), /^plugin marketplace update agenticos-workbench\nplugin update agenticos@agenticos-workbench$/m);
+  fs.writeFileSync(sb.env.FAKE_CLAUDE_LOG, '');
+  assert.equal(up(['--from-local', ROOT], { FAKE_MARKETPLACE_DIR: ROOT }).status, 0);
+  assert.match(sb.log('FAKE_CLAUDE_LOG'), /^plugin update agenticos@agenticos-workbench$/m, '--from-local naming the marketplace directory refreshes the plugin too');
+  fs.writeFileSync(sb.env.FAKE_CLAUDE_LOG, '');
+  assert.equal(up(['--from-local', ROOT], { FAKE_MARKETPLACE_DIR: sb.dir }).status, 0);
+  assert.doesNotMatch(sb.log('FAKE_CLAUDE_LOG'), /^plugin update/m, 'another checkout leaves the installed plugin alone');
+});
+
 test('upgradeReexecTarget: the checkout\'s own CLI runs in place; any other copy re-execs it; no CLI → null', () => {
   const { upgradeReexecTarget } = require('./aos.js');
   assert.equal(upgradeReexecTarget(ROOT, AOS), null);
