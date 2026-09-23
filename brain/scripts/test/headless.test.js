@@ -88,3 +88,16 @@ test('a kind\'s own Codex model wins over codex.model (persona.codexModel, routi
   assert.equal(H.resolveRunner({ cfg, kind: 'routines', env: ENV, lookup: none, candidates: false }).model, 'gpt-5-mini');
   assert.equal(H.resolveRunner({ cfg: { ...cfg, codex: {} }, kind: 'routines', env: ENV, lookup: none, candidates: false }).model, null, 'the user\'s Codex default');
 });
+
+test('graphRunner: a pinned runner, else an explicit provider, else Claude when it is a host with a binary, else Codex', () => {
+  const both = { hosts: { claude: { enabled: true }, codex: { enabled: true } } };
+  const bins = { claude: '/b/claude', codex: '/b/codex' };
+  assert.deepEqual(H.graphRunner(both, { bins }), { host: 'claude', bin: '/b/claude' });
+  assert.deepEqual(H.graphRunner(both, { bins: { claude: null, codex: '/b/codex' } }), { host: 'codex', bin: '/b/codex' });
+  assert.deepEqual(H.graphRunner({ ...both, provider: 'codex' }, { bins }), { host: 'codex', bin: '/b/codex' }, 'provider codex names Codex');
+  assert.deepEqual(H.graphRunner({ ...both, graph: { semantic: { runner: 'codex' } } }, { bins }), { host: 'codex', bin: '/b/codex' });
+  assert.equal(H.graphRunner({ ...both, provider: 'claude' }, { bins: { claude: null, codex: '/b/codex' } }), null, 'an explicit provider claude never falls to Codex');
+  assert.deepEqual(H.graphRunner({ hosts: { claude: { enabled: false }, codex: { enabled: true } } }, { bins }), { host: 'codex', bin: '/b/codex' });
+  assert.deepEqual(H.graphRunner({}, { bins }), { host: 'claude', bin: '/b/claude' }, 'a config without hosts is Claude only');
+  assert.equal(H.graphRunner({}, { bins: { claude: null, codex: '/b/codex' } }), null);
+});
