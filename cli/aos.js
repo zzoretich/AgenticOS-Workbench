@@ -715,7 +715,7 @@ function installPlugin(ctx, bin) {
   else if (inst.stdout.trim()) out.log(inst.stdout.trim());
 }
 
-/** "5 hook entries, the MCP registration, 24 skills" — what removeDirectWiring took out, or '' when nothing. */
+/** "5 hook entries, the MCP registration, 25 skills" — what removeDirectWiring took out, or '' when nothing. */
 function directWiringSummary(d) {
   return [d.hooks && `${d.hooks} hook entries`, d.mcp && 'the MCP registration', d.skills && `${d.skills} skills`].filter(Boolean).join(', ');
 }
@@ -1061,9 +1061,6 @@ async function init(flags) {
     runScript(vault, 'build-brain-md', [], { allowFail: true });
     runScript(vault, 'recall', ['--warm'], { allowFail: true });
   });
-  await act('share user skills between the hosts (skills-sync)', () => {
-    runScript(vault, 'skills-sync', [], { allowFail: true });
-  });
 
   // 10. checklist
   checklist(ctx);
@@ -1210,6 +1207,9 @@ async function upgrade(flags) {
     runScript(vault, 'scan-vault', ['--quiet'], { allowFail: true });
     runScript(vault, 'build-brain-md', [], { allowFail: true });
     runScript(vault, 'recall', ['--warm'], { allowFail: true });
+  });
+  await act('share user skills between the hosts (skills-sync)', () => {
+    runScript(vault, 'skills-sync', [], { allowFail: true });
   });
   await act('refresh the update check', async () => {
     const u = require('./update-check.js');

@@ -57,6 +57,8 @@ export interface VaultConfig {
   routines: { enabled: boolean; runner: "auto" | "claude" | "codex"; codexModel: string | null; perRunUsd: number; perDayUsd: number; tools: string; externalLabels: string[] };
   // Cross-review and handoff (spec 2026-09-23-cross-review D8): the HUD does not read these yet; mirrored so the defaults stay whole.
   crossReview: { enabled: boolean; claudeModel: string | null; codexModel: string | null; effort: string | null; perCallUsd: number; perDayUsd: number; timeoutSec: number; rounds: number };
+  // Universal skills (spec 2026-09-23-universal-skills D6): the Skills tab reads the runtime's cache, not these; mirrored so the defaults stay whole.
+  skills: { sync: boolean; exclude: string[] };
 }
 
 export interface ProviderState {
@@ -92,6 +94,7 @@ export const VAULT_CONFIG_DEFAULTS: VaultConfig = {
   persona: { enabled: true, runner: "auto", codexModel: null, perDutyUsd: 2.0, perDayUsd: 6.0, watchdog: { graceMinutes: 45, notify: true }, tick: { flagAgeDays: 7, earlyReflect: { corrections: 3, dutyFailures: 2 } }, autoapply: { minVerified: 3 } },
   routines: { enabled: true, runner: "auto", codexModel: null, perRunUsd: 2.0, perDayUsd: 6.0, tools: "Read,Glob,Grep", externalLabels: [] },
   crossReview: { enabled: true, claudeModel: null, codexModel: null, effort: null, perCallUsd: 3.0, perDayUsd: 10.0, timeoutSec: 600, rounds: 5 },
+  skills: { sync: true, exclude: [] },
 };
 
 export const PROVIDER_STATE_PATH = "brain/_index/provider-state.json";

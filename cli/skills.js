@@ -26,11 +26,10 @@ const translate = () => resolveModule('lib/skill-translate.js');
 
 class UsageError extends Error {}
 
-function claudeConfigDir() { return path.resolve(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')); }
 function readJson(file) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; } }
 
 function resolveCtx(opts = {}) {
-  const configDir = opts.configDir || claudeConfigDir();
+  const configDir = opts.configDir || resolveModule('lib/host.js').claudeConfigDir();
   const userCfg = readJson(process.env.AOS_CONFIG || path.join(configDir, 'agenticos.json')) || {};
   const vault = opts.vault || process.env.AOS_VAULT || userCfg.vault;
   if (!vault) throw new Error('no vault configured (run `aos init` first)');

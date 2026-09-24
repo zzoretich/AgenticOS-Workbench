@@ -82,7 +82,7 @@ test('mergeHooks writes the five events through the launcher with AOS_HOST=codex
   assert.deepEqual(names('UserPromptSubmit'), ['inject-context']);
   assert.deepEqual(names('PostToolUse'), ['telemetry-hook']);
   assert.deepEqual(names('Stop'), ['update-session', 'heartbeat-writer', 'reconcile-sessions']);
-  assert.deepEqual(names('SessionEnd'), ['telemetry-hook', 'auto-cost', 'heartbeat-writer', 'auto-wrap', 'scan-vault --quiet']);
+  assert.deepEqual(names('SessionEnd'), ['telemetry-hook', 'auto-cost', 'heartbeat-writer', 'auto-wrap', 'scan-vault --quiet', 'skills-sync']);
   for (const g of doc.hooks.SessionEnd) for (const h of g.hooks) assert.equal(h.timeout, 3);
   for (const g of doc.hooks.Stop) for (const h of g.hooks) { assert.equal(h.timeout, 10); assert.equal(h.type, 'command'); }
   assert.equal(doc.hooks.Stop[0].hooks[0].command, `env AOS_HOST=codex AOS_CONFIG='${CONFIG}' sh '${LAUNCHER}' update-session`);
@@ -167,7 +167,7 @@ test('Claude Code tools and host wording: file tools, AskUserQuestion, /agentico
   assert.ok(!/AskUserQuestion|Read tool|\/agenticos:/.test(plugin));
 });
 
-test('generateSkills turns the real plugin into 26 marked skills, copies skill scripts, and never overwrites a foreign skill', () => {
+test('generateSkills turns the real plugin into 27 marked skills, copies skill scripts, and never overwrites a foreign skill', () => {
   const dir = tmp('aos-skills-');
   fs.mkdirSync(path.join(dir, 'brain'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'brain', 'SKILL.md'), '---\nname: brain\ndescription: the user\'s own brain skill\n---\nmine\n');
@@ -175,8 +175,8 @@ test('generateSkills turns the real plugin into 26 marked skills, copies skill s
   const r = CH.generateSkills({ pluginDir: PLUGIN, dir, launcher: LAUNCHER, config: CONFIG, io: { warn: (m) => warnings.push(m) } });
   assert.deepEqual(r.skipped, ['brain']);
   assert.equal(warnings.length, 1);
-  assert.equal(r.written.length, 23, 'seventeen commands and nine skills, two shared names (wrap, cost), one foreign (brain)');
-  assert.equal(CH.countGenerated(dir), 23);
+  assert.equal(r.written.length, 24, 'eighteen commands and nine skills, two shared names (wrap, cost), one foreign (brain)');
+  assert.equal(CH.countGenerated(dir), 24);
   assert.equal(fs.readFileSync(path.join(dir, 'brain', 'SKILL.md'), 'utf8').trim().endsWith('mine'), true);
   for (const name of r.written) {
     const text = fs.readFileSync(path.join(dir, name, 'SKILL.md'), 'utf8');
@@ -208,7 +208,7 @@ test('installCodexHost writes hooks.json, registers the MCP server once, generat
   assert.equal(r.mcp, 'added');
   assert.equal(state.registered, LAUNCHER);
   assert.ok(calls.some((c) => c.join(' ') === `/x/codex mcp add agenticos --env AOS_CONFIG=${CONFIG} --env AOS_HOST=codex -- sh ${LAUNCHER} mcp-server`));
-  assert.equal(r.skills.written.length, 24);
+  assert.equal(r.skills.written.length, 25);
   const doc = JSON.parse(fs.readFileSync(r.hooksFile, 'utf8'));
   assert.equal(CH.countOurEvents(doc), 5);
   // second run: present, unchanged
@@ -220,14 +220,14 @@ test('installCodexHost writes hooks.json, registers the MCP server once, generat
   assert.equal(st.loggedIn, true);
   assert.equal(st.hookEvents, 5);
   assert.equal(st.mcp, 'ok');
-  assert.equal(st.skills, 24);
+  assert.equal(st.skills, 25);
   assert.equal(st.memories, false);
   const rm = CH.removeCodexHost({ cfg: {}, bin: '/x/codex', run, env, dir });
   assert.equal(rm.hooksFileState, 'deleted');
   assert.equal(rm.hooksRemoved, 5);
   assert.equal(rm.mcp, 'removed');
   assert.equal(state.registered, null);
-  assert.equal(rm.skills.length, 24);
+  assert.equal(rm.skills.length, 25);
   assert.ok(!fs.existsSync(r.hooksFile));
   assert.equal(CH.codexHostStatus({ cfg: {}, launcher: LAUNCHER, run, env: { ...env, AOS_CODEX_BIN: '/x/codex' }, dir }).hookEvents, 0);
 });
@@ -308,7 +308,7 @@ test('the plugin wiring names nothing on this machine: ${PLUGIN_ROOT} in hooks, 
   assert.ok(CH.isOurs(CH.pluginHookCommand('x')), 'the same AOS_HOST prefix as direct entries');
   assert.deepEqual(CH.pluginMcpServers().mcpServers.agenticos.args, ['./bin/aos', 'mcp-server']);
   assert.equal(CH.pluginMcpServers().mcpServers.agenticos.cwd, '.');
-  assert.equal(CH.pluginHookCount(), 15);
+  assert.equal(CH.pluginHookCount(), 16);
 });
 
 test('installCodexPlugin: a fresh install adds the marketplace and the plugin; a re-run refreshes a git marketplace first', () => {
@@ -380,7 +380,7 @@ test('removeDirectWiring takes out what a direct install wrote (hooks, MCP regis
   const { run, state } = fakeRun();
   CH.installCodexHost({ cfg: {}, launcher: LAUNCHER, config: CONFIG, pluginDir: PLUGIN, bin: '/x/codex', run, env, dir });
   CH.installCodexPlugin({ bin: '/x/codex', source: 'owner/repo', run });
-  assert.deepEqual(CH.removeDirectWiring({ cfg: {}, bin: '/x/codex', run, env, dir }), { hooks: 5, mcp: true, skills: 24 });
+  assert.deepEqual(CH.removeDirectWiring({ cfg: {}, bin: '/x/codex', run, env, dir }), { hooks: 5, mcp: true, skills: 25 });
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(home, 'hooks.json'), 'utf8')), { hooks: { Stop: [foreign] } });
   assert.equal(state.registered, null);
   assert.equal(state.installed, true, 'the plugin stays');
@@ -423,14 +423,14 @@ test('codexPluginStatus reports the plugin, its MCP server and any direct wiring
   const before = CH.codexPluginStatus({ cfg: {}, launcher: LAUNCHER, run, env, dir });
   assert.equal(before.installed, false);
   assert.equal(before.mcp, 'missing');
-  assert.equal(before.hooksTotal, 15);
+  assert.equal(before.hooksTotal, 16);
   CH.installCodexHost({ cfg: {}, launcher: LAUNCHER, config: CONFIG, pluginDir: PLUGIN, bin: '/x/codex', run, env, dir });
   CH.installCodexPlugin({ bin: '/x/codex', source: 'owner/repo', run });
   const both = CH.codexPluginStatus({ cfg: {}, launcher: LAUNCHER, run, env, dir });
   assert.equal(both.installed, true);
   assert.equal(both.version, '1.0.0');
   assert.equal(both.mcp, 'ok');
-  assert.deepEqual(both.direct, { hookEvents: 5, mcp: true, skills: 24 });
+  assert.deepEqual(both.direct, { hookEvents: 5, mcp: true, skills: 25 });
   CH.removeDirectWiring({ cfg: {}, bin: '/x/codex', run, env, dir });
   assert.deepEqual(CH.codexPluginStatus({ cfg: {}, launcher: LAUNCHER, run, env, dir }).direct, { hookEvents: 0, mcp: false, skills: 0 });
 });

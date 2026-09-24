@@ -102,6 +102,11 @@
             "type": "command",
             "command": "env AOS_HOST=codex sh \"${PLUGIN_ROOT}/bin/aos\" scan-vault --quiet",
             "timeout": 3
+          },
+          {
+            "type": "command",
+            "command": "env AOS_HOST=codex sh \"${PLUGIN_ROOT}/bin/aos\" skills-sync",
+            "timeout": 3
           }
         ]
       }
