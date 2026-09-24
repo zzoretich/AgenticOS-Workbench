@@ -16,7 +16,8 @@
  *      carries reason 'projects-unreadable:<code>'.
  *   5. Skips any UUID whose dir is younger than orphanUuidMinAgeMinutes.
  *
- * Gated by scanner-config.json: `autoSweepOrphans: true`.
+ * Gated by `autoSweepOrphans: true`: a boolean in scanner-config.json wins; otherwise scan.autoSweepOrphans from the
+ * product config (<vault>/brain/config.json, then agenticos.json), which `aos config` sets (spec 2026-09-24-aos-config D11).
  *   - sweepTransientResidue (default true): enable rule 3 above.
  *   - transientResiduePatterns (default ['-hook-\\d+\\.(sh|ps1|bat|cmd)$']):
  *     regex sources; a non-empty orphan is swept only if EVERY file matches one.
@@ -29,6 +30,14 @@
 const fs = require('fs');
 const path = require('path');
 const { VAULT, PATHS, safeStat, listDir, readJson } = require('./collectors/util');
+const { configFile } = require('./lib/paths.js');
+
+/** scan.autoSweepOrphans for `vault`, merged as lib/config.js merges it: agenticos.json over brain/config.json. */
+function productSweep(vault, userConfigFile = configFile()) {
+  const pick = (o) => (o && o.scan && typeof o.scan.autoSweepOrphans === 'boolean' ? o.scan.autoSweepOrphans : undefined);
+  const user = pick(readJson(userConfigFile));
+  return user !== undefined ? user : pick(readJson(path.join(vault, 'brain', 'config.json'))) === true;
+}
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -103,7 +112,8 @@ function sweepOrphans(opts = {}) {
     transientSwept: { sessionEnv: [], fileHistory: [] },
     skipped: { nonEmpty: 0, hasJsonl: 0, tooYoung: 0, error: 0 },
   };
-  if (!cfg.autoSweepOrphans) return result;
+  const on = typeof cfg.autoSweepOrphans === 'boolean' ? cfg.autoSweepOrphans : productSweep(vault, opts.userConfigFile);
+  if (!on) return result;
   result.enabled = true;
 
   const transient = {
