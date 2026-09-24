@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { runAos, runAosJson, failureText, needsUpgrade, aosEnv, AOS_CLI } from "./aosRun";
+import { runAos, runAosJson, failureText, needsUpgrade, listFailure, aosEnv, AOS_CLI } from "./aosRun";
 
 /** A fixture CLI: echoes its argv and the pinned env as JSON, or misbehaves on request. */
 function fixture(): { vault: string; configDir: string; cli: string } {
@@ -79,4 +79,14 @@ test("a node binary that cannot start resolves with the spawn error", async () =
 test("aosEnv keeps the base environment and overrides only the two pins", () => {
   const env = aosEnv({ node: "n", vault: "/v", configDir: "/c", env: { PATH: "/bin", AOS_VAULT: "/old" } });
   assert.deepEqual(env, { PATH: "/bin", AOS_VAULT: "/v", AOS_CONFIG: path.join("/c", "agenticos.json") });
+});
+
+test("listFailure: only a missing verb or CLI asks for an upgrade; unreadable output says what it is", () => {
+  const base = { stdout: "", stderr: "", timedOut: false, json: null };
+  assert.equal(listFailure({ ...base, code: 0, json: {} }, true), null);
+  assert.deepEqual(listFailure({ ...base, code: 2, stderr: "aos: unknown command: config\nusage:" }, false), { text: "unknown command: config", upgrade: true });
+  assert.deepEqual(listFailure({ ...base, code: 1, stderr: "aos: boom\n" }, false), { text: "boom", upgrade: false });
+  assert.deepEqual(listFailure({ ...base, code: 0, parseError: "Unexpected end of JSON input" }, false),
+    { text: "aos config list sent output that does not parse (Unexpected end of JSON input)", upgrade: false });
+  assert.deepEqual(listFailure({ ...base, code: 0, json: { schema: 2 } }, false), { text: "aos config list answered in an unexpected shape", upgrade: false });
 });

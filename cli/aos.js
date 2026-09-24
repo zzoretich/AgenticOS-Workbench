@@ -1449,12 +1449,19 @@ async function main(argv) {
   }
 }
 
+/** Exits once stdout and stderr have flushed. process.exit() drops whatever is still queued on a pipe, which cut
+ *  `aos config list --json` off at 64 KB when the Workbench read it through one; a write callback runs after every
+ *  earlier write on that stream has been handed to the OS. */
+function exitFlushed(code) {
+  process.stdout.write('', () => process.stderr.write('', () => process.exit(code)));
+}
+
 if (require.main === module) {
-  main(process.argv.slice(2)).then((code) => process.exit(code), (e) => {
-    if (e instanceof UsageError) { process.stderr.write(`aos: ${e.message}\n${USAGE}\n`); process.exit(2); }
+  main(process.argv.slice(2)).then((code) => exitFlushed(code), (e) => {
+    if (e instanceof UsageError) { process.stderr.write(`aos: ${e.message}\n${USAGE}\n`); exitFlushed(2); return; }
     // A non-Error rejection (a thrown string, a rejected promise with no reason) must still name itself.
     process.stderr.write(`aos: ${e && e.message ? e.message : String(e)}\n`);
-    process.exit(1);
+    exitFlushed(1);
   });
 }
 

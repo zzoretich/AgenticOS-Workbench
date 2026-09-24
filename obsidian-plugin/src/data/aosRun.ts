@@ -73,6 +73,18 @@ export function failureText(r: AosResult): string {
   return (own ?? lines[0] ?? `aos exited ${r.code}`).replace(/^aos( config)?: /, "");
 }
 
+/**
+ * Why `aos config list --json` gave the tab no list, and whether `aos upgrade` is the fix. Only a runtime without the
+ * verb (or without the CLI) is an upgrade; output that does not parse or has the wrong shape says so as it is — it
+ * once hid a 64 KB pipe truncation behind "run aos upgrade".
+ */
+export function listFailure(r: AosJsonResult<unknown>, parsed: boolean): { text: string; upgrade: boolean } | null {
+  if (parsed) return null;
+  if (r.code !== 0) return { text: failureText(r), upgrade: needsUpgrade(r) };
+  if (r.parseError) return { text: `aos config list sent output that does not parse (${r.parseError})`, upgrade: false };
+  return { text: "aos config list answered in an unexpected shape", upgrade: false };
+}
+
 /** D13: the vendored runtime predates `aos config` (or is missing), so the tab asks for `aos upgrade`. */
 export function needsUpgrade(r: AosResult): boolean {
   return /unknown command: config|unknown script config|Cannot find module/.test(r.stderr);
