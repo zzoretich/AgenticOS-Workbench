@@ -88,6 +88,19 @@ test('sync: builds the template vars from persona answers and reports labels, re
   assert.match(w.out(), /not supported on win32/);
 });
 
+test('sync: persona.model and persona.effort in brain/config.json win over the interview answers (duty-model-settings D3)', async () => {
+  const w = world();
+  fs.mkdirSync(path.join(w.vault, 'persona'), { recursive: true });
+  fs.writeFileSync(path.join(w.vault, 'persona', 'answers.json'), JSON.stringify({ name: 'Atlas', dutyModel: 'haiku', dutyEffort: 'medium' }));
+  fs.mkdirSync(path.join(w.vault, 'brain'), { recursive: true });
+  fs.writeFileSync(path.join(w.vault, 'brain', 'config.json'), JSON.stringify({ persona: { model: 'sonnet', effort: 'high' } }));
+  let seen = null;
+  await R.main(['sync'], { configDir: w.configDir, io: w.io, installSchedules: (o) => { seen = o; return { platform: 'linux', written: [], removed: [], labels: [], warnings: [] }; } });
+  assert.equal(seen.vars.MODEL, 'sonnet');
+  assert.equal(seen.vars.EFFORT, 'high');
+  assert.equal(seen.vars.AGENT_NAME, 'Atlas');
+});
+
 test('sync without persona answers falls back to claude.model and the default agent name', async () => {
   const w = world();
   let seen = null;

@@ -4,6 +4,13 @@ All notable changes to AgenticOS Workbench. Versions follow the tags. From the n
 
 ## [Unreleased]
 
+### Added
+- Duty model and effort are settings: `aos config set persona.model <model>` and `aos config set persona.effort low|medium|high`, then `aos routines sync`. They win over the interview's answers, which stay the fallback; the Codex duty model stays `persona.codexModel`.
+- One duty can run on its own model: `model:` and `effort:` in `brain/routines/<duty>.md` override the schedule's for that duty (for example the hourly tick on `haiku`, the weekly reflect on a bigger model). The Workbench Routines tab accepts them too.
+
+### Upgrading
+- Nothing to do. To move the duties to another model, set `persona.model` and run `aos routines sync`; raise a duty's `budgetUsd` in its routine file if the new model costs more per run (the hourly tick's is 0.10 USD).
+
 ## [0.19.0] — 2026-09-24
 
 ### Added

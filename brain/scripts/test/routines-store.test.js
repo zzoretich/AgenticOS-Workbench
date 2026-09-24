@@ -57,6 +57,9 @@ test('validate: kind-specific rules and the slug rule', () => {
   assert.match(store.validate({ ...base, kind: 'duty', writes: 'notes/' }).join(), /writes/);
   assert.match(store.validate({ ...base, kind: 'duty', writes: ['a,b'] }).join(), /writes/);
   assert.match(store.validate({ ...base, kind: 'duty', tools: ' ' }).join(), /tools/);
+  assert.deepEqual(store.validate({ ...base, kind: 'duty', body: '', model: 'sonnet', effort: 'high' }), [], 'a duty may pick its own model and effort');
+  assert.match(store.validate({ ...base, kind: 'duty', effort: 'max' }).join(), /effort/);
+  assert.match(store.validate({ ...base, kind: 'duty', model: ' ' }).join(), /model/);
   assert.match(store.validate({ ...base, body: '' }).join(), /needs a body/);
   assert.match(store.validate({ ...base, effort: 'max' }).join(), /effort/);
   assert.match(store.validate({ ...base, budgetUsd: -1 }).join(), /budgetUsd/);

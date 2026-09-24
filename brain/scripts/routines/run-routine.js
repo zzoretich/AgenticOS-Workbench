@@ -7,7 +7,8 @@
  *
  * Loads <vault>/brain/routines/<slug>.md, then by kind:
  *   duty     sh <vault>/brain/scripts/persona/run-duty.sh <slug>   (its own kill switch, caps, journal, contract);
- *            `budgetUsd` and `tools` in the routine file become PERSONA_MAX_USD and PERSONA_TOOLS for that run
+ *            `budgetUsd` and `tools` in the routine file become PERSONA_MAX_USD and PERSONA_TOOLS for that run, and
+ *            `model` and `effort` become PERSONA_MODEL and PERSONA_EFFORT
  *   prompt   the headless runner (lib/headless.js, codex-parity D4): `claude -p <body> --model … --effort … --allowedTools
  *            <routines.tools> --max-budget-usd …`, or `codex exec -` with the body on stdin when routines.runner says so
  *            or no claude is installed (spend then estimated from the usage block); gated by routines.perDayUsd over
@@ -103,6 +104,10 @@ function plan(routine, cfg, deps) {
     if (typeof routine.tools === 'string' && routine.tools.trim()) env.PERSONA_TOOLS = expandArgv(routine.tools, deps);
     // Extra write scope on top of the default one (spec 2026-09-23-duty-write-scope-design D5); duty-guard.js checks it.
     if (Array.isArray(routine.writes) && routine.writes.length) env.PERSONA_WRITES = routine.writes.join(',');
+    // A duty's own model and effort win over the schedule's (spec 2026-09-24-duty-model-settings-design D1). The model is
+    // a Claude model by contract, as for prompt routines: run-duty.sh gives the Codex runner persona.codexModel (D4).
+    if (routine.model) env.PERSONA_MODEL = routine.model;
+    if (routine.effort) env.PERSONA_EFFORT = routine.effort;
     return { cmd: 'sh', args: [path.join(deps.vault, 'brain', 'scripts', 'persona', 'run-duty.sh'), routine.slug], env, feature: `duty:${routine.slug}` };
   }
   if (routine.kind === 'prompt') {

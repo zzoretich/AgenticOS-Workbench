@@ -51,6 +51,18 @@ function resolveCtx(opts = {}) {
   };
 }
 
+/**
+ * The schedule vars for the duties: model and effort resolved through the settings first (schedule.dutyRunDefaults),
+ * so persona.model / persona.effort survive a re-run of the interview or a rename. Says so when a setting overrides the
+ * interview's answer.
+ */
+function dutyScheduleVars({ vault, configDir, node, answers, io }) {
+  const run = schedule.dutyRunDefaults({ userCfg: readAgenticos(configDir) || {}, vaultCfg: schedule.readVaultConfig(vault), answers });
+  if (io && answers.dutyModel && run.model !== answers.dutyModel) io.log(`persona: duties run on ${run.model} (persona.model), not the interview's ${answers.dutyModel}`);
+  if (io && answers.dutyEffort && run.effort !== answers.dutyEffort) io.log(`persona: duties run at ${run.effort} effort (persona.effort), not the interview's ${answers.dutyEffort}`);
+  return schedule.scheduleVars({ vault, configDir, node, model: run.model, effort: run.effort, agentName: answers.name });
+}
+
 /** The Codex duty model lives where lib/headless.js reads it: persona.codexModel in <vault>/brain/config.json. */
 function writeCodexModel(vault, model) {
   const file = path.join(vault, 'brain', 'config.json');
@@ -88,7 +100,7 @@ async function runInterview(opts = {}) {
   if (codex) writeCodexModel(vault, answers.dutyCodexModel);
   let sched = null;
   if (answers.schedule && opts.schedule !== false) {
-    const vars = schedule.scheduleVars({ vault, configDir, node, model: answers.dutyModel, effort: answers.dutyEffort, agentName: answers.name });
+    const vars = dutyScheduleVars({ vault, configDir, node, answers, io });
     // execution amendment 2026-09-15 (A30): schedule.js collects a failed `launchctl load` into `warnings` and calls `warn`;
     // route it through io.error so `aos` prints it on stderr and the tests can see it. Never aborts the interview.
     sched = (opts.installSchedules || schedule.installSchedules)({ vars, platform: opts.platform || process.platform, warn: (m) => io.error(`warning: ${m}`) });
@@ -106,7 +118,7 @@ async function rename(newName, opts = {}) {
   io.log(`persona: renamed ${r.from} → ${r.to} in ${r.changed.join(', ') || 'no files'}`);
   const platform = opts.platform || process.platform;
   if ((opts.isInstalled || schedule.isInstalled)({ platform })) {
-    const vars = schedule.scheduleVars({ vault, configDir, node, model: r.answers.dutyModel, effort: r.answers.dutyEffort, agentName: r.answers.name });
+    const vars = dutyScheduleVars({ vault, configDir, node, answers: r.answers });
     (opts.installSchedules || schedule.installSchedules)({ vars, platform, warn: (m) => io.error(`warning: ${m}`) });   // execution amendment 2026-09-15 (A30)
     io.log('persona: schedules re-rendered');
   }

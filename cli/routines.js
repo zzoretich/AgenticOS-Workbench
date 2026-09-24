@@ -42,14 +42,11 @@ function resolveCtx(opts = {}) {
   return { configDir, vault, cfg, node: opts.node || cfg.node || 'node', platform: opts.platform || process.platform };
 }
 
-/** The template variables every schedule carries: persona answers (model, effort, name) when the interview ran. */
+/** The template variables every schedule carries: the duty model and effort (schedule.dutyRunDefaults), the agent's name. */
 function scheduleVarsFor({ vault, configDir, node, cfg }) {
   const answers = readJson(path.join(vault, 'persona', 'answers.json')) || {};
-  return schedule.scheduleVars({
-    vault, configDir, node,
-    model: answers.dutyModel || (cfg && cfg.claude && cfg.claude.model) || 'haiku',
-    effort: answers.dutyEffort, agentName: answers.name,
-  });
+  const { model, effort } = schedule.dutyRunDefaults({ userCfg: cfg, vaultCfg: schedule.readVaultConfig(vault), answers });
+  return schedule.scheduleVars({ vault, configDir, node, model, effort, agentName: answers.name });
 }
 
 function routinesDir(vault) { return path.join(vault, 'brain', 'routines'); }
