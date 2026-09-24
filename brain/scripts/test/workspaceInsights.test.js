@@ -58,7 +58,7 @@ test('provider none → heuristic insight, status ok, model heuristic', async ()
 });
 
 test('provider claude → heuristic unless scan.insightsUnderClaude is on', async () => {
-  const fs = require('fs'); const path = require('path');
+  const fs = require('fs');
   const { PATHS } = require('../lib/paths.js');
   let calls = 0;
   const CLAUDE = { name: 'claude', reason: 'forced', capabilities: { chat: true, embed: false, structured: true }, chat: async () => { calls++; return 'INSIGHT: Claude says.\nNEXT: NONE'; } };

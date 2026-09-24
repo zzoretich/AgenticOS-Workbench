@@ -28,7 +28,6 @@ function resolveModule(rel) {
   throw new Error(`${rel} not found beside cli/routines.js — run \`aos upgrade\``);
 }
 const store = () => resolveModule('lib/routines-store.js');
-const cron = () => resolveModule('lib/cron.js');
 const hostsLib = () => resolveModule('lib/host-routines.js');
 
 function claudeConfigDir() { return path.resolve(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')); }

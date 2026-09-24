@@ -95,3 +95,15 @@ test('CLI: append prints one JSON line, refusals and usage exit 2', () => {
   assert.equal(B.main(['list', '--root', v], io), 2);
   assert.equal(B.defaultFile(v), file);
 });
+
+test('headings inside What and Why are demoted one level, so they nest under the entry\'s own ### What / ### Why', () => {
+  const { put, file } = vault();
+  const body = PROPOSAL('nested', 'product', 'surface: brain\n')
+    .replace('- step two\n', '- step two\n\n### Details\nOne.\n\n#### Deeper\nTwo.\n')
+    .replace('three days running.\n', 'three days running.\n\n### Evidence\nThe journal.\n');
+  B.append({ proposal: put('2026-09-22-nested.md', body), file, by: 'user', now: NOW });
+  const text = fs.readFileSync(file, 'utf8');
+  assert.match(text, /\n### What\n\n[\s\S]*\n#### Details\nOne\.\n\n##### Deeper\nTwo\.\n\n### Why\n/);
+  assert.match(text, /\n#### Evidence\nThe journal\.\n/);
+  assert.ok(!/^### (Details|Evidence)$/m.test(text), 'no sub-heading sits beside ### What');
+});

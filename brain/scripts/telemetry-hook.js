@@ -20,7 +20,7 @@
  * (default true) or BRAIN_AGENT_REDACT=1. telemetry.enabled=false → the hook writes nothing.
  */
 
-const { PATHS } = require('./lib/hook-entry.js').hookEntry();
+require('./lib/hook-entry.js').hookEntry();
 const fs = require('fs');
 const path = require('path');
 const { RUNS_DIR, LIVE_DIR, SUMMARY_LOG } = require('./sdk/lib/telemetry.js');

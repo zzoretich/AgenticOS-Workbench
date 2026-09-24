@@ -61,7 +61,7 @@ function parseProposal(file) {
 function renderSection(p, { by, now }) {
   const lines = [`## ${p.filed} · ${p.kind} · ${p.slug}`, `- target: ${p.target}`];
   if (p.kind === 'product') lines.push(`- surface: ${p.surface || '(unspecified)'}`);
-  lines.push(`- accepted: ${now.toISOString().slice(0, 10)}${by ? ` by ${by}` : ''}`, '', '### What', '', p.what || '(the proposal had no What section)', '', '### Why', '', p.why || '(the proposal had no Why section)', '');
+  lines.push(`- accepted: ${now.toISOString().slice(0, 10)}${by ? ` by ${by}` : ''}`, '', '### What', '', p.what ? demote(p.what) : '(the proposal had no What section)', '', '### Why', '', p.why ? demote(p.why) : '(the proposal had no Why section)', '');
   return lines.join('\n');
 }
 

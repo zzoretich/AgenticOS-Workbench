@@ -13,7 +13,7 @@ fs.writeFileSync(path.join(TMP, 'CLAUDE.md'), '# t');
 fs.writeFileSync(path.join(TMP, 'MEMORY.md'), '# Index\n');
 process.env.BRAIN_VAULT = TMP;
 const {
-  DRAFTS_DIR, METRICS_PATH, logEvent, readEvents, writeDraft, listDrafts,
+  METRICS_PATH, logEvent, readEvents, writeDraft, listDrafts,
   applyDraft, rejectDraft, activeRuleTitles,
 } = require('../lib/feedback-drafts.js');
 

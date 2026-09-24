@@ -22,7 +22,6 @@
 
 const { PATHS } = require('./lib/hook-entry.js').hookEntry();
 const fs = require('fs');
-const path = require('path');
 const { spawn } = require('child_process');
 const { extract } = require('./sdk/lib/qwen.js');
 const { ping } = require('./sdk/lib/ollama.js');
@@ -427,13 +426,6 @@ async function runAutoWrap({ transcriptText, sessionId, chatFn, report, correcti
 // ---------------------------------------------------------------------------
 // Hook + detached-respawn wiring (require.main-guarded; never used by tests).
 // ---------------------------------------------------------------------------
-
-function extractTextContent(content) {
-  if (typeof content === 'string') return content;
-  if (Array.isArray(content)) return content.map((c) => (typeof c === 'string' ? c : (c.text || ''))).join(' ');
-  if (content && typeof content === 'object') return content.text || '';
-  return '';
-}
 
 /** Flattens a session transcript (either host's JSONL) into plain "role: text" lines. */
 function loadTranscriptText(transcriptPath) {

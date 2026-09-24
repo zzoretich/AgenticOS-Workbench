@@ -23,7 +23,7 @@ function slugify(text, maxWords = 6) {
   return (
     text
       .toLowerCase()
-      .replace(/[`*_~#>\[\]\(\)]/g, '')
+      .replace(/[`*_~#>[\]()]/g, '')
       .replace(/[^a-z0-9\s-]/g, ' ')
       .trim()
       .split(/\s+/)

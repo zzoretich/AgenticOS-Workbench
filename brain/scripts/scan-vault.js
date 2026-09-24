@@ -10,7 +10,7 @@
  *        --quiet (no stdout summary)
  */
 
-const { PATHS } = require('./lib/hook-entry.js').hookEntry();
+require('./lib/hook-entry.js').hookEntry();
 const fs = require('fs');
 const path = require('path');
 

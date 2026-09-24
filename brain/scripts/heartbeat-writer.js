@@ -25,11 +25,11 @@
  * Run manually, or via the SessionEnd / Stop hooks (see settings.json).
  */
 
-const { PATHS } = require('./lib/hook-entry.js').hookEntry();
+require('./lib/hook-entry.js').hookEntry();
 const fs = require('fs');
 const path = require('path');
 const brain = require('./sdk/lib/brain.js');
-const { RUNS_DIR, LIVE_DIR, SUMMARY_LOG } = require('./sdk/lib/telemetry.js');
+const { LIVE_DIR, SUMMARY_LOG } = require('./sdk/lib/telemetry.js');
 const { withReport } = require('./lib/pipeline-report.js');
 
 const VAULT = brain.PATHS.VAULT;
@@ -239,7 +239,7 @@ for (const [rawName, hb] of Object.entries(state)) {
   delete hb._sort;
   if (NICKNAMES[rawName]) hb.display_name = NICKNAMES[rawName];
   if (!hb.next_fire) hb.next_fire = nextFireFor(rawName, rows);   // an agent that is also a routine (brain/routines/<name>.md)
-  const name = rawName.replace(/[\/:]+/g, '-').trim();
+  const name = rawName.replace(/[/:]+/g, '-').trim();
   if (!name) continue;
   const dir = path.join(HB_DIR, name);
   const file = path.join(dir, 'heartbeat.json');
