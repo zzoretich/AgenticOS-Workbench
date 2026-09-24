@@ -8,6 +8,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import type AgenticOSPlugin from "../../main";
 import { TerminalSession } from "../data/terminalSession";
+import { listen } from "../data/listen";
 import { TOKENS } from "./tokens";
 
 const HUD_THEME: ITheme = {
@@ -63,6 +64,7 @@ export class TerminalPanel {
   private bindings = new Map<string, XtermBinding>();
   private activeId: string | null = null;
   private resizeObs: ResizeObserver | null = null;
+  private disposePool: (() => void) | null = null;
   private height: number;
 
   constructor(plugin: AgenticOSPlugin, opts: TerminalPanelOptions) {
@@ -127,22 +129,29 @@ export class TerminalPanel {
     this.resizeObs = new ResizeObserver(() => this.refit());
     this.resizeObs.observe(this.bodyEl);
 
-    // listen for pool changes
-    this.plugin.registerEvent(pool.on("session-add", () => { this.renderTabs(); }));
-    this.plugin.registerEvent(pool.on("session-remove", (id: string) => {
-      const b = this.bindings.get(id);
-      if (b) { b.detachData(); try { b.term.dispose(); } catch {} this.bindings.delete(id); }
-      this.renderTabs();
-      if (this.activeId === id) {
-        const next = pool.list()[0];
-        this.activeId = next?.id || null;
-        if (this.activeId) this.ensureBindingForActive();
-      }
-    }));
-    this.plugin.registerEvent(pool.on("session-exit", () => { this.renderTabs(); }));
+    // listen for pool changes: owned by this panel and removed in unmount(), not plugin.registerEvent(), which kept
+    // three listeners per visit alive until the plugin unloaded (spec 2026-09-24-hud-deck-fixes D1)
+    this.disposePool?.();
+    this.disposePool = listen(pool, {
+      "session-add": () => { if (this.host) this.renderTabs(); },
+      "session-remove": (id: string) => {
+        if (!this.host) return;
+        const b = this.bindings.get(id);
+        if (b) { b.detachData(); try { b.term.dispose(); } catch {} this.bindings.delete(id); }
+        this.renderTabs();
+        if (this.activeId === id) {
+          const next = pool.list()[0];
+          this.activeId = next?.id || null;
+          if (this.activeId) this.ensureBindingForActive();
+        }
+      },
+      "session-exit": () => { if (this.host) this.renderTabs(); },
+    });
   }
 
   unmount(): void {
+    this.disposePool?.();
+    this.disposePool = null;
     // dispose xterm instances but DON'T touch PTYs in the pool
     for (const b of this.bindings.values()) {
       try { b.detachData(); } catch { /* ignore */ }

@@ -529,7 +529,7 @@
 
 .aos-deck-btn-exec      { border-color: rgba(94, 226, 160, 0.4); color: #5ee2a0; }
 .aos-deck-btn-exec:hover { border-color: #5ee2a0; box-shadow: 0 0 6px rgba(94,226,160,0.3); }
-.aos-deck-btn-capture   { border-color: rgba(0, 212, 255, 0.4); }
+.aos-deck-btn-capture, .aos-deck-btn-remember, .aos-deck-btn-pattern { border-color: rgba(0, 212, 255, 0.4); }
 .aos-deck-btn-openFile  { border-color: rgba(255, 180, 84, 0.3); color: #ffb454; }
 .aos-deck-btn-clipboard { color: var(--aos-dim); }
 

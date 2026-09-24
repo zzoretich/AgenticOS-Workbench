@@ -1,4 +1,5 @@
 import { App, normalizePath, TFile, Notice } from "obsidian";
+import { appendUnderHeading } from "./mdSections";
 
 export type MemoryType = "user" | "feedback" | "projects" | "reference";
 
@@ -113,37 +114,11 @@ async function appendToMemoryIndex(
     return false;
   }
   const raw = await app.vault.adapter.read(indexPath);
-  const lines = raw.split("\n");
-  const heading = `## ${TYPE_HEADING[type]}`;
+  // Prefix match, first heading wins; IDENTICAL rule in memory-writer.js — behavioral parity between the two writers
+  // is a standing P4 contract (the rule and its tests live in mdSections.ts).
   const entry = `- [${title}](${memoryPath}) — ${description}`;
-
-  let inserted = false;
-  // Prefix match, case-sensitive, no word-boundary: "## Project" must match a
-  // real "## Projects" heading; "## Feedback" must match "## Feedback (how to
-  // work)". First matching heading wins. IDENTICAL rule in memory-writer.js —
-  // behavioral parity between the two writers is a standing P4 contract.
-  let headingIdx = lines.findIndex((l) => l.trim().startsWith(heading));
-
-  if (headingIdx === -1) {
-    // append new section at end
-    if (lines[lines.length - 1] !== "") lines.push("");
-    lines.push(heading);
-    lines.push(entry);
-    inserted = true;
-  } else {
-    // find end of this section (next ## heading or EOF)
-    let insertAt = lines.length;
-    for (let i = headingIdx + 1; i < lines.length; i++) {
-      if (/^##\s/.test(lines[i])) { insertAt = i; break; }
-    }
-    // trim trailing blanks before next section
-    while (insertAt > headingIdx + 1 && lines[insertAt - 1].trim() === "") insertAt--;
-    lines.splice(insertAt, 0, entry);
-    inserted = true;
-  }
-
-  await app.vault.adapter.write(indexPath, lines.join("\n"));
-  return inserted;
+  await app.vault.adapter.write(indexPath, appendUnderHeading(raw, `## ${TYPE_HEADING[type]}`, entry));
+  return true;
 }
 
 async function removeSessionLine(app: App, lineNumber: number): Promise<boolean> {

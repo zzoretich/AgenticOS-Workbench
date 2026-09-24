@@ -3,6 +3,8 @@ import { spawn } from "child_process";
 import * as path from "path";
 import * as fs from "fs";
 import { CaptureModal } from "../ui/CaptureModal";
+import { RememberModal } from "../ui/RememberModal";
+import { PatternModal } from "../ui/PatternModal";
 import { MemoryType } from "./memoryWriter";
 import { invocation, readAgenticosJson, sessionHosts } from "./aosConfig";
 
@@ -35,7 +37,8 @@ export function resolveExe(name: string): string {
 let spawnCtx: { node: string; vaultRoot: string } | null = null;
 export function setSpawnContext(ctx: { node: string; vaultRoot: string }): void { spawnCtx = ctx; }
 
-export type CommandKind = "clipboard" | "openFile" | "exec" | "capture" | "openView";
+// remember / pattern: their own targets, the same as the in-session /remember and /pattern (spec 2026-09-24-hud-deck-fixes D4, D5).
+export type CommandKind = "clipboard" | "openFile" | "exec" | "capture" | "remember" | "pattern" | "openView";
 
 export interface SlashCommand {
   name: string;
@@ -55,12 +58,14 @@ export interface SlashCommand {
 
 export const COMMAND_REGISTRY: SlashCommand[] = [
   { name: "/scan",           kind: "exec",      desc: "Refresh vault snapshot.json", cmd: "node", args: ["brain/scripts/scan-vault.js"] },
-  { name: "/reflect",        kind: "exec",      desc: "Run weekly reflection", cmd: "node", args: ["brain/scripts/sdk/reflect-week.js"] },
+  // --local: the provider writes it (reasoner role, capped by reasoner.perCallUsd / perDayUsd); without a flag the
+  // script only prints a prompt meant for a session (spec 2026-09-24-hud-deck-fixes D2).
+  { name: "/reflect-week",   kind: "exec",      desc: "Write this week's reflection (reasoner model)", cmd: "node", args: ["brain/scripts/sdk/reflect-week.js", "--local"] },
   { name: "/brain",          kind: "openFile",  desc: "Open BRAIN.md", path: "brain/_index/BRAIN.md" },
-  { name: "/remember",       kind: "capture",   desc: "Quick capture as feedback", captureType: "feedback" },
+  { name: "/remember",       kind: "remember",  desc: "Add a note to SESSION.md (#promote)" },
   { name: "/feedback",       kind: "capture",   desc: "New feedback memory", captureType: "feedback" },
   { name: "/project",        kind: "capture",   desc: "New project memory", captureType: "projects" },
-  { name: "/pattern",        kind: "capture",   desc: "New pattern (stored as feedback)", captureType: "feedback" },
+  { name: "/pattern",        kind: "pattern",   desc: "New pattern in brain/patterns/" },
   { name: "/wrap",           kind: "clipboard", desc: "Run session-end protocol — copies" },
   { name: "/ask-brain",      kind: "clipboard", desc: "Ask the vault — copies" },
 ];
@@ -92,6 +97,16 @@ export async function executeCommand(app: App, cmd: SlashCommand): Promise<void>
       return;
     }
 
+    case "remember": {
+      new RememberModal(app).open();
+      return;
+    }
+
+    case "pattern": {
+      new PatternModal(app).open();
+      return;
+    }
+
     case "exec": {
       if (!cmd.cmd) {
         new Notice(`✗ ${cmd.name}: no shell command configured`);
@@ -120,7 +135,9 @@ export async function executeCommand(app: App, cmd: SlashCommand): Promise<void>
         } else {
           child.on("close", (code) => {
             if (code === 0) {
-              const tail = out.trim().split("\n").pop() || "ok";
+              // Runtime scripts report on stderr (reflect-week's "wrote brain/reflections/…"), so an empty stdout
+              // falls back to it (spec 2026-09-24-hud-deck-fixes D3).
+              const tail = (out.trim() || err.trim()).split("\n").pop() || "ok";
               new Notice(`✓ ${cmd.name}: ${tail.slice(0, 120)}`);
             } else {
               const tail = (err || out).trim().split("\n").pop() || `exit ${code}`;
