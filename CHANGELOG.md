@@ -4,6 +4,15 @@ All notable changes to AgenticOS Workbench. Versions follow the tags. From the n
 
 ## [Unreleased]
 
+### Added
+- **Notifications.** Agents, routines and duties on either host post with `aos notify post`. Each post is a Markdown note under `brain/notifications/`, with a level (`breaking`, `alert`, `edition`, `info`), optional tags and allow-listed actions.
+  - A new Workbench **Notifications** tab lists the items with an unread badge (rose while a breaking item is unread), filters by view, level and sender, and read, archive and open-note controls.
+  - Actions: **ask** runs a named skill in a new Claude Code or Codex session, and **react** records a +1/−1 the sender can read back.
+  - `breaking` and `alert` items raise a desktop notification.
+  - `/notifications` (Claude Code) and `$agenticos:notifications` (Codex) do the same from a session.
+  - New settings: `notifications.osAlert`, `notifications.retentionDays` and `notifications.maxPerSenderPerHour`.
+  - `recallRoots` now includes `brain/notifications`, so past items are searchable.
+
 ## [0.18.0] — 2026-09-24
 
 ### Added

@@ -52,6 +52,6 @@ test('mutating the returned config does not leak into DEFAULTS or a later loadCo
   cfg.recallRoots.push('mutated');
   assert.equal(DEFAULTS.scan.fileMapBudget, 40);
   assert.deepEqual(DEFAULTS.roster.orchestrators, {});
-  assert.equal(DEFAULTS.recallRoots.length, 3);
+  assert.equal(DEFAULTS.recallRoots.length, 4);
   assert.deepEqual(loadConfig(), DEFAULTS);
 });

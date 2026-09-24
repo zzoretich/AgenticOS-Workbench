@@ -2,6 +2,7 @@
 // WorkbenchView recomputes them on vault events whether or not the tab is mounted.
 import { PROPOSALS_DIR, isProposalFile } from "./proposals";
 import { TODO_PATH, todoBadgeCount } from "./todos";
+import { NOTIFICATIONS_DIR } from "./notifications";
 
 /** Pending proposals among a listing of persona/proposals (vault paths or bare names). */
 export function proposalBadge(paths: string[]): number {
@@ -21,5 +22,6 @@ export function badgeText(n: number): string {
 
 /** Whether a vault event on `path` can change a badge. */
 export function touchesBadges(path: string): boolean {
-  return path === TODO_PATH || path === PROPOSALS_DIR || path.startsWith(`${PROPOSALS_DIR}/`);
+  return path === TODO_PATH || path === PROPOSALS_DIR || path.startsWith(`${PROPOSALS_DIR}/`) ||
+    path === NOTIFICATIONS_DIR || path.startsWith(`${NOTIFICATIONS_DIR}/`);
 }

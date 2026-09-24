@@ -23,6 +23,7 @@ const SECTIONS = [
   { id: 'spend', label: 'Spend limits' },
   { id: 'memory', label: 'Memory & scanning' },
   { id: 'persona', label: 'Chief of Staff' },
+  { id: 'notifications', label: 'Notifications' },
   { id: 'routines', label: 'Routines' },
   { id: 'graph', label: 'Knowledge graph' },
   { id: 'crossReview', label: 'Cross-review' },
@@ -129,6 +130,12 @@ const SETTINGS = [
     help: 'Verified outcomes a proposal class needs before the Chief of Staff may apply it without asking. Lower means more autonomy.' },
 
   // ── Routines ────────────────────────────────────────────────────────────────
+  { key: 'notifications.osAlert', section: 'notifications', label: 'Desktop alerts', type: 'bool', applies: 'next-call',
+    help: 'Show a desktop notification when an agent posts a breaking or alert item with `aos notify`.' },
+  { key: 'notifications.retentionDays', section: 'notifications', label: 'Retention', type: 'number', gt: 0, applies: 'next-call',
+    help: 'Days before `aos notify prune` archives an item. Items are archived, never deleted.' },
+  { key: 'notifications.maxPerSenderPerHour', section: 'notifications', label: 'Posts per sender per hour', type: 'number', int: true, min: 0, applies: 'next-call',
+    help: 'Past this many posts in an hour, a sender\'s items are written as info and raise no desktop alert.' },
   { key: 'routines.enabled', section: 'routines', label: 'Routines', type: 'bool', risk: 'autonomy', applies: 'next-routine',
     help: 'Let scheduled routines run. Off skips every run; the schedules stay loaded.' },
   { key: 'routines.runner', section: 'routines', label: 'Routine runner', type: 'enum', values: RUNNERS, applies: 'next-routine',
