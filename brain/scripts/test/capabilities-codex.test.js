@@ -19,3 +19,21 @@ test('codexCapabilities counts Codex skills (not aos-generated ones), prompts an
   assert.equal(codexCapabilities({ userConfig: { hosts: { claude: { enabled: true } } }, codexHome: home, agentsSkillsDir: skills }), null);
   assert.equal(codexCapabilities({ userConfig: null, codexHome: home, agentsSkillsDir: skills }), null);
 });
+
+test('skill counts skip the mirrors lib/skills.js writes, on both hosts (spec 2026-09-23-universal-skills D8)', () => {
+  const { collectCapabilities } = require('../collectors/capabilities.js');
+  const mk = (dir, name, mirror) => {
+    fs.mkdirSync(path.join(dir, name), { recursive: true });
+    fs.writeFileSync(path.join(dir, name, 'SKILL.md'), `---\nname: ${name}\n---\n`);
+    if (mirror) fs.writeFileSync(path.join(dir, name, '.aos-mirror.json'), '{"schema":1}');
+  };
+  const skills = fs.mkdtempSync(path.join(os.tmpdir(), 'caps-skills-'));
+  mk(skills, 'mine', false); mk(skills, 'from-claude', true);
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'caps-codex-'));
+  assert.equal(codexCapabilities({ userConfig: { hosts: { codex: { enabled: true } } }, codexHome: home, agentsSkillsDir: skills }).skills, 1);
+  const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'caps-claude-'));
+  mk(path.join(cfg, 'skills'), 'own', false); mk(path.join(cfg, 'skills'), 'from-codex', true);
+  const caps = collectCapabilities({ claudeConfigDir: cfg, vault: fs.mkdtempSync(path.join(os.tmpdir(), 'caps-vault-')) });
+  assert.equal(caps.skills.count, 1);
+  assert.deepEqual(caps.skills.custom, ['own']);
+});

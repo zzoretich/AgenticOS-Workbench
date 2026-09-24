@@ -39,7 +39,7 @@ test('hooks.json wires exactly the contract events, in order, through bin/aos', 
   assert.deepEqual(names('PostToolUse'), ['telemetry-hook']);
   assert.equal(h.PostToolUse[0].matcher, '');
   assert.deepEqual(names('Stop'), ['update-session', 'heartbeat-writer', 'reconcile-sessions']);
-  assert.deepEqual(names('SessionEnd'), ['telemetry-hook', 'auto-cost', 'heartbeat-writer', 'auto-wrap', 'scan-vault --quiet']);
+  assert.deepEqual(names('SessionEnd'), ['telemetry-hook', 'auto-cost', 'heartbeat-writer', 'auto-wrap', 'scan-vault --quiet', 'skills-sync']);
   for (const ev of ['SessionStart', 'UserPromptSubmit', 'PostToolUse', 'Stop']) for (const g of h[ev]) for (const x of g.hooks) assert.equal(x.timeout, 10);
   for (const g of h.SessionEnd) for (const x of g.hooks) assert.equal(x.timeout, 15);
   assert.ok(!JSON.stringify(h).includes('bash -c'));

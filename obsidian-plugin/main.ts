@@ -85,7 +85,7 @@ export default class AgenticOSPlugin extends Plugin {
 
     // commands
     this.addCommand({ id: "open-workbench",       name: "Open Workbench",        callback: () => { void this.activate(VIEW_TYPE_WORKBENCH); } });
-    for (const t of ["todo", "proposals", "spaces", "memory", "runs", "routines", "chat", "term"] as const) {
+    for (const t of ["todo", "proposals", "spaces", "memory", "runs", "routines", "skills", "chat", "term"] as const) {
       this.addCommand({ id: `open-workbench-${t}`, name: `Open Workbench: ${t === "todo" ? "To-Do" : `${t[0].toUpperCase()}${t.slice(1)}`}`,
         callback: () => { void this.openWorkbenchTab(t); } });
     }

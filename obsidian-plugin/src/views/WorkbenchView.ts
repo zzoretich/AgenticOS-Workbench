@@ -5,6 +5,7 @@ import { SpacesTab } from "./SpacesTab";
 import { MemoryTab } from "./MemoryTab";
 import { RunsTab } from "./RunsTab";
 import { RoutinesTab } from "./RoutinesTab";
+import { SkillsTab } from "./SkillsTab";
 import { ChatTab } from "./ChatTab";
 import { TermTab } from "./TermTab";
 import { ProposalsTab } from "./ProposalsTab";
@@ -25,6 +26,7 @@ const RAIL: RailTab[] = [
   { id: "memory", icon: "◈", label: "Memory" },
   { id: "runs", icon: "≣", label: "Runs" },
   { id: "routines", icon: "⟳", label: "Routines" },
+  { id: "skills", icon: "✦", label: "Skills" },
   { id: "chat", icon: "✎", label: "Chat" },
   { id: "term", icon: "❯_", label: "Term" },
 ];
@@ -160,6 +162,7 @@ export class WorkbenchView extends ItemView {
     if (id === "memory") return new MemoryTab(this.plugin, this);
     if (id === "runs") return new RunsTab(this.plugin, this);
     if (id === "routines") return new RoutinesTab(this.plugin, this);
+    if (id === "skills") return new SkillsTab(this.plugin, this);
     if (id === "chat") return new ChatTab(this.plugin, this);
     if (id === "term") return new TermTab(this.plugin, this);
     return null;

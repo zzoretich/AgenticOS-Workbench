@@ -42,7 +42,8 @@
           { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/bin/aos\" auto-cost", "timeout": 15 },
           { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/bin/aos\" heartbeat-writer", "timeout": 15 },
           { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/bin/aos\" auto-wrap", "timeout": 15 },
-          { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/bin/aos\" scan-vault --quiet", "timeout": 15 }
+          { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/bin/aos\" scan-vault --quiet", "timeout": 15 },
+          { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/bin/aos\" skills-sync", "timeout": 15 }
         ]
       }
     ]
