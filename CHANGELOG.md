@@ -5,6 +5,8 @@ All notable changes to AgenticOS Workbench. Versions follow the tags. From the n
 ## [Unreleased]
 
 ### Added
+- ⚙ Settings has no text boxes: every setting is a toggle, a preset picker, chips or a button. Numbers also step with − / + to the next preset; model pickers list each host's models (Codex's from its pricing table); lists are chips; `quickLinks`, the roster and external labels open `brain/config.json`, and skill and agent exclusions open their tabs. A value set outside the presets is shown as "(custom)" and never changed by opening the tab; set any value with `aos config set`. Obsidian's own settings pane gets the same pickers.
+- `aos config list --json` rows carry `choices`, `unit`, `pick` and `editIn`.
 - **Notifications.** Agents, routines and duties on either host post with `aos notify post`. Each post is a Markdown note under `brain/notifications/`, with a level (`breaking`, `alert`, `edition`, `info`), optional tags and allow-listed actions.
   - A new Workbench **Notifications** tab lists the items with an unread badge (rose while a breaking item is unread), filters by view, level and sender, and read, archive and open-note controls.
   - Actions: **ask** runs a named skill in a new Claude Code or Codex session, and **react** records a +1/−1 the sender can read back.

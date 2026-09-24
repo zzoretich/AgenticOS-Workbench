@@ -1,8 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  parseConfigList, groupBySection, changedCount, masterRows, MASTER_SWITCHES, valueArg, inputText, parseInput, confirmFor,
+  parseConfigList, groupBySection, changedCount, masterRows, MASTER_SWITCHES, valueArg, confirmFor,
   appliesLabel, sourceLabel, sourceTitle, spendLine, hostNote, resultSummary, FollowUps, argsFor,
+  controlFor, choiceLabel, pickerOptions, stepIn, stepValue, manySelected, manyOptions, toggleMany, readonlyText,
 } from "./settingsModel";
 import type { ConfigRow, ConfigList } from "./settingsModel";
 
@@ -47,32 +48,11 @@ test("master switches (D5): Background AI is provider none ↔ auto; flags are t
   assert.equal(new Set(MASTER_SWITCHES.map((s) => s.key)).size, 10);
 });
 
-test("valueArg and inputText: strings as typed, null as `null` / empty, the rest as JSON", () => {
+test("valueArg: strings as typed, null as `null`, the rest as JSON", () => {
   assert.equal(valueArg("auto"), "auto");
   assert.equal(valueArg(null), "null");
   assert.equal(valueArg(false), "false");
   assert.equal(valueArg(["a"]), '["a"]');
-  assert.equal(inputText(null), "");
-  assert.equal(inputText(0.5), "0.5");
-  assert.equal(inputText({ a: 1 }), '{"a":1}');
-});
-
-test("parseInput: bounds, whole numbers, nullable empty, JSON lists and objects, empty strings", () => {
-  const num = row({ key: "claude.perCallUsd", type: "number", gt: 0, risk: "spend" });
-  assert.deepEqual(parseInput(num, " 0.2 "), { ok: true, value: 0.2 });
-  assert.deepEqual(parseInput(num, "0"), { ok: false, error: "claude.perCallUsd must be more than 0 (to stop spending, set the matching daily cap to 0)" });
-  assert.deepEqual(parseInput(num, "abc"), { ok: false, error: "claude.perCallUsd must be a number" });
-  assert.deepEqual(parseInput(num, ""), { ok: false, error: "claude.perCallUsd must be a number" });
-  const port = row({ key: "ollama.port", type: "number", int: true, min: 1, max: 65535 });
-  assert.equal(parseInput(port, "1.5").ok, false);
-  assert.deepEqual(parseInput(port, "70000"), { ok: false, error: "ollama.port must be at most 65535" });
-  assert.deepEqual(parseInput(row({ key: "codex.model", type: "model", nullable: true }), "  "), { ok: true, value: null });
-  assert.deepEqual(parseInput(row({ key: "claude.model", type: "model" }), ""), { ok: false, error: "claude.model cannot be empty" });
-  const list = row({ key: "recallRoots", type: "list" });
-  assert.deepEqual(parseInput(list, '["brain/memory"]'), { ok: true, value: ["brain/memory"] });
-  assert.equal(parseInput(list, "brain/memory").ok, false);
-  assert.equal(parseInput(list, "[1]").ok, false);
-  assert.equal(parseInput(row({ key: "roster.orchestrators", type: "object" }), "[]").ok, false);
 });
 
 test("confirmFor (D6): raising spend asks; lowering does not", () => {
@@ -150,4 +130,76 @@ test("FollowUps (D9): deduped, removable, and only plain aos commands are kept",
   assert.deepEqual(argsFor("aos skills sync"), ["skills", "sync"]);
   assert.equal(argsFor("aos routines sync; rm x"), null);
   assert.equal(argsFor("routines sync"), null);
+});
+
+// ── no text boxes (spec 2026-09-24-settings-pickers) ──
+
+test("controlFor: every row is a toggle, a picker, a stepper, chips, a button or read-only — never a text box", () => {
+  assert.equal(controlFor(row({ type: "bool" })), "toggle");
+  assert.equal(controlFor(row({ type: "enum", values: ["a", "b"] })), "picker");
+  assert.equal(controlFor(row({ type: "number", choices: [1, 2] })), "stepper");
+  assert.equal(controlFor(row({ type: "model", choices: ["haiku"] })), "picker");
+  assert.equal(controlFor(row({ type: "string", choices: ["x"] })), "picker");
+  assert.equal(controlFor(row({ type: "list", choices: ["a"], pick: "many" })), "chips");
+  assert.equal(controlFor(row({ type: "list", editIn: "skills" })), "button");
+  assert.equal(controlFor(row({ type: "object", editIn: "file" })), "button");
+  assert.equal(controlFor(row({ readonly: true })), "readonly");
+  assert.equal(controlFor(row({ type: "number", choices: null })), "readonly", "a 0.18 runtime sends no presets");
+});
+
+test("choiceLabel: money, no spend, units, null", () => {
+  assert.equal(choiceLabel({ unit: "usd", min: 0 }, 0), "$0 — no spend");
+  assert.equal(choiceLabel({ unit: "usd", min: null }, 0.5), "$0.50");
+  assert.equal(choiceLabel({ unit: "usd", min: null }, null), "none");
+  assert.equal(choiceLabel({ unit: null, min: null }, null), "host default");
+  assert.equal(choiceLabel({ unit: "min", min: null }, 45), "45 min");
+  assert.equal(choiceLabel({ unit: "days", min: null }, 1), "1 day");
+  assert.equal(choiceLabel({ unit: "tokens", min: null }, 20000), "20,000 tokens");
+  assert.equal(choiceLabel({ unit: null, min: null }, "haiku"), "haiku");
+});
+
+test("pickerOptions (D3): presets, null first when nullable, the current value kept as (custom) in order", () => {
+  const cap = row({ type: "number", unit: "usd", min: 0, choices: [0, 1, 5, 10], value: 7 });
+  assert.deepEqual(pickerOptions(cap).map((o) => o.label), ["$0 — no spend", "$1.00", "$5.00", "$7.00 (custom)", "$10.00"]);
+  assert.equal(pickerOptions(cap).find((o) => o.custom)?.key, "7");
+  assert.deepEqual(pickerOptions({ ...cap, value: 99 }).map((o) => o.value).at(-1), 99);
+  const model = row({ type: "model", nullable: true, choices: ["gpt-5", "o3"], value: null });
+  assert.deepEqual(pickerOptions(model).map((o) => o.label), ["host default", "gpt-5", "o3"]);
+  assert.deepEqual(pickerOptions({ ...model, value: "gpt-9" }).map((o) => o.label), ["host default", "gpt-5", "o3", "gpt-9 (custom)"]);
+  const en = row({ type: "enum", values: [true, false, "auto"], value: "auto" });
+  assert.deepEqual(pickerOptions(en).map((o) => o.key), ["true", "false", "auto"]);
+  const budget = row({ type: "number", unit: "usd", nullable: true, choices: [10, 150], value: null });
+  assert.equal(pickerOptions(budget)[0].label, "none");
+});
+
+test("stepValue (D9): the adjacent preset, nearest from a custom value, null at the ends", () => {
+  const cap = row({ type: "number", choices: [0, 1, 5, 10], value: 5 });
+  assert.equal(stepValue(cap, 1), 10);
+  assert.equal(stepValue(cap, -1), 1);
+  assert.equal(stepValue({ ...cap, value: 10 }, 1), null);
+  assert.equal(stepValue({ ...cap, value: 0 }, -1), null);
+  assert.equal(stepValue({ ...cap, value: 7 }, 1), 10);
+  assert.equal(stepValue({ ...cap, value: 7 }, -1), 5);
+  assert.equal(stepIn([10, 150], null, 1), 10, "from none, + goes to the first preset");
+  assert.equal(stepIn([10, 150], null, -1), null);
+});
+
+test("chips: a list or a comma string, in the presets' order, custom items kept", () => {
+  const roots = row({ type: "list", pick: "many", choices: ["brain/memory", "brain/patterns", "persona/journal"], value: ["persona/journal", "my/notes"] });
+  assert.deepEqual(manySelected(roots), ["persona/journal", "my/notes"]);
+  assert.deepEqual(manyOptions(roots), ["brain/memory", "brain/patterns", "persona/journal", "my/notes"]);
+  assert.deepEqual(toggleMany(roots, "brain/memory", true), ["brain/memory", "persona/journal", "my/notes"]);
+  assert.deepEqual(toggleMany(roots, "my/notes", false), ["persona/journal"]);
+  const tools = row({ type: "string", pick: "many", choices: ["Read", "Glob", "Grep", "Write"], value: "Read,Glob,Grep" });
+  assert.equal(toggleMany(tools, "Write", true), "Read,Glob,Grep,Write");
+  assert.equal(toggleMany(tools, "Glob", false), "Read,Grep");
+});
+
+test("readonlyText: a value, a list, an object, nothing", () => {
+  assert.equal(readonlyText(row({ value: "/v" })), "/v");
+  assert.equal(readonlyText(row({ value: null })), "not set");
+  assert.equal(readonlyText(row({ value: ["a", "b"] })), "a, b");
+  assert.equal(readonlyText(row({ value: [] })), "none");
+  assert.equal(readonlyText(row({ value: { a: {}, b: {} } })), "2 entries");
+  assert.equal(readonlyText(row({ value: 0.5, unit: "usd" })), "$0.50");
 });
