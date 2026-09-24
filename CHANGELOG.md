@@ -4,6 +4,8 @@ All notable changes to AgenticOS Workbench. Versions follow the tags. From the n
 
 ## [Unreleased]
 
+## [0.18.0] — 2026-09-24
+
 ### Added
 - ⚙ Settings, pinned to the bottom-left of the Workbench rail: every setting of the whole system in one tab, built from `aos config`. Master switches head it; each row shows where its value comes from (this machine, this vault or the default), when a change applies, and a ↺ to go back to the default; spend limits show today's spend against the cap. A change runs `aos config set`, so a refused value is explained under its field; raising spend or widening an agent's autonomy asks first; a step a change leaves (`aos routines sync`) waits as a button, counted on the ⚙ badge. Also "Open Workbench: Settings" in the command palette and a button in Obsidian's settings pane.
 - `aos config list --json` rows carry `host` (a Claude- or Codex-only setting) and `spentToday` (on each daily cap).
@@ -195,7 +197,8 @@ The first public release: an `aos` CLI, the AgenticOS runtime, a Claude Code plu
 - Update notifications: a GitHub release check surfaced as a session-start notice.
 - Docs: README, install guide, and a release acceptance runbook.
 
-[Unreleased]: https://github.com/zzoretich/AgenticOS-Workbench/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/zzoretich/AgenticOS-Workbench/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.18.0
 [0.17.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.17.0
 [0.16.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.16.0
 [0.15.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.15.0
