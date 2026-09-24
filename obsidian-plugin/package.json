@@ -13,7 +13,8 @@
     "build": "node scripts/gen-tokens.mjs && node esbuild.config.mjs production",
     "dev": "node scripts/gen-tokens.mjs && node esbuild.config.mjs",
     "rebuild-pty": "node scripts/rebuild-pty.mjs",
-    "test": "npm run check:hex && node --import tsx --test $(find src -name '*.test.ts' | sort)"
+    "test": "npm run check:hex && node --import tsx --test $(find src -name '*.test.ts' | sort)",
+    "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.10.0",

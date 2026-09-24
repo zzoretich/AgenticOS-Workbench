@@ -20,8 +20,8 @@ test("the nine pre-existing settings are unchanged", () => {
 });
 
 test("toggles never persisted follow cost.enabled / telemetry.enabled from the vault config; persisted ones stand", () => {
-  const on = { cost: { enabled: true, monthlyBudget: 100 }, telemetry: { enabled: false, redact: true, retentionDays: 30 } };
-  const off = { cost: { enabled: false, monthlyBudget: null }, telemetry: { enabled: true, redact: true, retentionDays: 30 } };
+  const on = { cost: { enabled: true, monthlyBudget: 100 }, telemetry: { enabled: false, redact: true, retentionDays: 30, staleAfterMinutes: 30 } };
+  const off = { cost: { enabled: false, monthlyBudget: null }, telemetry: { enabled: true, redact: true, retentionDays: 30, staleAfterMinutes: 30 } };
   // Fresh data.json (no toggle keys): `aos cost enable` shows COST, telemetry.enabled=false stops the sweep.
   const fresh = seedToggleDefaults({ ...DEFAULT_SETTINGS }, {}, on);
   assert.equal(fresh.costEnabled, true);
