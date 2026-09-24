@@ -4,6 +4,9 @@ All notable changes to AgenticOS Workbench. Versions follow the tags. From the n
 
 ## [Unreleased]
 
+### Fixed
+- ⚙ Settings said "no `aos config`, run `aos upgrade`" on 0.19.0: `aos` exited before a pipe had taken all its output, so the Workbench read `aos config list --json` cut off at 64 KB. Every `aos` command now exits only after its output is flushed, and the tab names the real reason when the output does not parse.
+
 ### Added
 - Duty model and effort are settings: `aos config set persona.model <model>` and `aos config set persona.effort low|medium|high`, then `aos routines sync`. They win over the interview's answers, which stay the fallback; the Codex duty model stays `persona.codexModel`.
 - One duty can run on its own model: `model:` and `effort:` in `brain/routines/<duty>.md` override the schedule's for that duty (for example the hourly tick on `haiku`, the weekly reflect on a bigger model). The Workbench Routines tab accepts them too.

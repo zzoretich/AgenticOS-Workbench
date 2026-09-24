@@ -1239,3 +1239,13 @@ test('spendByFamily (spec 2026-09-24-settings-tab D7): today\'s USD per family, 
   assert.deepEqual(spendByFamily(vault), { hooks: 0.03, duties: 2, reasoner: 0.3, routines: 0.4, graph: 0.5, crossReview: 1.25 });
   assert.deepEqual(spendByFamily(fs.mkdtempSync(path.join(os.tmpdir(), 'aos-spend-none-'))), { hooks: 0, duties: 0, reasoner: 0, routines: 0, graph: 0, crossReview: 0 });
 });
+
+test('output larger than a pipe buffer arrives whole: `aos config list --json` read through a pipe parses', () => {
+  const sb = sandbox();
+  fs.mkdirSync(path.join(sb.vault, 'brain', '_index'), { recursive: true });
+  fs.writeFileSync(path.join(sb.cfg, 'agenticos.json'), JSON.stringify({ vault: sb.vault, node: process.execPath }, null, 2));
+  const r = aos(sb, ['config', 'list', '--json']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(r.stdout.length > 65536, `the list is ${r.stdout.length} bytes: past one 64 KB pipe buffer, as the test needs`);
+  assert.ok(JSON.parse(r.stdout).settings.length > 80, 'the whole list, not the first 64 KB');
+});

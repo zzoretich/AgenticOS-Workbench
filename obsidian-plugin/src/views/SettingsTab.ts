@@ -4,7 +4,7 @@ import type AgenticOSPlugin from "../../main";
 import type { WorkbenchView } from "./WorkbenchView";
 import { readAgenticosJson, sessionHosts, VAULT_CONFIG_PATH } from "../data/aosConfig";
 import type { SessionHost } from "../data/aosConfig";
-import { failureText, needsUpgrade } from "../data/aosRun";
+import { failureText, listFailure } from "../data/aosRun";
 import {
   FollowUps, parseConfigList, groupBySection, changedCount, masterRows, valueArg, sameValue, confirmFor,
   appliesLabel, sourceLabel, sourceTitle, spendLine, hostNote, resultSummary, argsFor,
@@ -70,8 +70,8 @@ export class SettingsTab {
       this.hosts = sessionHosts(readAgenticosJson(this.plugin.claudeConfigDir()));
       const r = await this.plugin.aosJson<unknown>(["config", "list", "--json"]);
       const list = r.code === 0 ? parseConfigList(r.json) : null;
-      if (list) { this.list = list; this.failure = null; }
-      else this.failure = { text: r.parseError ?? (r.code === 0 ? "aos config list answered in an unexpected shape" : failureText(r)), upgrade: r.code !== 0 ? needsUpgrade(r) : true };
+      if (list) this.list = list;
+      this.failure = listFailure(r, !!list);
     } finally {
       this.loading = false;
     }
