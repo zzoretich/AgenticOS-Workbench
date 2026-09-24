@@ -52,6 +52,7 @@ const USAGE = `usage:
   aos graph [status | build [--semantic [--yes]] | on | off | semantic on|off|auto]
   aos routines [list [--json] | sync | run <slug> [--dry-run] | enable <slug> | disable <slug> | next [<slug>] | hosts [--refresh] [--json] | import-cloud <file>]
   aos skills [list [--all] [--json] | sync [--dry-run] [--json] | exclude <name> | include <name> | reset <name>]
+  aos agents [list [--all] [--json] | sync [--dry-run] [--json] | exclude <name> | include <name> | reset <name>]
   aos workspace [list [--json] | new <name> | adopt <path> [--name <slug>]]
   aos update-status [--statusline | --snooze <N>d|<N>h | --off]
   aos update-check [--quiet]
@@ -422,6 +423,8 @@ async function doctor() {
   if (vault) {
     try { const row = require('./skills.js').doctorRow({ vault }); add(row.name, row.ok, row.detail, row.level); }
     catch (e) { add('skills', false, e.message, 'warn'); }
+    try { const row = require('./agents.js').doctorRow({ vault }); add(row.name, row.ok, row.detail, row.level); }
+    catch (e) { add('agents', false, e.message, 'warn'); }
   }
   if (vault) {
     const u = require('./update-check.js');
@@ -1122,6 +1125,17 @@ async function skills(sub, flags) {
   }
 }
 
+/** `aos agents <verb>` — cli/agents.js (spec 2026-09-23-universal-agents). */
+async function agents(sub, flags) {
+  const G = require('./agents.js');
+  try {
+    return await G.main([...sub, ...(flags.json ? ['--json'] : []), ...(flags.dryRun ? ['--dry-run'] : []), ...(flags.all ? ['--all'] : [])], { io: console });
+  } catch (e) {
+    if (e instanceof G.UsageError) throw new UsageError(e.message);
+    throw e;
+  }
+}
+
 /** The launcher execs <vault>/brain/scripts/cli/aos.js — the copy vendored by the PREVIOUS upgrade — so an upgrade
  *  step that is new in the release being installed would only run on the second `aos upgrade`. upgrade() therefore
  *  re-execs the CLI that ships with the source it re-vendors from: this returns that file when it is not the one
@@ -1208,7 +1222,7 @@ async function upgrade(flags) {
     runScript(vault, 'build-brain-md', [], { allowFail: true });
     runScript(vault, 'recall', ['--warm'], { allowFail: true });
   });
-  await act('share user skills between the hosts (skills-sync)', () => {
+  await act('share user skills and agents between the hosts (skills-sync)', () => {
     runScript(vault, 'skills-sync', [], { allowFail: true });
   });
   await act('refresh the update check', async () => {
@@ -1378,7 +1392,7 @@ function parseArgs(argv) {
 async function main(argv) {
   const { cmd, sub, flags } = parseArgs(argv);
   // --dry-run is an init-only preview (contract §4.3); on a mutating command it must be a loud error, never a silent no-op.
-  if (flags.dryRun && cmd !== 'init' && cmd !== 'routines' && cmd !== 'skills') throw new UsageError('--dry-run is only supported by `aos init`, `aos routines run` and `aos skills sync`');
+  if (flags.dryRun && !['init', 'routines', 'skills', 'agents'].includes(cmd)) throw new UsageError('--dry-run is only supported by `aos init`, `aos routines run`, `aos skills sync` and `aos agents sync`');
   switch (cmd) {
     case 'init': return init(flags);
     case 'upgrade': return upgrade(flags);
@@ -1389,6 +1403,7 @@ async function main(argv) {
     case 'graph': return graph(sub, flags);
     case 'routines': return routines(sub, flags);
     case 'skills': return skills(sub, flags);
+    case 'agents': return agents(sub, flags);
     case 'workspace': return workspace(sub, flags);
     case 'doctor': return doctor();
     case 'status': return status();
