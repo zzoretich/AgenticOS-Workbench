@@ -8,6 +8,7 @@
   ],
   "roster": { "orchestrators": {} },
   "scan": { "fileMapBudget": 40, "embedBudget": 40, "fileMapBudgetUnderClaude": 0, "insightsUnderClaude": false, "fileMapBudgetUnderCodex": 0, "insightsUnderCodex": false, "autoSweepOrphans": false },
+  "summary": { "everyPrompts": 10, "minMinutes": 15 },
   "provider": "auto",
   "claude": { "model": "haiku", "perCallUsd": 0.05, "perDayUsd": 0.5 },
   "codex": { "model": null, "effort": "low", "perCallUsd": 0.05, "perDayUsd": 0.5 },

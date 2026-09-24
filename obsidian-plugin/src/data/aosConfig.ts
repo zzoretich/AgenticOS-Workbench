@@ -42,6 +42,8 @@ export interface VaultConfig {
   quickLinks: string[];
   roster: { orchestrators: Record<string, OrchestratorEntry> };
   scan: { fileMapBudget: number; embedBudget: number; fileMapBudgetUnderClaude: number; insightsUnderClaude: boolean; fileMapBudgetUnderCodex: number; insightsUnderCodex: boolean; autoSweepOrphans: boolean };
+  // The Stop hook's working-memory summary: every N typed prompts per session, at most every M minutes (0 = no floor).
+  summary: { everyPrompts: number; minMinutes: number };
   provider: ProviderMode;
   claude: { model: string; perCallUsd: number; perDayUsd: number };
   codex: { model: string | null; effort: string; perCallUsd: number; perDayUsd: number };
@@ -85,6 +87,7 @@ export const VAULT_CONFIG_DEFAULTS: VaultConfig = {
   ],
   roster: { orchestrators: {} },
   scan: { fileMapBudget: 40, embedBudget: 40, fileMapBudgetUnderClaude: 0, insightsUnderClaude: false, fileMapBudgetUnderCodex: 0, insightsUnderCodex: false, autoSweepOrphans: false },
+  summary: { everyPrompts: 10, minMinutes: 15 },
   provider: "auto",
   claude: { model: "haiku", perCallUsd: 0.05, perDayUsd: 0.5 },
   codex: { model: null, effort: "low", perCallUsd: 0.05, perDayUsd: 0.5 },

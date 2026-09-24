@@ -12,8 +12,10 @@
  *                patch_apply_end (edits, one per changed path), exec_command_end (shell) and
  *                mcp_tool_call_end (MCP). Token usage is event_msg/token_count.
  *
- * Output is host-neutral: { format, turns, toolUses, usage, userTurns, meta }.
+ * Output is host-neutral: { format, turns, toolUses, usage, userTurns, prompts, meta }.
  *   turns     [{ role, text, meta }]  meta = Claude's isMeta envelopes (kept for turn counting)
+ *   userTurns every user-role entry (Claude's tool results and envelopes included)
+ *   prompts   only what the user typed: isRealPrompt() turns (spec 2026-09-24-summary-throttle D1)
  *   toolUses  [{ name, kind, filePath }]  kind ∈ edit | read | bash | mcp | other
  *   usage     { inputTokens, cachedInputTokens, outputTokens, reasoningOutputTokens, totalTokens } | null
  */
@@ -56,10 +58,22 @@ function detectFormat(entries) {
   return 'claude';
 }
 
+// Claude Code writes slash commands and their output as user entries in these envelopes.
+const CLAUDE_ENVELOPE_RE = /^<(command-name|command-message|command-args|local-command)/;
+
+/** A turn the user typed: a user turn with text that is not Claude's isMeta, a slash-command envelope or a tool
+ *  result (a tool_result-only entry flattens to ''). Codex's injected envelopes never become turns. */
+function isRealPrompt(turn) {
+  if (!turn || turn.role !== 'user' || turn.meta) return false;
+  const text = String(turn.text || '').trim();
+  return !!text && !CLAUDE_ENVELOPE_RE.test(text);
+}
+
 function parseClaude(entries) {
   const turns = [];
   const toolUses = [];
   let userTurns = 0;
+  let prompts = 0;
   for (const e of entries) {
     if (!e || typeof e !== 'object') continue;
     const role = e.type || e.role;
@@ -73,9 +87,11 @@ function parseClaude(entries) {
         toolUses.push({ name: b.name, kind: kindOf(b.name), filePath });
       }
     }
-    turns.push({ role, text: textOf(content), meta: !!e.isMeta });
+    const turn = { role, text: textOf(content), meta: !!e.isMeta };
+    if (isRealPrompt(turn)) prompts++;
+    turns.push(turn);
   }
-  return { format: 'claude', turns, toolUses, usage: null, userTurns, meta: null };
+  return { format: 'claude', turns, toolUses, usage: null, userTurns, prompts, meta: null };
 }
 
 function parseCodex(entries) {
@@ -83,6 +99,7 @@ function parseCodex(entries) {
   const toolUses = [];
   let usage = null;
   let userTurns = 0;
+  let prompts = 0;
   let meta = null;
   for (const r of entries) {
     if (!r || typeof r !== 'object' || !r.payload || typeof r.payload !== 'object') continue;
@@ -96,7 +113,9 @@ function parseCodex(entries) {
       const text = textOf(p.content);
       if (p.role === 'user' && CODEX_ENVELOPE_RE.test(text.trim())) continue;
       if (p.role === 'user') userTurns++;
-      turns.push({ role: p.role, text, meta: false });
+      const turn = { role: p.role, text, meta: false };
+      if (isRealPrompt(turn)) prompts++;
+      turns.push(turn);
       continue;
     }
     if (r.type !== 'event_msg') continue;
@@ -129,7 +148,7 @@ function parseCodex(entries) {
         break;
     }
   }
-  return { format: 'codex', turns, toolUses, usage, userTurns, meta };
+  return { format: 'codex', turns, toolUses, usage, userTurns, prompts, meta };
 }
 
 /** Parsed JSONL entries of either host → the host-neutral shape. */
@@ -184,4 +203,4 @@ function flattenTurns(parsed, { maxChars = 0 } = {}) {
   return out.join('\n');
 }
 
-module.exports = { parseJsonl, textOf, detectFormat, parseEntries, readTurns, readTranscriptFile, flattenTurns, sessionModel, sessionModelFile, FILE_TOOLS };
+module.exports = { parseJsonl, textOf, detectFormat, isRealPrompt, parseEntries, readTurns, readTranscriptFile, flattenTurns, sessionModel, sessionModelFile, FILE_TOOLS };

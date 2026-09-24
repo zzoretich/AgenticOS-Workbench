@@ -206,6 +206,7 @@ export function confirmFor(row: ConfigRow, next: unknown): Confirm | null {
 
 const APPLIES: Record<string, string> = {
   "next-call": "applies at the next model call", "next-session": "applies from the next session", "next-scan": "applies at the next scan",
+  "next-reply": "applies from the next reply",
   "next-duty": "applies at the next duty", "next-routine": "applies at the next routine run", "next-sync": "applies at the next sync",
   "next-check": "applies at the next update check", reinstall: "changes only through the installer",
 };

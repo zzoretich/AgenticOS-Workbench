@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { detectFormat, parseJsonl, readTurns, readTranscriptFile, flattenTurns, parseEntries } = require('../lib/transcript.js');
+const { detectFormat, parseJsonl, readTurns, readTranscriptFile, flattenTurns, parseEntries, isRealPrompt } = require('../lib/transcript.js');
 
 const CODEX_FIXTURE = path.join(__dirname, 'fixtures', 'codex-rollout.jsonl');
 
@@ -98,4 +98,22 @@ test('sessionModel: Claude assistant message.model, Codex turn_context / session
   assert.equal(sessionModelFile(f), 'claude-x-1');
   assert.equal(sessionModelFile(path.join(path.dirname(f), 'missing.jsonl')), null);
   assert.equal(sessionModelFile(''), null);
+});
+
+test('prompts counts only what the user typed, on both hosts (summary-throttle D1)', () => {
+  const claude = readTurns(CLAUDE);
+  assert.equal(claude.prompts, 1, 'the isMeta command envelope and the tool result are not prompts');
+  assert.equal(claude.userTurns, 3, 'userTurns keeps its meaning');
+  assert.equal(readTranscriptFile(CODEX_FIXTURE).prompts, 2);
+  assert.equal(parseEntries([]).prompts, 0);
+});
+
+test('isRealPrompt skips envelopes, tool results and non-user turns', () => {
+  assert.equal(isRealPrompt({ role: 'user', text: 'Fix the parser', meta: false }), true);
+  assert.equal(isRealPrompt({ role: 'user', text: '<command-name>/clear</command-name>', meta: false }), false);
+  assert.equal(isRealPrompt({ role: 'user', text: '<local-command-stdout>done</local-command-stdout>', meta: false }), false);
+  assert.equal(isRealPrompt({ role: 'user', text: '   ', meta: false }), false, 'a tool_result-only entry flattens to blank');
+  assert.equal(isRealPrompt({ role: 'user', text: 'hi', meta: true }), false);
+  assert.equal(isRealPrompt({ role: 'assistant', text: 'On it.', meta: false }), false);
+  assert.equal(isRealPrompt(null), false);
 });
