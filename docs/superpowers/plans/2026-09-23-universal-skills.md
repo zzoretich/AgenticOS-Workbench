@@ -40,10 +40,10 @@ both.
 
 ## Tasks
 
-- [ ] 1. `skill-translate.js` + tests
-- [ ] 2. `skills.js` + tests; `skills-sync.js` + test
-- [ ] 3. Readers skip mirrors (scan-arsenal, capabilities) + tests
-- [ ] 4. `cli/skills.js`, `cli/aos.js` wiring, config default, `plugin/bin/aos` + tests
-- [ ] 5. `/skills` command, SessionEnd hook on both hosts, rebuild `codex-plugin/`, count pins
-- [ ] 6. HUD Skills tab + loader tests; `npm run build -w obsidian-plugin`
-- [ ] 7. Docs; gate, `npm test`, parity `--wip --rehearse`, publish-check; PR
+- [x] 1. `skill-translate.js` + tests
+- [x] 2. `skills.js` + tests; `skills-sync.js` + test
+- [x] 3. Readers skip mirrors (scan-arsenal, capabilities) + tests
+- [x] 4. `cli/skills.js`, `cli/aos.js` wiring, config default, `plugin/bin/aos` + tests
+- [x] 5. `/skills` command, SessionEnd hook on both hosts, rebuild `codex-plugin/`, count pins
+- [x] 6. HUD Skills tab + loader tests; `npm run build -w obsidian-plugin`
+- [x] 7. Docs; gate, `npm test`, parity `--wip --rehearse`, publish-check; PR

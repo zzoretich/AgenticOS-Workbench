@@ -72,6 +72,18 @@ Run before tagging a release, on a vault created by `aos init` (not the develope
 - [ ] After `/routines cloud` in a Claude Code session, the cloud routines appear with a `claude` pill, the name linking to claude.ai/code/routines/…, a `(UTC)` cadence or `once at …`, and a `ran once` chip on a fired one-shot; `claude as of <age>` shows the snapshot's age.
 - [ ] A duty run that bypassed the runtime (run `sh brain/scripts/persona/run-duty.sh monitor` by hand) shows in the duty's `last` column within a second, with tooltip `trigger: duty-log`, and a `missed` chip clears.
 
+## Skills (both hosts)
+
+- [ ] The Skills rail button (✦) lists YOUR SKILLS with a cyan `claude` and an amber `codex` pill per row (struck through where the host lacks it), a source pill (`claude`, `codex`, `claude.ai`) and a chip (`on both`, `can't share`, `differs`, `copy edited`, `not shared`); PLUGINS & BUILT-INS follow, listed only. The head counts "on both · Claude Code only · Codex only · from plugins", and the note reads "sharing on … as of <age>".
+- [ ] Opening the tab with a cache older than ten minutes (or none) spawns `aos skills sync` once; `sync now` does the same and the list re-renders when `brain/_index/skills.json` changes.
+- [ ] Typing in the filter narrows both sections by name, description or plugin without losing focus.
+- [ ] `❯_ claude` opens a Term session running `claude '/<name>'`; `❯_ codex` runs `codex '$<name>'` (plugin skills: `$<plugin>:<name>`); only enabled hosts get a button. `⧉` copies the invocation; `open` opens the SKILL.md.
+- [ ] `unshare` on a shared skill removes its copy from the other host and the chip reads `not shared`; `share` brings it back.
+- [ ] *Claude Code:* write `~/.claude/skills/smoke-skill/SKILL.md` (`name` + `description`), end the session; `~/.agents/skills/smoke-skill/` appears with a translated SKILL.md and `.aos-mirror.json`, and a new Codex session lists `$smoke-skill`. `/skills` relays the table.
+- [ ] *Codex:* write `~/.agents/skills/smoke-codex/SKILL.md`, end the session; `~/.claude/skills/smoke-codex/` appears and a new Claude Code session lists `/smoke-codex`. `$agenticos:skills` relays the table. Before trusting the new hook under `/hooks`, doctor's `codex hooks trusted` reads `15 of 16`.
+- [ ] Edit a copy by hand, then `aos skills sync`: it is left alone, the chip reads `copy edited`, and `aos doctor` warns on the `skills` row; `aos skills reset <name>` restores it.
+- [ ] With `hosts.codex.enabled: false`, the note reads "sharing off — sharing needs both hosts enabled", every row keeps only its `claude` pill, and nothing is written under `~/.agents/skills`.
+
 ## Cross-review and handoff (both hosts; each run spends)
 
 - [ ] **Claude Code:** `aos doctor` shows `ok cross-review cross-provider` on a machine with both CLIs logged in. In a Claude Code session on a disposable git repo, "cross-review this plan" writes `PLAN.md`, runs `aos cross-review review --host claude …`, and reports a Codex verdict; the run's `result.json` under `<vault>/brain/_index/cross-review/runs/` says `"provider": "codex"`, `"independence": "cross-provider"`, `provider-spend.jsonl` gains a `cross-review:review` row, and no new rollout appears under `~/.codex/sessions/`.
