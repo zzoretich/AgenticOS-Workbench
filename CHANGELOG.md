@@ -4,6 +4,9 @@ All notable changes to AgenticOS Workbench. Versions follow the tags. From the n
 
 ## [Unreleased]
 
+### Fixed
+- BRAIN.md no longer stops updating when active projects outgrow its 850-token budget. Session-end extraction files every new project as active, and the compiler used to fail once they crowded out the "Last Session" block, so every session started with the old BRAIN.md. It now lists active projects newest first (by `updated`), keeps as many as fit, and ends the list with "…and N older active projects" pointing at `brain/_index/MOC-projects.md`. Only pinned rules that overflow on their own still fail the build. The pipeline ledger records the count as `activeProjectsOmitted`.
+
 ## [0.19.1] — 2026-09-24
 
 ### Fixed

@@ -17,8 +17,12 @@
  * writer has no view of this budget — so it is CLAMPED to whatever headroom
  * the compiler-owned sections leave, never allowed to fail the compile. A long
  * session summary must not be able to freeze BRAIN.md.
- * Only compiler-owned content overflowing still throws: that means too many
- * pinned rules / active projects, which is actionable by pruning the store.
+ * Active projects are listed newest first (frontmatter `updated`) and give way
+ * next: auto-wrap files every project it extracts as status/active, so that
+ * list grows with no one pruning it. When it would crowd out the Last Session
+ * floor, the oldest projects drop off and one line counts them and points at
+ * MOC-projects. Only pinned rules overflowing still throws — they are pinned
+ * by hand, so that is actionable by pruning the store.
  *
  * The 3 MOCs do NOT share that budget, so they are written first and a BRAIN.md
  * overflow leaves them fresh. Per-bullet descriptions are clamped to
@@ -107,15 +111,18 @@ function findPinned() {
   return out;
 }
 
-/** Project memories tagged status/active. */
+/** Project memories tagged status/active, newest first by `updated` (else `created`); ties keep file-name order. */
 function findActiveProjects() {
   const dir = path.join(PATHS.MEMORY_DIR, 'projects');
   const out = [];
   for (const f of listMdFiles(dir)) {
     const fm = readFrontmatter(path.join(dir, f));
-    if (fm.tags && fm.tags.includes('status/active')) out.push(`brain/memory/projects/${f}`);
+    if (fm.tags && fm.tags.includes('status/active')) {
+      out.push({ rel: `brain/memory/projects/${f}`, at: String(fm.updated || fm.created || '') });
+    }
   }
-  return out;
+  // Array.prototype.sort is stable, so equal dates stay in listMdFiles' name order.
+  return out.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0)).map((p) => p.rel);
 }
 
 function bulletFor(rel, memIndex) {
@@ -134,9 +141,14 @@ function renderCriticalRules(memIndex) {
   return pinned.length ? pinned.map((rel) => bulletFor(rel, memIndex)).join('\n') : '_none pinned_';
 }
 
-function renderActiveContext(memIndex) {
-  const active = findActiveProjects();
-  return active.length ? active.map((rel) => bulletFor(rel, memIndex)).join('\n') : '_no active projects_';
+/** `shown` is a newest-first prefix of the active projects; `omitted` counts the older ones the budget left out. */
+function renderActiveContext(memIndex, shown, omitted) {
+  const lines = shown.map((rel) => bulletFor(rel, memIndex));
+  if (omitted) {
+    const noun = `active project${omitted === 1 ? '' : 's'}`;
+    lines.push(`- …and ${omitted} ${shown.length ? 'older ' : ''}${noun}: \`brain/_index/MOC-projects.md\``);
+  }
+  return lines.length ? lines.join('\n') : '_no active projects_';
 }
 
 /** Regex-lifts the "## Last Session" block (heading through EOF or next "## ") verbatim. */
@@ -169,7 +181,7 @@ function clampToChars(text, maxChars) {
   return (wordBreak > maxChars * 0.6 ? cut.slice(0, wordBreak) : cut).trimEnd() + '…';
 }
 
-function composeBrainMd(meta, memIndex, lastSession) {
+function composeBrainMd(meta, memIndex, lastSession, shown, omitted) {
   const lines = [];
   lines.push('---');
   lines.push('type: index');
@@ -191,7 +203,7 @@ function composeBrainMd(meta, memIndex, lastSession) {
   lines.push(renderCriticalRules(memIndex));
   lines.push('');
   lines.push('## Active context');
-  lines.push(renderActiveContext(memIndex));
+  lines.push(renderActiveContext(memIndex, shown, omitted));
   lines.push('');
   lines.push('## Quick links');
   lines.push(QUICK_LINKS);
@@ -271,19 +283,28 @@ async function buildBrainMd({ report }) {
 
   // Two-pass budget. First compose with the borrowed "## Last Session" block
   // omitted to price the compiler-owned sections, then hand that block only the
-  // headroom left over. Throwing is reserved for the case the compiler can
-  // actually act on — its own sections not fitting.
-  const fixed = composeBrainMd(meta, memIndex, '');
+  // headroom left over. Active projects give way first, oldest first, until the
+  // Last Session floor fits; throwing is reserved for pinned rules alone not
+  // fitting, the one overflow that needs a person to prune.
+  const active = findActiveProjects();
+  let shownCount = active.length;
+  let fixed = composeBrainMd(meta, memIndex, '', active, 0);
+  while (BUDGET * 4 - fixed.length < MIN_LAST_SESSION_CHARS && shownCount > 0) {
+    shownCount--;
+    fixed = composeBrainMd(meta, memIndex, '', active.slice(0, shownCount), active.length - shownCount);
+  }
+  const shown = active.slice(0, shownCount);
+  const omitted = active.length - shownCount;
   const headroomChars = BUDGET * 4 - fixed.length;
   if (headroomChars < MIN_LAST_SESSION_CHARS) {
     throw new Error(
       `compiler sections leave ${headroomChars} chars for "## Last Session", need ` +
-      `${MIN_LAST_SESSION_CHARS} (sections are ${estimateTokens(fixed)}/${BUDGET} tokens) — ` +
-      'prune pinned rules or active projects');
+      `${MIN_LAST_SESSION_CHARS} (sections are ${estimateTokens(fixed)}/${BUDGET} tokens with every ` +
+      'active project left out) — prune pinned rules');
   }
 
   const lastSession = clampToChars(meta.lastSession, headroomChars);
-  const brainMdContent = composeBrainMd(meta, memIndex, lastSession);
+  const brainMdContent = composeBrainMd(meta, memIndex, lastSession, shown, omitted);
   const tokens = estimateTokens(brainMdContent);
 
   writeAtomic(PATHS.BRAIN_MD, brainMdContent);
@@ -293,13 +314,15 @@ async function buildBrainMd({ report }) {
     report.wrote.push('brain/_index/BRAIN.md');
     report.counts.tokens = tokens;
     report.counts.pinnedRules = findPinned().length;
-    report.counts.activeProjects = findActiveProjects().length;
+    report.counts.activeProjects = active.length;
+    // BRAIN.md itself says how many projects it left out; the ledger keeps the count.
+    report.counts.activeProjectsOmitted = omitted;
     // Surfaced rather than silent: a clamp means the Stop-hook summary is
     // outrunning the budget and BRAIN.md is showing a trimmed one.
     report.counts.lastSessionClampedChars = meta.lastSession.length - lastSession.length;
   }
 
-  return { tokens, wrote, lastSessionClamped: lastSession !== meta.lastSession };
+  return { tokens, wrote, lastSessionClamped: lastSession !== meta.lastSession, projectsOmitted: omitted };
 }
 
 if (require.main === module) {
