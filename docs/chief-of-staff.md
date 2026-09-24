@@ -90,6 +90,25 @@ scope, below) stays in the working tree for you to review. Env: `PERSONA_MODEL`,
 `PERSONA_NAME` is set by the schedules (plists and cron lines) so that `aos persona rename` has
 something to re-render; the runner takes the name from `IDENTITY.md` and never reads it.
 
+### Model and effort
+
+Every duty schedule carries one model and one effort (`PERSONA_MODEL`, `PERSONA_EFFORT`), resolved when the schedules
+are rendered: `persona.model` → the interview's `dutyModel` → `claude.model` → `haiku`, and `persona.effort` →
+`dutyEffort` → `medium`. Change them without re-running the interview:
+
+```sh
+aos config set persona.model sonnet
+aos config set persona.effort high
+aos routines sync            # re-renders the schedules with the new values
+```
+
+One duty can differ from the rest: `model:` and `effort:` in its routine file (`brain/routines/<duty>.md`) win for
+that duty's runs, with no sync needed — for example the hourly tick on `haiku` while the weekly reflect runs on a
+bigger model. `model` is a Claude model: under the Codex runner a duty runs on `persona.codexModel` (else
+`codex.model`, else your Codex default) and `persona.model` has no effect; `effort` applies on both. A bigger model
+costs more per run, so raise that duty's `budgetUsd` with it: a run that reaches its cap stops mid-duty and is
+journaled FAILED.
+
 ### What a duty may write
 
 A duty is steered by text it did not write (commit subjects, correction quotes, journal lines), so the runner limits
