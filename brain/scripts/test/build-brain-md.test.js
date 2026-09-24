@@ -88,14 +88,18 @@ process.env.BRAIN_VAULT = TMP;
 const { buildBrainMd, BUDGET } = require('../build-brain-md.js');
 
 // Test 2 (over-budget) permanently adds 40 pinned feedback memories + MEMORY.md
-// lines to this shared fixture. Reset the two mutable pieces before every test
-// so test order never leaks state — same shape as auto-wrap.test.js's beforeEach.
+// lines to this shared fixture, and the active-project tests add project
+// memories. Reset the mutable pieces before every test so test order never
+// leaks state — same shape as auto-wrap.test.js's beforeEach.
 beforeEach(() => {
   fs.writeFileSync(path.join(TMP, 'MEMORY.md'), PRISTINE_MEMORY_MD);
   for (const f of fs.readdirSync(path.join(TMP, 'brain', 'memory', 'feedback'))) {
     fs.unlinkSync(path.join(TMP, 'brain', 'memory', 'feedback', f));
   }
   fs.writeFileSync(path.join(TMP, 'brain', 'memory', 'feedback', 'pinned-rule.md'), PRISTINE_PINNED_RULE);
+  for (const f of fs.readdirSync(path.join(TMP, 'brain', 'memory', 'projects'))) {
+    if (f !== 'active-project.md') fs.unlinkSync(path.join(TMP, 'brain', 'memory', 'projects', f));
+  }
 });
 
 test('compiles BRAIN.md with contract frontmatter and all sections', async () => {
@@ -134,8 +138,80 @@ test('over-budget compilation THROWS and leaves the previous BRAIN.md intact', a
   const before = fs.readFileSync(path.join(TMP, 'brain', '_index', 'BRAIN.md'), 'utf8');
   await assert.rejects(
     () => buildBrainMd({ report: { wrote: [], counts: {} } }),
-    /compiler sections leave -?\d+ chars for "## Last Session"/);
+    /compiler sections leave -?\d+ chars for "## Last Session".* — prune pinned rules$/);
   assert.equal(fs.readFileSync(path.join(TMP, 'brain', '_index', 'BRAIN.md'), 'utf8'), before);
+});
+
+// Seeds `count` active projects, one day apart: project-00 is the oldest. The
+// fixture's own active-project.md (updated 2026-01-01) is older than all of them.
+function seedActiveProjects(count) {
+  let idx = fs.readFileSync(path.join(TMP, 'MEMORY.md'), 'utf8');
+  for (let i = 0; i < count; i++) {
+    const slug = `project-${String(i).padStart(2, '0')}`;
+    const day = new Date(Date.UTC(2026, 6, 1 + i)).toISOString().slice(0, 10);
+    fs.writeFileSync(path.join(TMP, 'brain', 'memory', 'projects', `${slug}.md`),
+      `---\ntype: memory\ntags: [memory/projects, status/active]\ncreated: ${day}\nupdated: ${day}\n---\n\n# Project ${i}\n\nbody\n`);
+    idx += `- [Project ${i}](brain/memory/projects/${slug}.md) — ${'an auto-extracted project line '.repeat(3)}\n`;
+  }
+  fs.writeFileSync(path.join(TMP, 'MEMORY.md'), idx);
+}
+
+function seedLastSession(line) {
+  const brainPath = path.join(TMP, 'brain', '_index', 'BRAIN.md');
+  fs.writeFileSync(brainPath, fs.readFileSync(brainPath, 'utf8')
+    .replace(/## Last Session[\s\S]*$/, `## Last Session\n- ${line}\n`));
+}
+
+test('active projects are listed newest first, all of them while they fit', async () => {
+  seedActiveProjects(3);
+  const report = { wrote: [], counts: {} };
+  const out = await buildBrainMd({ report });
+  const raw = fs.readFileSync(path.join(TMP, 'brain', '_index', 'BRAIN.md'), 'utf8');
+
+  const order = ['**Project 2**', '**Project 1**', '**Project 0**', '**Active project**'].map((t) => raw.indexOf(t));
+  assert.ok(order.every((i) => i > 0), `every project is listed: ${order}`);
+  assert.deepEqual([...order].sort((a, b) => a - b), order, 'newest `updated` first');
+  assert.ok(!raw.includes('…and '), 'nothing left out, so no overflow line');
+  assert.equal(out.projectsOmitted, 0);
+  assert.equal(report.counts.activeProjectsOmitted, 0);
+});
+
+// Regression: auto-wrap files every extracted project as status/active, and the
+// compiler used to throw once they crowded out the Last Session floor, freezing
+// BRAIN.md on its previous text. The oldest now give way instead.
+test('too many active projects: the newest that fit are kept, the rest are counted, BRAIN.md is still written', async () => {
+  seedActiveProjects(40);
+  seedLastSession('a short last-session line that must survive whole');
+  const report = { wrote: [], counts: {} };
+
+  const out = await buildBrainMd({ report });
+  const raw = fs.readFileSync(path.join(TMP, 'brain', '_index', 'BRAIN.md'), 'utf8');
+
+  assert.ok(out.tokens <= BUDGET, `compiled to ${out.tokens} tokens, over ${BUDGET}`);
+  assert.ok(report.wrote.includes('brain/_index/BRAIN.md'));
+  const m = raw.match(/^- …and (\d+) older active projects: `brain\/_index\/MOC-projects\.md`$/m);
+  assert.ok(m, 'one line counts the projects left out and points at MOC-projects');
+  const omitted = Number(m[1]);
+  assert.ok(omitted > 0);
+  assert.equal(out.projectsOmitted, omitted);
+  assert.equal(report.counts.activeProjectsOmitted, omitted);
+  assert.equal(report.counts.activeProjects, 41);
+
+  // A newest-first prefix: the newest are shown, the oldest (and the fixture's 2026-01-01 project) are not.
+  const shown = 41 - omitted;
+  for (let i = 39; i > 39 - shown; i--) assert.ok(raw.includes(`**Project ${i}**`), `Project ${i} should be shown`);
+  for (let i = 39 - shown; i >= 0; i--) assert.ok(!raw.includes(`**Project ${i}**`), `Project ${i} should be left out`);
+  assert.ok(!raw.includes('**Active project**'));
+
+  assert.match(raw, /- a short last-session line that must survive whole$/m);
+  assert.equal(out.lastSessionClamped, false);
+});
+
+test('pinned rules that overflow on their own still throw, even with every project left out', async () => {
+  seedActiveProjects(5);
+  seedOverflowingPinnedRules();
+  await assert.rejects(() => buildBrainMd({ report: { wrote: [], counts: {} } }),
+    /with every active project left out\) — prune pinned rules/);
 });
 
 // Regression: the budget gate used to sit in front of BOTH writes, so too many
