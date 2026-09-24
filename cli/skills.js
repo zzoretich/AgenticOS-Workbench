@@ -172,4 +172,4 @@ function doctorRow({ vault, now = new Date() }) {
   return { name: 'skills', ok: need.length === 0, detail, level: 'warn' };
 }
 
-module.exports = { VERBS, UsageError, main, summary, source, doctorRow };
+module.exports = { VERBS, UsageError, main, summary, source, doctorRow, resolveModule, resolveCtx, ago, table };

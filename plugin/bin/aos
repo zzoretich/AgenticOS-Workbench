@@ -92,7 +92,7 @@ case "$NAME" in
   run-routine) SCRIPT=routines/run-routine.js ;;
   cross-review) SCRIPT=cross-review/runner.js ;;
   skills-sync) SCRIPT=skills-sync.js ;;
-  doctor|status|upgrade|uninstall|persona|cost|graph|routines|skills|workspace|terminal|provider|update-check|update-status|update-notice) SCRIPT=cli/aos.js; set -- "$NAME" "$@" ;;
+  doctor|status|upgrade|uninstall|persona|cost|graph|routines|skills|agents|workspace|terminal|provider|update-check|update-status|update-notice) SCRIPT=cli/aos.js; set -- "$NAME" "$@" ;;
   "") echo "usage: aos <name> [args...]" >&2; exit 64 ;;
   *) echo "aos: unknown script $NAME" >&2; exit 64 ;;
 esac

@@ -17,6 +17,8 @@ function sandbox({ hosts = { claude: { enabled: true }, codex: { enabled: true }
   fs.mkdirSync(path.join(vault, 'brain', '_index'), { recursive: true });
   fs.mkdirSync(path.join(claude, 'skills', 'deploy'), { recursive: true });
   fs.writeFileSync(path.join(claude, 'skills', 'deploy', 'SKILL.md'), '---\nname: deploy\ndescription: Ship it\n---\nBody\n');
+  fs.mkdirSync(path.join(claude, 'agents'), { recursive: true });
+  fs.writeFileSync(path.join(claude, 'agents', 'reviewer.md'), '---\nname: reviewer\ndescription: Reviews diffs\n---\nReview.\n');
   fs.mkdirSync(home, { recursive: true });
   const config = path.join(claude, 'agenticos.json');
   fs.writeFileSync(config, JSON.stringify({ vault, hosts }));
@@ -37,6 +39,25 @@ test('skills-sync hook: mirrors and writes the cache inline, with empty stdout a
   assert.equal(cache.sync.on, true);
   assert.deepEqual(cache.sync.written, ['deploy']);
   assert.ok(fs.existsSync(path.join(s.home, '.agents', 'skills', 'deploy', 'SKILL.md')));
+});
+
+test('skills-sync hook: the agent sync rides the same hook (spec 2026-09-23-universal-agents D5)', () => {
+  const s = sandbox();
+  const r = hook(s.env);
+  assert.equal(r.status, 0, r.stderr);
+  const cache = JSON.parse(fs.readFileSync(path.join(s.vault, 'brain', '_index', 'agents.json'), 'utf8'));
+  assert.deepEqual(cache.sync.written, ['reviewer']);
+  assert.ok(fs.existsSync(path.join(s.base, 'codex', 'agents', 'reviewer.toml')));
+});
+
+test('skills-sync hook: a skill sync that throws still lets the agent sync run', () => {
+  const s = sandbox();
+  fs.mkdirSync(path.join(s.vault, 'brain', '_index', 'skills.json')); // a directory: the skills cache write fails
+  const r = hook({ ...s.env, AOS_DEBUG: '1' });
+  assert.equal(r.status, 0);
+  assert.equal(r.stdout, '');
+  assert.match(r.stderr, /skills-sync \(skills\)/);
+  assert.ok(fs.existsSync(path.join(s.vault, 'brain', '_index', 'agents.json')));
 });
 
 test('skills-sync hook: no vault → exit 0, empty stdout', () => {

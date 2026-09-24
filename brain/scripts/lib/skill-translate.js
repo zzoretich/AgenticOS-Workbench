@@ -140,4 +140,4 @@ function toClaude(text, ctx) {
   return { ok: true, name, content: `---\n${head}\n---\n\n${note}\n\n${out.endsWith('\n') ? out : `${out}\n`}` };
 }
 
-module.exports = { parse, firstProse, clip, codexName, yamlScalar, crossRefs, toCodex, toClaude, DESC_MAX, NAME_MAX };
+module.exports = { parse, firstProse, clip, codexName, yamlScalar, crossRefs, claudeWording, codexWording, toCodex, toClaude, DESC_MAX, NAME_MAX };

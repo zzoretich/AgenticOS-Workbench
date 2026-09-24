@@ -48,6 +48,21 @@ test('scanArsenal lists each skill once: the mirrors of the other host\'s skills
   assert.deepEqual(skills, ['bare-skill', 'demo-skill', 'triage@codex']);
 });
 
+test('scanArsenal lists each agent once: mirrors skipped on both sides, Codex user agents listed under codex', () => {
+  const root = fixtureConfigDir();
+  const codexAgents = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-codex-agents-'));
+  const w = (dir, rel, body) => { fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), body); };
+  w(root, 'agents/pr-explorer.md', '---\nname: pr-explorer\ndescription: mirror\n# aos-mirror: {"schema":1,"id":"pr-explorer"}\n---\nbody\n');
+  w(codexAgents, 'pr_explorer.toml', 'name = "pr_explorer"\ndescription = "Maps code paths"\ndeveloper_instructions = "Explore."\n');
+  w(codexAgents, 'demo-agent.toml', '# aos-mirror: {"schema":1,"id":"demo-agent"}\nname = "demo-agent"\ndescription = "mirror"\ndeveloper_instructions = "x"\n');
+  w(codexAgents, 'broken.toml', 'name = "broken\n');
+  w(codexAgents, 'notes.md', 'not an agent');
+  const out = scanArsenal(root, { codex: { skillsDir: null, promptsDir: null, agentsDir: codexAgents } });
+  const agents = out.filter((e) => e.type === 'agent').map((e) => `${e.name}${e.host ? `@${e.host}` : ''}`).sort();
+  assert.deepEqual(agents, ['demo-agent', 'pr_explorer@codex']);
+  assert.equal(out.find((e) => e.name === 'pr_explorer').description, 'Maps code paths');
+});
+
 test('buildPlaybook writes <vault>/persona/PLAYBOOK.md with the agent name and generated sections', () => {
   const configDir = fixtureConfigDir();
   const vault = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-vault-'));

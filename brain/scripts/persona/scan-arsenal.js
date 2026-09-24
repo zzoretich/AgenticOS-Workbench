@@ -8,9 +8,10 @@
  *
  *   node persona/scan-arsenal.js [--root <configDir>]     (default: PATHS.CLAUDE_CONFIG_DIR)
  *
- * Where Codex is a host it also lists Codex's own user skills (~/.agents/skills/<name>/SKILL.md) and custom prompts
- * (<codex home>/prompts/*.md, as commands), each with host: 'codex'; skills our direct wiring generated (the
- * `aos init --host codex` marker) are the Workbench's own and stay out, like the plugin's own under Claude Code.
+ * Where Codex is a host it also lists Codex's own user skills (~/.agents/skills/<name>/SKILL.md), custom prompts
+ * (<codex home>/prompts/*.md, as commands) and user agents (<codex home>/agents/*.toml), each with host: 'codex'; skills
+ * our direct wiring generated (the `aos init --host codex` marker) are the Workbench's own and stay out, like the
+ * plugin's own under Claude Code.
  */
 const fs = require('fs');
 const os = require('os');
@@ -20,6 +21,9 @@ const EXCLUDE_FILES = new Set(['INDEX.md', 'README.md']);
 // lib/skills.js marks every skill it mirrors from the other host with this sidecar (spec 2026-09-23-universal-skills D8):
 // the playbook lists each skill once, under the host that owns it.
 const MIRROR_SIDECAR = '.aos-mirror.json';
+// lib/agents.js marks every agent it mirrors with an `# aos-mirror:` comment (spec 2026-09-23-universal-agents D8): the
+// playbook lists each agent once too, under the host that owns it.
+const AT = require('../lib/agent-translate.js');
 const DESC_MAX = 200;
 
 function parseFrontmatter(text) {
@@ -72,11 +76,12 @@ function codexSources() {
     const H = require('../lib/host.js');
     const cfg = require('../lib/paths.js').readUserConfig();
     if (!H.enabledHosts(cfg).includes('codex')) return null;
-    return { skillsDir: path.join(os.homedir(), '.agents', 'skills'), promptsDir: path.join(H.hostDirs('codex', { userConfig: cfg }).configDir, 'prompts') };
+    const home = H.hostDirs('codex', { userConfig: cfg }).configDir;
+    return { skillsDir: path.join(os.homedir(), '.agents', 'skills'), promptsDir: path.join(home, 'prompts'), agentsDir: path.join(home, 'agents') };
   } catch { return null; }
 }
 
-function scanCodex({ skillsDir, promptsDir }, out) {
+function scanCodex({ skillsDir, promptsDir, agentsDir }, out) {
   if (skillsDir && fs.existsSync(skillsDir)) {
     for (const dir of fs.readdirSync(skillsDir)) {
       const skillMd = path.join(skillsDir, dir, 'SKILL.md');
@@ -94,6 +99,17 @@ function scanCodex({ skillsDir, promptsDir }, out) {
       const text = fs.readFileSync(full, 'utf8');
       const fm = parseFrontmatter(text);
       out.push({ type: 'command', name: fm.name || f.slice(0, -3), description: clip(fm.description || firstHeading(text)), path: full, host: 'codex' });
+    }
+  }
+  if (agentsDir && fs.existsSync(agentsDir)) {
+    for (const f of fs.readdirSync(agentsDir)) {
+      const full = path.join(agentsDir, f);
+      if (!f.endsWith('.toml') || !fs.statSync(full).isFile()) continue;
+      const text = fs.readFileSync(full, 'utf8');
+      if (AT.readMarker(text, 'toml')) continue;
+      const a = AT.readCodex(text);
+      if (!a.ok) continue;
+      out.push({ type: 'agent', name: a.name || f.slice(0, -5), description: clip(a.description), path: full, host: 'codex' });
     }
   }
 }
@@ -126,6 +142,7 @@ function scanArsenal(root, { codex } = {}) {
       const full = path.join(dir, f);
       if (!fs.statSync(full).isFile()) continue;
       const text = fs.readFileSync(full, 'utf8');
+      if (type === 'agent' && AT.readMarker(text, 'md')) continue;
       const fm = parseFrontmatter(text);
       const base = f.replace(/\.md$/, '');
       out.push({
