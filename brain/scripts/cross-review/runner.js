@@ -34,6 +34,8 @@ const path = require('path');
 const crypto = require('crypto');
 const { spawn, spawnSync, execFileSync } = require('child_process');
 
+const { dayCap } = require('../lib/settings-schema.js');
+
 const PROVIDERS = ['claude', 'codex'];
 const MODES = ['roles', 'preflight', 'review', 'build', 'inspect', 'check', 'handoff'];
 const SEVERITIES = ['high', 'medium', 'low'];
@@ -333,7 +335,7 @@ function preflight(args, deps) {
   const why = (p) => (!cli[p].bin ? `${p} CLI not found` : !cli[p].version ? `${p} --version failed` : `${p} CLI not logged in`);
   const independence = ready(roles.reviewer) ? 'cross-provider' : ready(args.host) ? 'same-provider' : 'none';
   const sec = section(deps.cfg);
-  const cap = Number(sec.perDayUsd) || 10;
+  const cap = dayCap(sec.perDayUsd, 10);
   const spent = deps.spendToday();
   const report = { host: args.host, roles, cli, independence, reason: independence === 'cross-provider' ? null : why(ready(args.host) ? roles.reviewer : args.host),
     enabled: sec.enabled !== false, spendToday: spent, perDayUsd: cap,
@@ -412,7 +414,7 @@ async function turn(args, deps) {
   const effort = effortFor(provider, args, deps.cfg, deps.headless);
   const timeoutSec = Number(args.timeout) || Number(sec.timeoutSec) || 600;
   if (!(timeoutSec > 0)) throw new UsageError('--timeout must be positive');
-  const cap = Number(sec.perDayUsd) || 10;
+  const cap = dayCap(sec.perDayUsd, 10);
   const spent = deps.spendToday();
   if (spent >= cap) throw new RunError(`Today's cross-review spend $${spent.toFixed(2)} has reached crossReview.perDayUsd ($${cap}).`);
 
