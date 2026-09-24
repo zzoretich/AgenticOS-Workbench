@@ -4,6 +4,8 @@ All notable changes to AgenticOS Workbench. Versions follow the tags. From the n
 
 ## [Unreleased]
 
+## [0.19.0] — 2026-09-24
+
 ### Added
 - ⚙ Settings has no text boxes: every setting is a toggle, a preset picker, chips or a button. Numbers also step with − / + to the next preset; model pickers list each host's models (Codex's from its pricing table); lists are chips; `quickLinks`, the roster and external labels open `brain/config.json`, and skill and agent exclusions open their tabs. A value set outside the presets is shown as "(custom)" and never changed by opening the tab; set any value with `aos config set`. Obsidian's own settings pane gets the same pickers.
 - `aos config list --json` rows carry `choices`, `unit`, `pick` and `editIn`.
@@ -208,7 +210,8 @@ The first public release: an `aos` CLI, the AgenticOS runtime, a Claude Code plu
 - Update notifications: a GitHub release check surfaced as a session-start notice.
 - Docs: README, install guide, and a release acceptance runbook.
 
-[Unreleased]: https://github.com/zzoretich/AgenticOS-Workbench/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/zzoretich/AgenticOS-Workbench/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.19.0
 [0.18.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.18.0
 [0.17.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.17.0
 [0.16.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.16.0
