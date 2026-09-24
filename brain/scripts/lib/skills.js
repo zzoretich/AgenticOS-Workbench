@@ -506,5 +506,5 @@ function isMirrorDir(dir) { return fs.existsSync(path.join(dir, SIDECAR)); }
 
 module.exports = {
   SCHEMA, SIDECAR, skillsConfig, hostsOf, roots, discover, plan, apply, sync, reset, isMirrorDir,
-  cacheFile, readCache, writeCache, codexEnabledPlugins, codexPluginRoot,
+  cacheFile, readCache, writeCache, claudePlugins, codexEnabledPlugins, codexPluginRoot,
 };
