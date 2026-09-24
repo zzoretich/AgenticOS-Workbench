@@ -36,7 +36,7 @@ are since #38.
 
 - `brain/scripts/lib/skills.js` — the pattern to follow: `skillsConfig` `:44`, `hostsOf` `:54`, `roots` `:60`,
   `claudePlugins` `:95`, `plan` `:200`, `writeAtomic` `:356`, `sync` `:468`, `reset` `:493`. `lib/skill-translate.js`:
-  `parse` `:35`, `clip`, `yamlScalar`, `claudeWording` `:93`, `codexWording` `:98`, `claudeBodyToCodex` `:104` (the last three exported for reuse).
+  `parse` `:35`, `clip`, `yamlScalar`, `codexName`, `claudeWording` `:93`, `codexWording` `:98` (the last two exported for reuse).
 - `brain/scripts/skills-sync.js` — the SessionEnd entry (`respawnDetached`, exit 0). Hooks: `HOOKS` in
   `cli/codex-host.js:36` already carries `skills-sync`; `plugin/bin/aos:94`.
 - `cli/skills.js` — verbs, `summary`, `doctorRow`; `cli/aos.js` dispatch `:1391`, `skills()` `:1115`, doctor `:423`,
