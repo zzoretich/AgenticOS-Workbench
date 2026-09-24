@@ -28,7 +28,7 @@ function repo() {
 // variables the runner itself sets are cleared unless the test sets them.
 function gate(args, extra = {}, input) {
   const env = { ...process.env, AOS_PRIVACY_TERMS_FILE: path.join(os.tmpdir(), 'aos-no-such-terms-file') };
-  for (const k of ['CI', 'GITHUB_ACTIONS', 'AOS_PRIVACY_TERMS']) delete env[k];
+  for (const k of ['CI', 'GITHUB_ACTIONS', 'GITHUB_ACTOR', 'AOS_PRIVACY_TERMS']) delete env[k];
   return spawnSync(process.execPath, [GATE, ...args], { encoding: 'utf8', env: { ...env, ...extra }, input });
 }
 
@@ -95,6 +95,16 @@ test('CLI: --require-private exits 2 when no private term loaded; without it the
   const open = gate(['--root', dir]);
   assert.equal(open.status, 0, open.stderr);
   assert.match(open.stderr, /checking the \d+ public terms only/);
+});
+
+test('CLI: --require-private on a Dependabot run names the Dependabot secret as the fix', () => {
+  const dir = repo();
+  const bot = gate(['--root', dir, '--require-private'], { GITHUB_ACTOR: 'dependabot[bot]' });
+  assert.equal(bot.status, 2, bot.stderr);
+  assert.match(bot.stderr, /gh secret set AOS_PRIVACY_TERMS --app dependabot/);
+  const person = gate(['--root', dir, '--require-private'], { GITHUB_ACTOR: 'octocat' });
+  assert.equal(person.status, 2, person.stderr);
+  assert.doesNotMatch(person.stderr, /dependabot/i);
 });
 
 test('CLI: a private term from AOS_PRIVACY_TERMS is caught and, locally, printed with its line', () => {

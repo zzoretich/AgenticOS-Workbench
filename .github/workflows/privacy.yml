@@ -15,8 +15,11 @@ jobs:
   privacy:
     runs-on: ubuntu-latest
     env:
-      # One term per line (tools/privacy-terms.js). Sync: gh secret set AOS_PRIVACY_TERMS < tools/privacy-terms.local.txt
-      # A pull request from a fork gets no secrets, so it runs on the public terms and says so.
+      # One term per line (tools/privacy-terms.js). Sync both copies from the file whenever it changes:
+      #   gh secret set AOS_PRIVACY_TERMS < tools/privacy-terms.local.txt
+      #   gh secret set AOS_PRIVACY_TERMS --app dependabot < tools/privacy-terms.local.txt
+      # A Dependabot pull request reads only Dependabot secrets, hence the second copy. A pull request from a fork gets
+      # no secrets, so it runs on the public terms and says so.
       AOS_PRIVACY_TERMS: ${{ secrets.AOS_PRIVACY_TERMS }}
       FORK: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
       GITLEAKS_VERSION: 8.30.1
