@@ -29,7 +29,7 @@ Under Codex CLI every `/name` below is the plugin skill `$agenticos:name` (`$age
 - `/brain` — show current state · `/scan` — refresh the dashboard
 - `/ask-brain <q>` · `/standup` · `/reflect-week` · `/consolidate-memory` · `/compress <file>` — a script assembles the context, you answer or write it in-session (pass `--local` to let the local provider do it)
 - `/cost` — session costing (only after `aos cost enable`)
-- `/aos doctor|status|provider|persona` — maintenance
+- `/aos doctor|status|provider|persona|config` — maintenance; `aos config` lists every setting and changes one (`set <key> <value>`, `unset <key>`)
 - `/routines [list|sync|run <slug>|enable <slug>|disable <slug>|next]` — the recurring actions (see Routines)
 - `/skills [list|sync|exclude <name>|include <name>|reset <name>]` — every Claude Code and Codex skill; with both hosts enabled each host's own skills are copied, translated, into the other at session end, so a skill written for one works in both
 - `/agenticos:agents [list|sync|exclude <name>|include <name>|reset <name>]` — every Claude Code and Codex agent; with both hosts enabled each host's own agents are copied, translated, into the other at session end. Use one by asking for it by name (Claude Code also takes `@agent-<name>`)

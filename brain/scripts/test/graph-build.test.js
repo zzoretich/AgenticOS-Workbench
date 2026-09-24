@@ -303,3 +303,9 @@ test('under the codex runner the shim answers graphify through codex exec: read-
     for (const k of ['FAKE_ARGS', 'FAKE_CODEX_STDIN', 'FAKE_CODEX_REPLY']) delete process.env[k];
   }
 });
+
+test('a semantic daily cap of 0 means no spend (spec 2026-09-24-aos-config D10), even with nothing spent today', () => {
+  fs.rmSync(SPEND_PATH, { force: true });
+  assert.deepEqual(skip(scfg({ perDayUsd: 0 }), { force: true }), { status: 'skipped', reason: 'graph budget reached' });
+  assert.equal(skip(scfg({ perDayUsd: 'x' }), { force: true }), null, 'a non-numeric cap takes the $1 default');
+});

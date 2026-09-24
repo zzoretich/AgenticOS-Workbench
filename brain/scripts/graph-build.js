@@ -21,6 +21,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { PATHS } = require('./lib/paths.js');
 const { loadConfig } = require('./lib/config.js');
+const { dayCap } = require('./lib/settings-schema.js');
 const { withReport } = require('./lib/pipeline-report.js');
 const G = require('./sdk/lib/graph.js');
 const { graphSpendToday } = require('./sdk/lib/spend-ledger.js');
@@ -182,7 +183,7 @@ function semanticSkip(cfg, { vault = PATHS.VAULT, now = new Date(), force = fals
   const m = G.readMarker(G.outDir(vault, cfg.graph)) || {};
   const last = Date.parse(m.lastSemanticRun || '');
   if (!force && last && now - last < (Number(sem.everyHours) || 24) * 3_600_000) return { status: 'skipped', reason: 'not due' };
-  if (graphSpendToday(now) >= (Number(sem.perDayUsd) || 1)) return { status: 'skipped', reason: 'graph budget reached' };
+  if (graphSpendToday(now) >= dayCap(sem.perDayUsd, 1)) return { status: 'skipped', reason: 'graph budget reached' };
   const r = runner === undefined ? semanticRunner(cfg) : runner;
   if (!r) return { status: 'disabled', reason: 'no claude or codex CLI' };
   return null;

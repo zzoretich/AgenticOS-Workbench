@@ -38,6 +38,7 @@ const embedModule = require('./embed.js');
 const claudeCli = require('./claude-cli.js');
 const codexCli = require('./codex-cli.js');
 const { role, providerFor, thinkFor } = require('./models.js');
+const { dayCap } = require('../../lib/settings-schema.js');
 const { ProviderUnavailable, recordSpend, spendToday, reasonSpendToday, routineSpendToday, SPEND_PATH } = require('./spend-ledger.js');
 
 const STATE_PATH = path.join(PATHS.INDEX, 'provider-state.json');
@@ -94,7 +95,7 @@ function hookBudget(cfg, deps = {}) {
 function reasonerBudget(cfg, deps = {}) {
   const r = cfg.reasoner || {};
   return {
-    model: role('reasoner', cfg).tag, perCallUsd: Number(r.perCallUsd) || 0.5, perDayUsd: Number(r.perDayUsd) || 5,
+    model: role('reasoner', cfg).tag, perCallUsd: Number(r.perCallUsd) || 0.5, perDayUsd: dayCap(r.perDayUsd, 5),
     spent: deps.reasonSpendToday || reasonSpendToday, capKey: 'reasoner.perDayUsd', label: 'daily reasoner cap',
     effort: thinkFor('reasoner', undefined, cfg),
   };
@@ -133,7 +134,7 @@ function codexEffort(cfg) {
 function codexBudget(cfg, deps = {}) {
   const c = cfg.codex || {};
   return {
-    model: role('codex', cfg).tag, perCallUsd: Number(c.perCallUsd) || 0.05, perDayUsd: Number(c.perDayUsd) || 0.5,
+    model: role('codex', cfg).tag, perCallUsd: Number(c.perCallUsd) || 0.05, perDayUsd: dayCap(c.perDayUsd, 0.5),
     spent: deps.spendToday || spendToday, capKey: 'codex.perDayUsd', label: 'daily hook cap', effort: codexEffort(cfg),
   };
 }
@@ -143,7 +144,7 @@ function reasonerCodexBudget(cfg, deps = {}) {
   const model = (typeof r.codexModel === 'string' && r.codexModel) || role('codex', cfg).tag;
   const effort = codexCli.EFFORTS.includes(r.effort) ? r.effort : 'medium';
   return {
-    model, perCallUsd: Number(r.perCallUsd) || 0.5, perDayUsd: Number(r.perDayUsd) || 5,
+    model, perCallUsd: Number(r.perCallUsd) || 0.5, perDayUsd: dayCap(r.perDayUsd, 5),
     spent: deps.reasonSpendToday || reasonSpendToday, capKey: 'reasoner.perDayUsd', label: 'daily reasoner cap', effort,
   };
 }

@@ -377,3 +377,13 @@ test('codex hook calls without a think level use codex.effort, default low, neve
   await p.chat({ prompt: 'summarise' });
   assert.equal(calls[1].effort, 'minimal');
 });
+
+test('a daily cap of 0 means no spend (spec 2026-09-24-aos-config D10): codex and the reasoner resolve to none before any call', async () => {
+  fs.writeFileSync(CONFIG, JSON.stringify({ codex: { perDayUsd: 0 }, reasoner: { perDayUsd: 0 } }));
+  const c = await resolveProvider({ mode: 'codex', deps: { ping: never, resolveClaudeBin: never, loginProbe: never, resolveCodexBin: () => '/x/codex', codexLoginProbe: async () => true } });
+  assert.equal(c.name, 'none');
+  assert.equal(c.reason, 'daily-cap');
+  const r = await resolveProviderForRole({ role: 'reasoner', deps: { ...loggedIn, claudeCall: never } });
+  assert.equal(r.name, 'none');
+  assert.equal(r.reason, 'reasoner-daily-cap');
+});

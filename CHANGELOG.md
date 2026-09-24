@@ -4,6 +4,21 @@ All notable changes to AgenticOS Workbench. Versions follow the tags. From the n
 
 ## [Unreleased]
 
+### Added
+- `aos config list | get | set | unset`: every setting in one place, with the file each value comes from. `set` validates the value, writes it atomically to the file that actually wins the merge, and runs the side effects the change needs. It works from a terminal, from `/aos config` in Claude Code and from `$agenticos:aos config` in Codex. First step toward the Workbench Settings tab.
+- `aos doctor` has a `config` row that flags unknown keys (typos) and invalid values in `agenticos.json` and `brain/config.json`.
+
+### Changed
+- `persona.enabled` set through `aos config` is the whole Chief of Staff switch: `false` also pauses scheduled duties (`persona/DISABLED`). `aos persona on|off` still pauses duties alone.
+- `scan.autoSweepOrphans` in the vault config now turns the orphan sweep on; a boolean in `brain/_index/scanner-config.json` still wins.
+- Every writer of `agenticos.json` and `brain/config.json` (`aos provider`, `aos cost`, `aos graph`, `aos persona`, init and upgrade) writes atomically, so a hook never reads a half-written file.
+
+### Fixed
+- A daily cap of `0` now means no spend for `codex.perDayUsd`, `reasoner.perDayUsd`, `graph.semantic.perDayUsd` and `crossReview.perDayUsd`, as it already did for the Claude, persona and routine caps; it used to fall back to the default.
+
+### Upgrading
+- Run `aos upgrade`; until then the launcher answers `aos config` with `unknown script config`.
+
 ## [0.16.0] — 2026-09-23
 
 ### Changed

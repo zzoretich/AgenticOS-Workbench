@@ -24,6 +24,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { loadConfig } = require('./lib/config.js');
+const { dayCap } = require('./lib/settings-schema.js');
 const { recordSpend, graphSpendToday } = require('./sdk/lib/spend-ledger.js');
 const { headlessEnv, ISOLATION_FLAGS } = require('./sdk/lib/claude-cli.js');
 
@@ -72,7 +73,7 @@ async function codexLeg(argv, { env, readStdin, out, err, codexCall, mkTemp }) {
   if (argv.some((a) => PASS_THROUGH.has(a))) { out.write(argv.includes('--version') || argv.includes('-v') ? '0.0.0 (graph shim, codex)\n' : CODEX_HELP); return 0; }
   const cfg = loadConfig();
   const sem = (cfg.graph && cfg.graph.semantic) || {};
-  const cap = Number(sem.perDayUsd) || 1;
+  const cap = dayCap(sem.perDayUsd, 1);
   const spent = graphSpendToday();
   if (spent >= cap) {
     err.write(`graph-claude: today's graph budget is spent ($${spent.toFixed(4)} of $${cap}); the rest waits for the next run\n`);
@@ -116,7 +117,7 @@ function main(argv = process.argv.slice(2), io = {}) {
   }
   const cfg = loadConfig();
   const sem = (cfg.graph && cfg.graph.semantic) || {};
-  const cap = Number(sem.perDayUsd) || 1;
+  const cap = dayCap(sem.perDayUsd, 1);
   const spent = graphSpendToday();
   if (spent >= cap) {
     err.write(`graph-claude: today's graph budget is spent ($${spent.toFixed(4)} of $${cap}); the rest waits for the next run\n`);

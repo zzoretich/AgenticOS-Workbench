@@ -78,3 +78,20 @@ test('the test harness pins CLAUDE_CONFIG_DIR away from the real ~/.claude, and 
   const r = sweepOrphans(); // the shared test vault carries no scanner-config.json → enabled: false before any read or removal
   assert.equal(r.enabled, false);
 });
+
+test('the gate (spec 2026-09-24-aos-config D11): scan.autoSweepOrphans in the product config turns the sweep on; scanner-config.json still wins', () => {
+  const vault = fs.mkdtempSync(path.join(os.tmpdir(), 'so-vault-'));
+  const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'so-cfg-'));
+  const user = path.join(cfg, 'agenticos.json');
+  fs.mkdirSync(path.join(vault, 'brain', '_index'), { recursive: true });
+  fs.mkdirSync(path.join(cfg, 'projects'), { recursive: true });
+  const run = () => sweepOrphans({ vault, claudeConfigDir: cfg, userConfigFile: user }).enabled;
+  assert.equal(run(), false, 'off by default');
+  fs.writeFileSync(path.join(vault, 'brain', 'config.json'), JSON.stringify({ scan: { autoSweepOrphans: true } }));
+  assert.equal(run(), true, 'the vault config turns it on');
+  fs.writeFileSync(user, JSON.stringify({ scan: { autoSweepOrphans: false } }));
+  assert.equal(run(), false, 'agenticos.json wins over the vault config, as loadConfig merges');
+  fs.rmSync(user);
+  fs.writeFileSync(path.join(vault, 'brain', '_index', 'scanner-config.json'), JSON.stringify({ autoSweepOrphans: false }));
+  assert.equal(run(), false, 'a boolean in scanner-config.json wins');
+});

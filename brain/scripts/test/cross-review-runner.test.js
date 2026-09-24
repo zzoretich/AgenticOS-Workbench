@@ -424,3 +424,8 @@ test('usage errors exit 2', () => {
   assert.equal(s.run(['review', '--host', 'claude']).status, 2, 'no --plan');
   assert.equal(s.run(['review', '--host', 'claude', ...PLAN, '--timeout', '-1']).status, 2);
 });
+
+test('a crossReview daily cap of 0 refuses before launch (spec 2026-09-24-aos-config D10)', () => {
+  const s = sandbox({ cfg: { crossReview: { perDayUsd: 0 } } });
+  assert.match(s.run(['review', '--host', 'claude', ...PLAN]).stderr, /\$0\.00 has reached crossReview\.perDayUsd \(\$0\)/);
+});
