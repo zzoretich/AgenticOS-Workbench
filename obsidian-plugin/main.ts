@@ -14,7 +14,6 @@ import { loadRuns, RUNS_PATH, formatRelative } from "./src/data/runs";
 import { CaptureModal } from "./src/ui/CaptureModal";
 import { HeartbeatClient } from "./src/data/heartbeatClient";
 import { LiveRunsWatcher } from "./src/data/liveRuns";
-import { sweepOrphans } from "./src/data/orphanSweep";
 import { COMMAND_REGISTRY, executeCommand, setSpawnContext } from "./src/data/commandRegistry";
 import { resolveNodeBinary } from "./src/data/nodeResolver";
 import { readAgenticosJson, readVaultConfig, readProviderState, claudeConfigDir as defaultClaudeConfigDir } from "./src/data/aosConfig";
@@ -122,17 +121,14 @@ export default class AgenticOSPlugin extends Plugin {
     this.app.workspace.onLayoutReady(async () => {
       if (this.settings.autoOpenSidebarOnStart) await this.activate(VIEW_TYPE_SIDEBAR_HUD, "right");
       this.refreshStatusBar();
-      // Sweep crashed runs BEFORE the watcher starts so it doesn't latch onto dead ndjson
-      // files. Off when telemetry is disabled: the plugin then writes nothing under agent-runs.
+      // Finish the runs that never got a SessionEnd with the runtime's own reconcile (idle past
+      // telemetry.staleAfterMinutes, or a Codex process that exited), the same one both hosts' hooks run.
+      // The plugin's old sweep read the hook's pid, which is always dead, and marked every session idle
+      // for 5 minutes "crashed" (spec 2026-09-24-no-duplicate-sessions D1). The live watcher drops a run
+      // when its file goes. Off when telemetry is disabled: the plugin then writes nothing under agent-runs.
+      // AOS_HOST / CLAUDE_PROJECT_DIR blank: an Obsidian started from a session terminal must not look like a hook.
       if (this.telemetryOn()) {
-        try {
-          const result = sweepOrphans(this.vaultRoot());
-          if (result.swept.length > 0 || result.errors > 0) {
-            console.log(`[agentic-os] orphan sweep: ${result.swept.length} crashed, ${result.skipped} skipped, ${result.errors} errors`);
-          }
-        } catch (e) {
-          console.warn("[agentic-os] orphan sweep failed:", e);
-        }
+        this.runBrainScript("brain/scripts/reconcile-sessions.js", [], undefined, { env: { AOS_HOST: "", CLAUDE_PROJECT_DIR: "" }, quiet: true });
       }
       this.startRunsTail();
       this.rebindLiveSources();
@@ -464,18 +460,25 @@ export default class AgenticOSPlugin extends Plugin {
   }
 
   /** Spawn a brain script detached (Fix Queue / Pulse actions). Best-effort;
-   *  UI feedback comes from the pipelines ledger, not the exit code. */
-  runBrainScript(relScript: string, args: string[] = [], onDone?: () => void, opts: { env?: Record<string, string> } = {}): void {
+   *  UI feedback comes from the pipelines ledger, not the exit code. opts.quiet: no notices (background work
+   *  on load; a vault with no runtime yet stays silent), the console only. */
+  runBrainScript(relScript: string, args: string[] = [], onDone?: () => void, opts: { env?: Record<string, string>; quiet?: boolean } = {}): void {
     try {
       const base = this.vaultRoot();
       const script = path.join(base, relScript);
-      if (!fs.existsSync(script)) { new Notice(`script missing: ${relScript}`); return; }
+      if (!fs.existsSync(script)) {
+        if (opts.quiet) console.warn(`[agentic-os] script missing: ${relScript}`); else new Notice(`script missing: ${relScript}`);
+        return;
+      }
       // opts.env: the Routines tab pins AOS_VAULT/AOS_CONFIG so the runtime resolves the same vault and config dir the HUD shows.
       const child = spawn(this.nodeBin(), [script, ...args], { cwd: base, stdio: "ignore", detached: true, env: opts.env ? { ...process.env, ...opts.env } : process.env });
       child.unref();
-      child.on("error", (e) => { console.warn("[agentic-os] runBrainScript failed:", e); new Notice(`spawn failed: ${relScript}`); });
+      child.on("error", (e) => {
+        console.warn("[agentic-os] runBrainScript failed:", e);
+        if (!opts.quiet) new Notice(`spawn failed: ${relScript}`);
+      });
       if (onDone) child.on("close", onDone);
-      new Notice(`▶ ${relScript.split("/").pop()} ${args.join(" ")}`.trim());
+      if (!opts.quiet) new Notice(`▶ ${relScript.split("/").pop()} ${args.join(" ")}`.trim());
     } catch (e) {
       console.warn("[agentic-os] runBrainScript error:", e);
     }

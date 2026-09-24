@@ -403,3 +403,29 @@ test('wrapCycle with provider none: prefilter draft failures reach the ledger in
     fs.mkdirSync(draftsDir, { recursive: true });
   }
 });
+
+test('a second wrap of one session reads only what came after the first, and skips when nothing did (no-duplicate-sessions D3)', async () => {
+  const transcript = path.join(TMP, 'twice.jsonl');
+  const line = (role, text) => JSON.stringify({ type: role, message: { content: [{ type: 'text', text }] } });
+  fs.writeFileSync(transcript, [line('user', 'first ask about the ledger'), line('assistant', 'first answer')].join('\n') + '\n');
+  const sent = [];
+  const COUNTING = { ...CLAUDE, chat: async (o) => { sent.push(JSON.stringify(o)); return JSON.stringify(GOOD_EXTRACTION); } };
+  const deps = { pruneQueue: async () => ({ dropped: 0 }), waitForOllama: async () => true };
+
+  assert.equal((await wrapCycle({ transcriptPath: transcript, sessionId: 'sess-twice', provider: COUNTING, deps })).status, 'ok');
+  const first = sent.length;
+  assert.ok(first > 0);
+  assert.ok(sent.some((s) => s.includes('first ask about the ledger')));
+
+  await wrapCycle({ transcriptPath: transcript, sessionId: 'sess-twice', provider: COUNTING, deps });
+  assert.equal(sent.length, first, 'nothing new: no model call');
+  const last = readLedgerFile().pipelines['auto-wrap'].lastRun;
+  assert.equal(last.status, 'skipped');
+  assert.equal(last.reason, 'already-wrapped');
+
+  fs.appendFileSync(transcript, [line('user', 'second ask about offsets'), line('assistant', 'second answer')].join('\n') + '\n');
+  await wrapCycle({ transcriptPath: transcript, sessionId: 'sess-twice', provider: COUNTING, deps });
+  const later = sent.slice(first);
+  assert.ok(later.some((s) => s.includes('second ask about offsets')));
+  assert.ok(!later.some((s) => s.includes('first ask about the ledger')), 'the wrapped part is not sent again');
+});

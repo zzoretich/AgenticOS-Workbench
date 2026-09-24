@@ -173,7 +173,7 @@ Precondition for both action rows: the plugin folder must be an `aos init` / `ao
 
 ## Telemetry switch
 
-- [ ] With `telemetry.enabled` false (⚙ Settings → Telemetry, or `aos config set telemetry.enabled false`): no `agent-runs/live/` is created on load and no orphan-sweep log line appears; Runs tab still reads existing `runs.jsonl`; the hooks record nothing either — one key for `telemetry-hook.js` and the plugin.
+- [ ] With `telemetry.enabled` false (⚙ Settings → Telemetry, or `aos config set telemetry.enabled false`): no `agent-runs/live/` is created on load and the plugin starts no `reconcile-sessions.js`; Runs tab still reads existing `runs.jsonl`; the hooks record nothing either — one key for `telemetry-hook.js` and the plugin.
 - [ ] A `data.json` from 0.17 or earlier that stored `costEnabled`/`telemetryEnabled` loses both keys on the first load (the console logs `pruned dead settings keys`).
 
 ## Review readiness
