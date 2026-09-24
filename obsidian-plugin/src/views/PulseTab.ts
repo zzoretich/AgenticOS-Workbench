@@ -155,8 +155,10 @@ export class PulseTab {
 
     const monthRuns = await loadRunsForMonth(app);
     const budgetConfig = await this.loadBudgetConfig();
-    const monthlyBudget = readVaultConfig(this.plugin.vaultRoot(), this.plugin.claudeConfigDir()).cost.monthlyBudget;
-    this.costActive = this.plugin.settings.costEnabled && typeof monthlyBudget === "number";
+    // cost.enabled is the system switch (spec 2026-09-24-settings-tab D10), read with the budget from the merged config.
+    const sysCost = readVaultConfig(this.plugin.vaultRoot(), this.plugin.claudeConfigDir()).cost;
+    const monthlyBudget = sysCost.monthlyBudget;
+    this.costActive = sysCost.enabled === true && typeof monthlyBudget === "number";
     const budget = buildMonthlyBudget(monthRuns, budgetConfig, new Date(), monthlyBudget);
     const now2 = new Date();
     const currentMonth = `${now2.getFullYear()}-${String(now2.getMonth() + 1).padStart(2, "0")}`;

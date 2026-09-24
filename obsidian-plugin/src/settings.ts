@@ -1,23 +1,22 @@
-import { App, Notice, PluginSettingTab, Setting } from "obsidian";
+import { App, PluginSettingTab, Setting } from "obsidian";
 import type AgenticOSPlugin from "../main";
 import { DEFAULT_SETTINGS } from "./settingsDefaults";
 import type { AgenticOSSettings } from "./settingsDefaults";
-import { resolveNodeBinary, resetProbeForTests } from "./data/nodeResolver";
-import { readProviderState, readAgenticosJson } from "./data/aosConfig";
-import { setSpawnContext } from "./data/commandRegistry";
-import { decideVaultRoot } from "./data/vaultRootField";
-import * as fs from "fs";
+import { readProviderState } from "./data/aosConfig";
+import { renderPluginSettings, setSystemSetting } from "./ui/pluginSettingRows";
+import type { PluginRowsHandle } from "./ui/pluginSettingRows";
 
 export { DEFAULT_SETTINGS };
 export type { AgenticOSSettings };
 
-function isDirectory(p: string): boolean {
-  try { return fs.statSync(p).isDirectory(); } catch { return false; }
-}
-
+/**
+ * Obsidian's settings pane for the plugin. The Workbench's ⚙ Settings tab is the full control panel (spec
+ * 2026-09-24-settings-tab); this pane keeps the plugin's own settings where Obsidian users look for them, rendered by
+ * the same renderPluginSettings() the tab uses (D11), plus the two system switches the HUD depends on (D10).
+ */
 export class AgenticOSSettingTab extends PluginSettingTab {
   plugin: AgenticOSPlugin;
-  private commitVaultRoot: (() => Promise<void>) | null = null;
+  private rows: PluginRowsHandle | null = null;
 
   constructor(app: App, plugin: AgenticOSPlugin) {
     super(app, plugin);
@@ -29,203 +28,52 @@ export class AgenticOSSettingTab extends PluginSettingTab {
     containerEl.empty();
     containerEl.createEl("h2", { text: "Agentic OS" });
 
-    new Setting(containerEl).setName("General").setHeading();
-
     new Setting(containerEl)
-      .setName("Status bar enabled")
-      .setDesc("Show live agent/run telemetry in the Obsidian status bar. Consumed by Plugin.rebuildStatusBar(), which reruns immediately when this changes.")
-      .addToggle((t) =>
-        t.setValue(this.plugin.settings.statusBarEnabled).onChange(async (v) => {
-          this.plugin.settings.statusBarEnabled = v;
-          await this.plugin.saveSettings();
-          this.plugin.rebuildStatusBar();
-        })
-      );
+      .setName("Workbench settings")
+      .setDesc("Every AgenticOS setting in one place: provider and models, spend limits, the Chief of Staff, routines, the knowledge graph, cross-review, sharing, telemetry and updates.")
+      .addButton((b) => b.setButtonText("Open Workbench settings").setCta().onClick(() => {
+        // Obsidian has no public API to close its settings modal; the guarded call is a no-op if that ever changes.
+        (this.app as unknown as { setting?: { close?: () => void } }).setting?.close?.();
+        void this.plugin.openWorkbenchTab("settings");
+      }));
 
-    new Setting(containerEl)
-      .setName("Auto-open sidebar on start")
-      .setDesc("Open the compact HUD in the right sidebar whenever Obsidian launches. Checked once in Plugin.onload() on workspace layout-ready — takes effect on the next restart, not immediately.")
-      .addToggle((t) =>
-        t.setValue(this.plugin.settings.autoOpenSidebarOnStart).onChange(async (v) => {
-          this.plugin.settings.autoOpenSidebarOnStart = v;
-          await this.plugin.saveSettings();
-        })
-      );
-
-    new Setting(containerEl)
-      .setName("Poll interval (ms)")
-      .setDesc("How often the local watcher polls brain/_index/agent-runs/ for new run events (ms). Consumed by LiveRunsWatcher, rebuilt immediately via Plugin.rebindLiveSources(); its events feed ChatTab's live tail.")
-      .addText((t) =>
-        t.setValue(String(this.plugin.settings.liveTailPollMs)).onChange(async (v) => {
-          const n = Number(v);
-          if (Number.isFinite(n) && n >= 100 && n <= 5000) {
-            this.plugin.settings.liveTailPollMs = n;
-            await this.plugin.saveSettings();
-            this.plugin.rebindLiveSources();
-          }
-        })
-      );
-
-    new Setting(containerEl).setName("AgenticOS").setHeading();
-
-    new Setting(containerEl)
-      .setName("Vault root")
-      .setDesc("Absolute path used for spawns, the live-runs watcher and orphan sweep, brain/config.json, provider-state.json and persona/IDENTITY.md. Pulse/Runs/Memory/Spaces and the status bar always render this Obsidian vault, regardless of this setting. Leave blank to use this vault. Consumed by Plugin.vaultRoot() on every read/spawn — committed when the field loses focus, and in effect from that moment.")
-      .addText((t) => {
-        // Plan 4 Ruling F12: no onChange. Obsidian binds onChange to the input event, so saving there
-        // committed every keystroke — stacking Notices, saving abandoned typo prefixes, and re-validating
-        // an unchanged value. The field commits ONCE, on blur, through the pure decideVaultRoot(). The
-        // same commit also runs from hide(), because Chromium fires no blur on detachment (Escape closes
-        // the modal with the field still focused).
-        t.setPlaceholder("(this vault)").setValue(this.plugin.settings.vaultRoot);
-        this.commitVaultRoot = async () => {
-          const adapter = this.app.vault.adapter as unknown as { getBasePath?: () => string };
-          const d = decideVaultRoot({
-            typed: t.getValue(),
-            saved: this.plugin.settings.vaultRoot,
-            basePath: adapter.getBasePath ? adapter.getBasePath() : process.cwd(),
-            isDirectory,
-          });
-          if (d.notice) new Notice(d.notice, d.noticeMs);
-          t.setValue(d.value);
-          if (d.action === "none") return;
-          if (d.action === "reject") return;
-          this.plugin.settings.vaultRoot = d.value;
-          await this.plugin.saveSettings();
-          // commandRegistry captured the context once in onload(); refresh it or ⌘K and the
-          // command deck keep spawning in the old vault until Obsidian is reloaded.
-          setSpawnContext({ node: this.plugin.nodeBin(), vaultRoot: this.plugin.vaultRoot() });
-        };
-        t.inputEl.addEventListener("blur", () => { void this.commitVaultRoot?.(); });
-      });
-
-    new Setting(containerEl)
-      .setName("Claude config dir")
-      .setDesc("Where Claude Code keeps projects/ transcripts and agents/. Leave blank to use agenticos.json, then $CLAUDE_CONFIG_DIR, then ~/.claude. Consumed by Plugin.claudeConfigDir() (Pulse backfill count).")
-      .addText((t) =>
-        t.setPlaceholder(readAgenticosJson()?.claudeConfigDir ?? "~/.claude").setValue(this.plugin.settings.claudeConfigDir).onChange(async (v) => {
-          this.plugin.settings.claudeConfigDir = v.trim();
-          await this.plugin.saveSettings();
-        })
-      );
-
-    const nodeSetting = new Setting(containerEl)
-      .setName("Node binary")
-      .setDesc("Absolute path to node for spawning brain scripts. Leave blank to auto-resolve (agenticos.json, common install locations, then one login-shell probe whose result is saved here). Consumed by Plugin.nodeBin() on every spawn.");
-    nodeSetting.addText((t) =>
-      t.setPlaceholder("auto").setValue(this.plugin.settings.nodePath).onChange(async (v) => {
-        this.plugin.settings.nodePath = v.trim();
-        await this.plugin.saveSettings();
-        setSpawnContext({ node: this.plugin.nodeBin(), vaultRoot: this.plugin.vaultRoot() });
-      })
-    );
-    nodeSetting.addButton((b) =>
-      b.setButtonText("Probe").setTooltip("Re-run the resolver now and save what it finds").onClick(async () => {
-        resetProbeForTests();
-        const before = this.plugin.settings.nodePath;
-        this.plugin.settings.nodePath = "";
-        const found = resolveNodeBinary(this.plugin.settings);
-        if (found === "node") this.plugin.settings.nodePath = before;
-        else this.plugin.settings.nodePath = found;
-        await this.plugin.saveSettings();
-        setSpawnContext({ node: this.plugin.nodeBin(), vaultRoot: this.plugin.vaultRoot() });
-        new Notice(found === "node" ? "node not found — set the path manually" : `node: ${found}`);
-        this.display();
-      })
-    );
+    new Setting(containerEl).setName("System").setHeading();
 
     const state = readProviderState(this.plugin.vaultRoot());
     new Setting(containerEl)
       .setName("Provider")
       .setDesc(state
-        ? `${state.name} (${state.reason}) — checked ${state.checkedAt}. Change it with \`aos provider <auto|ollama|claude|codex|none>\`; the scripts write brain/_index/provider-state.json.`
+        ? `${state.name} (${state.reason}) — checked ${state.checkedAt}. Change it in Workbench settings or with \`aos config set provider <auto|ollama|claude|codex|none>\`.`
         : "No provider state yet — run any Claude Code or Codex session (hooks write brain/_index/provider-state.json) or `aos provider`.")
       .addExtraButton((b) => b.setIcon("refresh-cw").setTooltip("Re-read provider state").onClick(() => this.display()));
 
+    const sys = this.plugin.systemConfig();
     new Setting(containerEl)
-      .setName("Cost module enabled")
-      .setDesc("Show the COST row, cost Fix Queue cards, the re-anchor modal and the COST DETAIL drawer section. Also needs cost.monthlyBudget in brain/config.json (set by `aos cost enable`). Until you change it here it follows cost.enabled from agenticos.json (`aos cost enable` / `aos cost disable`); once saved, this toggle wins. Consumed by PulseTab/SystemDrawer on their next render.")
+      .setName("Session costing")
+      .setDesc("cost.enabled — cost every session at its end and show the COST row, cost Fix Queue cards and COST DETAIL (with cost.monthlyBudget set). The system switch: this runs `aos config set cost.enabled`, which installs the analyzer when turning it on.")
       .addToggle((t) =>
-        t.setValue(this.plugin.settings.costEnabled).onChange(async (v) => {
-          this.plugin.settings.costEnabled = v;
-          await this.plugin.saveSettings();
+        t.setValue(sys.cost.enabled === true).onChange(async (v) => {
+          await setSystemSetting(this.plugin, "cost.enabled", v);
+          this.display();
         })
       );
 
     new Setting(containerEl)
-      .setName("Telemetry enabled")
-      .setDesc("When off, the plugin neither sweeps crashed runs on load nor creates brain/_index/agent-runs/live/. Until you change it here it follows telemetry.enabled from agenticos.json / brain/config.json (the same key telemetry-hook.js honors); once saved, this toggle wins. Consumed by Plugin.onload() (orphan sweep) and Plugin.rebindLiveSources() (rebuilt immediately).")
+      .setName("Telemetry")
+      .setDesc("telemetry.enabled — record agent runs (Runs tab, Pulse, spend). The system switch: this runs `aos config set telemetry.enabled`; when off, the hooks record nothing and the plugin neither sweeps crashed runs nor creates brain/_index/agent-runs/live.")
       .addToggle((t) =>
-        t.setValue(this.plugin.settings.telemetryEnabled).onChange(async (v) => {
-          this.plugin.settings.telemetryEnabled = v;
-          await this.plugin.saveSettings();
-          this.plugin.rebindLiveSources();
+        t.setValue(sys.telemetry.enabled !== false).onChange(async (v) => {
+          await setSystemSetting(this.plugin, "telemetry.enabled", v);
+          this.display();
         })
       );
 
-    new Setting(containerEl).setName("Terminal").setHeading();
-
-    new Setting(containerEl)
-      .setName("Embedded terminal panel")
-      .setDesc("Show the embedded terminal strip on the Pulse tab. Disable to hide; the Term tab still offers a full-pane terminal. Consumed by PulseTab.renderTerminalSlot() on its next render.")
-      .addToggle((t) =>
-        t.setValue(this.plugin.settings.terminalEmbedded).onChange(async (v) => {
-          this.plugin.settings.terminalEmbedded = v;
-          await this.plugin.saveSettings();
-        })
-      );
-
-    new Setting(containerEl)
-      .setName("Shell")
-      .setDesc("Default shell for new terminal sessions. Leave blank to use $SHELL (zsh on darwin, cmd.exe on win32). Read once by Plugin.onload() to build the shared TerminalPool — changes apply only after an Obsidian restart or plugin reload.")
-      .addText((t) =>
-        t.setValue(this.plugin.settings.terminalShell).onChange(async (v) => {
-          this.plugin.settings.terminalShell = v.trim();
-          await this.plugin.saveSettings();
-        })
-      );
-
-    new Setting(containerEl)
-      .setName("Working directory")
-      .setDesc("Default working directory for new terminal sessions. Leave blank for vault root. Read once by Plugin.onload() to build the shared TerminalPool — changes apply only after an Obsidian restart or plugin reload.")
-      .addText((t) =>
-        t.setValue(this.plugin.settings.terminalCwd).onChange(async (v) => {
-          this.plugin.settings.terminalCwd = v.trim();
-          await this.plugin.saveSettings();
-        })
-      );
-
-    new Setting(containerEl)
-      .setName("Font size")
-      .setDesc("xterm.js font size (px) for new terminal sessions. Consumed by TerminalPanel.createBinding() when a session is first opened — already-open sessions keep their current size until reopened.")
-      .addText((t) =>
-        t.setValue(String(this.plugin.settings.terminalFontSize)).onChange(async (v) => {
-          const n = Number(v);
-          if (Number.isFinite(n) && n >= 8 && n <= 32) {
-            this.plugin.settings.terminalFontSize = n;
-            await this.plugin.saveSettings();
-          }
-        })
-      );
-
-    new Setting(containerEl)
-      .setName("Scrollback (lines)")
-      .setDesc("xterm.js scrollback buffer (lines) for new terminal sessions. Consumed by TerminalPanel.createBinding() when a session is first opened — already-open sessions are unaffected until reopened.")
-      .addText((t) =>
-        t.setValue(String(this.plugin.settings.terminalScrollback)).onChange(async (v) => {
-          const n = Number(v);
-          if (Number.isFinite(n) && n >= 100 && n <= 100000) {
-            this.plugin.settings.terminalScrollback = n;
-            await this.plugin.saveSettings();
-          }
-        })
-      );
-
+    this.rows = renderPluginSettings(containerEl, this.plugin, () => this.display());
   }
 
   hide(): void {
-    void this.commitVaultRoot?.();
-    this.commitVaultRoot = null;
+    void this.rows?.commit();
+    this.rows = null;
     super.hide();
   }
 }

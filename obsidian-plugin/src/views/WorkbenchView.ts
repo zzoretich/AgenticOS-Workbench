@@ -11,6 +11,7 @@ import { ChatTab } from "./ChatTab";
 import { TermTab } from "./TermTab";
 import { ProposalsTab } from "./ProposalsTab";
 import { TodoTab } from "./TodoTab";
+import { SettingsTab } from "./SettingsTab";
 import { PROPOSALS_DIR } from "../data/proposals";
 import { badgeText, proposalBadge, todoBadge, touchesBadges } from "../data/badges";
 import { TODO_PATH, localDay } from "../data/todos";
@@ -32,6 +33,8 @@ const RAIL: RailTab[] = [
   { id: "chat", icon: "✎", label: "Chat" },
   { id: "term", icon: "❯_", label: "Term" },
 ];
+/** Pinned to the rail's foot, below the scrolling tab list (spec 2026-09-24-settings-tab D1). */
+const SETTINGS_TAB: RailTab = { id: "settings", icon: "⚙", label: "Settings" };
 
 export class WorkbenchView extends ItemView {
   private plugin: AgenticOSPlugin;
@@ -86,15 +89,14 @@ export class WorkbenchView extends ItemView {
 
     // body: rail | content | drawer
     const body = root.createDiv({ cls: "aos-wb-body" });
+    // The tab buttons scroll inside .aos-wb-railtabs so a short pane never pushes the ⚙ footer out of reach (D1).
     this.railEl = body.createDiv({ cls: "aos-wb-rail" });
+    const tabsEl = this.railEl.createDiv({ cls: "aos-wb-railtabs" });
     for (const tab of RAIL) {
       if (tab.id === "chat" && !this.plugin.chatAvailable()) continue; // no provider → no Chat tab (hint lives in ChatTab.render)
-      const b = this.railEl.createDiv({ cls: "aos-wb-railbtn", attr: { "data-tab": tab.id, "aria-label": tab.label } });
-      b.createDiv({ text: tab.icon, cls: "aos-wb-railicon" });
-      b.createDiv({ text: tab.label, cls: "aos-wb-raillabel" });
-      this.badgeEls[tab.id] = b.createDiv({ cls: "aos-wb-railbadge" });
-      b.addEventListener("click", () => this.onRailClick(tab));
+      this.railButton(tabsEl, tab);
     }
+    this.railButton(this.railEl.createDiv({ cls: "aos-wb-railfoot" }), SETTINGS_TAB);
     this.contentHost = body.createDiv({ cls: "aos-wb-content" });
     this.drawerHost = body.createDiv({ cls: "aos-wb-drawer" });
 
@@ -110,6 +112,15 @@ export class WorkbenchView extends ItemView {
     this.registerEvent(this.app.vault.on("delete", (f) => onPath(f)));
     this.registerEvent(this.app.vault.on("rename", (f, oldPath) => onPath(f, oldPath)));
     void this.refreshBadges();
+  }
+
+  private railButton(parent: HTMLElement, tab: RailTab): void {
+    const b = parent.createDiv({ cls: "aos-wb-railbtn", attr: { "data-tab": tab.id, "aria-label": tab.label, role: "button", tabindex: "0" } });
+    b.createDiv({ text: tab.icon, cls: "aos-wb-railicon" });
+    b.createDiv({ text: tab.label, cls: "aos-wb-raillabel" });
+    this.badgeEls[tab.id] = b.createDiv({ cls: "aos-wb-railbadge is-empty" });
+    b.addEventListener("click", () => this.onRailClick(tab));
+    b.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); this.onRailClick(tab); } });
   }
 
   /** Shows `n` on a rail button; 0 hides the badge. */
@@ -168,6 +179,7 @@ export class WorkbenchView extends ItemView {
     if (id === "agents") return new AgentsTab(this.plugin, this);
     if (id === "chat") return new ChatTab(this.plugin, this);
     if (id === "term") return new TermTab(this.plugin, this);
+    if (id === "settings") return new SettingsTab(this.plugin, this);
     return null;
   }
 

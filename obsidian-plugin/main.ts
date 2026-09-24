@@ -20,7 +20,10 @@ import { resolveNodeBinary } from "./src/data/nodeResolver";
 import { readAgenticosJson, readVaultConfig, readProviderState, claudeConfigDir as defaultClaudeConfigDir } from "./src/data/aosConfig";
 import { resolveClaudeBin } from "./src/data/claudeAsk";
 import { installTerminalSupport, rebuildPty, electronVersion, hasBundle, NO_PACKAGE_JSON } from "./src/data/terminalInstall";
-import { seedToggleDefaults } from "./src/settingsDefaults";
+import { DEAD_SETTINGS_KEYS } from "./src/settingsDefaults";
+import { runAos, runAosJson } from "./src/data/aosRun";
+import type { AosResult, AosJsonResult } from "./src/data/aosRun";
+import type { VaultConfig } from "./src/data/aosConfig";
 import { loadAllMaps } from "./src/data/workspaceMaps";
 import { listMemories } from "./src/data/memories";
 import { loadStaff } from "./src/data/staff";
@@ -85,7 +88,7 @@ export default class AgenticOSPlugin extends Plugin {
 
     // commands
     this.addCommand({ id: "open-workbench",       name: "Open Workbench",        callback: () => { void this.activate(VIEW_TYPE_WORKBENCH); } });
-    for (const t of ["todo", "proposals", "spaces", "memory", "runs", "routines", "skills", "agents", "chat", "term"] as const) {
+    for (const t of ["todo", "proposals", "spaces", "memory", "runs", "routines", "skills", "agents", "chat", "term", "settings"] as const) {
       this.addCommand({ id: `open-workbench-${t}`, name: `Open Workbench: ${t === "todo" ? "To-Do" : `${t[0].toUpperCase()}${t.slice(1)}`}`,
         callback: () => { void this.openWorkbenchTab(t); } });
     }
@@ -121,7 +124,7 @@ export default class AgenticOSPlugin extends Plugin {
       this.refreshStatusBar();
       // Sweep crashed runs BEFORE the watcher starts so it doesn't latch onto dead ndjson
       // files. Off when telemetry is disabled: the plugin then writes nothing under agent-runs.
-      if (this.settings.telemetryEnabled) {
+      if (this.telemetryOn()) {
         try {
           const result = sweepOrphans(this.vaultRoot());
           if (result.swept.length > 0 || result.errors > 0) {
@@ -169,19 +172,9 @@ export default class AgenticOSPlugin extends Plugin {
     }
     this.settings = merged as unknown as AgenticOSSettings;
 
-    // Toggles that mirror keys the scripts own start from the vault config when data.json has
-    // never stored them (fresh install, or a data.json from before these settings existed):
-    // `aos cost enable` shows the COST row and telemetry.enabled=false stops the orphan sweep
-    // with no second switch here. After the merge because readVaultConfig() needs
-    // this.settings.vaultRoot. Once the user saves settings the stored value wins on every load.
-    // claudeConfigDir() is passed so an Obsidian launched without $CLAUDE_CONFIG_DIR still finds
-    // the agenticos.json the settings tab names (Ruling A6).
-    seedToggleDefaults(this.settings, raw, readVaultConfig(this.vaultRoot(), this.claudeConfigDir()));
-
-    // One-time prune of dead data.json keys from the pre-P0 era (no interface
-    // fields since P0 removed them, but the stored keys lingered on disk).
-    const deadKeys = ["snapshotPath", "runsPath", "sessionPath", "snapshotHistoryDir", "refreshDebounceMs"];
-    const pruned = deadKeys.filter((k) => Object.prototype.hasOwnProperty.call(raw, k));
+    // One-time prune of dead data.json keys: the pre-P0 paths, and the HUD-only cost/telemetry toggles that the system's
+    // own cost.enabled / telemetry.enabled replaced (spec 2026-09-24-settings-tab D10).
+    const pruned = DEAD_SETTINGS_KEYS.filter((k) => Object.prototype.hasOwnProperty.call(raw, k));
     if (pruned.length > 0) {
       await this.saveSettings();
       console.info(`[agentic-os] pruned dead settings keys: ${pruned.join(", ")}`);
@@ -208,6 +201,21 @@ export default class AgenticOSPlugin extends Plugin {
     if (this.settings.claudeConfigDir) return this.settings.claudeConfigDir;
     // No argument on purpose: this call is what *resolves* the config dir, so it uses the env chain.
     return readAgenticosJson()?.claudeConfigDir || defaultClaudeConfigDir();
+  }
+
+  /** The merged product config (defaults ← brain/config.json ← agenticos.json), read fresh on every call. */
+  systemConfig(): VaultConfig { return readVaultConfig(this.vaultRoot(), this.claudeConfigDir()); }
+  /** cost.enabled — the COST row, cost Fix Queue cards and COST DETAIL follow the system switch (D10). */
+  costOn(): boolean { return this.systemConfig().cost.enabled === true; }
+  /** telemetry.enabled — the orphan sweep and agent-runs/live creation follow the system switch (D10). */
+  telemetryOn(): boolean { return this.systemConfig().telemetry.enabled !== false; }
+
+  /** Runs the vendored `aos` CLI and waits for it (spec 2026-09-24-settings-tab D3); the Settings tab's only write path. */
+  aos(args: string[], timeoutMs?: number): Promise<AosResult> {
+    return runAos(args, { node: this.nodeBin(), vault: this.vaultRoot(), configDir: this.claudeConfigDir(), timeoutMs });
+  }
+  aosJson<T>(args: string[], timeoutMs?: number): Promise<AosJsonResult<T>> {
+    return runAosJson<T>(args, { node: this.nodeBin(), vault: this.vaultRoot(), configDir: this.claudeConfigDir(), timeoutMs });
   }
 
   /** Node binary for spawns; a login-shell probe result lands in settings and is persisted here. */
@@ -331,7 +339,7 @@ export default class AgenticOSPlugin extends Plugin {
       bus: this.bus,
       pollMs: this.settings.liveTailPollMs,
       source: "local",
-      createDirs: this.settings.telemetryEnabled,
+      createDirs: this.telemetryOn(),
     });
     this.liveRuns.start();
     this.hb.setSource(this.liveRuns);

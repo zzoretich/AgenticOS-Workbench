@@ -1231,8 +1231,15 @@
 .aos-wb-rail {
   display: flex; flex-direction: column; gap: 6px; padding: 10px 6px;
   background: var(--aos-bg); border-right: 1px solid var(--aos-border);
-  min-width: 56px; align-items: stretch;
+  min-width: 56px; align-items: stretch; min-height: 0;
 }
+/* Settings tab D1: the tab buttons scroll; the ⚙ footer stays pinned to the bottom-left. */
+.aos-wb-railtabs {
+  display: flex; flex-direction: column; gap: 6px; flex: 1 1 auto; min-height: 0;
+  overflow-y: auto; overflow-x: hidden; scrollbar-width: thin;
+}
+.aos-wb-railfoot { flex: none; display: flex; flex-direction: column; border-top: 1px solid var(--aos-border); padding-top: 6px; }
+.aos-wb-railbtn:focus-visible { outline: 1px solid var(--aos-cyan); outline-offset: -1px; }
 .aos-wb-railbtn {
   position: relative;
   text-align: center; padding: 7px 4px; border-radius: 4px; cursor: pointer;
@@ -1880,3 +1887,31 @@
 .aos-sk-actions { flex: 0 0 auto; font-family: var(--aos-mono); font-size: 10.5px; white-space: nowrap; }
 .aos-ag-ro { margin-left: 6px; font-size: 9.5px; vertical-align: 1px; }
 .aos-ag-warn { color: var(--aos-amber); }
+
+/* ── Settings tab (spec 2026-09-24-settings-tab) ─────────────────────────────── */
+.aos-st-section { margin-bottom: 14px; }
+.aos-st-section .setting-item { padding: 8px 0; }
+.aos-st-section .setting-item:first-child { border-top: none; }
+.aos-st-row.is-dim { opacity: 0.55; }
+.aos-st-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; font-size: 11px; }
+.aos-st-key { font-family: var(--aos-mono); color: var(--aos-dim); }
+.aos-st-spend { font-family: var(--aos-mono); color: var(--aos-green); }
+.aos-st-hostnote { margin-top: 3px; font-size: 11px; color: var(--aos-amber); }
+.aos-st-err { margin-top: 3px; font-size: 11px; color: var(--aos-rose); }
+.aos-st-master { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; margin: 4px 0 14px; }
+.aos-st-switch {
+  display: flex; align-items: center; gap: 6px; padding: 6px 8px; cursor: pointer;
+  border: 1px solid var(--aos-border); border-radius: 4px; background: var(--aos-panel); font-size: 12px; color: var(--aos-dim);
+}
+.aos-st-switch.is-on { border-color: var(--aos-cyan); color: var(--aos-text); }
+.aos-st-switch.is-busy { opacity: 0.5; pointer-events: none; }
+.aos-st-follow {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 6px 0 12px; padding: 6px 8px;
+  border: 1px solid var(--aos-amber); border-radius: 4px; color: var(--aos-amber); font-family: var(--aos-mono); font-size: 11px;
+}
+.aos-st-follow .aos-ws-action, .aos-st-failure .aos-ws-action, .aos-st-actions .aos-ws-action { margin-left: 0; }
+.aos-st-failure {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin: 6px 0 12px; padding: 8px;
+  border: 1px solid var(--aos-rose); border-radius: 4px; font-size: 12px;
+}
+.aos-st-actions { display: flex; gap: 6px; margin: 4px 0 8px; }

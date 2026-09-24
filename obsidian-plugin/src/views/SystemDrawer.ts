@@ -31,8 +31,8 @@ export async function renderSystemDrawer(plugin: AgenticOSPlugin, host: HTMLElem
 
   renderInventorySection(host, app, inv, snapshot);
   renderDiskSection(host, snapshot);
-  const monthlyBudget = readVaultConfig(plugin.vaultRoot(), plugin.claudeConfigDir()).cost.monthlyBudget;
-  if (plugin.settings.costEnabled && typeof monthlyBudget === "number") {
+  const { enabled: costOn, monthlyBudget } = readVaultConfig(plugin.vaultRoot(), plugin.claudeConfigDir()).cost;
+  if (costOn === true && typeof monthlyBudget === "number") {
     renderCostDetailSection(host, monthRuns, budgetConfig, budgetLedger, monthlyBudget);
   }
 }
