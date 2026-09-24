@@ -93,12 +93,18 @@ function lowerVersion(a, b) {
 function storePath(vault) { return path.join(vault, STORE_REL); }
 function linePath(vault) { return path.join(vault, LINE_REL); }
 
-/** tmp + rename: a reader always sees the whole old file or the whole new one, never a partial write. */
+/** tmp + rename: a reader always sees the whole old file or the whole new one, never a partial write. The temp name
+ *  is this process's own, so two writers never share one (brain/scripts/lib/fsx.js does the same for the runtime). */
 function writeAtomic(file, text) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.tmp`;
-  fs.writeFileSync(tmp, text);
-  fs.renameSync(tmp, file);
+  const tmp = `${file}.${process.pid}.${require('crypto').randomBytes(4).toString('hex')}.tmp`;
+  try {
+    fs.writeFileSync(tmp, text, { flag: 'wx' });
+    fs.renameSync(tmp, file);
+  } catch (e) {
+    try { fs.unlinkSync(tmp); } catch { /* never created */ }
+    throw e;
+  }
 }
 
 /** Missing, unparseable, or a foreign schema all mean "no state" — never an error, never a migration. */

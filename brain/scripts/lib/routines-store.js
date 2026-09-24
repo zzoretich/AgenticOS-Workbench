@@ -20,6 +20,7 @@
 const fs = require('fs');
 const path = require('path');
 const cron = require('./cron.js');
+const fsx = require('./fsx.js');
 
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,40}$/;
 const KINDS = ['duty', 'prompt', 'command'];
@@ -178,9 +179,7 @@ function write(routine, { dir = defaultDir() } = {}) {
   if (errors.length) { const e = new Error(`invalid routine: ${errors.join('; ')}`); e.errors = errors; throw e; }
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, `${routine.slug}.md`);
-  const tmp = `${file}.tmp`;
-  fs.writeFileSync(tmp, toFile(routine));
-  fs.renameSync(tmp, file);
+  fsx.writeAtomic(file, toFile(routine));
   return file;
 }
 
@@ -203,19 +202,37 @@ function readState({ file = defaultStateFile() } = {}) {
   return emptyState();
 }
 
+const stateText = (state) => JSON.stringify({ ...emptyState(), ...state, schema: STATE_SCHEMA }, null, 2) + '\n';
+
 function writeState(state, { file = defaultStateFile() } = {}) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify({ ...emptyState(), ...state, schema: STATE_SCHEMA }, null, 2) + '\n');
-  fs.renameSync(tmp, file);
+  fsx.writeAtomic(file, stateText(state));
 }
 
-/** Read-modify-write one slug's entry. `mutate(entry)` may return a replacement. */
+/**
+ * Read-modify-write the whole state under routines.json's lock (spec 2026-09-24-locked-writers D2): two routines
+ * finishing together, or a sync recording its fingerprints while a routine records its run, each see the other's
+ * write instead of overwriting it. `mutate(state)` changes it in place or returns a replacement.
+ */
+function updateState(mutate, { file = defaultStateFile() } = {}) {
+  let result = null;
+  fsx.updateSync(file, (text) => {
+    let st = emptyState();
+    try {
+      const parsed = text ? JSON.parse(text) : null;
+      if (parsed && typeof parsed === 'object' && parsed.routines && typeof parsed.routines === 'object') st = { ...emptyState(), ...parsed, schema: STATE_SCHEMA };
+    } catch { /* corrupt — start fresh, as readState does */ }
+    result = mutate(st) || st;
+    return stateText(result);
+  }, { timeoutMs: 5000 });
+  return result;
+}
+
+/** Read-modify-write one slug's entry, locked (updateState). `mutate(entry)` may return a replacement. */
 function patchState(slug, mutate, opts = {}) {
-  const st = readState(opts);
-  const cur = st.routines[slug] || { lastRunAt: null, lastExit: null, lastCostUsd: null, lastDurationMs: null, failStreak: 0, lastTrigger: null, lastError: null };
-  st.routines[slug] = mutate(cur) || cur;
-  writeState(st, opts);
+  const st = updateState((s) => {
+    const cur = s.routines[slug] || { lastRunAt: null, lastExit: null, lastCostUsd: null, lastDurationMs: null, failStreak: 0, lastTrigger: null, lastError: null };
+    s.routines[slug] = mutate(cur) || cur;
+  }, opts);
   return st.routines[slug];
 }
 
@@ -301,6 +318,6 @@ module.exports = {
   SLUG_RE, KINDS, EFFORTS, STATE_SCHEMA,
   parseFrontmatter, serializeFrontmatter, parseFlowArray,
   validate, fromFile, toFile, list, read, write, fingerprint,
-  readState, writeState, patchState, health, overview,
+  readState, writeState, updateState, patchState, health, overview,
   dutyLogLast, mergeDutyLog,
 };

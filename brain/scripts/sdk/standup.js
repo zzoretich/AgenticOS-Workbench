@@ -39,8 +39,11 @@ function recentTelemetry(n = 20) {
 function appendToDailyNote(block) {
   const notePath = dailyNotePath(new Date());
   fs.mkdirSync(path.dirname(notePath), { recursive: true });
-  const prefix = fs.existsSync(notePath) && fs.readFileSync(notePath, 'utf8').trim() ? '\n\n' : '';
-  fs.appendFileSync(notePath, prefix + block + '\n');
+  // Under the daily note's lock, like every other writer of the note (spec 2026-09-24-locked-writers D3).
+  require('../lib/fsx.js').updateSync(notePath, (t) => {
+    const cur = t == null ? '' : t;
+    return cur + (cur.trim() ? '\n\n' : '') + block + '\n';
+  }, { timeoutMs: 5000 });
   return notePath;
 }
 

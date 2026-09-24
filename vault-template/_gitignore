@@ -19,3 +19,6 @@ brain/scripts/cost/data/
 .obsidian/plugins/*/data.json
 .obsidian/plugins/*/node_modules/
 .DS_Store
+# lib/fsx.js: a writer's lock and temp files, present only for the moment of a write
+*.lock
+*.tmp

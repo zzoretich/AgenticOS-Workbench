@@ -4,6 +4,9 @@ All notable changes to AgenticOS Workbench. Versions follow the tags. From the n
 
 ## [Unreleased]
 
+### Upgrading
+- Add `*.lock` and `*.tmp` to your vault's `.gitignore` (new vaults get them): a writer's lock and temp files exist only for the moment of a write, but an auto-backup at that moment would commit them.
+
 ### Added
 - `summary.everyPrompts` (default 10) and `summary.minMinutes` (default 15): how often the working-memory summary refreshes BRAIN.md's Last Session, as pickers in ⚙ Settings → Memory & scanning.
 
@@ -12,6 +15,7 @@ All notable changes to AgenticOS Workbench. Versions follow the tags. From the n
 - `memory_list` returns the same kind of index grouped by type, with `type` and `limit` filters, instead of every memory's frontmatter; `session_recall` cuts a daily note at `maxChars` (default 24,000) and says how to read the rest. Every MCP tool's JSON is compact.
 
 ### Fixed
+- Files the runtime changes from several processes at once no longer lose a write. `routines.json` (a routine's run against `aos routines sync`, which wrote back a state it read before installing the schedules), `MEMORY.md`, `SESSION.md`, BRAIN.md's Last Session (against the BRAIN.md compile) and the daily note are now changed under a lock, as they are at that moment; every writer that used a shared `<file>.tmp` has a temp name of its own.
 - A session's cost is counted once. The cost sync used to rewrite `runs.jsonl` to patch the whole session's cost into every row of the session, so a session with two runs counted twice ($213 on one vault), and a run that ended while it rewrote the file could be lost. Costs now go to their own log, `brain/_index/agent-runs/costs.jsonl`, and `runs.jsonl` is only ever appended to (retention prunes both under a lock the writers wait on). The Workbench's Runs tab, Cost panel, Fix Queue and the monthly budget read the two together: the session's cost on its latest run, its earlier runs at $0 pointing to it. Rows costed before this release are read the same way; nothing is rewritten.
 - One session no longer turns into several runs, each wrapped as if it were the whole session. The Workbench's load-time sweep read the telemetry hook's own process id, which is always gone, so it marked every session idle for 5 minutes "crashed", and the session's next tool call started a new run. The plugin now runs the runtime's own reconcile instead (idle past `telemetry.staleAfterMinutes`, or a Codex process that exited). A session that goes on after its run was closed is recorded as a second segment with its own run id and timeline instead of overwriting the first, and auto-wrap keeps a per-session offset, so a later wrap of the same session extracts only what is new and skips when nothing is.
 - The working-memory summary ran every few minutes in a busy session and not at all in the next one. It counted every user-role entry, and Claude Code writes each tool result and slash command as one (43 for 2 prompts in one transcript), against a single marker per day shared by every session. It now counts only the prompts you type, keeps one marker per session on both hosts, and runs every 10 prompts at most every 15 minutes.

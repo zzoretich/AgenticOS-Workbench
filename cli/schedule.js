@@ -184,9 +184,16 @@ function installSchedules({ platform = process.platform, vars, routines, store =
   const state = readStateSafe(store, file);
   const stale = knownSlugs({ routines: all, state }).filter(s => !active.some(r => r.slug === s));
   const record = () => {
-    state.synced = Object.fromEntries(active.map(r => [r.slug, store.fingerprint(r)]));
-    state.syncedAt = now().toISOString();
-    try { store.writeState(state, { file }); } catch (e) { warn(`could not record the sync in ${file}: ${e.message}`); }
+    const synced = Object.fromEntries(active.map(r => [r.slug, store.fingerprint(r)]));
+    const syncedAt = now().toISOString();
+    state.synced = synced;
+    state.syncedAt = syncedAt;
+    // Merged into a fresh, locked read (spec 2026-09-24-locked-writers D2): `state` was read before the launchd/cron
+    // work, and writing it back whole erased any run a routine recorded meanwhile.
+    try {
+      if (store.updateState) store.updateState((s) => { s.synced = synced; s.syncedAt = syncedAt; }, { file });
+      else store.writeState(state, { file });
+    } catch (e) { warn(`could not record the sync in ${file}: ${e.message}`); }
   };
   if (platform === 'darwin') {
     fs.mkdirSync(launchAgentsDir, { recursive: true });
@@ -287,7 +294,13 @@ function removeSchedules({ platform = process.platform, vault, store = null, lau
       catch (e) { const m = `crontab - failed (${e && e.message ? e.message : e})`; warnings.push(m); warn(m); }
     }
   }
-  if (st && store && file) { st.synced = {}; st.syncedAt = null; try { store.writeState(st, { file }); } catch { /* best effort */ } }
+  if (st && store && file) {
+    st.synced = {}; st.syncedAt = null;
+    try {
+      if (store.updateState) store.updateState((s) => { s.synced = {}; s.syncedAt = null; }, { file });
+      else store.writeState(st, { file });
+    } catch { /* best effort */ }
+  }
   return { platform, removed, warnings };
 }
 

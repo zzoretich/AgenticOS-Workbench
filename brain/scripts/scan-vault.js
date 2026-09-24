@@ -510,12 +510,8 @@ async function main(report) {
   const mdPath = path.join(VAULT, 'brain/_index/snapshot.md');
   const healthPath = path.join(VAULT, 'brain/_index/health.md');
   const lockPath = path.join(VAULT, 'brain/_index/.snapshot.lock');
-  // Atomic write: .tmp + rename so readers (the dashboard) never see a half-written file.
-  const writeAtomic = (p, content) => {
-    const tmp = p + '.tmp';
-    fs.writeFileSync(tmp, content);
-    fs.renameSync(tmp, p);
-  };
+  // Atomic write through a temp name of its own (lib/fsx.js), so readers (the dashboard) never see a half-written file.
+  const writeAtomic = (p, content) => require('./lib/fsx.js').writeAtomic(p, content);
   await withLock(lockPath, async () => {
     writeAtomic(jsonPath, JSON.stringify(snapshot, null, 2));
   });

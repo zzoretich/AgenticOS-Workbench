@@ -75,7 +75,7 @@ test('outDir defaults to brain/graphify-out; the marker round-trips with schema 
   assert.equal(G.readMarker(dir), null);
   G.writeMarker(dir, { mode: 'structural', nodes: 5 });
   assert.deepEqual(G.readMarker(dir), { schema: 1, mode: 'structural', nodes: 5 });
-  assert.ok(!fs.existsSync(path.join(dir, `${G.MARKER}.tmp`)));
+  assert.deepEqual(fs.readdirSync(dir).filter((n) => n.endsWith('.tmp')), [], 'no temp file left behind');
 });
 
 // ── queries (graph_* MCP tools) ───────────────────────────────────────────────

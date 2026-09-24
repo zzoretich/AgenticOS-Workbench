@@ -26,9 +26,7 @@ async function main() {
   await withLock(LOCK, async () => {
     const snapshot = JSON.parse(fs.readFileSync(SNAPSHOT, 'utf8'));
     await regenInto(snapshot, name);
-    const tmp = SNAPSHOT + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(snapshot, null, 2));
-    fs.renameSync(tmp, SNAPSHOT);
+    require('./lib/fsx.js').writeAtomic(SNAPSHOT, JSON.stringify(snapshot, null, 2));
   });
   console.log(`regenerated insight for: ${name}`);
 }

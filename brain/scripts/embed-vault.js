@@ -125,9 +125,7 @@ async function refreshEmbedIndex(opts = {}) {
   };
   const p = indexPath(vault);
   fs.mkdirSync(path.dirname(p), { recursive: true });
-  const tmp = p + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(index));
-  fs.renameSync(tmp, p);
+  require('./lib/fsx.js').writeAtomic(p, JSON.stringify(index));
 
   return { embedded, skipped: seen.size - dirty.length, pending: dirty.length - toEmbed.length, failed };
 }

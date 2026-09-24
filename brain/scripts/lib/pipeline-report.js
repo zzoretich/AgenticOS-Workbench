@@ -28,9 +28,7 @@ function readLedgerFile() {
 }
 
 function writeLedgerFile(led) {
-  const tmp = LEDGER_PATH + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(led, null, 2) + '\n');
-  fs.renameSync(tmp, LEDGER_PATH);
+  require('./fsx.js').writeAtomic(LEDGER_PATH, JSON.stringify(led, null, 2) + '\n');
 }
 
 async function patch(name, mutate) {

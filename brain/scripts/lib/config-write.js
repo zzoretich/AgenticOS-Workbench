@@ -7,7 +7,6 @@
  *   vault    <vault>/brain/config.json          — the product config, merged over config.default.json
  */
 const fs = require('fs');
-const path = require('path');
 const S = require('./settings-schema.js');
 
 class ConfigFileError extends Error {}
@@ -32,15 +31,7 @@ function readStrict(file) {
  * existing key order: the launcher reads agenticos.json one `"key": "value"` line at a time (plugin/bin/aos json_str).
  */
 function writeAtomic(file, obj) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.tmp`;
-  try {
-    fs.writeFileSync(tmp, `${JSON.stringify(obj, null, 2)}\n`);
-    fs.renameSync(tmp, file);
-  } catch (e) {
-    fs.rmSync(tmp, { force: true });
-    throw e;
-  }
+  require('./fsx.js').writeAtomic(file, `${JSON.stringify(obj, null, 2)}\n`); // one implementation (spec 2026-09-24-locked-writers D5)
 }
 
 /** A parsed JSON file cannot hold `undefined`, so a key is present exactly when its value is defined (null included). */

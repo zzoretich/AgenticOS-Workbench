@@ -83,11 +83,9 @@ function overview(g, { hubs = 10, communities = 8 } = {}) {
 function readMarker(dir) {
   try { return JSON.parse(fs.readFileSync(path.join(dir, MARKER), 'utf8')); } catch { return null; }
 }
-/** Atomic (tmp + rename), like every other brain writer. */
+/** Atomic (lib/fsx.js: a temp name of its own, then rename), like every other brain writer. */
 function writeMarker(dir, marker) {
-  const p = path.join(dir, MARKER);
-  fs.writeFileSync(p + '.tmp', JSON.stringify({ schema: 1, ...marker }, null, 2) + '\n');
-  fs.renameSync(p + '.tmp', p);
+  require('../../lib/fsx.js').writeAtomic(path.join(dir, MARKER), JSON.stringify({ schema: 1, ...marker }, null, 2) + '\n');
 }
 
 // ── queries (the graph_* MCP tools, spec §4.6) ────────────────────────────────
