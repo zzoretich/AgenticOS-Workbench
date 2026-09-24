@@ -2,6 +2,9 @@
 // Preloaded via NODE_OPTIONS for every test process: gives paths.js a vault to
 // resolve when a test file does not set one itself. Sets the LEGACY alias so a
 // test's own `process.env.BRAIN_VAULT = …` still wins (AOS_VAULT would beat it).
+// First, in the top-level runner only, drop every host variable the developer's shell exported (AOS_*, BRAIN_*,
+// CLAUDE*, CODEX_*): the defaults below then always come from temp folders (tools/test-env.js; tests are never vendored).
+require('../../../tools/test-env.js');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');

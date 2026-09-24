@@ -151,6 +151,9 @@ test('unknown verb is a usage error; no verb means list', async () => {
 // ---------- hosts / import-cloud (spec host-routines D3–D4) ----------
 
 const H = require('../brain/scripts/lib/host-routines.js');
+// The host payloads are absolute UTC instants, so their clock is too: a local 14:00 NOW falls before the fixture's
+// 13:00Z run east of UTC+1, and the last run would read as in the future (spec 2026-09-23-ci-safety-net-design D5).
+const HOST_NOW = new Date('2026-09-21T14:00:00Z');
 const CLOUD = { data: [
   { id: 'trig_a', name: 'Weekly digest', cron_expression: '0 13 * * 1', enabled: true, next_run_at: '2026-09-28T13:00:00Z', last_fired_at: '2026-09-21T13:00:05Z',
     derived_state: { model: 'claude-sonnet-5', prompt: 'Summarize.' }, job_config: { ccr: { session_context: { sources: [{ git_repository: { url: 'https://github.com/example/repo' } }] } } } },
@@ -168,16 +171,16 @@ const CODEX = [{ id: 'auto_1', name: 'Nightly triage', status: 'ACTIVE', rrule: 
 
 test('hosts: empty says how to fill it; --refresh reads Codex through the injected sqlite3; --json is the cache', async () => {
   const w = world();
-  assert.equal(await R.main(['hosts'], { configDir: w.configDir, io: w.io, now: NOW }), 0);
+  assert.equal(await R.main(['hosts'], { configDir: w.configDir, io: w.io, now: HOST_NOW }), 0);
   assert.match(w.out(), /no host routines yet — `aos routines hosts --refresh`/);
   const { exec } = codexWorld(w, CODEX);
   w.logs.length = 0;
-  assert.equal(await R.main(['hosts', '--refresh'], { configDir: w.configDir, io: w.io, now: NOW, exec }), 0);
+  assert.equal(await R.main(['hosts', '--refresh'], { configDir: w.configDir, io: w.io, now: HOST_NOW, exec }), 0);
   assert.match(w.out(), /^host\s+name\s+cadence\s+on\s+next\s+last\s+as-of$/m);
   assert.match(w.out(), /^codex\s+Nightly triage\s+Every day at 22:00\s+on\s+(Mon|Tue) 2026-09-2\d \d\d:\d\d\s+\d+h ago \(completed\)\s+1s ago$/m);
   assert.deepEqual(w.errs, []);
   w.logs.length = 0;
-  assert.equal(await R.main(['hosts', '--json'], { configDir: w.configDir, io: w.io, now: NOW }), 0);
+  assert.equal(await R.main(['hosts', '--json'], { configDir: w.configDir, io: w.io, now: HOST_NOW }), 0);
   const cache = JSON.parse(w.out());
   assert.equal(cache.schema, 1); assert.equal(cache.hosts.codex.ok, true); assert.equal(cache.hosts.codex.routines[0].id, 'auto_1');
   assert.ok(fs.existsSync(path.join(w.vault, 'brain', '_index', 'routines-hosts.json')));
@@ -187,7 +190,7 @@ test('hosts --refresh: an unreadable Codex database is a warning row, never a fa
   const w = world();
   codexWorld(w, []);
   const exec = () => { const e = new Error('spawn sqlite3 ENOENT'); e.code = 'ENOENT'; throw e; };
-  assert.equal(await R.main(['hosts', '--refresh'], { configDir: w.configDir, io: w.io, now: NOW, exec }), 0);
+  assert.equal(await R.main(['hosts', '--refresh'], { configDir: w.configDir, io: w.io, now: HOST_NOW, exec }), 0);
   assert.match(w.out(), /no host routines \(codex checked\)/);
   assert.match(w.errs.join('\n'), /^warning: codex: could not read Codex automations: sqlite3 is not on PATH$/m);
 });
@@ -196,31 +199,31 @@ test('import-cloud: from a file and from stdin, then the HOSTS table; a bad payl
   const w = world();
   const file = path.join(w.vault, 'cloud.json');
   fs.writeFileSync(file, JSON.stringify(CLOUD));
-  assert.equal(await R.main(['import-cloud', file], { configDir: w.configDir, io: w.io, now: NOW }), 0);
+  assert.equal(await R.main(['import-cloud', file], { configDir: w.configDir, io: w.io, now: HOST_NOW }), 0);
   assert.match(w.out(), /^import-cloud: 2 cloud routines → .*routines-hosts\.json$/m);
   assert.match(w.out(), /^claude\s+One shot\s+once at (Sat|Sun|Mon) 2026-05-1\d \d\d:\d\d\s+off\s+—\s+\d+d ago \(ran once\)\s+1s ago$/m);
-  assert.match(w.out(), /^claude\s+Weekly digest\s+Mondays at 13:00 \(UTC\)\s+on\s+Mon 2026-09-28 \d\d:\d\d\s+\d+[mh] ago \(fired\)\s+1s ago$/m);
+  assert.match(w.out(), /^claude\s+Weekly digest\s+Mondays at 13:00 \(UTC\)\s+on\s+(Mon|Tue) 2026-09-2[89] \d\d:\d\d\s+\d+[mh] ago \(fired\)\s+1s ago$/m);
   w.logs.length = 0;
-  assert.equal(await R.main(['import-cloud', '-'], { configDir: w.configDir, io: w.io, now: NOW, stdin: () => JSON.stringify({ data: [] }) }), 0);
+  assert.equal(await R.main(['import-cloud', '-'], { configDir: w.configDir, io: w.io, now: HOST_NOW, stdin: () => JSON.stringify({ data: [] }) }), 0);
   assert.match(w.out(), /^import-cloud: 0 cloud routines/m);
   assert.match(w.out(), /no host routines \(claude checked\)/);
   w.logs.length = 0; w.errs.length = 0;
   fs.writeFileSync(file, JSON.stringify({ nope: 1 }));
-  assert.equal(await R.main(['import-cloud', file], { configDir: w.configDir, io: w.io, now: NOW }), 2);
+  assert.equal(await R.main(['import-cloud', file], { configDir: w.configDir, io: w.io, now: HOST_NOW }), 2);
   assert.match(w.errs.join('\n'), /expected the RemoteTrigger list payload/);
-  assert.equal(await R.main(['import-cloud', path.join(w.vault, 'missing.json')], { configDir: w.configDir, io: w.io, now: NOW }), 2);
+  assert.equal(await R.main(['import-cloud', path.join(w.vault, 'missing.json')], { configDir: w.configDir, io: w.io, now: HOST_NOW }), 2);
   await assert.rejects(R.main(['import-cloud'], { configDir: w.configDir, io: w.io }), R.UsageError);
   // list: the routine table first, then HOSTS from the cache (a codex section beside the claude one).
   fs.writeFileSync(file, JSON.stringify(CLOUD));
-  await R.main(['import-cloud', file], { configDir: w.configDir, io: w.io, now: NOW });
+  await R.main(['import-cloud', file], { configDir: w.configDir, io: w.io, now: HOST_NOW });
   w.put('monitor', { kind: 'duty', schedule: '0 13 * * *' });
   w.logs.length = 0;
-  assert.equal(await R.main(['list'], { configDir: w.configDir, io: w.io, now: NOW }), 0);
+  assert.equal(await R.main(['list'], { configDir: w.configDir, io: w.io, now: HOST_NOW }), 0);
   const out = w.out();
   assert.ok(out.indexOf('slug  kind') < out.indexOf('\nHOSTS\nhost'), 'HOSTS follows the routine table');
   assert.match(out, /^claude\s+Weekly digest/m);
   w.logs.length = 0;
-  await R.main(['list', '--json'], { configDir: w.configDir, io: w.io, now: NOW });
+  await R.main(['list', '--json'], { configDir: w.configDir, io: w.io, now: HOST_NOW });
   assert.equal(JSON.parse(w.out()).hosts.claude.routines.length, 2);
 });
 

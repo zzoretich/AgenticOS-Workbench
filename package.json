@@ -12,7 +12,7 @@
     "obsidian-plugin"
   ],
   "scripts": {
-    "test": "node --test tools/*.test.js cli/*.test.js && npm test --workspaces --if-present",
+    "test": "node --require ./tools/test-env.js --test tools/*.test.js cli/*.test.js && npm test --workspaces --if-present",
     "gate": "node tools/privacy-gate.js",
     "export": "node tools/export-from-vault.js",
     "setup": "node cli/aos.js init",

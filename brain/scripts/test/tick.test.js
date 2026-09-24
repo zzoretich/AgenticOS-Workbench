@@ -6,7 +6,7 @@ const os = require('os');
 const path = require('path');
 const T = require('../persona/tick.js');
 
-const NOW = new Date('2026-09-22T10:00:00.000Z');
+const NOW = new Date(2026, 8, 22, 10, 0); // Tue 2026-09-22 10:00 local: the tick's once-a-day rules and flag ages are local days
 const at = (ms) => new Date(NOW.getTime() + ms);
 const HOUR = 3600e3, DAY = 86400e3;
 
@@ -185,7 +185,7 @@ test('beat starts reflect-daily early once per day through run-routine.js, and n
   fs.mkdirSync(routines, { recursive: true });
   const seed = path.join(__dirname, '..', '..', '..', 'vault-template', 'persona', 'routines', 'reflect-daily.md');
   fs.copyFileSync(seed, path.join(routines, 'reflect-daily.md'));
-  // (NOW is 10:00 UTC; the two same-day beats stay within the hour so they share a local day in every timezone)
+  // (NOW is 10:00 local; the two same-day beats at 10:30 and 11:00 share its local day in every timezone)
   const b1 = T.beat({ deps: d, now: at(30 * 60e3) });
   assert.equal(b1.earlyReflect.started, true, JSON.stringify(b1.earlyReflect));
   assert.equal(b1.earlyReflect.pid, 4242);
