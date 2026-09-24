@@ -11,7 +11,9 @@ import { ChatTab } from "./ChatTab";
 import { TermTab } from "./TermTab";
 import { ProposalsTab } from "./ProposalsTab";
 import { TodoTab } from "./TodoTab";
+import { NotificationsTab } from "./NotificationsTab";
 import { PROPOSALS_DIR } from "../data/proposals";
+import { NOTIFICATIONS_DIR, STATE_PATH, notificationId, parseNotification, parseState, unreadBadge, Level } from "../data/notifications";
 import { badgeText, proposalBadge, todoBadge, touchesBadges } from "../data/badges";
 import { TODO_PATH, localDay } from "../data/todos";
 
@@ -23,6 +25,7 @@ const RAIL: RailTab[] = [
   { id: "pulse", icon: "◉", label: "Pulse" },
   { id: "todo", icon: "☐", label: "To-Do" },
   { id: "proposals", icon: "⚖", label: "Proposals" },
+  { id: "notifications", icon: "◔", label: "Notifications" },
   { id: "spaces", icon: "▣", label: "Spaces" },
   { id: "memory", icon: "◈", label: "Memory" },
   { id: "runs", icon: "≣", label: "Runs" },
@@ -112,12 +115,13 @@ export class WorkbenchView extends ItemView {
     void this.refreshBadges();
   }
 
-  /** Shows `n` on a rail button; 0 hides the badge. */
-  setBadge(id: string, n: number): void {
+  /** Shows `n` on a rail button; 0 hides the badge. `urgent` paints it rose (an unread breaking notification). */
+  setBadge(id: string, n: number, urgent = false): void {
     const el = this.badgeEls[id];
     if (!el) return;
     el.textContent = badgeText(n);
     el.toggleClass("is-empty", el.textContent === "");
+    el.toggleClass("is-urgent", urgent && el.textContent !== "");
   }
 
   private scheduleBadges(): void {
@@ -132,6 +136,32 @@ export class WorkbenchView extends ItemView {
     let todo: string | null = null;
     try { if (await this.app.vault.adapter.exists(TODO_PATH)) todo = await this.app.vault.adapter.read(TODO_PATH); } catch { /* unreadable: no badge */ }
     this.setBadge("todo", todoBadge(todo, localDay(new Date())));
+    const n = await this.notificationBadge();
+    this.setBadge("notifications", n.count, n.breaking);
+  }
+
+  /** Unread notifications (spec 2026-09-24-notifications-design §4.3). Reads state.json and only the unread item files,
+   *  newest first and at most 200, for the breaking flag; the count itself needs file names alone. */
+  private async notificationBadge(): Promise<{ count: number; breaking: boolean }> {
+    const a = this.app.vault.adapter;
+    try {
+      const state = parseState((await a.exists(STATE_PATH)) ? await a.read(STATE_PATH) : null);
+      const years = (await a.list(NOTIFICATIONS_DIR)).folders.filter((f) => /\/\d{4}$/.test(f));
+      const unread: string[] = [];
+      for (const y of years) {
+        for (const f of (await a.list(y)).files) {
+          const id = notificationId(f);
+          if (id && !state[id]?.read && !state[id]?.archived) unread.push(f);
+        }
+      }
+      unread.sort().reverse();
+      const rows: { level: Level; read: boolean; archived: boolean }[] = [];
+      for (const f of unread.slice(0, 200)) {
+        try { const n = parseNotification(f, await a.read(f)); if (n) rows.push({ level: n.level, read: false, archived: false }); } catch { /* gone */ }
+      }
+      const b = unreadBadge(rows);
+      return { count: b.count + Math.max(0, unread.length - 200), breaking: b.breaking };
+    } catch { return { count: 0, breaking: false }; }   // no brain/notifications yet
   }
 
   /** Opens a fresh Term session in the vault running `command`, and shows it (the Proposals tab's Review button). */
@@ -160,6 +190,7 @@ export class WorkbenchView extends ItemView {
     if (id === "pulse") return new PulseTab(this.plugin, this);
     if (id === "todo") return new TodoTab(this.plugin, this);
     if (id === "proposals") return new ProposalsTab(this.plugin, this);
+    if (id === "notifications") return new NotificationsTab(this.plugin, this);
     if (id === "spaces") return new SpacesTab(this.plugin, this);
     if (id === "memory") return new MemoryTab(this.plugin, this);
     if (id === "runs") return new RunsTab(this.plugin, this);

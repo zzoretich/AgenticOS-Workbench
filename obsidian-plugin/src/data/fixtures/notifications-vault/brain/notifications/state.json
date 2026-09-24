@@ -1,0 +1,7 @@
+{
+  "schema": 1,
+  "items": {
+    "2026-09-24T0700-news-anchor-the-morning-edition": { "read": true },
+    "2026-09-20T1300-monitor-weekly-health": { "read": true, "archived": true }
+  }
+}
