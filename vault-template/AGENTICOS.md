@@ -32,6 +32,7 @@ Under Codex CLI every `/name` below is the plugin skill `$agenticos:name` (`$age
 - `/aos doctor|status|provider|persona` — maintenance
 - `/routines [list|sync|run <slug>|enable <slug>|disable <slug>|next]` — the recurring actions (see Routines)
 - `/skills [list|sync|exclude <name>|include <name>|reset <name>]` — every Claude Code and Codex skill; with both hosts enabled each host's own skills are copied, translated, into the other at session end, so a skill written for one works in both
+- `/agenticos:agents [list|sync|exclude <name>|include <name>|reset <name>]` — every Claude Code and Codex agent; with both hosts enabled each host's own agents are copied, translated, into the other at session end. Use one by asking for it by name (Claude Code also takes `@agent-<name>`)
 - `/cross-review` — the other CLI (Claude Code ⇄ Codex) reviews a plan before you build, and inspects what was built · `/handoff` — recommend who should handle a task and run one scoped handoff; both go through `aos cross-review` on the `crossReview.perDayUsd` budget
 
 ## Conventions
