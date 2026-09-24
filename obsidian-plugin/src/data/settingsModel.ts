@@ -13,6 +13,8 @@ export interface ConfigRow {
   values: (string | boolean)[] | null; min: number | null; gt: number | null; max: number | null; int: boolean; nullable: boolean;
   risk: "spend" | "autonomy" | "privacy" | null; applies: string; readonly: boolean; how: string | null; host: SessionHost | null;
   default: unknown; value: unknown; source: Source; changed: boolean; note: string | null; spentToday: number | null;
+  // Picker presets, chips and edit buttons (spec 2026-09-24-settings-pickers); null from a runtime older than 0.19.
+  choices?: unknown[] | null; unit?: string | null; pick?: "many" | null; editIn?: "file" | "skills" | "agents" | null;
 }
 export interface ConfigSection { id: string; label: string }
 export interface ConfigList { schema: 1; files: { machine: string; vault: string }; sections: ConfigSection[]; settings: ConfigRow[] }
@@ -70,39 +72,90 @@ export function sameValue(a: unknown, b: unknown): boolean { return JSON.stringi
 /** A value as `aos config set <key> <value>` takes it: strings as typed, null as `null`, the rest as JSON. */
 export function valueArg(v: unknown): string { return typeof v === "string" ? v : v === null ? "null" : JSON.stringify(v); }
 
-/** What a text field shows: a string as is, null (the host default) as empty, lists and objects as JSON. */
-export function inputText(v: unknown): string {
-  if (v === null || v === undefined) return "";
-  return typeof v === "string" ? v : typeof v === "number" ? String(v) : JSON.stringify(v);
+// ── controls (spec 2026-09-24-settings-pickers): a toggle, a picker, chips or a button — never a text box ──────────
+
+export type Control = "toggle" | "picker" | "stepper" | "chips" | "button" | "readonly";
+
+/** How a row is edited. A runtime that sends no presets (0.18) leaves those rows read-only with an upgrade hint. */
+export function controlFor(row: ConfigRow): Control {
+  if (row.readonly) return "readonly";
+  if (row.editIn) return "button";
+  if (row.type === "bool") return "toggle";
+  if (row.type === "enum") return "picker";
+  if (!Array.isArray(row.choices) || !row.choices.length) return "readonly";
+  if (row.pick === "many") return "chips";
+  return row.type === "number" ? "stepper" : "picker";
 }
 
-export type Parsed = { ok: true; value: unknown } | { ok: false; error: string };
+const plural = (n: number, one: string, many: string) => `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
+const UNIT_LABEL: Record<string, (n: number) => string> = {
+  min: (n) => `${n} min`, h: (n) => `${n} h`, days: (n) => plural(n, "day", "days"), s: (n) => `${n} s`, ms: (n) => `${n} ms`, px: (n) => `${n} px`,
+  files: (n) => plural(n, "file", "files"), notes: (n) => plural(n, "note", "notes"), tokens: (n) => plural(n, "token", "tokens"), lines: (n) => plural(n, "line", "lines"),
+};
+
+/** A preset as the picker shows it: "$0.50", "$0 — no spend", "45 min", "host default", or the value itself. */
+export function choiceLabel(row: Pick<ConfigRow, "unit" | "min">, v: unknown): string {
+  if (v === null) return row.unit === "usd" ? "none" : "host default";
+  if (typeof v === "number" && row.unit === "usd") return v === 0 && row.min === 0 ? "$0 — no spend" : `$${v.toFixed(2)}`;
+  if (typeof v === "number" && row.unit && UNIT_LABEL[row.unit]) return UNIT_LABEL[row.unit](v);
+  return valueArg(v);
+}
+
+export interface PickOption { key: string; value: unknown; label: string; custom: boolean }
 
 /**
- * A text field's input → a value, with the schema's bounds checked here so a typo never costs a spawn. The CLI still
- * validates every write; the messages match its wording. Empty in a nullable field means null (the host default).
+ * The picker's options: null ("host default" / "none") first when the row is nullable, then the presets (or an enum's
+ * values), and the current value marked "(custom)" when it is none of them — so opening the tab never hides or
+ * rewrites a value set by hand (D3). Numbers are kept in order with the custom value slotted in.
  */
-export function parseInput(row: ConfigRow, text: string): Parsed {
-  const t = text.trim();
-  if (row.nullable && t === "") return { ok: true, value: null };
-  if (row.type === "number") {
-    const n = t === "" ? NaN : Number(t);
-    if (!Number.isFinite(n)) return { ok: false, error: `${row.key} must be a number` };
-    if (row.int && !Number.isInteger(n)) return { ok: false, error: `${row.key} must be a whole number` };
-    if (row.gt !== null && !(n > row.gt)) return { ok: false, error: `${row.key} must be more than ${row.gt}${row.risk === "spend" ? " (to stop spending, set the matching daily cap to 0)" : ""}` };
-    if (row.min !== null && n < row.min) return { ok: false, error: `${row.key} must be at least ${row.min}` };
-    if (row.max !== null && n > row.max) return { ok: false, error: `${row.key} must be at most ${row.max}` };
-    return { ok: true, value: n };
+export function pickerOptions(row: ConfigRow): PickOption[] {
+  const base = (row.type === "enum" ? row.values : row.choices) ?? [];
+  const opt = (value: unknown, custom = false): PickOption => ({ key: valueArg(value), value, label: `${choiceLabel(row, value)}${custom ? " (custom)" : ""}`, custom });
+  const out = base.map((v) => opt(v));
+  if (!out.some((o) => sameValue(o.value, row.value)) && row.value !== null && row.value !== undefined) {
+    const custom = opt(row.value, true);
+    const at = typeof row.value === "number" ? out.findIndex((o) => typeof o.value === "number" && o.value > (row.value as number)) : -1;
+    if (at === -1) out.push(custom); else out.splice(at, 0, custom);
   }
-  if (row.type === "list" || row.type === "object") {
-    let v: unknown;
-    try { v = JSON.parse(t); } catch { return { ok: false, error: `${row.key} takes JSON, e.g. ${row.type === "list" ? '["a","b"]' : '{"name":{}}'}` }; }
-    if (row.type === "list" && !(Array.isArray(v) && v.every((x) => typeof x === "string"))) return { ok: false, error: `${row.key} must be a JSON list of strings` };
-    if (row.type === "object" && (v === null || typeof v !== "object" || Array.isArray(v))) return { ok: false, error: `${row.key} must be a JSON object` };
-    return { ok: true, value: v };
-  }
-  if (t === "") return { ok: false, error: `${row.key} cannot be empty` };
-  return { ok: true, value: t };
+  if (row.nullable && !out.some((o) => o.value === null)) out.unshift(opt(null));
+  return out;
+}
+
+/** D9: the next preset below (-1) or above (+1) `current`, from a custom value the nearest one on that side; null at the ends. */
+export function stepIn(presets: number[], current: unknown, dir: -1 | 1): number | null {
+  const sorted = [...new Set(presets)].sort((a, b) => a - b);
+  if (typeof current !== "number") return dir === 1 ? sorted[0] ?? null : null;
+  const next = dir === 1 ? sorted.find((n) => n > current) : [...sorted].reverse().find((n) => n < current);
+  return next === undefined ? null : next;
+}
+export function stepValue(row: ConfigRow, dir: -1 | 1): number | null {
+  return stepIn((row.choices ?? []).filter((v): v is number => typeof v === "number"), row.value, dir);
+}
+
+/** The items a chips row currently has on: a list as is, a comma string split (routines.tools). */
+export function manySelected(row: ConfigRow): string[] {
+  if (Array.isArray(row.value)) return row.value.map(String);
+  return typeof row.value === "string" ? row.value.split(",").map((t) => t.trim()).filter(Boolean) : [];
+}
+/** The chips to show: the presets, then any item that is on but not a preset (kept, never dropped). */
+export function manyOptions(row: ConfigRow): string[] {
+  const presets = (row.choices ?? []).map(String);
+  return [...presets, ...manySelected(row).filter((x) => !presets.includes(x))];
+}
+/** The row's new value after turning `item` on or off, in the chips' order, as the type it is stored as. */
+export function toggleMany(row: ConfigRow, item: string, on: boolean): string[] | string {
+  const chosen = new Set(manySelected(row));
+  if (on) chosen.add(item); else chosen.delete(item);
+  const next = manyOptions(row).filter((x) => chosen.has(x));
+  if (on && !next.includes(item)) next.push(item);
+  return row.type === "list" ? next : next.join(",");
+}
+
+/** What a read-only row shows: the value as text (a list joined), "not set" when absent. */
+export function readonlyText(row: ConfigRow): string {
+  if (row.value === null || row.value === undefined || row.value === "") return "not set";
+  if (Array.isArray(row.value)) return row.value.length ? row.value.map(String).join(", ") : "none";
+  return typeof row.value === "object" ? `${Object.keys(row.value as object).length} entries` : choiceLabel(row, row.value);
 }
 
 // ── confirmations (D6) ──────────────────────────────────────────────────────────────────────────────────────────────

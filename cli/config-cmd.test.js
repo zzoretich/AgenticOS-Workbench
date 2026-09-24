@@ -259,3 +259,16 @@ test('list --json (spec 2026-09-24-settings-tab D7, D8): host on host-specific r
   await w.run('list', '--json');
   assert.equal(JSON.parse(w.out()).settings.find((r) => r.key === 'claude.perDayUsd').spentToday, null, 'a failed read is null, not an error');
 });
+
+test('list --json (spec 2026-09-24-settings-pickers D2, D4): choices, unit, pick and editIn reach the Workbench', async () => {
+  const w = world();
+  await w.run('list', '--json');
+  const rows = Object.fromEntries(JSON.parse(w.out()).settings.map((r) => [r.key, r]));
+  assert.equal(rows['persona.perDayUsd'].unit, 'usd');
+  assert.ok(rows['persona.perDayUsd'].choices.includes(10));
+  assert.equal(rows.recallRoots.pick, 'many');
+  assert.equal(rows['skills.exclude'].editIn, 'skills');
+  assert.equal(rows.quickLinks.editIn, 'file');
+  assert.equal(rows['telemetry.enabled'].choices, null, 'a toggle has no presets');
+  assert.equal(rows.vault.choices, null, 'install keys stay read-only');
+});

@@ -6,8 +6,9 @@ import { readAgenticosJson, sessionHosts, VAULT_CONFIG_PATH } from "../data/aosC
 import type { SessionHost } from "../data/aosConfig";
 import { failureText, needsUpgrade } from "../data/aosRun";
 import {
-  FollowUps, parseConfigList, groupBySection, changedCount, masterRows, parseInput, inputText, valueArg, sameValue, confirmFor,
+  FollowUps, parseConfigList, groupBySection, changedCount, masterRows, valueArg, sameValue, confirmFor,
   appliesLabel, sourceLabel, sourceTitle, spendLine, hostNote, resultSummary, argsFor,
+  controlFor, pickerOptions, stepValue, choiceLabel, manyOptions, manySelected, toggleMany, readonlyText,
 } from "../data/settingsModel";
 import type { ConfigList, ConfigRow, FollowUp, SetResult } from "../data/settingsModel";
 import { ConfirmModal } from "../ui/ConfirmModal";
@@ -223,36 +224,49 @@ export class SettingsTab {
     const err = this.rowErrors.get(row.key);
     if (err) desc.createDiv({ cls: "aos-st-err", text: err });
 
-    if (row.readonly) {
-      s.addText((t) => t.setValue(row.value === null ? "" : inputText(row.value)).setPlaceholder("not set").setDisabled(true));
+    // Every control is a toggle, a picker (with − / + on numbers), chips or a button — never a text box (spec
+    // 2026-09-24-settings-pickers D1). A value outside the presets stays visible as "(custom)" and is set with the CLI.
+    const control = controlFor(row);
+    if (control === "readonly") {
+      s.controlEl.createSpan({ cls: "aos-st-value", text: readonlyText(row), attr: { title: typeof row.value === "string" ? row.value : "" } });
+      if (!row.readonly) desc.createDiv({ cls: "aos-st-hostnote", text: "Run `aos upgrade` to change this here: this vault's runtime sends no presets yet." });
       return;
     }
-    if (row.type === "bool") {
+    if (control === "toggle") {
       s.addToggle((t) => t.setValue(row.value === true).setDisabled(busy).onChange((v) => void this.change(row, v)));
-    } else if (row.type === "enum" && row.values) {
+    } else if (control === "picker" || control === "stepper") {
+      if (control === "stepper") this.addStep(s, row, -1, busy);
+      const opts = pickerOptions(row);
       s.addDropdown((d) => {
-        for (const v of row.values!) d.addOption(valueArg(v), valueArg(v));
-        if (row.nullable) d.addOption("null", "host default");
+        for (const o of opts) d.addOption(o.key, o.label);
         d.setValue(valueArg(row.value));
         d.setDisabled(busy);
-        d.onChange((text) => {
-          const next = text === "null" && row.nullable ? null : row.values!.find((v) => valueArg(v) === text) ?? text;
-          void this.change(row, next);
-        });
+        d.selectEl.setAttr("title", `Other values: aos config set ${row.key} <value>`);
+        d.onChange((k) => { const o = opts.find((x) => x.key === k); if (o) void this.change(row, o.value); });
       });
-    } else {
-      s.addText((t) => {
-        t.setValue(inputText(row.value)).setDisabled(busy);
-        if (row.nullable) t.setPlaceholder("host default");
-        // Commit once, on blur or Enter — never per keystroke, so a half-typed number never reaches `aos config`.
-        const commit = () => {
-          if (inputText(row.value) === t.getValue()) return;
-          const parsed = parseInput(row, t.getValue());
-          if (!parsed.ok) { this.rowErrors.set(row.key, parsed.error); this.render(); return; }
-          void this.change(row, parsed.value);
-        };
-        t.inputEl.addEventListener("keydown", (e) => { if (e.key === "Enter") t.inputEl.blur(); });
-        t.inputEl.addEventListener("blur", commit);
+      if (control === "stepper") this.addStep(s, row, 1, busy);
+    } else if (control === "chips") {
+      const on = new Set(manySelected(row));
+      const wrap = s.controlEl.createDiv({ cls: "aos-st-chips" });
+      for (const item of manyOptions(row)) {
+        const chip = wrap.createEl("label", { cls: `aos-st-switch aos-st-chip${on.has(item) ? " is-on" : ""}${busy ? " is-busy" : ""}` });
+        const box = chip.createEl("input", { attr: { type: "checkbox" } });
+        box.checked = on.has(item);
+        // A comma-string setting (routines.tools) cannot be emptied: its last chip stays on.
+        box.disabled = busy || (row.type === "string" && on.size === 1 && on.has(item));
+        box.addEventListener("change", () => void this.change(row, toggleMany(row, item, box.checked)));
+        chip.createSpan({ text: item });
+      }
+    } else if (control === "button") {
+      desc.querySelector(".aos-st-meta")?.createSpan({ cls: "aos-dim", text: `now: ${readonlyText(row)}` });
+      const file = row.source === "machine" ? this.list?.files.machine : this.list?.files.vault;
+      s.addButton((b) => {
+        if (row.editIn === "skills" || row.editIn === "agents") {
+          const tab = row.editIn;
+          b.setButtonText(`Manage in ${tab === "skills" ? "Skills" : "Agents"}`).onClick(() => this.view.setTab(tab));
+        } else {
+          b.setButtonText(`Edit ${row.source === "machine" ? "agenticos.json" : "brain/config.json"}`).onClick(() => { if (file) this.openFile(file); });
+        }
       });
     }
     if (row.source !== "default" && row.source !== "unset") {
@@ -260,6 +274,22 @@ export class SettingsTab {
         .setTooltip(`Back to the default (${valueArg(row.default)}): aos config unset ${row.key}`)
         .onClick(() => void this.reset(row)));
     }
+  }
+
+  /** D9: − / + step to the adjacent preset; disabled at the ends. The change goes through the same confirm rules. */
+  private addStep(s: Setting, row: ConfigRow, dir: -1 | 1, busy: boolean): void {
+    const next = stepValue(row, dir);
+    s.addExtraButton((b) => b.setIcon(dir === -1 ? "minus" : "plus").setDisabled(busy || next === null)
+      .setTooltip(next === null ? (dir === -1 ? "lowest preset" : "highest preset") : `${dir === -1 ? "Lower" : "Raise"} to ${choiceLabel(row, next)}`)
+      .onClick(() => { if (next !== null) void this.change(row, next); }));
+  }
+
+  private openFile(file: string): void {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { shell } = require("electron");
+      void shell.openPath(file).then((err: string) => { if (err) new Notice(`Cannot open ${file}: ${err}`); });
+    } catch { new Notice(`Cannot open ${file}`); }
   }
 
   private renderHosts(host: HTMLElement, list: ConfigList): void {

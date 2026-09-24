@@ -12,7 +12,7 @@ Run before tagging a release, on a vault created by `aos init` (not the develope
 ## Install paths
 
 - [ ] Copy the three release assets into `<vault>/.obsidian/plugins/agentic-os/`, enable the plugin: it loads with no console errors and `[agentic-os] loaded` is logged.
-- [ ] Settings → Agentic OS shows the AgenticOS section: Vault root blank, Claude config dir placeholder from `agenticos.json`, Node binary blank; **Probe** fills a path and shows a notice.
+- [ ] Settings → Agentic OS shows the Paths section as pickers: Vault root on "this vault (…)", Claude config dir on "auto (…)", Node binary on "auto" with the installed nodes listed; **Probe** picks a path and shows a notice.
 - [ ] Provider row reflects `provider-state.json` (name + reason); the refresh icon re-reads it.
 
 ## Settings
@@ -20,15 +20,15 @@ Run before tagging a release, on a vault created by `aos init` (not the develope
 - [ ] ⚙ Settings sits at the rail's foot (bottom-left) and stays visible in a pane too short for all eleven tabs, which scroll above it; Enter or Space on a focused rail button opens it. "Open Workbench: Settings" in the command palette and "Open Workbench settings" in Obsidian's settings pane open the same tab.
 - [ ] The head reads "N changed from the defaults" and matches the `*` rows of `aos config list`. Every row shows its key, a pill (`this machine` / `this vault` / `default`, the file path on hover) and when it applies; daily caps show "today $x of $cap".
 - [ ] Master switches: turning Telemetry off writes `telemetry.enabled` to `agenticos.json` (check with `aos config get telemetry.enabled`), shows the change as a Notice, and the chip follows; turning Background AI on from `none` asks first ("Turn on paid background calls?"), and Cancel leaves it off.
-- [ ] Raising a daily cap asks first; lowering it does not. Typing `0` in `claude.perCallUsd` shows "must be more than 0 …" under the field without a spawn; typing `70000` in `ollama.port` shows the CLI's "must be at most 65535".
+- [ ] No text box anywhere in ⚙ Settings or Obsidian's pane (spec 2026-09-24-settings-pickers): toggles, pickers, chips and buttons only. Every number row has − / + around its picker; + on a daily cap raises it to the next preset and asks first, − never asks; − is disabled at the lowest preset and + at the highest.
+- [ ] A value set outside the presets (e.g. `aos config set cost.monthlyBudget 175`) shows in its picker as "$175.00 (custom)" and is not changed by opening the tab; − / + from it go to $150 / $200.
+- [ ] `recallRoots` and `routines.tools` are chips; the last `routines.tools` chip cannot be turned off. `quickLinks`, the roster and external labels have an "Edit brain/config.json" button (opens the file); `skills.exclude` / `agents.exclude` have "Manage in Skills" / "Manage in Agents", which switch tabs. Hosts & install values are plain text.
 - [ ] Setting `claude.model` leaves a "⚠ 1 step left: aos routines sync" bar and a `1` on the ⚙ badge; clicking it runs the sync, the bar goes and the badge clears.
 - [ ] ↺ on a changed row puts it back to the default (`aos config unset`); Hosts & install rows are read-only and their "❯_ aos doctor" / "❯_ aos upgrade" buttons open the Term tab running them.
 - [ ] *Claude Code only* (`hosts.codex.enabled: false`): every Codex row (`codex.*`, `*.codexModel`) is dimmed with "Codex is off on this machine; `aos init --host both` turns it on", and still editable. *Codex only* (`hosts.claude.enabled: false`): the Claude rows are dimmed the same way. *Both*: nothing dimmed.
 - [ ] A vault whose runtime predates 0.17 (no `aos config`): the tab says to run `aos upgrade` with a "❯_ aos upgrade" button, and the WORKBENCH section below still works.
 - [ ] The WORKBENCH section and Obsidian's own settings pane show the same plugin rows; a change in one appears in the other on reopen.
-- [ ] Vault root: typing a path that is not a directory (e.g. a file, or a path that does not exist) is ignored while typing — nothing is saved, no Notice.
-- [ ] Vault root: leaving the field (blur) on a value that is not a directory shows a Notice once ("Vault root: … is not a directory — keeping …") and restores the field to the saved value.
-- [ ] Vault root: typing a valid directory changes nothing until the field loses focus; on blur it saves once and, if it differs from this vault, shows the 10 s explanation once (Task 1 of Plan 5b — no per-keystroke save or Notice); reopen Settings — the saved value is shown, including after closing the modal with Escape while the field was focused.
+- [ ] Vault root: the picker offers this vault and the agenticos.json vault; picking one that no longer exists shows a Notice once ("Vault root: … is not a directory — keeping …") and the picker returns to the saved value; picking a different vault shows the 10 s explanation once.
 
 ## Config (both hosts)
 

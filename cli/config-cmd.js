@@ -63,6 +63,8 @@ function row(e, ctx) {
     key: e.key, section: e.section, label: e.label, help: e.help, type: e.type, values: e.values || null,
     min: e.min ?? null, gt: e.gt ?? null, max: e.max ?? null, int: !!e.int, nullable: !!e.nullable,
     risk: e.risk || null, applies: e.applies, readonly: !!e.readonly, how: e.how || null, host: e.host || null,
+    // The Workbench's picker presets, chips and edit buttons (spec 2026-09-24-settings-pickers D2, D4).
+    choices: e.choices || null, unit: e.unit || null, pick: e.pick || null, editIn: e.editIn || null,
     default: def === undefined ? null : def, value, source, changed: !e.machine && !same(value, def), note: null,
     // Today's spend in the ledger family this daily cap governs (spec 2026-09-24-settings-tab D7); null without a ledger read.
     spentToday: e.spend && ctx.spend && typeof ctx.spend[e.spend] === 'number' ? ctx.spend[e.spend] : null,

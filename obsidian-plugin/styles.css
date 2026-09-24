@@ -1940,3 +1940,6 @@
 .aos-nt-react.is-chosen { color: var(--aos-cyan); border-color: var(--aos-cyan); }
 .aos-nt-links { margin-top: 8px; }
 .aos-nt-foot { margin-top: 6px; font-size: 11px; }
+.aos-st-chips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; max-width: 460px; }
+.aos-st-chip { padding: 3px 8px; font-size: 11px; font-family: var(--aos-mono); }
+.aos-st-value { font-family: var(--aos-mono); font-size: 12px; color: var(--aos-dim); max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -1,30 +1,80 @@
 import { Notice, Setting } from "obsidian";
 import type AgenticOSPlugin from "../../main";
-import { resolveNodeBinary, resetProbeForTests } from "../data/nodeResolver";
+import type { AgenticOSSettings } from "../settingsDefaults";
+import { resolveNodeBinary, resetProbeForTests, nodeCandidates } from "../data/nodeResolver";
 import { readAgenticosJson, claudeConfigDir as envClaudeConfigDir } from "../data/aosConfig";
 import { setSpawnContext } from "../data/commandRegistry";
 import { decideVaultRoot } from "../data/vaultRootField";
 import { failureText } from "../data/aosRun";
 import { resultSummary, valueArg } from "../data/settingsModel";
 import type { SetResult } from "../data/settingsModel";
+import { pluginChoices, pluginStep, parseShells } from "../data/pluginChoices";
+import type { PluginChoiceEnv } from "../data/pluginChoices";
 import * as fs from "fs";
+import * as os from "os";
 
 function isDirectory(p: string): boolean {
   try { return fs.statSync(p).isDirectory(); } catch { return false; }
 }
 
 export interface PluginRowsHandle {
-  /** Commits a vault-root edit still in its field: Chromium fires no blur when the container is detached. */
+  /** Kept for callers' teardown; every row now saves on pick, so there is nothing left to commit. */
   commit(): Promise<void>;
 }
+
+function basePath(plugin: AgenticOSPlugin): string {
+  const adapter = plugin.app.vault.adapter as unknown as { getBasePath?: () => string };
+  return adapter.getBasePath ? adapter.getBasePath() : process.cwd();
+}
+
+/** The machine facts the pickers offer (spec 2026-09-24-settings-pickers D7), read fresh on every render. */
+function choiceEnv(plugin: AgenticOSPlugin): PluginChoiceEnv {
+  const cfg = readAgenticosJson();
+  let shells: string[] = [];
+  try { shells = parseShells(fs.readFileSync("/etc/shells", "utf8")); } catch { /* no /etc/shells: system default only */ }
+  return {
+    vaultBase: basePath(plugin), agenticosVault: cfg?.vault ?? null,
+    envConfigDir: process.env.CLAUDE_CONFIG_DIR ?? null, agenticosConfigDir: cfg?.claudeConfigDir ?? null, defaultConfigDir: envClaudeConfigDir(),
+    home: os.homedir(), nodeCandidates: nodeCandidates({ homedir: () => os.homedir(), platform: process.platform, readdirSync: (p) => fs.readdirSync(p) }),
+    exists: (p) => { try { return fs.existsSync(p); } catch { return false; } }, shells, envShell: process.env.SHELL ?? null,
+  };
+}
+
+type Key = keyof AgenticOSSettings;
 
 /**
  * The plugin's own settings (data.json), rendered with Obsidian's Setting component into any container. Obsidian's
  * settings pane and the Workbench Settings tab both call this, so the two never drift (spec 2026-09-24-settings-tab
- * D11). `rerender` redraws the caller after a change that alters other rows (the node Probe).
+ * D11). Every row is a toggle, a picker (with − / + on numbers) or a button — no text boxes (settings-pickers D1, D7,
+ * D9). `rerender` redraws the caller after a change that alters other rows.
  */
 export function renderPluginSettings(containerEl: HTMLElement, plugin: AgenticOSPlugin, rerender: () => void): PluginRowsHandle {
-  let commitVaultRoot: (() => Promise<void>) | null = null;
+  const env = choiceEnv(plugin);
+  const save = async (key: Key, value: string | number, after?: () => void) => {
+    (plugin.settings as unknown as Record<string, unknown>)[key] = value;
+    await plugin.saveSettings();
+    after?.();
+    rerender();
+  };
+
+  /** A picker for `key`, with − / + around it when the key is a number (D9). */
+  const picker = (s: Setting, key: Key, onPick: (value: string | number) => void | Promise<void>) => {
+    const current = plugin.settings[key] as string | number;
+    const opts = pluginChoices(key, current, env) ?? [];
+    const step = (dir: -1 | 1) => (typeof current === "number" ? pluginStep(key, current, dir) : null);
+    const stepper = (dir: -1 | 1) => s.addExtraButton((b) => {
+      const next = step(dir);
+      b.setIcon(dir === -1 ? "minus" : "plus").setTooltip(next === null ? (dir === -1 ? "lowest preset" : "highest preset") : `${dir === -1 ? "Lower" : "Raise"} to ${next}`)
+        .setDisabled(next === null).onClick(() => { if (next !== null) void onPick(next); });
+    });
+    if (typeof current === "number") stepper(-1);
+    s.addDropdown((d) => {
+      opts.forEach((o, i) => d.addOption(String(i), o.label));
+      d.setValue(String(Math.max(0, opts.findIndex((o) => o.value === current))));
+      d.onChange((i) => { const o = opts[Number(i)]; if (o && o.value !== current) void onPick(o.value); });
+    });
+    if (typeof current === "number") stepper(1);
+  };
 
   new Setting(containerEl).setName("General").setHeading();
 
@@ -49,73 +99,35 @@ export function renderPluginSettings(containerEl: HTMLElement, plugin: AgenticOS
       })
     );
 
-  new Setting(containerEl)
-    .setName("Poll interval (ms)")
-    .setDesc("How often the local watcher polls brain/_index/agent-runs/ for new run events (ms). Consumed by LiveRunsWatcher, rebuilt immediately via Plugin.rebindLiveSources(); its events feed ChatTab's live tail.")
-    .addText((t) =>
-      t.setValue(String(plugin.settings.liveTailPollMs)).onChange(async (v) => {
-        const n = Number(v);
-        if (Number.isFinite(n) && n >= 100 && n <= 5000) {
-          plugin.settings.liveTailPollMs = n;
-          await plugin.saveSettings();
-          plugin.rebindLiveSources();
-        }
-      })
-    );
+  picker(new Setting(containerEl)
+    .setName("Poll interval")
+    .setDesc("How often the local watcher polls brain/_index/agent-runs/ for new run events. Consumed by LiveRunsWatcher, rebuilt immediately via Plugin.rebindLiveSources(); its events feed ChatTab's live tail."),
+  "liveTailPollMs", (v) => save("liveTailPollMs", v, () => plugin.rebindLiveSources()));
 
   new Setting(containerEl).setName("Paths").setHeading();
 
-  new Setting(containerEl)
+  picker(new Setting(containerEl)
     .setName("Vault root")
-    .setDesc("Absolute path used for spawns, the live-runs watcher and orphan sweep, brain/config.json, provider-state.json and persona/IDENTITY.md. Pulse/Runs/Memory/Spaces and the status bar always render this Obsidian vault, regardless of this setting. Leave blank to use this vault. Consumed by Plugin.vaultRoot() on every read/spawn — committed when the field loses focus, and in effect from that moment.")
-    .addText((t) => {
-      // Plan 4 Ruling F12: no onChange. Obsidian binds onChange to the input event, so saving there
-      // committed every keystroke — stacking Notices, saving abandoned typo prefixes, and re-validating
-      // an unchanged value. The field commits ONCE, on blur, through the pure decideVaultRoot(). The
-      // same commit also runs from the caller's teardown (commit()), because Chromium fires no blur on
-      // detachment (Escape closes the modal with the field still focused).
-      t.setPlaceholder("(this vault)").setValue(plugin.settings.vaultRoot);
-      commitVaultRoot = async () => {
-        const adapter = plugin.app.vault.adapter as unknown as { getBasePath?: () => string };
-        const d = decideVaultRoot({
-          typed: t.getValue(),
-          saved: plugin.settings.vaultRoot,
-          basePath: adapter.getBasePath ? adapter.getBasePath() : process.cwd(),
-          isDirectory,
-        });
-        if (d.notice) new Notice(d.notice, d.noticeMs);
-        t.setValue(d.value);
-        if (d.action === "none") return;
-        if (d.action === "reject") return;
-        plugin.settings.vaultRoot = d.value;
-        await plugin.saveSettings();
-        // commandRegistry captured the context once in onload(); refresh it or ⌘K and the
-        // command deck keep spawning in the old vault until Obsidian is reloaded.
-        setSpawnContext({ node: plugin.nodeBin(), vaultRoot: plugin.vaultRoot() });
-      };
-      t.inputEl.addEventListener("blur", () => { void commitVaultRoot?.(); });
-    });
+    .setDesc("The vault used for spawns, the live-runs watcher and orphan sweep, brain/config.json, provider-state.json and persona/IDENTITY.md. Pulse/Runs/Memory/Spaces and the status bar always render this Obsidian vault, regardless of this setting. Consumed by Plugin.vaultRoot() on every read/spawn, from the moment it is picked."),
+  "vaultRoot", async (v) => {
+    // decideVaultRoot still vets the pick (a vault that has since moved is refused, a different vault explains itself).
+    const d = decideVaultRoot({ typed: String(v), saved: plugin.settings.vaultRoot, basePath: basePath(plugin), isDirectory });
+    if (d.notice) new Notice(d.notice, d.noticeMs);
+    if (d.action === "none" || d.action === "reject") { rerender(); return; }
+    // commandRegistry captured the context once in onload(); refresh it or ⌘K and the command deck keep spawning in
+    // the old vault until Obsidian is reloaded.
+    await save("vaultRoot", d.value, () => setSpawnContext({ node: plugin.nodeBin(), vaultRoot: plugin.vaultRoot() }));
+  });
 
-  new Setting(containerEl)
+  picker(new Setting(containerEl)
     .setName("Claude config dir")
-    .setDesc("Where Claude Code keeps projects/ transcripts and agents/. Leave blank to use agenticos.json, then $CLAUDE_CONFIG_DIR, then ~/.claude. Consumed by Plugin.claudeConfigDir() (Pulse backfill count).")
-    .addText((t) =>
-      t.setPlaceholder(readAgenticosJson()?.claudeConfigDir ?? envClaudeConfigDir()).setValue(plugin.settings.claudeConfigDir).onChange(async (v) => {
-        plugin.settings.claudeConfigDir = v.trim();
-        await plugin.saveSettings();
-      })
-    );
+    .setDesc("Where Claude Code keeps projects/ transcripts and agents/. Auto uses agenticos.json, then $CLAUDE_CONFIG_DIR, then ~/.claude. Consumed by Plugin.claudeConfigDir() (Pulse backfill count)."),
+  "claudeConfigDir", (v) => save("claudeConfigDir", v));
 
   const nodeSetting = new Setting(containerEl)
     .setName("Node binary")
-    .setDesc("Absolute path to node for spawning brain scripts. Leave blank to auto-resolve (agenticos.json, common install locations, then one login-shell probe whose result is saved here). Consumed by Plugin.nodeBin() on every spawn.");
-  nodeSetting.addText((t) =>
-    t.setPlaceholder("auto").setValue(plugin.settings.nodePath).onChange(async (v) => {
-      plugin.settings.nodePath = v.trim();
-      await plugin.saveSettings();
-      setSpawnContext({ node: plugin.nodeBin(), vaultRoot: plugin.vaultRoot() });
-    })
-  );
+    .setDesc("The node used to spawn brain scripts. Auto resolves it (agenticos.json, common install locations, then one login-shell probe whose result is saved here); Probe re-runs that now. Consumed by Plugin.nodeBin() on every spawn.");
+  picker(nodeSetting, "nodePath", (v) => save("nodePath", v, () => setSpawnContext({ node: plugin.nodeBin(), vaultRoot: plugin.vaultRoot() })));
   nodeSetting.addButton((b) =>
     b.setButtonText("Probe").setTooltip("Re-run the resolver now and save what it finds").onClick(async () => {
       resetProbeForTests();
@@ -126,7 +138,7 @@ export function renderPluginSettings(containerEl: HTMLElement, plugin: AgenticOS
       else plugin.settings.nodePath = found;
       await plugin.saveSettings();
       setSpawnContext({ node: plugin.nodeBin(), vaultRoot: plugin.vaultRoot() });
-      new Notice(found === "node" ? "node not found — set the path manually" : `node: ${found}`);
+      new Notice(found === "node" ? "node not found — pick one of the listed binaries" : `node: ${found}`);
       rerender();
     })
   );
@@ -143,53 +155,27 @@ export function renderPluginSettings(containerEl: HTMLElement, plugin: AgenticOS
       })
     );
 
-  new Setting(containerEl)
+  picker(new Setting(containerEl)
     .setName("Shell")
-    .setDesc("Default shell for new terminal sessions. Leave blank to use $SHELL (zsh on darwin, cmd.exe on win32). Read once by Plugin.onload() to build the shared TerminalPool — changes apply only after an Obsidian restart or plugin reload.")
-    .addText((t) =>
-      t.setValue(plugin.settings.terminalShell).onChange(async (v) => {
-        plugin.settings.terminalShell = v.trim();
-        await plugin.saveSettings();
-      })
-    );
+    .setDesc("Default shell for new terminal sessions; system default is $SHELL. Read once by Plugin.onload() to build the shared TerminalPool — applies after an Obsidian restart or plugin reload."),
+  "terminalShell", (v) => save("terminalShell", v));
 
-  new Setting(containerEl)
+  picker(new Setting(containerEl)
     .setName("Working directory")
-    .setDesc("Default working directory for new terminal sessions. Leave blank for vault root. Read once by Plugin.onload() to build the shared TerminalPool — changes apply only after an Obsidian restart or plugin reload.")
-    .addText((t) =>
-      t.setValue(plugin.settings.terminalCwd).onChange(async (v) => {
-        plugin.settings.terminalCwd = v.trim();
-        await plugin.saveSettings();
-      })
-    );
+    .setDesc("Default working directory for new terminal sessions. Read once by Plugin.onload() to build the shared TerminalPool — applies after an Obsidian restart or plugin reload."),
+  "terminalCwd", (v) => save("terminalCwd", v));
 
-  new Setting(containerEl)
+  picker(new Setting(containerEl)
     .setName("Font size")
-    .setDesc("xterm.js font size (px) for new terminal sessions. Consumed by TerminalPanel.createBinding() when a session is first opened — already-open sessions keep their current size until reopened.")
-    .addText((t) =>
-      t.setValue(String(plugin.settings.terminalFontSize)).onChange(async (v) => {
-        const n = Number(v);
-        if (Number.isFinite(n) && n >= 8 && n <= 32) {
-          plugin.settings.terminalFontSize = n;
-          await plugin.saveSettings();
-        }
-      })
-    );
+    .setDesc("xterm.js font size for new terminal sessions. Consumed by TerminalPanel.createBinding() when a session is first opened — already-open sessions keep their size until reopened."),
+  "terminalFontSize", (v) => save("terminalFontSize", v));
 
-  new Setting(containerEl)
-    .setName("Scrollback (lines)")
-    .setDesc("xterm.js scrollback buffer (lines) for new terminal sessions. Consumed by TerminalPanel.createBinding() when a session is first opened — already-open sessions are unaffected until reopened.")
-    .addText((t) =>
-      t.setValue(String(plugin.settings.terminalScrollback)).onChange(async (v) => {
-        const n = Number(v);
-        if (Number.isFinite(n) && n >= 100 && n <= 100000) {
-          plugin.settings.terminalScrollback = n;
-          await plugin.saveSettings();
-        }
-      })
-    );
+  picker(new Setting(containerEl)
+    .setName("Scrollback")
+    .setDesc("xterm.js scrollback buffer for new terminal sessions. Consumed by TerminalPanel.createBinding() when a session is first opened — already-open sessions are unaffected until reopened."),
+  "terminalScrollback", (v) => save("terminalScrollback", v));
 
-  return { commit: async () => { await commitVaultRoot?.(); commitVaultRoot = null; } };
+  return { commit: async () => {} };
 }
 
 /**
