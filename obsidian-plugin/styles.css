@@ -1867,3 +1867,14 @@
 .aos-pr-open { margin: 0 0 6px; font-size: 12px; }
 .aos-pr-open .aos-link { font-weight: 600; }
 .aos-pr-pagelink { flex: 0 0 auto; font-family: var(--aos-mono); font-size: 10.5px; }
+
+/* Skills tab (spec 2026-09-23-universal-skills): every Claude Code and Codex skill, with its availability per host. */
+.aos-sk-filter { width: 100%; margin: 0 0 8px; font-family: var(--aos-mono); font-size: 11px; }
+.aos-sk-row { gap: 10px; align-items: center; }
+.aos-sk-row.is-off { opacity: 0.6; }
+.aos-sk-name { flex: 1 1 200px; min-width: 0; color: var(--aos-text); }
+.aos-sk-desc { font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.aos-sk-pills { display: flex; gap: 4px; flex: 0 0 auto; }
+.aos-sk-pills .is-absent { opacity: 0.45; text-decoration: line-through; }
+.aos-sk-source { flex: 0 0 auto; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aos-sk-actions { flex: 0 0 auto; font-family: var(--aos-mono); font-size: 10.5px; white-space: nowrap; }
