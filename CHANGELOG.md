@@ -5,13 +5,13 @@ All notable changes to AgenticOS Workbench. Versions follow the tags. From the n
 ## [Unreleased]
 
 ### Changed
-- Release notes come from this CHANGELOG; a release builds in a read-only job and publishes from a separate one, and every GitHub Action is pinned to a commit.
-- CI type-checks the HUD, lints the JavaScript (eslint) and the shell scripts (shellcheck), and runs every suite in two extreme time zones with host variables exported.
+- Release notes come from this CHANGELOG; a release builds in a read-only job and publishes from a separate one, and every GitHub Action is pinned to a commit (#41).
+- CI type-checks the HUD, lints the JavaScript (eslint) and the shell scripts (shellcheck), and runs every suite in two extreme time zones with host variables exported (#41).
 
 ### Fixed
 - Codex sessions now close in telemetry as soon as the Codex process exits, instead of waiting out the stale-session timeout (#40).
-- The MCP server reports the release version instead of 0.1.0: the runtime's own `package.json` is now bumped with every release.
-- An accepted proposal's own sub-headings now nest under its What and Why in `persona/backlog.md`.
+- The MCP server reports the release version instead of 0.1.0: the runtime's own `package.json` is now bumped with every release (#41).
+- An accepted proposal's own sub-headings now nest under its What and Why in `persona/backlog.md` (#41).
 
 ## [0.15.0] — 2026-09-23
 
