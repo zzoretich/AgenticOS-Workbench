@@ -92,6 +92,30 @@ test('SessionStart records the host and the model the payload names; SessionEnd 
   const h2 = JSON.parse(fs.readFileSync(LIVE('cc-m'), 'utf8').split('\n')[0]);
   assert.equal(h2.host, 'claude');
   assert.equal(h2.model, null);
+  assert.ok(!('host_pid' in h2) && !('host_started' in h2), 'a Claude Code header records no host process');
+});
+
+test('a Codex header records the Codex process the hook runs under (host_pid, host_started); null when there is none', () => {
+  fs.writeFileSync(CONFIG, JSON.stringify({ provider: 'none' }));
+  const env = { ...process.env, AOS_VAULT: TMP, AOS_CONFIG: path.join(TMP, 'none.json'), AOS_HOST: 'codex' };
+  // A process whose executable is named `codex` (a symlink to node) runs the hook as its child, as Codex does.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'thook-bin-'));
+  const fake = path.join(dir, 'codex');
+  fs.symlinkSync(process.execPath, fake);
+  const payload = JSON.stringify({ hook_event_name: 'SessionStart', session_id: 'cx-p', source: 'startup' });
+  const inner = `const r = require('child_process').spawnSync(process.execPath, [${JSON.stringify(SCRIPT)}], { input: ${JSON.stringify(payload)}, encoding: 'utf8' }); process.stdout.write(String(process.pid)); process.exit(r.status);`;
+  const run = spawnSync(fake, ['-e', inner], { encoding: 'utf8', env });
+  assert.equal(run.status, 0, run.stderr);
+  const header = JSON.parse(fs.readFileSync(LIVE('cx-p'), 'utf8').split('\n')[0]);
+  assert.equal(header.host_pid, Number(run.stdout), 'the pid of the codex process, not the hook\'s own');
+  assert.match(header.host_started, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+  assert.notEqual(header.pid, header.host_pid);
+  // Outside Codex (the test runner is the ancestor chain) both keys are present and null.
+  const plain = spawnSync(process.execPath, [SCRIPT], { input: JSON.stringify({ hook_event_name: 'SessionStart', session_id: 'cx-q' }), encoding: 'utf8', env });
+  assert.equal(plain.status, 0, plain.stderr);
+  const h2 = JSON.parse(fs.readFileSync(LIVE('cx-q'), 'utf8').split('\n')[0]);
+  assert.ok('host_pid' in h2 && 'host_started' in h2);
+  if (h2.host_pid !== null) assert.ok(Number.isInteger(h2.host_pid), 'only when the tests themselves run inside Codex');
 });
 
 test('SessionEnd backfills a null model from the transcript (codex-parity D6); a reconciled end keeps the given ended_at', () => {

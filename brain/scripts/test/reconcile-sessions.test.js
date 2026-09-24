@@ -89,6 +89,42 @@ test('reconcile ends each stale run then spawns auto-cost and auto-wrap with AOS
   assert.equal(spawned[1].env.AOS_HOST, 'codex');
 });
 
+test('findStale: a Codex run whose process exited ends inside the idle window; alive, pid-less and Claude runs wait', () => {
+  const recent = new Date(NOW - 5 * MIN).toISOString();
+  const tr = transcriptAt(1);
+  const liveDir = liveDirWith([
+    { session_id: 'exited', host: 'codex', host_pid: 111, host_started: 'a', started_at: recent, idleMin: 2 },
+    { session_id: 'running', host: 'codex', host_pid: 222, host_started: 'b', started_at: recent, idleMin: 2 },
+    { session_id: 'nopid', host: 'codex', host_pid: null, host_started: null, started_at: recent, idleMin: 2 },
+    { session_id: 'claude', host: 'claude', host_pid: 111, started_at: recent, idleMin: 2 },
+    { session_id: 'idle', host: 'codex', host_pid: 222, host_started: 'b', started_at: new Date(NOW - 90 * MIN).toISOString(), idleMin: 60 },
+  ]);
+  const asked = [];
+  const processState = (h) => { asked.push(h.session_id); return h.host_pid === 111 ? 'gone' : 'alive'; };
+  const deps = { liveDir, staleMs: 30 * MIN, now: NOW, findTranscript: (h, id) => (id === 'exited' ? tr : null), processState };
+  const stale = R.findStale(deps);
+  assert.deepEqual(stale.map((s) => s.sessionId).sort(), ['exited', 'idle'], 'an alive Codex process keeps only the idle rule');
+  const exited = stale.find((s) => s.sessionId === 'exited');
+  assert.equal(exited.why, 'exited');
+  assert.equal(exited.endedAt.getTime(), NOW - MIN, 'ends at the later of the transcript and the live file');
+  assert.equal(stale.find((s) => s.sessionId === 'idle').why, 'idle');
+  assert.deepEqual(asked.sort(), ['exited', 'idle', 'running'], 'never asked for a Claude run or a header without host_pid');
+
+  const ended = [];
+  const done = R.reconcile({ deps: { ...deps, endRun: (id, reason, opts) => { ended.push([id, reason, opts.endedAt.getTime()]); return true; }, spawn: () => {} } });
+  assert.deepEqual(done.map((s) => s.sessionId).sort(), ['exited', 'idle']);
+  assert.deepEqual(ended.find((e) => e[0] === 'exited'), ['exited', 'reconciled', NOW - MIN]);
+});
+
+test('findStale with the real process check: a recorded Codex pid that has exited is finished at once', () => {
+  const dead = spawnSync('true');
+  const liveDir = liveDirWith([
+    { session_id: 'dead', host: 'codex', host_pid: dead.pid, host_started: '2026-09-22T11:55:00.000Z', started_at: new Date(NOW - 5 * MIN).toISOString(), idleMin: 2 },
+  ]);
+  const stale = R.findStale({ liveDir, staleMs: 30 * MIN, now: NOW, findTranscript: () => null });
+  assert.deepEqual(stale.map((s) => [s.sessionId, s.why]), [['dead', 'exited']]);
+});
+
 test('throttled: a stamp younger than five minutes skips the sweep; --force and an old stamp run it and refresh the stamp', () => {
   const stamp = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'aos-stamp-')), '.reconcile');
   assert.equal(R.throttled(false, stamp, NOW), false, 'no stamp yet: run and write it');
