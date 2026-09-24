@@ -56,14 +56,12 @@ function arg(flag) {
   return i >= 0 ? process.argv[i + 1] : null;
 }
 
-/** Deduped session records from runs.jsonl (richest per session). */
+/** Deduped session records from runs.jsonl with costs.jsonl laid over it (lib/runs-log.js readRuns), richest per session. */
 function readBestRuns() {
-  let lines = [];
-  try { lines = fs.readFileSync(RUNS, 'utf8').trim().split('\n').filter(Boolean); } catch {}
-  const key = (r) => r.session_id || (r.id || '').replace(/^sess-/, '') || r.id || '';
+  const { readRuns, sessionOf } = require('./lib/runs-log.js');
+  const key = (r) => sessionOf(r) || r.id || '';
   const best = new Map();
-  for (const l of lines) {
-    let r; try { r = JSON.parse(l); } catch { continue; }
+  for (const r of readRuns({ runsFile: RUNS })) {
     const k = key(r); if (!k) continue;
     const cur = best.get(k);
     if (!cur || (r.cost_usd || 0) > (cur.cost_usd || 0)) best.set(k, r);

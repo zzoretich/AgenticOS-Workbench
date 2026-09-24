@@ -242,7 +242,7 @@ async function endRun(run, opts = {}) {
   }
 
   try {
-    fs.appendFileSync(SUMMARY_LOG, JSON.stringify(summary) + '\n');
+    require('../../lib/fsx.js').appendLineSync(SUMMARY_LOG, JSON.stringify(summary), { lock: true }); // never lost to a retention rewrite
   } catch (err) {
     process.stderr.write(`[telemetry] failed to append runs.jsonl: ${err.message}\n`);
   }
