@@ -131,7 +131,7 @@ export class SkillsTab {
 
     box.createDiv({ cls: "aos-rt-subhead aos-dim", text: `YOUR SKILLS (${mine.length})` });
     const t1 = box.createDiv({ cls: "aos-inv-table aos-sk-table" });
-    if (!mine.length) t1.createDiv({ cls: "aos-inv-row aos-dim", text: this.query ? "no match" : "none yet — a skill is a folder with a SKILL.md under ~/.claude/skills or ~/.agents/skills" });
+    if (!mine.length) t1.createDiv({ cls: "aos-inv-row aos-dim", text: this.query ? "no match" : "none yet — a skill is a folder with a SKILL.md in either host's skills folder" });
     for (const r of mine) this.renderRow(t1, r, true);
 
     box.createDiv({ cls: "aos-rt-subhead aos-dim", text: `PLUGINS & BUILT-INS (${theirs.length}) — listed, not copied: they need their plugin's tools` });
