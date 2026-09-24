@@ -82,6 +82,14 @@ function ensureHeader(sessionId, extra = {}) {
     // Codex's hook payload names the model on every event; Claude Code's does not. Costing reads it back.
     model: typeof extra.model === 'string' && extra.model ? extra.model : null,
   };
+  // Quitting the Codex TUI fires no SessionEnd for this thread: record the Codex process so reconcile-sessions can
+  // finalize the run once it exits (spec 2026-09-23-codex-session-close-on-exit-design D1). null = not found.
+  if (header.host === 'codex') {
+    let hp = null;
+    try { hp = require('./lib/host-process.js').findHostProcess('codex'); } catch (_) { hp = null; }
+    header.host_pid = hp ? hp.pid : null;
+    header.host_started = hp ? hp.started : null;
+  }
   try { fs.writeFileSync(lf, JSON.stringify(header) + '\n'); } catch (_) {}
   return lf;
 }

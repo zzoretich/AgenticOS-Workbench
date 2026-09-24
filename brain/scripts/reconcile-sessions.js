@@ -8,7 +8,8 @@
  * brain/_index/agent-runs/live/ and everything that runs at SessionEnd — the telemetry summary,
  * auto-cost, auto-wrap's memory extraction — silently never happens. This hook runs on
  * SessionStart and Stop of both hosts, detaches at once, and for every live run whose header,
- * live file and transcript are all older than telemetry.staleAfterMinutes (default 30):
+ * live file and transcript are all older than telemetry.staleAfterMinutes (default 30) — or, for a
+ * Codex run, whose recorded Codex process (host_pid) has exited, whatever its age (lib/host-process.js):
  *   1. telemetry-hook endRun(id, 'reconciled') with ended_at = the transcript's last change;
  *   2. auto-cost --cost-one, then auto-wrap in its detached mode, each as a child with AOS_HOST set
  *      from the header — the same two workers SessionEnd would have spawned, one session at a time.
@@ -22,6 +23,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const host = require('./lib/host.js');
+const { hostProcessState } = require('./lib/host-process.js');
 
 const RUNS_DIR = path.join(PATHS.VAULT, 'brain', '_index', 'agent-runs');
 const LIVE_DIR = path.join(RUNS_DIR, 'live');
@@ -39,8 +41,11 @@ function readHeader(file) {
 
 function mtimeOf(file) { try { return fs.statSync(file).mtime; } catch { return null; } }
 
-/** The live runs idle for longer than staleMs: [{ sessionId, host, liveFile, transcript, endedAt }]. */
-function findStale({ liveDir = LIVE_DIR, staleMs, now = Date.now(), findTranscript = host.findTranscript } = {}) {
+/**
+ * The live runs to finish: idle for longer than staleMs, or Codex runs whose Codex process has exited
+ * (why: 'idle' | 'exited'). [{ sessionId, host, liveFile, transcript, endedAt, why }]
+ */
+function findStale({ liveDir = LIVE_DIR, staleMs, now = Date.now(), findTranscript = host.findTranscript, processState = hostProcessState } = {}) {
   let names = [];
   try { names = fs.readdirSync(liveDir).filter((n) => n.endsWith('.ndjson')); } catch { return []; }
   const out = [];
@@ -50,14 +55,18 @@ function findStale({ liveDir = LIVE_DIR, staleMs, now = Date.now(), findTranscri
     if (!header) continue;
     const started = Date.parse(header.started_at || '') || 0;
     const liveAt = mtimeOf(liveFile);
-    if (!liveAt || now - started < staleMs || now - liveAt.getTime() < staleMs) continue;
+    if (!liveAt) continue;
     const hostName = header.host === 'codex' ? 'codex' : 'claude';
+    // Quitting the Codex TUI fires no SessionEnd for the session's thread; once its process is gone the run is
+    // over, whatever the idle window says (spec 2026-09-23-codex-session-close-on-exit-design D5).
+    const exited = hostName === 'codex' && header.host_pid != null && processState(header) === 'gone';
+    if (!exited && (now - started < staleMs || now - liveAt.getTime() < staleMs)) continue;
     let transcript = null;
     try { transcript = findTranscript(hostName, header.session_id) || null; } catch { transcript = null; }
     const tAt = transcript ? mtimeOf(transcript) : null;
-    if (tAt && now - tAt.getTime() < staleMs) continue;
+    if (!exited && tAt && now - tAt.getTime() < staleMs) continue;
     const endedAt = tAt && tAt > liveAt ? tAt : liveAt;
-    out.push({ sessionId: header.session_id, host: hostName, liveFile, transcript, endedAt });
+    out.push({ sessionId: header.session_id, host: hostName, liveFile, transcript, endedAt, why: exited ? 'exited' : 'idle' });
   }
   return out;
 }
@@ -68,10 +77,10 @@ function spawnWorker(script, args, env, spawn = spawnSync) {
   } catch { /* the workers keep their own ledgers */ }
 }
 
-/** Reconcile every stale run. deps: { endRun, spawn, findTranscript, now, staleMs, liveDir } for tests. */
+/** Reconcile every stale run. deps: { endRun, spawn, findTranscript, processState, now, staleMs, liveDir } for tests. */
 function reconcile({ dryRun = false, deps = {} } = {}) {
   const staleMs = deps.staleMs != null ? deps.staleMs : staleMinutes() * 60 * 1000;
-  const stale = findStale({ liveDir: deps.liveDir, staleMs, now: deps.now, findTranscript: deps.findTranscript });
+  const stale = findStale({ liveDir: deps.liveDir, staleMs, now: deps.now, findTranscript: deps.findTranscript, processState: deps.processState });
   const done = [];
   for (const s of stale) {
     if (dryRun) { done.push(s); continue; }
@@ -132,7 +141,7 @@ function main() {
     if (!dryRun && !force && process.env.AOS_DETACHED !== '1' && throttled(false)) { process.exit(0); }
     const done = reconcile({ dryRun });
     if (dryRun || process.env.AOS_DETACHED !== '1') {
-      for (const s of done) process.stdout.write(`[reconcile] ${dryRun ? 'would reconcile' : 'reconciled'} ${s.host} session ${s.sessionId}${s.transcript ? '' : ' (no transcript)'}\n`);
+      for (const s of done) process.stdout.write(`[reconcile] ${dryRun ? 'would reconcile' : 'reconciled'} ${s.host} session ${s.sessionId}${s.why === 'exited' ? ' (process exited)' : ''}${s.transcript ? '' : ' (no transcript)'}\n`);
       if (!done.length) process.stdout.write('[reconcile] nothing stale\n');
     }
   } catch (e) {
