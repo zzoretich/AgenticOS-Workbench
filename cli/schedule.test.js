@@ -35,6 +35,29 @@ test('scheduleVars derives the config path and log dir', () => {
   assert.equal(VARS.AGENT_NAME, 'Atlas');
 });
 
+// Spec 2026-09-24-duty-model-settings-design D3: settings → interview answers → claude.model → haiku; machine file wins.
+test('dutyRunDefaults: persona.model/effort, then the interview answers, then claude.model and medium', () => {
+  const answers = { dutyModel: 'haiku', dutyEffort: 'medium' };
+  assert.deepEqual(S.dutyRunDefaults(), { model: 'haiku', effort: 'medium' });
+  assert.deepEqual(S.dutyRunDefaults({ userCfg: { claude: { model: 'opus' } } }), { model: 'opus', effort: 'medium' }, 'no answers → claude.model');
+  assert.deepEqual(S.dutyRunDefaults({ userCfg: { claude: { model: 'opus' } }, answers }), { model: 'haiku', effort: 'medium' }, 'the answers beat claude.model');
+  assert.deepEqual(S.dutyRunDefaults({ vaultCfg: { persona: { model: 'sonnet', effort: 'high' } }, answers }), { model: 'sonnet', effort: 'high' }, 'the settings beat the answers');
+  assert.deepEqual(S.dutyRunDefaults({ userCfg: { persona: { model: 'opus' } }, vaultCfg: { persona: { model: 'sonnet', effort: 'low' } }, answers }),
+    { model: 'opus', effort: 'low' }, 'agenticos.json wins over brain/config.json, key by key');
+  assert.deepEqual(S.dutyRunDefaults({ vaultCfg: { persona: { model: null, effort: 'max' } }, answers: { dutyModel: ' ', dutyEffort: 'bogus' } }),
+    { model: 'haiku', effort: 'medium' }, 'null, blank and unknown values fall through');
+});
+
+test('readVaultConfig: brain/config.json, or {} when missing or unparseable', () => {
+  const vault = fs.mkdtempSync(path.join(os.tmpdir(), 'sched-vcfg-'));
+  assert.deepEqual(S.readVaultConfig(vault), {});
+  fs.mkdirSync(path.join(vault, 'brain'));
+  fs.writeFileSync(path.join(vault, 'brain', 'config.json'), '{ nope');
+  assert.deepEqual(S.readVaultConfig(vault), {});
+  fs.writeFileSync(path.join(vault, 'brain', 'config.json'), JSON.stringify({ persona: { model: 'sonnet' } }));
+  assert.equal(S.readVaultConfig(vault).persona.model, 'sonnet');
+});
+
 test('listRoutines reads the vault store; installable keeps enabled + valid only', () => {
   const v = vault();
   const all = S.listRoutines({ vault: v.dir });

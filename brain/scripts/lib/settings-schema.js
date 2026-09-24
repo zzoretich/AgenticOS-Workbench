@@ -119,6 +119,10 @@ const SETTINGS = [
     help: 'The whole Chief of Staff: its context in sessions, the watchdog and the scheduled duties (persona/DISABLED follows it).' },
   { key: 'persona.runner', section: 'persona', label: 'Duty runner', type: 'enum', values: RUNNERS, applies: 'next-duty',
     help: 'Which host runs the duties: auto, claude or codex.' },
+  { key: 'persona.model', section: 'persona', label: 'Duty model on Claude', type: 'model', host: 'claude', nullable: true, applies: 'next-duty', followUp: ROUTINES_SYNC,
+    help: 'Claude model for duties; null uses the interview answer, then claude.model. A duty routine\'s own model: wins.' },
+  { key: 'persona.effort', section: 'persona', label: 'Duty effort', type: 'enum', values: REASONER_EFFORTS, nullable: true, applies: 'next-duty', followUp: ROUTINES_SYNC,
+    help: 'Effort for duties on either host; null uses the interview answer, then medium. A duty routine\'s own effort: wins.' },
   { key: 'persona.codexModel', section: 'persona', label: 'Duty model on Codex', type: 'model', host: 'codex', nullable: true, applies: 'next-duty',
     help: 'Codex model for duties; null uses codex.model, then your Codex default.' },
   { key: 'persona.watchdog.graceMinutes', section: 'persona', label: 'Watchdog grace', type: 'number', int: true, min: 1, applies: 'next-session',
@@ -242,7 +246,7 @@ const USD_RUN = [0.25, 0.5, 1, 2, 3, 5, 10];
 const USD_DAY = [0, 0.25, 0.5, 1, 2, 3, 5, 6, 10, 15, 20, 30, 50];
 const usd = (choices) => ({ choices, unit: 'usd' });
 const PICKS = {
-  'claude.model': { choices: CLAUDE_MODELS }, 'reasoner.model': { choices: CLAUDE_MODELS }, 'crossReview.claudeModel': { choices: CLAUDE_MODELS },
+  'claude.model': { choices: CLAUDE_MODELS }, 'reasoner.model': { choices: CLAUDE_MODELS }, 'crossReview.claudeModel': { choices: CLAUDE_MODELS }, 'persona.model': { choices: CLAUDE_MODELS },
   'codex.model': { choices: CODEX_MODELS }, 'reasoner.codexModel': { choices: CODEX_MODELS }, 'persona.codexModel': { choices: CODEX_MODELS },
   'routines.codexModel': { choices: CODEX_MODELS }, 'crossReview.codexModel': { choices: CODEX_MODELS },
   'ollama.host': { choices: ['127.0.0.1', 'localhost'] }, 'ollama.port': { choices: [11434] },

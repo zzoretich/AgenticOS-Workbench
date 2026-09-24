@@ -29,6 +29,7 @@ export interface Routine {
   schedule?: string;
   enabled?: boolean;
   guarded?: boolean;
+  // prompt and duty: the Claude model and the effort for that routine's run; on a duty they override the schedule's.
   model?: string;
   effort?: string;
   budgetUsd?: number;
@@ -146,10 +147,12 @@ export function validateRoutine(r: Partial<Routine>): string[] {
   if (r.guarded !== undefined && typeof r.guarded !== "boolean") errors.push("guarded must be true or false");
   if (r.timeoutSec !== undefined && !(Number.isInteger(r.timeoutSec) && (r.timeoutSec as number) > 0)) errors.push("timeoutSec must be a positive integer");
   if (r.tags !== undefined && !isStringArray(r.tags)) errors.push("tags must be an array of strings");
-  if (r.kind === "prompt") {
-    if (typeof r.body !== "string" || !r.body.trim()) errors.push("a prompt routine needs a body");
+  if (r.kind === "prompt" || r.kind === "duty") {
     if (r.model !== undefined && (typeof r.model !== "string" || !r.model.trim())) errors.push("model must be a string");
     if (r.effort !== undefined && !(EFFORTS as readonly string[]).includes(String(r.effort))) errors.push(`effort must be one of ${EFFORTS.join(", ")}`);
+  }
+  if (r.kind === "prompt") {
+    if (typeof r.body !== "string" || !r.body.trim()) errors.push("a prompt routine needs a body");
     if (r.budgetUsd !== undefined && !isMoney(r.budgetUsd)) errors.push("budgetUsd must be a non-negative number");
   }
   if (r.kind === "duty") {

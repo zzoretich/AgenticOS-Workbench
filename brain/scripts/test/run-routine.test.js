@@ -150,6 +150,8 @@ test('duty kind: delegates to run-duty.sh with the inherited env, ledgered as pe
   assert.equal(d.ledger.length, 0, 'the duty runner ledgers its own duty:* row');
   assert.equal(d.calls[0].opts.env.PERSONA_MAX_USD, undefined, 'no budgetUsd → the runner\'s own default');
   assert.equal(d.calls[0].opts.env.PERSONA_TOOLS, undefined);
+  assert.equal(d.calls[0].opts.env.PERSONA_MODEL, undefined, 'no model → the schedule\'s PERSONA_MODEL');
+  assert.equal(d.calls[0].opts.env.PERSONA_EFFORT, undefined);
 });
 
 // Spec 2026-09-22-persona-reflect-daily-design D7: the tick starts the daily reflect early through this entrypoint; the
@@ -179,6 +181,19 @@ test('duty kind: writes in the routine file reach run-duty.sh as PERSONA_WRITES 
   const d = deps();
   assert.equal(await runRoutine('sitrep', { deps: d }), 0);
   assert.equal(d.calls[0].opts.env.PERSONA_WRITES, 'notes/inbox/,TODO.md');
+});
+
+test('duty kind: model and effort in the routine file override the schedule\'s PERSONA_MODEL and PERSONA_EFFORT (spec 2026-09-24-duty-model-settings-design D1)', async () => {
+  put('reflect', { kind: 'duty', guarded: true, model: 'sonnet', effort: 'high' });
+  const d = deps({ env: { PATH: '/usr/bin:/bin', HOME: VAULT, PERSONA_MODEL: 'haiku', PERSONA_EFFORT: 'medium' } });
+  assert.equal(await runRoutine('reflect', { deps: d }), 0);
+  assert.equal(d.calls[0].opts.env.PERSONA_MODEL, 'sonnet');
+  assert.equal(d.calls[0].opts.env.PERSONA_EFFORT, 'high');
+  put('tick', { kind: 'duty', guarded: true, effort: 'low' });
+  const t = deps({ env: { PATH: '/usr/bin:/bin', HOME: VAULT, PERSONA_MODEL: 'haiku', PERSONA_EFFORT: 'medium' } });
+  assert.equal(await runRoutine('tick', { deps: t }), 0);
+  assert.equal(t.calls[0].opts.env.PERSONA_MODEL, 'haiku', 'a key the routine leaves out keeps the schedule\'s value');
+  assert.equal(t.calls[0].opts.env.PERSONA_EFFORT, 'low');
 });
 
 test('prompt kind: claude -p argv, headless env, ledger row routine:<slug>, cost recorded', async () => {

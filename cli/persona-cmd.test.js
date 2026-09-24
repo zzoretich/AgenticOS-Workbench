@@ -46,6 +46,23 @@ test('runInterview with an answers file writes the persona and installs schedule
   assert.ok(w.logs.includes('ERR warning: launchctl load com.agenticos.reflect.plist: boom'), 'installSchedules warn → io.error');
 });
 
+test('runInterview: persona.model/effort settings win over the answers for the schedules, and it says so (duty-model-settings D3)', async () => {
+  const w = world(); const calls = [];
+  fs.mkdirSync(path.join(w.vault, 'brain'), { recursive: true });
+  fs.writeFileSync(path.join(w.vault, 'brain', 'config.json'), JSON.stringify({ persona: { model: 'sonnet', effort: 'high' } }));
+  await P.runInterview({ configDir: w.configDir, answersFile: w.answersFile, io: w.io, platform: 'darwin',
+    installSchedules: (o) => { calls.push(o); return { platform: 'darwin', written: [], labels: [], warnings: [] }; } });
+  assert.equal(calls[0].vars.MODEL, 'sonnet');
+  assert.equal(calls[0].vars.EFFORT, 'high');
+  assert.ok(w.logs.some(l => /duties run on sonnet \(persona\.model\), not the interview's haiku/.test(l)));
+  assert.ok(w.logs.some(l => /duties run at high effort \(persona\.effort\), not the interview's medium/.test(l)));
+  const w2 = world(); const calls2 = [];
+  await P.runInterview({ configDir: w2.configDir, answersFile: w2.answersFile, io: w2.io, platform: 'darwin',
+    installSchedules: (o) => { calls2.push(o); return { platform: 'darwin', written: [], labels: [], warnings: [] }; } });
+  assert.equal(calls2[0].vars.MODEL, 'haiku', 'no setting → the answer');
+  assert.ok(!w2.logs.some(l => /persona\.model/.test(l)), 'no override note without a setting');
+});
+
 test('schedule "no" (or schedule:false option) skips scheduling; dry-run writes nothing', async () => {
   const w = world(); let called = 0;
   fs.writeFileSync(w.answersFile, JSON.stringify({ ...ANSWERS, schedule: 'no' }));

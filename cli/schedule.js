@@ -75,6 +75,31 @@ function scheduleVars({ vault, configDir, node, logDir, model, effort, agentName
 }
 
 /** Every routine file in the vault (valid or not); `installable` is the subset the scheduler acts on. */
+const DUTY_EFFORTS = ['low', 'medium', 'high'];
+function nonEmpty(v) { return typeof v === 'string' && v.trim() ? v.trim() : null; }
+
+/** <vault>/brain/config.json, or {} when it is missing or does not parse (a schedule render never fails on it). */
+function readVaultConfig(vault) {
+  try { return JSON.parse(fs.readFileSync(path.join(vault, 'brain', 'config.json'), 'utf8')) || {}; } catch { return {}; }
+}
+
+/**
+ * The model and effort every duty schedule carries (spec 2026-09-24-duty-model-settings-design D3). Model:
+ * persona.model → the interview's dutyModel → claude.model → haiku. Effort: persona.effort → dutyEffort → medium.
+ * userCfg is agenticos.json and wins over vaultCfg (<vault>/brain/config.json), as in lib/config.js loadConfig().
+ * A duty routine's own model:/effort: still win for its runs (routines/run-routine.js plan()).
+ */
+function dutyRunDefaults({ userCfg = {}, vaultCfg = {}, answers = {} } = {}) {
+  const files = [userCfg || {}, vaultCfg || {}];
+  const first = (get, ok = () => true) => { for (const c of files) { const v = nonEmpty(get(c)); if (v && ok(v)) return v; } return null; };
+  const a = answers || {};
+  const effortOk = (v) => DUTY_EFFORTS.includes(v);
+  return {
+    model: first(c => c.persona && c.persona.model) || nonEmpty(a.dutyModel) || first(c => c.claude && c.claude.model) || 'haiku',
+    effort: first(c => c.persona && c.persona.effort, effortOk) || (effortOk(nonEmpty(a.dutyEffort)) ? nonEmpty(a.dutyEffort) : null) || 'medium',
+  };
+}
+
 function listRoutines({ vault, store = loadStore() }) {
   return store.list({ dir: routinesDir(vault) });
 }
@@ -276,7 +301,7 @@ function isInstalled({ platform = process.platform, vault, launchAgentsDir = def
 }
 
 module.exports = {
-  CRON_TAG, TEMPLATES_DIR, LEGACY_DUTIES, RUNNER_REL, launchdLabel, renderTemplate, xmlEscape, scheduleVars,
+  CRON_TAG, TEMPLATES_DIR, LEGACY_DUTIES, RUNNER_REL, launchdLabel, renderTemplate, xmlEscape, scheduleVars, dutyRunDefaults, readVaultConfig,
   listRoutines, installable, calendarXml, renderLaunchd, renderCron, cronLine, stripAgenticosCron, knownSlugs,
   installSchedules, removeSchedules, isInstalled,
 };
