@@ -124,8 +124,58 @@ function readSession(date) {
   return readIfExists(dailyNotePath(d));
 }
 
+/** A file in a folder under brain/memory/<type>/ whose name starts with "_" (feedback/_drafts) is a draft, not a
+ *  memory: the correction detector's unreviewed rules wait there for feedback-review (spec 2026-09-24-mcp-index-first D2). */
+function isDraftPath(rel) {
+  return String(rel).split('/').slice(3, -1).some(s => s.startsWith('_'));
+}
+
+/** Active feedback rules: brain/memory/feedback/**, drafts left out. */
 function listFeedback() {
-  return listMemories().filter(m => m.type === 'feedback');
+  return listMemories().filter(m => m.type === 'feedback' && !isDraftPath(m.path));
+}
+
+/** MEMORY.md's `- [Title](path) — description` lines, by path. */
+function memoryIndexEntries() {
+  const out = new Map();
+  for (const line of (readIfExists(PATHS.MEMORY_INDEX) || '').split(/\r?\n/)) {
+    const m = /^\s*-\s*\[([^\]]*)\]\(([^)\s]+)\)\s*(?:—|--|-)\s*(.*)$/.exec(line);
+    if (m && !out.has(m[2])) out.set(m[2], { title: m[1].trim(), description: m[3].trim() });
+  }
+  return out;
+}
+
+function firstBodyLine(body) {
+  for (const raw of String(body).split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#') || line.startsWith('---')) continue;
+    return line.replace(/\*\*/g, '').replace(/^[-*]\s+/, '');
+  }
+  return '';
+}
+
+function clip(s, n) {
+  return s.length > n ? `${s.slice(0, n - 1).trimEnd()}…` : s;
+}
+
+/** Index-first cards, newest first: path, title (the file's H1), a one-line description (its MEMORY.md line, else its
+ *  first body line), updated; the full text only with `full` (spec 2026-09-24-mcp-index-first D1). */
+function memoryCards(mems, { full = false } = {}) {
+  const index = memoryIndexEntries();
+  return mems.map(m => {
+    const content = readIfExists(m.absPath) || '';
+    const { frontmatter, body } = parseFrontmatter(content);
+    const h1 = /^#\s+(.+)$/m.exec(body);
+    const entry = index.get(m.path);
+    const card = {
+      path: m.path,
+      title: (h1 && h1[1].trim()) || (entry && entry.title) || m.name,
+      description: clip((entry && entry.description) || firstBodyLine(body), 200),
+      updated: String(frontmatter.updated || frontmatter.created || ''),
+    };
+    if (full) card.content = content;
+    return card;
+  }).sort((a, b) => b.updated.localeCompare(a.updated) || a.path.localeCompare(b.path));
 }
 
 function loadSnapshot() {
@@ -199,7 +249,9 @@ module.exports = {
   listPatterns,
   listSessions,
   readSession,
+  isDraftPath,
   listFeedback,
+  memoryCards,
   loadSnapshot,
   readBrief,
   grepMemories,

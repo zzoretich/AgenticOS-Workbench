@@ -75,8 +75,9 @@ concrete failure modes when useful; respect an explicit research depth.
 
 When the agenticos memory tools are available, query `recall` (`mcp__plugin_agenticos_agenticos__recall`) for the
 project, its components and past decisions, and `feedback_rules` (`mcp__plugin_agenticos_agenticos__feedback_rules`)
-for the user's standing instructions. Put relevant hits in the assumptions ledger with their vault paths; a feedback
-rule outranks your own default.
+for the index of the user's standing instructions; read the ones that bear on the plan with `memory_read`
+(`mcp__plugin_agenticos_agenticos__memory_read`). Put relevant hits in the assumptions ledger with their vault paths; a
+feedback rule outranks your own default.
 
 Do not assume this host's MCP servers, browser, credentials or skills exist for the other CLI: its children run with
 none of them. Present one assumptions ledger with source paths or links, and ask for corrections to material
