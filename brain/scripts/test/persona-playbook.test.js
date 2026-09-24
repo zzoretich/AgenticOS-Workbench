@@ -34,6 +34,20 @@ test('scanArsenal returns [] for a config dir with none of the three folders', (
   assert.deepEqual(scanArsenal(fs.mkdtempSync(path.join(os.tmpdir(), 'aos-empty-'))), []);
 });
 
+test('scanArsenal lists each skill once: the mirrors of the other host\'s skills are skipped on both sides', () => {
+  const root = fixtureConfigDir();
+  const agents = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-agents-'));
+  const w = (dir, rel, body) => { fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), body); };
+  w(root, 'skills/from-codex/SKILL.md', '---\nname: from-codex\ndescription: mirror\n---\n');
+  w(root, 'skills/from-codex/.aos-mirror.json', '{"schema":1}');
+  w(agents, 'triage/SKILL.md', '---\nname: triage\ndescription: Codex own\n---\n');
+  w(agents, 'demo-skill/SKILL.md', '---\nname: demo-skill\ndescription: mirror\n---\n');
+  w(agents, 'demo-skill/.aos-mirror.json', '{"schema":1}');
+  const out = scanArsenal(root, { codex: { skillsDir: agents, promptsDir: null } });
+  const skills = out.filter((e) => e.type === 'skill').map((e) => `${e.name}${e.host ? `@${e.host}` : ''}`).sort();
+  assert.deepEqual(skills, ['bare-skill', 'demo-skill', 'triage@codex']);
+});
+
 test('buildPlaybook writes <vault>/persona/PLAYBOOK.md with the agent name and generated sections', () => {
   const configDir = fixtureConfigDir();
   const vault = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-vault-'));
