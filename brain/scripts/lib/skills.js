@@ -482,7 +482,7 @@ function sync({ vault, userCfg = null, env = process.env, roots: r, now = new Da
     schema: SCHEMA,
     scannedAt: now.toISOString(),
     hosts: { claude: hosts.includes('claude'), codex: hosts.includes('codex') },
-    sync: { on: p.sync.on, reason: p.sync.reason, at: now.toISOString(), written: result.written, removed: result.removed, errors: result.errors },
+    sync: { on: p.sync.on, reason: p.sync.reason, at: dryRun ? null : now.toISOString(), written: result.written, removed: result.removed, errors: result.errors },
     skills: p.rows,
   };
   if (!dryRun && vault) writeCache(cacheFile(vault), cache);

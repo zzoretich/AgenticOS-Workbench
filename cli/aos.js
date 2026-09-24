@@ -37,7 +37,7 @@ const PLUGIN_ID = `agenticos@${MARKETPLACE}`;
 const OBSIDIAN_PLUGIN_ID = 'agentic-os';
 const DEFAULT_VAULT = path.join(os.homedir(), 'AgenticOS');
 const PROVIDERS = ['auto', 'ollama', 'claude', 'codex', 'none'];
-const RUNTIME_SCRIPTS = { 'scan-vault': 'scan-vault.js', 'build-brain-md': 'build-brain-md.js', recall: 'sdk/recall-cli.js' };
+const RUNTIME_SCRIPTS = { 'scan-vault': 'scan-vault.js', 'build-brain-md': 'build-brain-md.js', recall: 'sdk/recall-cli.js', 'skills-sync': 'skills-sync.js' };
 const HOST_CHOICES = ['auto', 'claude', 'codex', 'both'];
 const CH = require('./codex-host.js');
 
@@ -51,6 +51,7 @@ const USAGE = `usage:
   aos cost [enable [--budget <usd>] [--yes] | disable]
   aos graph [status | build [--semantic [--yes]] | on | off | semantic on|off|auto]
   aos routines [list [--json] | sync | run <slug> [--dry-run] | enable <slug> | disable <slug> | next [<slug>] | hosts [--refresh] [--json] | import-cloud <file>]
+  aos skills [list [--all] [--json] | sync [--dry-run] [--json] | exclude <name> | include <name> | reset <name>]
   aos workspace [list [--json] | new <name> | adopt <path> [--name <slug>]]
   aos update-status [--statusline | --snooze <N>d|<N>h | --off]
   aos update-check [--quiet]
@@ -417,6 +418,10 @@ async function doctor() {
       const bad = rows.filter((r) => ['failed', 'missed', 'stale', 'invalid'].includes(r.health));
       add('routines', bad.length === 0, rows.length === 0 ? 'none defined' : bad.length ? bad.map((r) => `${r.slug} ${r.health}`).join(', ') + ' — run aos routines list' : `${rows.filter((r) => r.enabled).length} enabled of ${rows.length}`, 'warn');
     } catch (e) { add('routines', false, e.message, 'warn'); }
+  }
+  if (vault) {
+    try { const row = require('./skills.js').doctorRow({ vault }); add(row.name, row.ok, row.detail, row.level); }
+    catch (e) { add('skills', false, e.message, 'warn'); }
   }
   if (vault) {
     const u = require('./update-check.js');
@@ -1056,6 +1061,9 @@ async function init(flags) {
     runScript(vault, 'build-brain-md', [], { allowFail: true });
     runScript(vault, 'recall', ['--warm'], { allowFail: true });
   });
+  await act('share user skills between the hosts (skills-sync)', () => {
+    runScript(vault, 'skills-sync', [], { allowFail: true });
+  });
 
   // 10. checklist
   checklist(ctx);
@@ -1102,6 +1110,17 @@ async function routines(sub, flags) {
     return await R.main([...sub, ...(flags.json ? ['--json'] : []), ...(flags.dryRun ? ['--dry-run'] : []), ...(flags.refresh ? ['--refresh'] : [])], { io: console });
   } catch (e) {
     if (e instanceof R.UsageError) throw new UsageError(e.message);
+    throw e;
+  }
+}
+
+/** `aos skills <verb>` — cli/skills.js (spec 2026-09-23-universal-skills). */
+async function skills(sub, flags) {
+  const K = require('./skills.js');
+  try {
+    return await K.main([...sub, ...(flags.json ? ['--json'] : []), ...(flags.dryRun ? ['--dry-run'] : []), ...(flags.all ? ['--all'] : [])], { io: console });
+  } catch (e) {
+    if (e instanceof K.UsageError) throw new UsageError(e.message);
     throw e;
   }
 }
@@ -1320,7 +1339,7 @@ function updateNotice() {
 
 // ── args and main ─────────────────────────────────────────────────────────────
 const VALUE_FLAGS = new Set(['vault', 'provider', 'persona-json', 'from-local', 'budget', 'snooze', 'host', 'name']);
-const BOOL_FLAGS = new Set(['dry-run', 'yes', 'terminal', 'cost', 'keep-vault', 'statusline', 'off', 'quiet', 'json', 'refresh', 'semantic']);
+const BOOL_FLAGS = new Set(['dry-run', 'yes', 'terminal', 'cost', 'keep-vault', 'statusline', 'off', 'quiet', 'json', 'refresh', 'semantic', 'all']);
 const NEGATABLE_FLAGS = new Set(['obsidian']);
 function camel(s) { return s.replace(/-([a-z])/g, (_, c) => c.toUpperCase()); }
 /** `--flag`, `--no-flag`, `--flag value`, `--flag=value`; unknown flags are a usage error (a typo must never start a real install). */
@@ -1359,7 +1378,7 @@ function parseArgs(argv) {
 async function main(argv) {
   const { cmd, sub, flags } = parseArgs(argv);
   // --dry-run is an init-only preview (contract §4.3); on a mutating command it must be a loud error, never a silent no-op.
-  if (flags.dryRun && cmd !== 'init' && cmd !== 'routines') throw new UsageError('--dry-run is only supported by `aos init` and `aos routines run`');
+  if (flags.dryRun && cmd !== 'init' && cmd !== 'routines' && cmd !== 'skills') throw new UsageError('--dry-run is only supported by `aos init`, `aos routines run` and `aos skills sync`');
   switch (cmd) {
     case 'init': return init(flags);
     case 'upgrade': return upgrade(flags);
@@ -1369,6 +1388,7 @@ async function main(argv) {
     case 'cost': return cost(sub, flags);
     case 'graph': return graph(sub, flags);
     case 'routines': return routines(sub, flags);
+    case 'skills': return skills(sub, flags);
     case 'workspace': return workspace(sub, flags);
     case 'doctor': return doctor();
     case 'status': return status();
