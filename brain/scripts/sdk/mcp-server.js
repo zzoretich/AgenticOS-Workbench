@@ -8,11 +8,11 @@
  * Tools provided:
  *   - memory_search   — fuzzy search across brain/memory/** + brain/patterns/**
  *   - memory_read     — read a specific memory or pattern file
- *   - memory_list     — list all memories grouped by type
+ *   - memory_list     — an index of the memories (title, description, updated) grouped by type
  *   - pattern_list    — list all patterns with their front-matter tags
  *   - session_list    — recent daily-note dates
- *   - session_recall  — read a daily note by date (YYYY-MM-DD)
- *   - feedback_rules  — return every active feedback rule
+ *   - session_recall  — read a daily note by date (YYYY-MM-DD), capped at maxChars
+ *   - feedback_rules  — an index of the active feedback rules; full: true for their text
  *   - snapshot_read   — return the latest scanner snapshot JSON
  *   - brief_read      — read the current morning brief, if any
  *   - routine_list    — every routine (brain/routines/*.md) with its cadence, next fire times, last run and health
@@ -46,9 +46,12 @@ const WRITES_VAULT = { readOnlyHint: false, destructiveHint: false, idempotentHi
 function textResult(text) {
   return { content: [{ type: 'text', text: String(text) }] };
 }
+// Compact: a model reads the text, and indentation was ~15% of every result (spec 2026-09-24-mcp-index-first D3).
 function jsonResult(obj) {
-  return { content: [{ type: 'text', text: JSON.stringify(obj, null, 2) }] };
+  return { content: [{ type: 'text', text: JSON.stringify(obj) }] };
 }
+
+const SESSION_MAX_CHARS = 24000;
 
 server.registerTool(
   'memory_search',
@@ -85,16 +88,20 @@ server.registerTool(
   {
     title: 'List all memories grouped by type',
     annotations: READ_ONLY,
-    description: 'Returns every memory under brain/memory/** with type, name, path, and frontmatter.',
-    inputSchema: {},
+    description: 'An index of the memories under brain/memory/** (feedback drafts left out), newest first, grouped by type: path, title, one-line description, updated. Read one with memory_read.',
+    inputSchema: {
+      type: z.enum(['user', 'feedback', 'projects', 'reference']).optional().describe('Only this memory type'),
+      limit: z.number().int().positive().optional().describe('Only the N most recently updated memories'),
+    },
   },
-  async () => {
-    const mems = brain.listMemories();
-    const grouped = mems.reduce((acc, m) => {
-      (acc[m.type] = acc[m.type] || []).push({ name: m.name, path: m.path, frontmatter: m.frontmatter });
-      return acc;
-    }, {});
-    return jsonResult({ total: mems.length, byType: grouped });
+  async ({ type, limit }) => {
+    const mems = brain.listMemories().filter(m => !brain.isDraftPath(m.path) && (!type || m.type === type));
+    const typeOf = new Map(mems.map(m => [m.path, m.type]));
+    const cards = brain.memoryCards(mems);
+    const shown = limit ? cards.slice(0, limit) : cards;
+    const byType = {};
+    for (const c of shown) (byType[typeOf.get(c.path)] ||= []).push(c);
+    return jsonResult({ total: cards.length, shown: shown.length, byType });
   }
 );
 
@@ -131,13 +138,18 @@ server.registerTool(
   {
     title: 'Read a specific session log',
     annotations: READ_ONLY,
-    description: 'Read a session log by date (YYYY-MM-DD).',
-    inputSchema: { date: z.string().describe('YYYY-MM-DD') },
+    description: `Read a session log by date (YYYY-MM-DD). A note longer than maxChars (default ${SESSION_MAX_CHARS}) is cut there and ends with a line giving its full length.`,
+    inputSchema: {
+      date: z.string().describe('YYYY-MM-DD'),
+      maxChars: z.number().int().positive().max(200000).optional().describe(`Longest text to return (default ${SESSION_MAX_CHARS})`),
+    },
   },
-  async ({ date }) => {
+  async ({ date, maxChars }) => {
     const content = brain.readSession(date);
     if (!content) return textResult(`No session found for ${date}`);
-    return textResult(content);
+    const cap = maxChars || SESSION_MAX_CHARS;
+    if (content.length <= cap) return textResult(content);
+    return textResult(`${content.slice(0, cap)}\n\n…[truncated: ${cap} of ${content.length} characters; call session_recall with maxChars: ${content.length} for all of it]`);
   }
 );
 
@@ -146,15 +158,16 @@ server.registerTool(
   {
     title: 'List all feedback rules',
     annotations: READ_ONLY,
-    description: 'Return every active feedback/correction rule with its full content.',
-    inputSchema: {},
+    description: 'An index of every active feedback/correction rule (drafts under _drafts/ left out), newest first: path, title, one-line description, updated. Pass full: true for every rule\'s full text, or read one rule with memory_read.',
+    inputSchema: {
+      full: z.boolean().optional().describe('Include each rule\'s full text (large)'),
+      limit: z.number().int().positive().optional().describe('Only the N most recently updated rules'),
+    },
   },
-  async () => {
-    const rules = brain.listFeedback().map(f => {
-      const content = brain.readMemory(f.path) || '';
-      return { name: f.name, path: f.path, content };
-    });
-    return jsonResult({ count: rules.length, rules });
+  async ({ full, limit }) => {
+    const rules = brain.memoryCards(brain.listFeedback(), { full: !!full });
+    const shown = limit ? rules.slice(0, limit) : rules;
+    return jsonResult({ count: rules.length, shown: shown.length, rules: shown });
   }
 );
 
