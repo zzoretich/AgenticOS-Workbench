@@ -36,6 +36,7 @@ const { listDrafts, writeDraft, logEvent, activeRuleTitles } = require('./lib/fe
 const { findTranscript } = require('./auto-cost.js');
 const host = require('./lib/host.js');
 const { readTranscriptFile, flattenTurns } = require('./lib/transcript.js');
+const wrapOffsets = require('./lib/wrap-offsets.js');
 const { getProvider } = require('./sdk/lib/provider.js');
 
 // Fix round 1 (live-fire found the workhorse continuing chat-shaped transcripts
@@ -450,19 +451,27 @@ async function waitForOllama() {
   return false;
 }
 
-/** One reported extraction pass through `provider`. Throws on failure so the caller can classify it. */
+/**
+ * One reported extraction pass through `provider`. Throws on failure so the caller can classify it. Reads only the
+ * part of the transcript no earlier wrap of this session has seen, and skips when that part has no user line
+ * (spec 2026-09-24-no-duplicate-sessions D3); the offset moves only after a pass that did not throw.
+ */
 function extractOnce({ transcriptPath, sessionId, provider }) {
   const chatFn = (o) => provider.chat({ ...o, feature: 'auto-wrap' });
   return withReport('auto-wrap', async (report) => {
     report.provider = provider.name;
+    const text = loadTranscriptText(transcriptPath);
+    const part = wrapOffsets.unwrappedPart(text, wrapOffsets.wrappedChars(sessionId));
+    if (!wrapOffsets.hasNewDialogue(part)) { report.skip(text ? 'already-wrapped' : 'no-transcript'); return; }
     await runAutoWrap({
-      transcriptText: loadTranscriptText(transcriptPath),
+      transcriptText: part,
       sessionId, chatFn, report, corrections: { enabled: true, chatFn },
       // Claude and Codex count as "structured" here (a real JSON Schema; codex-cli.js makes it strict). Ollama also
       // reports capabilities.structured, but that is grammar-constrained decoding by a small local model that still
       // drifts to an empty result — the retry exists for exactly that case, so it stays on for ollama.
       structured: provider.name === 'claude' || provider.name === 'codex',
     });
+    wrapOffsets.markWrapped(sessionId, text.length);
   });
 }
 

@@ -138,3 +138,27 @@ test('SessionEnd backfills a null model from the transcript (codex-parity D6); a
   const hook = require('../telemetry-hook.js');
   assert.equal(hook.endRun('never-started', 'reconciled'), false);
 });
+
+test('a session that goes on after its run closed is segment 2, with its own run id and timeline (no-duplicate-sessions D4)', () => {
+  fs.writeFileSync(CONFIG, JSON.stringify({ provider: 'none' }));
+  const env = { ...process.env, AOS_VAULT: TMP, AOS_CONFIG: path.join(TMP, 'none.json'), AOS_HOST: '' };
+  const send = (payload) => {
+    const r = spawnSync(process.execPath, [SCRIPT], { input: JSON.stringify(payload), encoding: 'utf8', env });
+    assert.equal(r.status, 0, r.stderr);
+  };
+  send({ hook_event_name: 'SessionStart', session_id: 'seg-a' });
+  assert.equal(JSON.parse(fs.readFileSync(LIVE('seg-a'), 'utf8').split('\n')[0]).segment, 1);
+  send({ hook_event_name: 'SessionEnd', session_id: 'seg-a', reason: 'other' });
+  // the session goes on (a reconcile ended it while idle, or a resume): the next event opens a new header
+  send({ hook_event_name: 'PostToolUse', session_id: 'seg-a', tool_name: 'Read', tool_input: {}, tool_response: {} });
+  const h2 = JSON.parse(fs.readFileSync(LIVE('seg-a'), 'utf8').split('\n')[0]);
+  assert.equal(h2.segment, 2);
+  assert.equal(h2.id, 'sess-seg-a-s2');
+  send({ hook_event_name: 'SessionEnd', session_id: 'seg-a', reason: 'other' });
+  const rows = fs.readFileSync(path.join(TMP, 'brain', '_index', 'agent-runs', 'runs.jsonl'), 'utf8').trim().split('\n')
+    .map((l) => JSON.parse(l)).filter((r) => r.session_id === 'seg-a');
+  assert.deepEqual(rows.map((r) => [r.id, r.segment]), [['sess-seg-a', 1], ['sess-seg-a-s2', 2]]);
+  for (const r of rows) {
+    assert.ok(fs.existsSync(path.join(TMP, 'brain', '_index', 'agent-runs', r.started_at.slice(0, 10), `${r.id}.json`)), `${r.id} has its own timeline`);
+  }
+});

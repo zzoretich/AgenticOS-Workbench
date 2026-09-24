@@ -12,9 +12,9 @@
  *                    JSON + a runs.jsonl summary line, delete the live file
  *
  * The session_id is the run key — the live ndjson file's existence is the state,
- * so no separate state store is needed. Crashed runs (no SessionEnd) are retired
- * by the Obsidian plugin's orphan sweep. Best-effort throughout: never throws,
- * never blocks the session.
+ * so no separate state store is needed. Runs that never get a SessionEnd are finished
+ * by reconcile-sessions.js (SessionStart and Stop of both hosts, and the Obsidian
+ * plugin on load). Best-effort throughout: never throws, never blocks the session.
  *
  * Redaction (tool name + input length only) is ON by default: config telemetry.redact
  * (default true) or BRAIN_AGENT_REDACT=1. telemetry.enabled=false → the hook writes nothing.
@@ -67,16 +67,34 @@ function toolEvent(input) {
   return t;
 }
 
+/**
+ * Runs this session already closed: its rows in runs.jsonl. A session that a reconcile ended while idle gets a new
+ * header on its next event, and that segment's row and timeline must not overwrite the first one's (spec
+ * 2026-09-24-no-duplicate-sessions D4).
+ */
+function closedSegments(sessionId, summaryLog = SUMMARY_LOG) {
+  let text = '';
+  try { text = fs.readFileSync(summaryLog, 'utf8'); } catch { return 0; }
+  const needle = `"session_id":${JSON.stringify(String(sessionId))}`;
+  let n = 0;
+  for (const line of text.split('\n')) if (line.includes(needle)) n++;
+  return n;
+}
+
 function ensureHeader(sessionId, extra = {}) {
   const lf = liveFileFor(sessionId);
   if (fs.existsSync(lf)) return lf;
   fs.mkdirSync(LIVE_DIR, { recursive: true });
+  const segment = closedSegments(sessionId) + 1;
   const header = {
     type: 'run_start',
-    id: `sess-${sessionId}`,
+    // A continued session's later segments get their own run id, so their timeline JSON is a file of its own.
+    id: segment > 1 ? `sess-${sessionId}-s${segment}` : `sess-${sessionId}`,
     script: 'session',
     started_at: new Date().toISOString(),
+    // The hook's own pid: it exits at once, so it is never a liveness signal (the HUD's sweep read it as one).
     pid: process.pid,
+    segment,
     session_id: sessionId,
     host: currentHost(process.env, PAYLOAD),
     // Codex's hook payload names the model on every event; Claude Code's does not. Costing reads it back.
@@ -164,6 +182,7 @@ function endRun(sessionId, reason, opts = {}) {
     end_reason: reason || null,
     host: header.host || 'claude',
     model,
+    segment: Number.isInteger(header.segment) && header.segment > 0 ? header.segment : 1,
   };
 
   const dayDir = path.join(RUNS_DIR, startedAt.toISOString().slice(0, 10));
@@ -226,4 +245,4 @@ process.stdin.on('end', () => {
 });
 }
 
-module.exports = { ensureHeader, endRun, liveFileFor, LIVE_DIR };
+module.exports = { ensureHeader, endRun, liveFileFor, closedSegments, LIVE_DIR };
