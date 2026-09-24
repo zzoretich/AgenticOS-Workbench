@@ -4,6 +4,12 @@ All notable changes to AgenticOS Workbench. Versions follow the tags. From the n
 
 ## [Unreleased]
 
+### Fixed
+- The terminal no longer leaks listeners. Every visit to Pulse or Term left three terminal-pool listeners behind for as long as Obsidian ran, and a closed panel kept redrawing its tabs; each panel now removes its own when it closes.
+- The Pulse command deck's `/reflect` only printed a prompt meant for a session and wrote nothing. It is now `/reflect-week` and writes this week's reflection to `brain/reflections/` in one click through the model provider (the reasoner model, within `reasoner.perCallUsd` and `reasoner.perDayUsd`); the notice shows the saved path, or why no model was available.
+- The deck's `/remember` and `/pattern` filed a feedback memory. `/remember` now adds the note to `SESSION.md` with `#promote`, under "Things to Remember" (or "Promote to Memory on Close" for a `feedback:`, `project:` or `pattern:` note), and `/pattern` adds a pattern to `brain/patterns/<area>.md`, listing a new area file in `MEMORY.md`, the same as the in-session `/remember` and `/pattern`.
+- A deck command that reports on stderr (as the runtime scripts do) shows that line in its success notice instead of "ok".
+
 ## [0.19.2] — 2026-09-24
 
 ### Fixed
