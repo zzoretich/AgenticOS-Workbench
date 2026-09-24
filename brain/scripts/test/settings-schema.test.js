@@ -98,3 +98,30 @@ test('host and spend tags (spec 2026-09-24-settings-tab D7, D8): every daily cap
   for (const k of ['claude.model', 'reasoner.model', 'crossReview.claudeModel']) assert.equal(S.entry(k).host, 'claude', k);
   assert.equal(S.entry('provider').host, undefined);
 });
+
+test('no text boxes (spec 2026-09-24-settings-pickers D6): every settable non-bool/enum row has choices or editIn; defaults are choices; choices validate', () => {
+  for (const e of S.SETTINGS) {
+    if (e.machine || e.type === 'bool' || e.type === 'enum') continue;
+    assert.ok(e.choices || e.editIn, `${e.key} would render as a text field`);
+    if (e.editIn) { assert.ok(['file', 'skills', 'agents'].includes(e.editIn), `${e.key} editIn=${e.editIn}`); continue; }
+    assert.ok(Array.isArray(e.choices) && e.choices.length, `${e.key} choices`);
+    if (e.unit !== undefined) assert.ok(S.UNITS.includes(e.unit), `${e.key} unit=${e.unit}`);
+    const d = S.defaultOf(e);
+    if (e.pick === 'many') {
+      for (const item of (Array.isArray(d) ? d : String(d).split(','))) assert.ok(e.choices.includes(item), `${e.key} default item ${item}`);
+      for (const c of e.choices) assert.equal(typeof c, 'string', `${e.key} chip ${c}`);
+      continue;
+    }
+    assert.ok((d === null && e.nullable) || e.choices.includes(d), `${e.key} default ${JSON.stringify(d)} is not a choice`);
+    for (const c of e.choices) assert.equal(S.validate(e, c), null, `${e.key} choice ${JSON.stringify(c)}`);
+  }
+  for (const k of Object.keys(S.PICKS)) assert.ok(S.entry(k), `PICKS names an unknown key ${k}`);
+});
+
+test('model pickers: Claude rows list Claude models, Codex rows the pricing table\'s models', () => {
+  assert.deepEqual(S.CODEX_MODELS, Object.keys(require('../sdk/lib/codex-pricing.js').MODELS));
+  for (const e of S.SETTINGS.filter((x) => x.type === 'model')) {
+    assert.deepEqual(e.choices, e.host === 'codex' ? S.CODEX_MODELS : S.CLAUDE_MODELS, e.key);
+  }
+  assert.ok(S.CLAUDE_MODELS.includes(S.DEFAULTS.claude.model) && S.CLAUDE_MODELS.includes(S.DEFAULTS.reasoner.model));
+});

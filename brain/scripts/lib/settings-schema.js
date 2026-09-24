@@ -15,6 +15,11 @@
  *   followUp  { command, why } — printed as a `next:` line after a set (D7)
  *   host      claude | codex — the setting only matters when that host is enabled (spec 2026-09-24-settings-tab D8)
  *   spend     hooks | duties | reasoner | routines | graph | crossReview — the ledger family a perDayUsd caps (D7)
+ *   choices   the presets the Workbench offers in its picker (spec 2026-09-24-settings-pickers D2); `aos config set`
+ *             still takes any valid value, and the Workbench keeps showing a value that is not a preset
+ *   unit      usd | min | h | days | s | files | notes | tokens — how a number's presets are labelled
+ *   pick      "many" — a list (or a comma string) chosen as chips from `choices`
+ *   editIn    file | skills | agents — no picker: the Workbench offers a button to where it is edited (D4)
  */
 const DEFAULTS = require('../config.default.json');
 
@@ -227,6 +232,47 @@ const SETTINGS = [
     help: 'Written by the installer into agenticos.json; the launcher, schedules and Codex wiring carry it.' })),
 ];
 
+// ── presets (spec 2026-09-24-settings-pickers): every settable value that is not a bool or an enum is picked, not typed ──
+// Claude Code takes the aliases and the pinned ids; the Codex list is the pricing table's, so a model it cannot price
+// is never offered. A value outside these still works through `aos config set`.
+const CLAUDE_MODELS = ['haiku', 'sonnet', 'opus', 'claude-haiku-4-5', 'claude-sonnet-5', 'claude-opus-5', 'claude-opus-5-5', 'claude-fable-5-1'];
+const CODEX_MODELS = Object.keys(require('../sdk/lib/codex-pricing.js').MODELS);
+const USD_CALL = [0.01, 0.02, 0.05, 0.1, 0.25, 0.5, 1, 2, 3, 5];
+const USD_RUN = [0.25, 0.5, 1, 2, 3, 5, 10];
+const USD_DAY = [0, 0.25, 0.5, 1, 2, 3, 5, 6, 10, 15, 20, 30, 50];
+const usd = (choices) => ({ choices, unit: 'usd' });
+const PICKS = {
+  'claude.model': { choices: CLAUDE_MODELS }, 'reasoner.model': { choices: CLAUDE_MODELS }, 'crossReview.claudeModel': { choices: CLAUDE_MODELS },
+  'codex.model': { choices: CODEX_MODELS }, 'reasoner.codexModel': { choices: CODEX_MODELS }, 'persona.codexModel': { choices: CODEX_MODELS },
+  'routines.codexModel': { choices: CODEX_MODELS }, 'crossReview.codexModel': { choices: CODEX_MODELS },
+  'ollama.host': { choices: ['127.0.0.1', 'localhost'] }, 'ollama.port': { choices: [11434] },
+  'claude.perCallUsd': usd(USD_CALL), 'codex.perCallUsd': usd(USD_CALL), 'reasoner.perCallUsd': usd(USD_CALL),
+  'graph.semantic.perCallUsd': usd(USD_CALL), 'crossReview.perCallUsd': usd(USD_CALL),
+  'persona.perDutyUsd': usd(USD_RUN), 'routines.perRunUsd': usd(USD_RUN),
+  'claude.perDayUsd': usd(USD_DAY), 'codex.perDayUsd': usd(USD_DAY), 'reasoner.perDayUsd': usd(USD_DAY), 'persona.perDayUsd': usd(USD_DAY),
+  'routines.perDayUsd': usd(USD_DAY), 'graph.semantic.perDayUsd': usd(USD_DAY), 'crossReview.perDayUsd': usd(USD_DAY),
+  'cost.monthlyBudget': usd([10, 25, 50, 100, 150, 200, 300, 500, 1000]),
+  'dailyNote.layout': { choices: ['{yyyy}/{yyyy}-{MM}-{MMMM}/{yyyy}-{MM}-{dd}.md', '{yyyy}/{yyyy}-{MM}-{dd}.md', 'Daily/{yyyy}-{MM}-{dd}.md', 'brain/sessions/{yyyy}-{MM}-{dd}.md', '{yyyy}-{MM}-{dd}.md'] },
+  recallRoots: { pick: 'many', choices: ['brain/memory', 'brain/patterns', 'persona/journal', 'brain/notifications', 'brain/sessions', 'brain/reflections', 'workspaces'] },
+  quickLinks: { editIn: 'file' }, 'roster.orchestrators': { editIn: 'file' }, 'routines.externalLabels': { editIn: 'file' },
+  'skills.exclude': { editIn: 'skills' }, 'agents.exclude': { editIn: 'agents' },
+  'scan.fileMapBudget': { choices: [0, 10, 20, 40, 80, 160], unit: 'files' }, 'scan.embedBudget': { choices: [0, 10, 20, 40, 80, 160], unit: 'notes' },
+  'scan.fileMapBudgetUnderClaude': { choices: [0, 10, 20, 40, 80], unit: 'files' }, 'scan.fileMapBudgetUnderCodex': { choices: [0, 10, 20, 40, 80], unit: 'files' },
+  'persona.watchdog.graceMinutes': { choices: [15, 30, 45, 60, 90, 120], unit: 'min' }, 'persona.tick.flagAgeDays': { choices: [3, 5, 7, 14, 30], unit: 'days' },
+  'persona.tick.earlyReflect.corrections': { choices: [1, 2, 3, 5, 10] }, 'persona.tick.earlyReflect.dutyFailures': { choices: [1, 2, 3, 5, 10] },
+  'persona.autoapply.minVerified': { choices: [1, 2, 3, 5, 10] },
+  'routines.tools': { pick: 'many', choices: ['Read', 'Glob', 'Grep', 'WebFetch', 'WebSearch', 'Write', 'Edit', 'Bash'] },
+  'graph.out': { choices: ['brain/graphify-out'] }, 'graph.timeoutSec': { choices: [60, 120, 300, 600], unit: 's' },
+  'graph.staleDays': { choices: [1, 3, 7, 14, 30], unit: 'days' }, 'graph.semantic.everyHours': { choices: [6, 12, 24, 48, 168], unit: 'h' },
+  'graph.semantic.tokenBudget': { choices: [5000, 10000, 20000, 50000, 100000], unit: 'tokens' }, 'graph.semantic.timeoutSec': { choices: [600, 1200, 1800, 3600], unit: 's' },
+  'crossReview.timeoutSec': { choices: [300, 600, 900, 1800], unit: 's' }, 'crossReview.rounds': { choices: [1, 2, 3, 4, 5, 6, 8, 10] },
+  'telemetry.retentionDays': { choices: [7, 14, 30, 60, 90, 180, 365], unit: 'days' }, 'telemetry.staleAfterMinutes': { choices: [10, 15, 30, 60, 120], unit: 'min' },
+  'updates.intervalHours': { choices: [6, 12, 24, 48, 168], unit: 'h' },
+  'notifications.retentionDays': { choices: [7, 14, 30, 60, 90, 180], unit: 'days' }, 'notifications.maxPerSenderPerHour': { choices: [0, 1, 3, 6, 10, 20] },
+};
+for (const e of SETTINGS) if (PICKS[e.key]) Object.assign(e, PICKS[e.key]);
+const UNITS = ['usd', 'min', 'h', 'days', 's', 'files', 'notes', 'tokens'];
+
 const BY_KEY = new Map(SETTINGS.map((e) => [e.key, e]));
 /** The ledger families a daily cap can govern (D7); cli/aos.js sums today's spend per family for `list --json`. */
 const SPEND_FAMILIES = ['hooks', 'duties', 'reasoner', 'routines', 'graph', 'crossReview'];
@@ -316,4 +362,4 @@ function dayCap(v, d) {
   return Number.isFinite(n) && n >= 0 ? n : d;
 }
 
-module.exports = { SECTIONS, SETTINGS, SPEND_FAMILIES, DEFAULTS, entry, isPrefix, defaultOf, getPath, leafKeys, parseValue, validate, dayCap, isPlainObject };
+module.exports = { SECTIONS, SETTINGS, SPEND_FAMILIES, PICKS, UNITS, CLAUDE_MODELS, CODEX_MODELS, DEFAULTS, entry, isPrefix, defaultOf, getPath, leafKeys, parseValue, validate, dayCap, isPlainObject };
