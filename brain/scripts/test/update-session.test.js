@@ -1,7 +1,49 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { isJunkSummary, renderLastSession, renderWorkingMemory } = require('../update-session.js');
+const { isJunkSummary, renderLastSession, renderWorkingMemory, summaryPolicy, summaryMarkerName, parseSummaryMarker, shouldSummarize } = require('../update-session.js');
+
+// ── throttle (spec 2026-09-24-summary-throttle) ──
+const MIN = 60000;
+const POLICY = { everyPrompts: 10, minMinutes: 15 };
+
+test('shouldSummarize waits for everyPrompts new prompts and minMinutes since the last summary', () => {
+  const fresh = { prompts: 0, at: 0 };
+  assert.equal(shouldSummarize({ prompts: 9, last: fresh, now: 100 * MIN, ...POLICY }), false);
+  assert.equal(shouldSummarize({ prompts: 10, last: fresh, now: 100 * MIN, ...POLICY }), true);
+  const last = { prompts: 10, at: 100 * MIN };
+  assert.equal(shouldSummarize({ prompts: 25, last, now: 110 * MIN, ...POLICY }), false, '15 prompts but only 10 minutes');
+  assert.equal(shouldSummarize({ prompts: 25, last, now: 115 * MIN, ...POLICY }), true);
+  assert.equal(shouldSummarize({ prompts: 19, last, now: 200 * MIN, ...POLICY }), false, 'an hour later but 9 prompts');
+  assert.equal(shouldSummarize({ prompts: 0, last: fresh, now: 100 * MIN, everyPrompts: 1, minMinutes: 0 }), false);
+});
+
+test('shouldSummarize counts from zero when the transcript started over', () => {
+  assert.equal(shouldSummarize({ prompts: 10, last: { prompts: 40, at: 0 }, now: 100 * MIN, ...POLICY }), true);
+  assert.equal(shouldSummarize({ prompts: 4, last: { prompts: 40, at: 0 }, now: 100 * MIN, ...POLICY }), false);
+});
+
+test('one marker per session, and a payload without session_id falls back to the day', () => {
+  assert.equal(summaryMarkerName({ session_id: 'abc-123' }, '2026-09-24'), '.last-summary-abc-123');
+  assert.equal(summaryMarkerName({ sessionId: 'xyz' }, '2026-09-24'), '.last-summary-xyz');
+  assert.notEqual(summaryMarkerName({ session_id: 'a' }), summaryMarkerName({ session_id: 'b' }));
+  assert.equal(summaryMarkerName({}, '2026-09-24'), '.last-summary-2026-09-24');
+  assert.equal(summaryMarkerName(null, '2026-09-24'), '.last-summary-2026-09-24');
+});
+
+test('parseSummaryMarker reads { prompts, at } and starts an old bare-number marker over', () => {
+  assert.deepEqual(parseSummaryMarker('{"prompts":12,"at":1727190000000}'), { prompts: 12, at: 1727190000000 });
+  assert.deepEqual(parseSummaryMarker('306'), { prompts: 0, at: 0 });
+  assert.deepEqual(parseSummaryMarker(''), { prompts: 0, at: 0 });
+  assert.deepEqual(parseSummaryMarker('not json'), { prompts: 0, at: 0 });
+});
+
+test('summaryPolicy reads summary.* and falls back to 10 prompts / 15 minutes', () => {
+  assert.deepEqual(summaryPolicy({ summary: { everyPrompts: 5, minMinutes: 0 } }), { everyPrompts: 5, minMinutes: 0 });
+  assert.deepEqual(summaryPolicy({}), POLICY);
+  assert.deepEqual(summaryPolicy({ summary: { everyPrompts: 0, minMinutes: -1 } }), POLICY);
+  assert.deepEqual(summaryPolicy({ summary: { everyPrompts: '10', minMinutes: 'x' } }), POLICY);
+});
 
 const GOOD = '*   Shipped the P0 repair pass and committed plugin source.\n*   Decided cost re-anchors monthly via cost-budget.js.\n*   Open thread: verify pty rebuild on next Obsidian update.';
 const JUNK1 = '- The provided session log contains empty `user:` fields with no actual conversation captured.\n- No code files were built, modified, or changed.\n- Summary reflects an empty state rather than completed work.';

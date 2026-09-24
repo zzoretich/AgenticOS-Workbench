@@ -2,7 +2,8 @@
 /**
  * Stop hook — runs after every Claude response.
  * - Writes a last-active marker to today's daily note
- * - Every 5 user turns, respawns detached and summarizes through the provider:
+ * - Every summary.everyPrompts prompts the user typed in this session (default 10), and no sooner than
+ *   summary.minMinutes after its last summary (default 15), respawns detached and summarizes through the provider:
  *     ollama/claude → model summary into BRAIN.md "Last Session", the daily note, SESSION.md
  *     none          → heuristic Key Context (last prompts, files touched, commands) into SESSION.md
  * - Parses the transcript from transcript_path (JSONL on disk)
@@ -29,7 +30,44 @@ const SESSION_MD = PATHS.SESSION_MD;
 const _d = new Date();
 const today = `${_d.getFullYear()}-${String(_d.getMonth()+1).padStart(2,'0')}-${String(_d.getDate()).padStart(2,'0')}`;
 const sessionFile = dailyNotePath(_d);
-const throttleFile = markerPath(`.last-summary-${today}`);
+
+// The throttle (spec 2026-09-24-summary-throttle). It used to count every user entry, a Claude tool result
+// included, against one marker per day shared by every session: one busy session summarized every few minutes and
+// starved the next session of the day.
+const DEFAULT_POLICY = { everyPrompts: 10, minMinutes: 15 };
+
+/** summary.everyPrompts / summary.minMinutes from the config; a missing or bad value falls back to the default. */
+function summaryPolicy(cfg) {
+  let s = {};
+  try { s = ((cfg || require('./lib/config.js').loadConfig()) || {}).summary || {}; } catch (_) { /* defaults */ }
+  return {
+    everyPrompts: Number.isInteger(s.everyPrompts) && s.everyPrompts > 0 ? s.everyPrompts : DEFAULT_POLICY.everyPrompts,
+    minMinutes: Number.isFinite(s.minMinutes) && s.minMinutes >= 0 ? s.minMinutes : DEFAULT_POLICY.minMinutes,
+  };
+}
+
+/** One marker per session: both hosts send session_id to the Stop hook. A payload without one falls back to the day. */
+function summaryMarkerName(input, day = today) {
+  const id = input && (input.session_id || input.sessionId);
+  return `.last-summary-${id ? String(id) : day}`;
+}
+
+/** { prompts, at } from a marker's text. An old marker's bare number counted every user entry, so it starts over. */
+function parseSummaryMarker(text) {
+  try {
+    const j = JSON.parse(String(text || '').trim());
+    if (j && typeof j === 'object') return { prompts: Number(j.prompts) || 0, at: Number(j.at) || 0 };
+  } catch (_) { /* empty or not JSON */ }
+  return { prompts: 0, at: 0 };
+}
+
+/** Due when everyPrompts prompts came since the last summary and minMinutes have passed. A count below the marker's
+ *  (a transcript that started over) counts from zero. */
+function shouldSummarize({ prompts, last, now, everyPrompts, minMinutes }) {
+  if (!(prompts > 0)) return false;
+  const base = prompts >= last.prompts ? last.prompts : 0;
+  return prompts - base >= everyPrompts && now - last.at >= minMinutes * 60000;
+}
 
 // Detached worker: does the slow model call in the background so the Stop hook
 // itself returns instantly.
@@ -107,19 +145,20 @@ function readStdinAndRun() {
       input = JSON.parse(raw || '{}');
       const transcriptPath = input.transcript_path || input.transcriptPath || '';
       const transcript = loadTranscript(transcriptPath);
-      const turnCount = parseEntries(transcript).userTurns;
+      const parsed = parseEntries(transcript);
+      const turnCount = parsed.userTurns;
 
       const now = new Date().toLocaleString('en-US', { hour12: false });
       writeLastActive(now, turnCount); // fast: marker only
 
-      const lastSummaryTurn = readLastSummaryTurn();
-      const shouldSummarize = (turnCount - lastSummaryTurn) >= 5 && turnCount > 0;
-      if (shouldSummarize) {
-        saveLastSummaryTurn(turnCount); // mark now so we don't spawn twice
+      const marker = markerPath(summaryMarkerName(input));
+      const nowMs = Date.now();
+      if (shouldSummarize({ prompts: parsed.prompts, last: readSummaryMarker(marker), now: nowMs, ...summaryPolicy() })) {
+        writeSummaryMarker(marker, { prompts: parsed.prompts, at: nowMs }); // mark now so we don't spawn twice
         const child = spawn(process.execPath, [__filename], {
           detached: true,
           stdio: 'ignore',
-          env: { ...process.env, BRAIN_SUMMARIZE_DETACHED: '1', BRAIN_TRANSCRIPT: transcriptPath, BRAIN_TURN: String(turnCount) },
+          env: { ...process.env, BRAIN_SUMMARIZE_DETACHED: '1', BRAIN_TRANSCRIPT: transcriptPath, BRAIN_TURN: String(parsed.prompts) },
         });
         child.unref();
       }
@@ -165,13 +204,13 @@ function writeLastActive(now, turns) {
   } catch (_) {}
 }
 
-function readLastSummaryTurn() {
-  try { return parseInt(fs.readFileSync(throttleFile, 'utf8').trim(), 10) || 0; }
-  catch (_) { return 0; }
+function readSummaryMarker(file) {
+  try { return parseSummaryMarker(fs.readFileSync(file, 'utf8')); }
+  catch (_) { return { prompts: 0, at: 0 }; }
 }
 
-function saveLastSummaryTurn(n) {
-  try { fs.writeFileSync(throttleFile, String(n)); } catch (_) {}
+function writeSummaryMarker(file, state) {
+  try { fs.writeFileSync(file, JSON.stringify(state)); } catch (_) {}
 }
 
 function writeSessionSummary(summary, now) {
@@ -293,4 +332,5 @@ async function summarizeSession(transcript, date, chatFn) {
   }
 }
 
-module.exports = { isJunkSummary, renderLastSession, renderWorkingMemory, conversationTail, summarizeSession, summaryCycle, readTranscriptRaw };
+module.exports = { isJunkSummary, renderLastSession, renderWorkingMemory, conversationTail, summarizeSession, summaryCycle, readTranscriptRaw,
+  summaryPolicy, summaryMarkerName, parseSummaryMarker, shouldSummarize };

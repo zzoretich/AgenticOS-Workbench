@@ -113,6 +113,10 @@ const SETTINGS = [
     help: 'Let scans write workspace insights with Codex (paid).' },
   { key: 'scan.autoSweepOrphans', section: 'memory', label: 'Sweep orphaned session residue', type: 'bool', applies: 'next-scan',
     help: 'Let scans delete empty session-env and file-history folders a crashed session left behind. A boolean in brain/_index/scanner-config.json still wins.' },
+  { key: 'summary.everyPrompts', section: 'memory', label: 'Session summary every', type: 'number', int: true, min: 1, applies: 'next-reply',
+    help: 'Prompts you type in a session between two working-memory summaries (BRAIN.md Last Session, the daily note, SESSION.md). Counted per session; tool results and slash commands do not count.' },
+  { key: 'summary.minMinutes', section: 'memory', label: 'Session summary at most every', type: 'number', int: true, min: 0, applies: 'next-reply',
+    help: 'Minutes that must pass between two summaries of the same session, however many prompts came in between. 0 turns the floor off.' },
 
   // ── Chief of Staff ──────────────────────────────────────────────────────────
   { key: 'persona.enabled', section: 'persona', label: 'Chief of Staff', type: 'bool', risk: 'autonomy', applies: 'next-session',
@@ -262,6 +266,7 @@ const PICKS = {
   'skills.exclude': { editIn: 'skills' }, 'agents.exclude': { editIn: 'agents' },
   'scan.fileMapBudget': { choices: [0, 10, 20, 40, 80, 160], unit: 'files' }, 'scan.embedBudget': { choices: [0, 10, 20, 40, 80, 160], unit: 'notes' },
   'scan.fileMapBudgetUnderClaude': { choices: [0, 10, 20, 40, 80], unit: 'files' }, 'scan.fileMapBudgetUnderCodex': { choices: [0, 10, 20, 40, 80], unit: 'files' },
+  'summary.everyPrompts': { choices: [3, 5, 10, 15, 20, 30] }, 'summary.minMinutes': { choices: [0, 5, 10, 15, 30, 60], unit: 'min' },
   'persona.watchdog.graceMinutes': { choices: [15, 30, 45, 60, 90, 120], unit: 'min' }, 'persona.tick.flagAgeDays': { choices: [3, 5, 7, 14, 30], unit: 'days' },
   'persona.tick.earlyReflect.corrections': { choices: [1, 2, 3, 5, 10] }, 'persona.tick.earlyReflect.dutyFailures': { choices: [1, 2, 3, 5, 10] },
   'persona.autoapply.minVerified': { choices: [1, 2, 3, 5, 10] },

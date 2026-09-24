@@ -4,11 +4,15 @@ All notable changes to AgenticOS Workbench. Versions follow the tags. From the n
 
 ## [Unreleased]
 
+### Added
+- `summary.everyPrompts` (default 10) and `summary.minMinutes` (default 15): how often the working-memory summary refreshes BRAIN.md's Last Session, as pickers in ⚙ Settings → Memory & scanning.
+
 ### Changed
 - The `feedback_rules` MCP tool returns an index of the active rules (path, title, one-line description, updated), newest first; `full: true` adds each rule's text and `limit` keeps the newest. On a vault with 70 rules one call went from about 20k tokens to about 5k. `feedback-review` asks for the text; `cross-review` reads the index and then only the rules it needs.
 - `memory_list` returns the same kind of index grouped by type, with `type` and `limit` filters, instead of every memory's frontmatter; `session_recall` cuts a daily note at `maxChars` (default 24,000) and says how to read the rest. Every MCP tool's JSON is compact.
 
 ### Fixed
+- The working-memory summary ran every few minutes in a busy session and not at all in the next one. It counted every user-role entry, and Claude Code writes each tool result and slash command as one (43 for 2 prompts in one transcript), against a single marker per day shared by every session. It now counts only the prompts you type, keeps one marker per session on both hosts, and runs every 10 prompts at most every 15 minutes.
 - `feedback_rules` and `memory_list` no longer return the correction detector's unreviewed drafts (`brain/memory/feedback/_drafts/`) as rules and memories.
 - The terminal no longer leaks listeners. Every visit to Pulse or Term left three terminal-pool listeners behind for as long as Obsidian ran, and a closed panel kept redrawing its tabs; each panel now removes its own when it closes.
 - The Pulse command deck's `/reflect` only printed a prompt meant for a session and wrote nothing. It is now `/reflect-week` and writes this week's reflection to `brain/reflections/` in one click through the model provider (the reasoner model, within `reasoner.perCallUsd` and `reasoner.perDayUsd`); the notice shows the saved path, or why no model was available.
