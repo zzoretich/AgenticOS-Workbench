@@ -2,7 +2,7 @@ import { Notice, TFile } from "obsidian";
 import type { TAbstractFile } from "obsidian";
 import type AgenticOSPlugin from "../../main";
 import type { WorkbenchView } from "./WorkbenchView";
-import { loadRuns, AgentRun, RUNS_PATH, formatDuration, formatRelative, formatClockTime } from "../data/runs";
+import { loadRuns, AgentRun, touchesRuns, formatDuration, formatRelative, formatClockTime } from "../data/runs";
 import { loadRunDetail, RunDetail, formatEventLabel } from "../data/runDetail";
 import { setPendingRunId, VIEW_TYPE_RUN_INSPECTOR } from "./RunInspectorView";
 import { formatUSD } from "../data/cost";
@@ -37,7 +37,7 @@ export class RunsTab {
       this.listenersRegistered = true;
       this.view.registerEvent(
         this.plugin.app.vault.on("modify", (f: TAbstractFile) => {
-          if (f.path === RUNS_PATH) this.schedule();
+          if (touchesRuns(f.path)) this.schedule();
         })
       );
       this.view.registerEvent(this.plugin.bus.on("runs-appended", () => this.schedule()));

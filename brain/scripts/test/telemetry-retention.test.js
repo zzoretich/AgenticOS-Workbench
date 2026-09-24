@@ -27,7 +27,7 @@ function fixture() {
 test('pruneAgentRuns removes day folders and rows older than retentionDays, keeps live/', () => {
   const { runsDir, now, day } = fixture();
   const r = pruneAgentRuns({ runsDir, retentionDays: 30, now });
-  assert.deepEqual(r, { removedDirs: 2, keptRows: 2, droppedRows: 2 });
+  assert.deepEqual(r, { removedDirs: 2, keptRows: 2, droppedRows: 2, droppedCosts: 0 });
   assert.deepEqual(fs.readdirSync(runsDir).sort(), [day(0), day(10), 'live', 'runs.jsonl'].sort());
   const rows = fs.readFileSync(runsDir + '/runs.jsonl', 'utf8').trim().split('\n').map((l) => JSON.parse(l).id);
   assert.deepEqual(rows, ['b', 'c']);
@@ -35,7 +35,20 @@ test('pruneAgentRuns removes day folders and rows older than retentionDays, keep
 
 test('retentionDays 0 or a missing dir is a no-op', () => {
   const { runsDir, now } = fixture();
-  assert.deepEqual(pruneAgentRuns({ runsDir, retentionDays: 0, now }), { removedDirs: 0, keptRows: 0, droppedRows: 0 });
+  assert.deepEqual(pruneAgentRuns({ runsDir, retentionDays: 0, now }), { removedDirs: 0, keptRows: 0, droppedRows: 0, droppedCosts: 0 });
   assert.equal(fs.readdirSync(runsDir).length, 6);
-  assert.deepEqual(pruneAgentRuns({ runsDir: path.join(runsDir, 'nope'), retentionDays: 30, now }), { removedDirs: 0, keptRows: 0, droppedRows: 0 });
+  assert.deepEqual(pruneAgentRuns({ runsDir: path.join(runsDir, 'nope'), retentionDays: 30, now }), { removedDirs: 0, keptRows: 0, droppedRows: 0, droppedCosts: 0 });
+});
+
+test('costs.jsonl is pruned by its `at` in the same pass, and no lock file is left behind (append-only-runs D4)', () => {
+  const { runsDir, now } = fixture();
+  fs.writeFileSync(path.join(runsDir, 'costs.jsonl'), [
+    JSON.stringify({ session_id: 'old', cost_usd: 1, at: new Date(now - 40 * 86400000).toISOString() }),
+    JSON.stringify({ session_id: 'new', cost_usd: 2, at: new Date(now).toISOString() }),
+  ].join('\n') + '\n');
+  const r = pruneAgentRuns({ runsDir, retentionDays: 30, now });
+  assert.equal(r.droppedCosts, 1);
+  const kept = fs.readFileSync(path.join(runsDir, 'costs.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l).session_id);
+  assert.deepEqual(kept, ['new']);
+  assert.deepEqual(fs.readdirSync(runsDir).filter((n) => n.endsWith('.lock') || n.endsWith('.tmp')), []);
 });

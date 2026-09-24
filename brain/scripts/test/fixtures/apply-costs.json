@@ -1,0 +1,69 @@
+{
+  "about": "Shared cases for applyCosts: brain/scripts/lib/runs-log.js and obsidian-plugin/src/data/runs.ts must agree on every one (spec 2026-09-24-append-only-runs D3).",
+  "cases": [
+    {
+      "name": "one session run takes its session's cost record",
+      "runs": [{ "id": "sess-a", "session_id": "a", "script": "session", "started_at": "2026-09-24T10:00:00Z", "ended_at": "2026-09-24T11:00:00Z", "cost_usd": null }],
+      "costs": [{ "session_id": "a", "cost_usd": 1.25, "cost_source": "token-analyzer", "tokens": 900, "at": "2026-09-24T11:01:00Z" }],
+      "expect": [{ "id": "sess-a", "cost_usd": 1.25, "cost_source": "token-analyzer", "tokens": 900 }]
+    },
+    {
+      "name": "a continued session is counted once, on its latest segment",
+      "runs": [
+        { "id": "sess-b", "session_id": "b", "script": "session", "segment": 1, "started_at": "2026-09-24T09:00:00Z", "ended_at": "2026-09-24T09:40:00Z", "cost_usd": null },
+        { "id": "sess-b-s2", "session_id": "b", "script": "session", "segment": 2, "started_at": "2026-09-24T12:00:00Z", "ended_at": "2026-09-24T13:00:00Z", "cost_usd": null }
+      ],
+      "costs": [{ "session_id": "b", "cost_usd": 30.1, "cost_source": "token-analyzer", "at": "2026-09-24T13:02:00Z" }],
+      "expect": [
+        { "id": "sess-b", "cost_usd": 0, "cost_counted_on": "sess-b-s2" },
+        { "id": "sess-b-s2", "cost_usd": 30.1, "cost_source": "token-analyzer" }
+      ]
+    },
+    {
+      "name": "rows costed before costs.jsonl keep one copy of the session's cost, on the latest row",
+      "runs": [
+        { "id": "sess-c", "session_id": "c", "script": "session", "ended_at": "2026-09-23T11:31:00Z", "cost_usd": 50.77, "cost_source": "token-analyzer" },
+        { "id": "sess-c", "session_id": "c", "script": "session", "ended_at": "2026-09-23T16:12:00Z", "cost_usd": 50.77, "cost_source": "token-analyzer" }
+      ],
+      "costs": [],
+      "expect": [
+        { "id": "sess-c", "cost_usd": 0, "cost_counted_on": "sess-c" },
+        { "id": "sess-c", "cost_usd": 50.77 }
+      ]
+    },
+    {
+      "name": "the newest cost record wins",
+      "runs": [{ "id": "sess-d", "session_id": "d", "script": "session", "ended_at": "2026-09-24T10:00:00Z", "cost_usd": null }],
+      "costs": [
+        { "session_id": "d", "cost_usd": 2, "cost_source": "token-analyzer", "at": "2026-09-24T10:05:00Z" },
+        { "session_id": "d", "cost_usd": 3.5, "cost_source": "token-analyzer", "at": "2026-09-24T14:05:00Z" },
+        { "session_id": "d", "cost_usd": 1, "cost_source": "token-analyzer", "at": "2026-09-24T09:05:00Z" }
+      ],
+      "expect": [{ "id": "sess-d", "cost_usd": 3.5 }]
+    },
+    {
+      "name": "an uncosted session stays null on every row",
+      "runs": [
+        { "id": "sess-e", "session_id": "e", "script": "session", "ended_at": "2026-09-24T08:00:00Z", "cost_usd": null },
+        { "id": "sess-e-s2", "session_id": "e", "script": "session", "ended_at": "2026-09-24T09:00:00Z", "cost_usd": null }
+      ],
+      "costs": [],
+      "expect": [{ "id": "sess-e", "cost_usd": null }, { "id": "sess-e-s2", "cost_usd": null }]
+    },
+    {
+      "name": "a headless run keeps its own cost, even with a record for its session",
+      "runs": [{ "id": "run-tick-1", "session_id": "f", "script": "tick", "ended_at": "2026-09-24T07:00:00Z", "cost_usd": 0.06 }],
+      "costs": [{ "session_id": "f", "cost_usd": 9, "at": "2026-09-24T07:01:00Z" }],
+      "expect": [{ "id": "run-tick-1", "cost_usd": 0.06 }]
+    },
+    {
+      "name": "the Workbench's old crashed row (no session_id) joins its session by run id",
+      "runs": [
+        { "id": "sess-g", "script": "session", "status": "crashed", "started_at": "2026-09-24T04:14:00Z", "ended_at": "2026-09-24T11:31:00Z", "cost_usd": null },
+        { "id": "sess-g", "session_id": "g", "script": "session", "started_at": "2026-09-24T14:56:00Z", "ended_at": "2026-09-24T16:12:00Z", "cost_usd": null }
+      ],
+      "costs": [{ "session_id": "g", "cost_usd": 12, "cost_source": "token-analyzer", "at": "2026-09-24T16:53:00Z" }],
+      "expect": [{ "id": "sess-g", "cost_usd": 0, "cost_counted_on": "sess-g" }, { "id": "sess-g", "cost_usd": 12 }]
+    }
+  ]
+}

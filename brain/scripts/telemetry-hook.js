@@ -190,7 +190,8 @@ function endRun(sessionId, reason, opts = {}) {
     fs.mkdirSync(dayDir, { recursive: true });
     fs.writeFileSync(path.join(dayDir, `${id}.json`), JSON.stringify({ id, summary, events }, null, 2));
   } catch (_) {}
-  try { fs.appendFileSync(SUMMARY_LOG, JSON.stringify(summary) + '\n'); } catch (_) {}
+  // Waits (briefly) for a retention rewrite to finish so the row is never lost (spec 2026-09-24-append-only-runs D4).
+  try { require('./lib/fsx.js').appendLineSync(SUMMARY_LOG, JSON.stringify(summary), { lock: true }); } catch (_) {}
   try { fs.unlinkSync(lf); } catch (_) {}
   return true;
 }

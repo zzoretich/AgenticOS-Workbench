@@ -10,7 +10,7 @@ import { TerminalPool } from "./src/data/terminalPool";
 import { setPluginDir as setTerminalPluginDir } from "./src/data/terminalSession";
 import { AgenticOSSettings, AgenticOSSettingTab, DEFAULT_SETTINGS } from "./src/settings";
 import { loadSnapshot, SNAPSHOT_PATH } from "./src/data/snapshot";
-import { loadRuns, RUNS_PATH, formatRelative } from "./src/data/runs";
+import { loadRuns, RUNS_PATH, touchesRuns, formatRelative } from "./src/data/runs";
 import { CaptureModal } from "./src/ui/CaptureModal";
 import { HeartbeatClient } from "./src/data/heartbeatClient";
 import { LiveRunsWatcher } from "./src/data/liveRuns";
@@ -115,7 +115,7 @@ export default class AgenticOSPlugin extends Plugin {
     this.rebuildStatusBar();
 
     this.registerEvent(this.app.vault.on("modify", (file: TAbstractFile) => {
-      if (file.path === SNAPSHOT_PATH || file.path === RUNS_PATH) this.refreshStatusBar();
+      if (file.path === SNAPSHOT_PATH || touchesRuns(file.path)) this.refreshStatusBar();
     }));
 
     this.app.workspace.onLayoutReady(async () => {

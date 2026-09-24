@@ -21,10 +21,12 @@ anything but a positive number is rejected. `cost.enabled` lives in `agenticos.j
 ## What you get
 
 - At SessionEnd, `auto-cost.js` finds the session transcript under `<configDir>/projects/*/`,
-  runs the analyzer, and patches `cost_usd` into `brain/_index/agent-runs/runs.jsonl`. Snapshots
+  runs the analyzer, and appends the session's cost to `brain/_index/agent-runs/costs.jsonl`;
+  `runs.jsonl` itself is never rewritten. Everything that shows a cost reads the two together and
+  counts a session once, on its latest run, however many runs it has. Snapshots
   land in `brain/_index/cost/snapshots/` (gitignored). For a Codex session (the hook fired with
   `AOS_HOST=codex`) the rollout under `<codex home>/sessions/` is priced in-process instead and
-  patched with `cost_source: "codex-rollout"`; the model comes from the run record, the rates from
+  recorded with `cost_source: "codex-rollout"`; the model comes from the run record, the rates from
   `brain/scripts/sdk/lib/codex-pricing.js`.
 - `node brain/scripts/auto-cost.js --backfill` costs every past session that still has a transcript.
 - The Pulse COST row and the cost Fix Queue cards render only when cost is enabled and

@@ -1,6 +1,6 @@
 'use strict';
-// Codex sessions are priced in-process from the rollout's token_count events and patched into
-// runs.jsonl through the same cost-sync path the Claude analyzer uses.
+// Codex sessions are priced in-process from the rollout's token_count events and recorded in
+// costs.jsonl through the same cost-sync path the Claude analyzer uses.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -56,25 +56,30 @@ test('costCodexRollout: no file → no-transcript; a rollout without token_count
   assert.match(r.detail, /unreadable/);
 });
 
-test('cost-sync patches a run from a rollout-named snapshot with cost_source codex-rollout', () => {
+test('cost-sync records a rollout-named snapshot\'s cost in costs.jsonl and never rewrites runs.jsonl (append-only-runs D2)', () => {
+  const { readRuns } = require('../lib/runs-log.js');
+  const COSTS = path.join(VAULT, 'brain', '_index', 'agent-runs', 'costs.jsonl');
+  try { fs.unlinkSync(COSTS); } catch { /* first run */ }
   const t = rolloutCopy(path.join(VAULT, 'sessions3'));
   fs.writeFileSync(RUNS, [
     JSON.stringify({ id: `sess-${SID}`, session_id: SID, script: 'session', cost_usd: null, host: 'codex', model: 'gpt-5-mini' }),
     JSON.stringify({ id: 'sess-other', session_id: 'other', script: 'session', cost_usd: null }),
   ].join('\n') + '\n');
+  const runsBefore = fs.readFileSync(RUNS, 'utf8');
   const r = costCodexRollout(t, SID, { model: runModelFor(SID, RUNS), snapshotsDir: SNAPS }); // real cost-sync child
   assert.equal(r.status, 'ok', r.detail);
-  const rows = fs.readFileSync(RUNS, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.equal(fs.readFileSync(RUNS, 'utf8'), runsBefore, 'runs.jsonl is not rewritten');
+  const rows = readRuns({ runsFile: RUNS, costsFile: COSTS });
   assert.equal(rows[0].cost_source, 'codex-rollout');
   assert.equal(rows[0].cost_usd, r.usd);
   assert.equal(rows[0].tokens, 56982);
   assert.equal(rows[1].cost_usd, null, 'the other run is untouched');
-  // a second sync with the same figure is a no-op
-  const before = fs.readFileSync(RUNS, 'utf8');
+  // a second sync with the same figure records nothing
+  const costsBefore = fs.readFileSync(COSTS, 'utf8');
   const again = spawnSync(process.execPath, [path.join(__dirname, '..', 'cost-sync.js'), '--report', r.snapshot], { encoding: 'utf8', env: { ...process.env, AOS_VAULT: VAULT } });
   assert.equal(again.status, 0, again.stderr);
-  assert.match(again.stdout, /0 runs needed patching/);
-  assert.equal(fs.readFileSync(RUNS, 'utf8'), before);
+  assert.match(again.stdout, /no cost changed/);
+  assert.equal(fs.readFileSync(COSTS, 'utf8'), costsBefore);
 });
 
 test('runModelFor reads the newest matching run record, else null', () => {
@@ -101,11 +106,12 @@ test('hostForRun: AOS_HOST from a hook, else the host the run record carries, el
 test('backfill costs a Codex run from its rollout (by the run record\'s host), not only Claude transcripts', () => {
   const { backfill } = require('../auto-cost.js');
   rolloutCopy(path.join(process.env.CODEX_HOME, 'sessions', '2026', '09', '21'));
+  try { fs.unlinkSync(path.join(VAULT, 'brain', '_index', 'agent-runs', 'costs.jsonl')); } catch { /* no cost recorded yet */ }
   fs.writeFileSync(RUNS, JSON.stringify({ id: `sess-${SID}`, session_id: SID, script: 'session', cost_usd: null, host: 'codex', model: 'gpt-5-mini' }) + '\n');
   const report = { counts: {} };
   backfill(report);
   assert.equal(report.counts.costed, 1);
-  const row = JSON.parse(fs.readFileSync(RUNS, 'utf8').trim());
+  const [row] = require('../lib/runs-log.js').readRuns({ runsFile: RUNS });
   assert.equal(row.cost_source, 'codex-rollout');
   assert.equal(row.cost_usd, priceUsd('gpt-5-mini', { inputTokens: 56562, cachedInputTokens: 48384, outputTokens: 420 }));
 });

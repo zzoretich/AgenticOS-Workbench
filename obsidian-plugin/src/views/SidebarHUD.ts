@@ -1,6 +1,6 @@
 import { ItemView, WorkspaceLeaf, TAbstractFile } from "obsidian";
 import { loadSnapshot, Snapshot, SNAPSHOT_PATH, loadSnapshotHistory, DailySnapshot, seriesFromHistory } from "../data/snapshot";
-import { loadRuns, AgentRun, RUNS_PATH, formatDuration, formatRelative, formatClockTime } from "../data/runs";
+import { loadRuns, AgentRun, touchesRuns, formatDuration, formatRelative, formatClockTime } from "../data/runs";
 import { sparkline } from "../data/sparkline";
 import { loadStaff, StaffAgent } from "../data/staff";
 import { loadPipelines, pipelineStatuses, PipelineStatus, PIPELINES_PATH } from "../data/pipelines";
@@ -47,7 +47,7 @@ export class SidebarHUDView extends ItemView {
   private registerVaultWatchers(): void {
     this.registerEvent(
       this.app.vault.on("modify", (file: TAbstractFile) => {
-        if (file.path === SNAPSHOT_PATH || file.path === RUNS_PATH || file.path === PIPELINES_PATH || file.path === PERSONA_HEARTBEAT_PATH) {
+        if (file.path === SNAPSHOT_PATH || touchesRuns(file.path) || file.path === PIPELINES_PATH || file.path === PERSONA_HEARTBEAT_PATH) {
           this.scheduleRefresh();
         }
       })

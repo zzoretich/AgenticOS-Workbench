@@ -160,12 +160,11 @@ function costCodexRollout(transcript, sessionId, { model = null, snapshotsDir = 
  *  rollout, by the host the run record carries. */
 function backfill(report) {
   if (!costEnabled()) { process.stdout.write('[auto-cost] cost module disabled — run `aos cost enable`\n'); if (report) report.disable('cost disabled'); return; }
-  let lines = [];
-  try { lines = fs.readFileSync(RUNS, 'utf8').trim().split('\n').filter(Boolean); } catch { return; }
+  // The runs with costs.jsonl laid over them: a session costed on any of its runs reads as costed on all of them.
+  const rows = require('./lib/runs-log.js').readRuns({ runsFile: RUNS });
   const seen = new Set();
   let costed = 0;
-  for (const line of lines) {
-    let r; try { r = JSON.parse(line); } catch { continue; }
+  for (const r of rows) {
     // A numeric cost — including a genuine $0.00 — means "already costed".
     if (typeof r.cost_usd === 'number') continue;
     const sid = r.session_id || (r.id || '').replace(/^sess-/, '');
