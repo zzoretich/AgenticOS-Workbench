@@ -1,0 +1,308 @@
+'use strict';
+/**
+ * settings-schema.js — one entry per setting `aos config` can show or change (spec 2026-09-24-aos-config D2).
+ * Pure: no vault, no fs. Defaults are read from config.default.json, never copied here. The keys `aos init` writes only
+ * into agenticos.json (install paths, binaries, hosts) are listed read-only with the command that changes them (D6).
+ *
+ * An entry: { key, section, label, help, type, values?, min?, gt?, max?, int?, nullable?, risk?, applies, readonly?,
+ * machine?, how?, vaultOnly?, followUp? }
+ *   type      bool | enum | number | string | model | list | object
+ *   gt        exclusive lower bound (a perCallUsd must be more than 0; a perDayUsd of 0 means no spend, D10)
+ *   risk      spend | autonomy | privacy — the HUD asks before saving these
+ *   applies   when a change takes effect: next-call | next-session | next-scan | next-duty | next-routine | next-sync |
+ *             next-check | reinstall
+ *   vaultOnly the runtime reads the key from brain/config.json alone, so it is always written there (D4)
+ *   followUp  { command, why } — printed as a `next:` line after a set (D7)
+ */
+const DEFAULTS = require('../config.default.json');
+
+const SECTIONS = [
+  { id: 'provider', label: 'Provider & models' },
+  { id: 'spend', label: 'Spend limits' },
+  { id: 'memory', label: 'Memory & scanning' },
+  { id: 'persona', label: 'Chief of Staff' },
+  { id: 'routines', label: 'Routines' },
+  { id: 'graph', label: 'Knowledge graph' },
+  { id: 'crossReview', label: 'Cross-review' },
+  { id: 'sharing', label: 'Skills & agents' },
+  { id: 'telemetry', label: 'Telemetry & privacy' },
+  { id: 'updates', label: 'Updates' },
+  { id: 'hosts', label: 'Hosts & install' },
+];
+
+const RUNNERS = ['auto', 'claude', 'codex'];
+const CODEX_EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh'];
+const REASONER_EFFORTS = ['low', 'medium', 'high'];
+const CROSS_EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+const ROUTINES_SYNC = { command: 'aos routines sync', why: 'the schedules carry the duty model' };
+const SKILLS_SYNC = { command: 'aos skills sync', why: 'share or unshare now instead of at the next session end' };
+const AGENTS_SYNC = { command: 'aos agents sync', why: 'share or unshare now instead of at the next session end' };
+
+const perCall = (key, section, label, help) => ({ key, section, label, help, type: 'number', gt: 0, risk: 'spend', applies: 'next-call' });
+const perDay = (key, section, label, help) => ({ key, section, label, help: `${help} 0 means no spend.`, type: 'number', min: 0, risk: 'spend', applies: 'next-call' });
+
+const SETTINGS = [
+  // ── Provider & models ───────────────────────────────────────────────────────
+  { key: 'provider', section: 'provider', label: 'Background provider', type: 'enum', values: ['auto', 'ollama', 'claude', 'codex', 'none'], risk: 'spend', applies: 'next-call',
+    help: 'Who answers background work: auto picks Ollama when it answers, then Claude, then Codex; none turns background model calls off.' },
+  { key: 'claude.model', section: 'provider', label: 'Claude model', type: 'model', applies: 'next-call', followUp: ROUTINES_SYNC,
+    help: 'Claude model for background hook calls, and the duty model when the persona interview named none. An alias (haiku) or a full id.' },
+  { key: 'codex.model', section: 'provider', label: 'Codex model', type: 'model', nullable: true, applies: 'next-call',
+    help: 'Codex model for background calls; null uses your own Codex default. Never a Claude alias.' },
+  { key: 'codex.effort', section: 'provider', label: 'Codex effort', type: 'enum', values: CODEX_EFFORTS, applies: 'next-call',
+    help: 'Reasoning effort for background Codex calls.' },
+  { key: 'reasoner.model', section: 'provider', label: 'Reasoner model', type: 'model', applies: 'next-call',
+    help: 'Claude model the Chat tab and other reasoning calls use.' },
+  { key: 'reasoner.codexModel', section: 'provider', label: 'Reasoner model on Codex', type: 'model', nullable: true, applies: 'next-call',
+    help: 'Codex model for the reasoner when Codex answers it; null falls back to codex.model.' },
+  { key: 'reasoner.effort', section: 'provider', label: 'Reasoner effort', type: 'enum', values: REASONER_EFFORTS, applies: 'next-call',
+    help: 'Thinking effort for reasoner calls.' },
+  { key: 'ollama.host', section: 'provider', label: 'Ollama host', type: 'string', applies: 'next-call',
+    help: 'Where a local Ollama answers.' },
+  { key: 'ollama.port', section: 'provider', label: 'Ollama port', type: 'number', int: true, min: 1, max: 65535, applies: 'next-call',
+    help: 'Ollama port.' },
+
+  // ── Spend limits ────────────────────────────────────────────────────────────
+  perCall('claude.perCallUsd', 'spend', 'Background call cap (Claude)', 'Most one background Claude call may spend, in USD.'),
+  perDay('claude.perDayUsd', 'spend', 'Background daily cap (Claude)', 'Most background hook calls may spend per day on Claude, in USD.'),
+  perCall('codex.perCallUsd', 'spend', 'Background call cap (Codex)', 'Most one background Codex call may spend, in USD (estimated after the call).'),
+  perDay('codex.perDayUsd', 'spend', 'Background daily cap (Codex)', 'Most background hook calls may spend per day on Codex, in USD.'),
+  perCall('reasoner.perCallUsd', 'spend', 'Reasoner call cap', 'Most one reasoner call may spend, in USD.'),
+  perDay('reasoner.perDayUsd', 'spend', 'Reasoner daily cap', 'Most reasoner calls may spend per day, in USD.'),
+  perCall('persona.perDutyUsd', 'spend', 'Duty cap', 'Most one Chief of Staff duty may spend, in USD.'),
+  perDay('persona.perDayUsd', 'spend', 'Chief of Staff daily cap', 'Most the Chief of Staff duties may spend per day, in USD.'),
+  perCall('routines.perRunUsd', 'spend', 'Routine run cap', 'Most one prompt routine run may spend, in USD, unless the routine names its own budget.'),
+  perDay('routines.perDayUsd', 'spend', 'Routines daily cap', 'Most prompt routines may spend per day, in USD.'),
+  perCall('graph.semantic.perCallUsd', 'spend', 'Semantic graph call cap', 'Most one semantic graph pass may spend, in USD.'),
+  perDay('graph.semantic.perDayUsd', 'spend', 'Semantic graph daily cap', 'Most the semantic graph pass may spend per day, in USD.'),
+  perCall('crossReview.perCallUsd', 'spend', 'Cross-review call cap', 'Most one cross-review call may spend, in USD.'),
+  perDay('crossReview.perDayUsd', 'spend', 'Cross-review daily cap', 'Most cross-review calls may spend per day, in USD.'),
+  { key: 'cost.enabled', section: 'spend', label: 'Session costing', type: 'bool', applies: 'next-session',
+    help: 'Cost every session at its end (needs python3; turning it on installs the analyzer).' },
+  { key: 'cost.monthlyBudget', section: 'spend', label: 'Monthly budget', type: 'number', gt: 0, nullable: true, applies: 'next-session',
+    help: 'Monthly budget the cost report compares session cost against. Shown only, never enforced; null for none.' },
+
+  // ── Memory & scanning ───────────────────────────────────────────────────────
+  { key: 'dailyNote.layout', section: 'memory', label: 'Daily note layout', type: 'string', vaultOnly: true, applies: 'next-session',
+    help: 'Where daily notes go, as a date template ({yyyy}, {MM}, {MMMM}, {dd}). Also rewrites Obsidian\'s Daily Notes setting.' },
+  { key: 'recallRoots', section: 'memory', label: 'Recall roots', type: 'list', applies: 'next-call',
+    help: 'Vault folders recall searches, as a JSON list.' },
+  { key: 'quickLinks', section: 'memory', label: 'BRAIN.md quick links', type: 'list', applies: 'next-scan',
+    help: 'Lines BRAIN.md lists under its quick links, as a JSON list.' },
+  { key: 'roster.orchestrators', section: 'memory', label: 'Orchestrator roster', type: 'object', applies: 'next-session',
+    help: 'Named orchestrators for the heartbeat roster: {"name": {"nickname", "trigger", "match"}}.' },
+  { key: 'scan.fileMapBudget', section: 'memory', label: 'File map budget', type: 'number', int: true, min: 0, applies: 'next-scan',
+    help: 'Files a scan may summarize with the local provider.' },
+  { key: 'scan.embedBudget', section: 'memory', label: 'Embedding budget', type: 'number', int: true, min: 0, applies: 'next-scan',
+    help: 'Notes a scan may embed with the local provider.' },
+  { key: 'scan.fileMapBudgetUnderClaude', section: 'memory', label: 'File map budget on Claude', type: 'number', int: true, min: 0, risk: 'spend', applies: 'next-scan',
+    help: 'Files a scan may summarize when Claude is the provider (paid; 0 = off).' },
+  { key: 'scan.insightsUnderClaude', section: 'memory', label: 'Workspace insights on Claude', type: 'bool', risk: 'spend', applies: 'next-scan',
+    help: 'Let scans write workspace insights with Claude (paid).' },
+  { key: 'scan.fileMapBudgetUnderCodex', section: 'memory', label: 'File map budget on Codex', type: 'number', int: true, min: 0, risk: 'spend', applies: 'next-scan',
+    help: 'Files a scan may summarize when Codex is the provider (paid; 0 = off).' },
+  { key: 'scan.insightsUnderCodex', section: 'memory', label: 'Workspace insights on Codex', type: 'bool', risk: 'spend', applies: 'next-scan',
+    help: 'Let scans write workspace insights with Codex (paid).' },
+  { key: 'scan.autoSweepOrphans', section: 'memory', label: 'Sweep orphaned session residue', type: 'bool', applies: 'next-scan',
+    help: 'Let scans delete empty session-env and file-history folders a crashed session left behind. A boolean in brain/_index/scanner-config.json still wins.' },
+
+  // ── Chief of Staff ──────────────────────────────────────────────────────────
+  { key: 'persona.enabled', section: 'persona', label: 'Chief of Staff', type: 'bool', risk: 'autonomy', applies: 'next-session',
+    help: 'The whole Chief of Staff: its context in sessions, the watchdog and the scheduled duties (persona/DISABLED follows it).' },
+  { key: 'persona.runner', section: 'persona', label: 'Duty runner', type: 'enum', values: RUNNERS, applies: 'next-duty',
+    help: 'Which host runs the duties: auto, claude or codex.' },
+  { key: 'persona.codexModel', section: 'persona', label: 'Duty model on Codex', type: 'model', nullable: true, applies: 'next-duty',
+    help: 'Codex model for duties; null uses codex.model, then your Codex default.' },
+  { key: 'persona.watchdog.graceMinutes', section: 'persona', label: 'Watchdog grace', type: 'number', int: true, min: 1, applies: 'next-session',
+    help: 'Minutes past its schedule before a missed duty is flagged.' },
+  { key: 'persona.watchdog.notify', section: 'persona', label: 'Watchdog notifications', type: 'bool', applies: 'next-session',
+    help: 'Send a desktop notification when a duty fails or goes missing.' },
+  { key: 'persona.tick.flagAgeDays', section: 'persona', label: 'Stale flag age', type: 'number', int: true, min: 1, applies: 'next-duty',
+    help: 'Days before an open flag counts as stale.' },
+  { key: 'persona.tick.earlyReflect.corrections', section: 'persona', label: 'Early reflect: corrections', type: 'number', int: true, min: 1, applies: 'next-duty',
+    help: 'Corrections in a day that trigger an early reflection.' },
+  { key: 'persona.tick.earlyReflect.dutyFailures', section: 'persona', label: 'Early reflect: duty failures', type: 'number', int: true, min: 1, applies: 'next-duty',
+    help: 'Duty failures in a day that trigger an early reflection.' },
+  { key: 'persona.autoapply.minVerified', section: 'persona', label: 'Autoapply threshold', type: 'number', int: true, min: 1, risk: 'autonomy', applies: 'next-duty',
+    help: 'Verified outcomes a proposal class needs before the Chief of Staff may apply it without asking. Lower means more autonomy.' },
+
+  // ── Routines ────────────────────────────────────────────────────────────────
+  { key: 'routines.enabled', section: 'routines', label: 'Routines', type: 'bool', risk: 'autonomy', applies: 'next-routine',
+    help: 'Let scheduled routines run. Off skips every run; the schedules stay loaded.' },
+  { key: 'routines.runner', section: 'routines', label: 'Routine runner', type: 'enum', values: RUNNERS, applies: 'next-routine',
+    help: 'Which host runs prompt routines: auto, claude or codex.' },
+  { key: 'routines.codexModel', section: 'routines', label: 'Routine model on Codex', type: 'model', nullable: true, applies: 'next-routine',
+    help: 'Codex model for prompt routines; null uses codex.model, then your Codex default.' },
+  { key: 'routines.tools', section: 'routines', label: 'Routine tools', type: 'string', risk: 'autonomy', applies: 'next-routine',
+    help: 'Tools a prompt routine may use, comma-separated (Read,Glob,Grep). Adding a writing tool lets routines change files.' },
+  { key: 'routines.externalLabels', section: 'routines', label: 'External schedule labels', type: 'list', applies: 'next-session',
+    help: 'launchd labels of your own schedules the Routines tab lists read-only, as a JSON list.' },
+
+  // ── Knowledge graph ─────────────────────────────────────────────────────────
+  { key: 'graph.enabled', section: 'graph', label: 'Knowledge graph', type: 'bool', applies: 'next-scan',
+    help: 'Rebuild the vault graph on each scan (local, no model).' },
+  { key: 'graph.out', section: 'graph', label: 'Graph folder', type: 'string', applies: 'next-scan',
+    help: 'Where the graph is written, relative to the vault.' },
+  { key: 'graph.timeoutSec', section: 'graph', label: 'Graph build timeout', type: 'number', int: true, gt: 0, applies: 'next-scan',
+    help: 'Seconds a structural build may take.' },
+  { key: 'graph.staleDays', section: 'graph', label: 'Graph stale after', type: 'number', int: true, min: 1, applies: 'next-scan',
+    help: 'Days before doctor calls the graph stale.' },
+  { key: 'graph.semantic.enabled', section: 'graph', label: 'Semantic graph pass', type: 'enum', values: [true, false, 'auto'], risk: 'spend', applies: 'next-scan',
+    help: 'The daily model pass that adds concepts and links: true, false, or auto (on unless the provider is ollama or none).' },
+  { key: 'graph.semantic.runner', section: 'graph', label: 'Semantic pass runner', type: 'enum', values: RUNNERS, applies: 'next-scan',
+    help: 'Which host runs the semantic pass: auto, claude or codex.' },
+  { key: 'graph.semantic.everyHours', section: 'graph', label: 'Semantic pass interval', type: 'number', gt: 0, applies: 'next-scan',
+    help: 'Hours between semantic passes.' },
+  { key: 'graph.semantic.tokenBudget', section: 'graph', label: 'Semantic token budget', type: 'number', int: true, gt: 0, risk: 'spend', applies: 'next-scan',
+    help: 'Tokens of changed notes one semantic pass may read.' },
+  { key: 'graph.semantic.timeoutSec', section: 'graph', label: 'Semantic pass timeout', type: 'number', int: true, gt: 0, applies: 'next-scan',
+    help: 'Seconds one semantic pass may take.' },
+
+  // ── Cross-review ────────────────────────────────────────────────────────────
+  { key: 'crossReview.enabled', section: 'crossReview', label: 'Cross-review', type: 'bool', applies: 'next-call',
+    help: 'Let cross-review and handoff call the other host.' },
+  { key: 'crossReview.claudeModel', section: 'crossReview', label: 'Cross-review Claude model', type: 'model', nullable: true, applies: 'next-call',
+    help: 'Claude model for reviews; null uses Claude Code\'s default.' },
+  { key: 'crossReview.codexModel', section: 'crossReview', label: 'Cross-review Codex model', type: 'model', nullable: true, applies: 'next-call',
+    help: 'Codex model for reviews; null uses your Codex default.' },
+  { key: 'crossReview.effort', section: 'crossReview', label: 'Cross-review effort', type: 'enum', values: CROSS_EFFORTS, nullable: true, applies: 'next-call',
+    help: 'Effort for reviews; null uses each CLI\'s default. Claude takes low to max, Codex minimal to xhigh.' },
+  { key: 'crossReview.timeoutSec', section: 'crossReview', label: 'Cross-review timeout', type: 'number', int: true, gt: 0, applies: 'next-call',
+    help: 'Seconds one review call may take.' },
+  { key: 'crossReview.rounds', section: 'crossReview', label: 'Cross-review rounds', type: 'number', int: true, min: 1, max: 20, applies: 'next-call',
+    help: 'Most plan-review rounds before the loop stops.' },
+
+  // ── Skills & agents ─────────────────────────────────────────────────────────
+  { key: 'skills.sync', section: 'sharing', label: 'Share skills', type: 'bool', applies: 'next-sync', followUp: SKILLS_SYNC,
+    help: 'Copy each host\'s own skills to the other host at session end (needs both hosts).' },
+  { key: 'skills.exclude', section: 'sharing', label: 'Skills not shared', type: 'list', applies: 'next-sync', followUp: SKILLS_SYNC,
+    help: 'Skill names never shared, as a JSON list (aos skills exclude|include edits it too).' },
+  { key: 'agents.sync', section: 'sharing', label: 'Share agents', type: 'bool', applies: 'next-sync', followUp: AGENTS_SYNC,
+    help: 'Copy each host\'s own subagents to the other host at session end (needs both hosts).' },
+  { key: 'agents.exclude', section: 'sharing', label: 'Agents not shared', type: 'list', applies: 'next-sync', followUp: AGENTS_SYNC,
+    help: 'Agent names never shared, as a JSON list (aos agents exclude|include edits it too).' },
+
+  // ── Telemetry & privacy ─────────────────────────────────────────────────────
+  { key: 'telemetry.enabled', section: 'telemetry', label: 'Telemetry', type: 'bool', applies: 'next-session',
+    help: 'Record agent runs under brain/_index/agent-runs/ (Runs tab, Pulse, spend).' },
+  { key: 'telemetry.redact', section: 'telemetry', label: 'Redact tool inputs', type: 'bool', risk: 'privacy', applies: 'next-session',
+    help: 'Keep tool inputs out of telemetry. Off stores them as typed.' },
+  { key: 'telemetry.retentionDays', section: 'telemetry', label: 'Telemetry retention', type: 'number', int: true, min: 1, applies: 'next-scan',
+    help: 'Days of run telemetry kept.' },
+  { key: 'telemetry.staleAfterMinutes', section: 'telemetry', label: 'Run stale after', type: 'number', int: true, min: 1, applies: 'next-scan',
+    help: 'Minutes without activity before a live run counts as crashed.' },
+
+  // ── Updates ─────────────────────────────────────────────────────────────────
+  { key: 'updates.check', section: 'updates', label: 'Update checks', type: 'bool', applies: 'next-check',
+    help: 'Check for a new release at session start.' },
+  { key: 'updates.intervalHours', section: 'updates', label: 'Update check interval', type: 'number', gt: 0, applies: 'next-check',
+    help: 'Hours between update checks.' },
+
+  // ── Hosts & install: read-only, D6 ──────────────────────────────────────────
+  ...[
+    ['version', 'Installed version', 'aos upgrade'],
+    ['vault', 'Vault', 'aos init --vault <dir>'],
+    ['node', 'Node binary', 'aos upgrade (records the node that runs it)'],
+    ['claudeConfigDir', 'Claude Code config folder', 'aos init with CLAUDE_CONFIG_DIR set'],
+    ['claude.bin', 'claude binary', 'aos upgrade (re-resolves it)'],
+    ['codex.bin', 'codex binary', 'aos upgrade (re-resolves it)'],
+    ['graph.bin', 'graphify binary', 'aos upgrade (reinstalls the pinned graphify)'],
+    ['hosts.claude.enabled', 'Claude Code host', 'aos init --host claude|both, or aos uninstall --host claude'],
+    ['hosts.claude.configDir', 'Claude Code config folder (host)', 'aos init with CLAUDE_CONFIG_DIR set'],
+    ['hosts.claude.bin', 'claude binary (host)', 'aos upgrade (re-resolves it)'],
+    ['hosts.codex.enabled', 'Codex host', 'aos init --host codex|both, or aos uninstall --host codex'],
+    ['hosts.codex.home', 'Codex home', 'aos init with CODEX_HOME set'],
+    ['hosts.codex.bin', 'codex binary (host)', 'aos upgrade (re-resolves it)'],
+    ['hosts.codex.install', 'Codex wiring', 'aos upgrade (plugin when the Codex CLI supports it, else direct)'],
+  ].map(([key, label, how]) => ({ key, section: 'hosts', label, type: 'string', readonly: true, machine: true, applies: 'reinstall', how,
+    help: 'Written by the installer into agenticos.json; the launcher, schedules and Codex wiring carry it.' })),
+];
+
+const BY_KEY = new Map(SETTINGS.map((e) => [e.key, e]));
+
+function isPlainObject(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); }
+
+/** The value at a dotted key, or undefined. */
+function getPath(obj, key) {
+  let o = obj;
+  for (const k of key.split('.')) {
+    if (!isPlainObject(o) || !Object.prototype.hasOwnProperty.call(o, k)) return undefined;
+    o = o[k];
+  }
+  return o;
+}
+
+function entry(key) { return BY_KEY.get(key) || null; }
+/** True when `key` is an ancestor of a setting (e.g. `graph.semantic`), so a config walk descends into it. */
+function isPrefix(key) { return SETTINGS.some((e) => e.key.startsWith(`${key}.`)); }
+function defaultOf(e) { return e.machine ? undefined : structuredClone(getPath(DEFAULTS, e.key)); }
+
+/** Every leaf of a config object as a dotted key: a scalar, an array, or an empty object ends a branch. */
+function leafKeys(obj, prefix = '') {
+  const out = [];
+  for (const [k, v] of Object.entries(obj)) {
+    const key = prefix ? `${prefix}.${k}` : k;
+    if (isPlainObject(v) && Object.keys(v).length) out.push(...leafKeys(v, key));
+    else out.push(key);
+  }
+  return out;
+}
+
+const BOOL_WORDS = { true: true, on: true, yes: true, false: false, off: false, no: false };
+
+/** CLI text → a value of the entry's type. Throws with a message that names the key and an example. */
+function parseValue(e, text) {
+  const t = String(text).trim();
+  if (e.nullable && t === 'null') return null;
+  if (e.type === 'bool') {
+    const b = BOOL_WORDS[t.toLowerCase()];
+    if (b === undefined) throw new Error(`${e.key} takes true or false (got "${t}")`);
+    return b;
+  }
+  if (e.type === 'enum') {
+    if (e.values.includes(t)) return t;
+    const b = BOOL_WORDS[t.toLowerCase()];
+    if (b !== undefined && e.values.includes(b)) return b;
+    throw new Error(`${e.key} takes ${e.values.map(String).join(' | ')}${e.nullable ? ' | null' : ''} (got "${t}")`);
+  }
+  if (e.type === 'number') {
+    const n = t === '' ? NaN : Number(t);
+    if (!Number.isFinite(n)) throw new Error(`${e.key} takes a number (got "${t}")`);
+    return n;
+  }
+  if (e.type === 'list' || e.type === 'object') {
+    try { return JSON.parse(t); } catch { throw new Error(`${e.key} takes JSON, e.g. ${e.type === 'list' ? '\'["a","b"]\'' : '\'{"name":{}}\''} (got "${t}")`); }
+  }
+  return t;
+}
+
+/** null when `value` is valid for the entry, else a one-line reason. */
+function validate(e, value) {
+  if (value === null) return e.nullable ? null : `${e.key} cannot be null`;
+  switch (e.type) {
+    case 'bool': return typeof value === 'boolean' ? null : `${e.key} must be true or false`;
+    case 'enum': return e.values.includes(value) ? null : `${e.key} must be one of ${e.values.map(String).join(' | ')}`;
+    case 'number':
+      if (typeof value !== 'number' || !Number.isFinite(value)) return `${e.key} must be a number`;
+      if (e.int && !Number.isInteger(value)) return `${e.key} must be a whole number`;
+      if (e.gt !== undefined && !(value > e.gt)) return `${e.key} must be more than ${e.gt}${e.risk === 'spend' ? ' (to stop spending, set the matching perDayUsd to 0 or turn the feature off)' : ''}`;
+      if (e.min !== undefined && value < e.min) return `${e.key} must be at least ${e.min}`;
+      if (e.max !== undefined && value > e.max) return `${e.key} must be at most ${e.max}`;
+      return null;
+    case 'string': case 'model': return typeof value === 'string' && value.trim() !== '' ? null : `${e.key} must be a non-empty string`;
+    case 'list': return Array.isArray(value) && value.every((x) => typeof x === 'string') ? null : `${e.key} must be a JSON list of strings`;
+    case 'object': return isPlainObject(value) ? null : `${e.key} must be a JSON object`;
+    default: return `${e.key} has an unknown type`;
+  }
+}
+
+/**
+ * A daily cap from config (D10): 0 means no spend; only a missing, empty or non-numeric value takes the default.
+ * `Number(v) || d` turned a 0 back into the default for the codex, reasoner, semantic graph and cross-review caps.
+ */
+function dayCap(v, d) {
+  const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN;
+  return Number.isFinite(n) && n >= 0 ? n : d;
+}
+
+module.exports = { SECTIONS, SETTINGS, DEFAULTS, entry, isPrefix, defaultOf, getPath, leafKeys, parseValue, validate, dayCap, isPlainObject };

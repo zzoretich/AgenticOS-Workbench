@@ -29,7 +29,13 @@ const USAGE = 'usage: aos graph [status | build [--semantic [--yes]] | on | off 
 function claudeConfigDir() { return path.resolve(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')); }
 function agenticosPath(configDir) { return process.env.AOS_CONFIG || path.join(configDir, 'agenticos.json'); }
 function readJson(file) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; } }
-function writeJson(file, obj) { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, `${JSON.stringify(obj, null, 2)}\n`); }
+function writeJson(file, obj) {
+  // tmp + rename (spec 2026-09-24-aos-config D5): a reader never sees a half-written file.
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, `${JSON.stringify(obj, null, 2)}\n`);
+  fs.renameSync(tmp, file);
+}
 function isExecutable(p) { try { fs.accessSync(p, fs.constants.X_OK); return fs.statSync(p).isFile(); } catch { return false; } }
 function lastLine(s) { return String(s || '').trim().split('\n').filter(Boolean).pop() || ''; }
 function which(name) {

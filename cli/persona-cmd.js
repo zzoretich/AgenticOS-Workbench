@@ -57,7 +57,9 @@ function writeCodexModel(vault, model) {
   let cfg = {};
   try { cfg = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { if (e.code !== 'ENOENT') throw e; }
   cfg.persona = { ...(cfg.persona || {}), codexModel: model || null };
-  fs.writeFileSync(file, JSON.stringify(cfg, null, 2) + '\n');
+  const tmp = `${file}.${process.pid}.tmp`; // tmp + rename (spec 2026-09-24-aos-config D5)
+  fs.writeFileSync(tmp, JSON.stringify(cfg, null, 2) + '\n');
+  fs.renameSync(tmp, file);
 }
 
 const SKIP_MSG = 'persona: no --persona-json and no terminal interview (--yes, or stdin is not a TTY) and no stored persona/answers.json; skipping the interview (run `aos persona` later)';

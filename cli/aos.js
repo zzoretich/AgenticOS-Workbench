@@ -53,6 +53,7 @@ const USAGE = `usage:
   aos routines [list [--json] | sync | run <slug> [--dry-run] | enable <slug> | disable <slug> | next [<slug>] | hosts [--refresh] [--json] | import-cloud <file>]
   aos skills [list [--all] [--json] | sync [--dry-run] [--json] | exclude <name> | include <name> | reset <name>]
   aos agents [list [--all] [--json] | sync [--dry-run] [--json] | exclude <name> | include <name> | reset <name>]
+  aos config [list [--json] | get <key> [--json] | set <key> <value> [--dry-run] [--json] | unset <key> [--dry-run]]
   aos workspace [list [--json] | new <name> | adopt <path> [--name <slug>]]
   aos update-status [--statusline | --snooze <N>d|<N>h | --off]
   aos update-check [--quiet]
@@ -70,7 +71,14 @@ const out = {
 function configDir() { return path.resolve(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')); }
 function configPath() { return path.resolve(process.env.AOS_CONFIG || path.join(configDir(), 'agenticos.json')); }
 function readJson(p, fallback = null) { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return fallback; } }
-function writeJson(p, obj) { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, JSON.stringify(obj, null, 2) + '\n'); }
+/** tmp + rename (spec 2026-09-24-aos-config D5): a hook reading agenticos.json mid-write would otherwise get null, then
+ *  the defaults and a Claude-only host. */
+function writeJson(p, obj) {
+  fs.mkdirSync(path.dirname(p), { recursive: true });
+  const tmp = `${p}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(obj, null, 2) + '\n');
+  fs.renameSync(tmp, p);
+}
 /** readJson's strict sibling for files the USER owns: a file that exists but does not parse is refused rather
  *  than replaced, because overwriting it discards their settings with no warning (final review F7 — the shape
  *  cli/cost-cmd.js:81-87 already uses for this same brain/config.json). Missing is fine → fallback. */
@@ -425,6 +433,8 @@ async function doctor() {
     catch (e) { add('skills', false, e.message, 'warn'); }
     try { const row = require('./agents.js').doctorRow({ vault }); add(row.name, row.ok, row.detail, row.level); }
     catch (e) { add('agents', false, e.message, 'warn'); }
+    try { const row = require('./config-cmd.js').doctorRow({ configDir: configDir(), vault }); add(row.name, row.ok, row.detail, row.level); }
+    catch (e) { add('config', false, e.message, 'warn'); }
   }
   if (vault) {
     const u = require('./update-check.js');
@@ -1136,6 +1146,17 @@ async function agents(sub, flags) {
   }
 }
 
+/** `aos config <verb>` — cli/config-cmd.js (spec 2026-09-24-aos-config). */
+async function config(sub, flags) {
+  const C = require('./config-cmd.js');
+  try {
+    return await C.main([...sub, ...(flags.json ? ['--json'] : []), ...(flags.dryRun ? ['--dry-run'] : [])], { io: console, dailyNotesJson });
+  } catch (e) {
+    if (e instanceof C.UsageError) throw new UsageError(e.message);
+    throw e;
+  }
+}
+
 /** The launcher execs <vault>/brain/scripts/cli/aos.js — the copy vendored by the PREVIOUS upgrade — so an upgrade
  *  step that is new in the release being installed would only run on the second `aos upgrade`. upgrade() therefore
  *  re-execs the CLI that ships with the source it re-vendors from: this returns that file when it is not the one
@@ -1392,7 +1413,7 @@ function parseArgs(argv) {
 async function main(argv) {
   const { cmd, sub, flags } = parseArgs(argv);
   // --dry-run is an init-only preview (contract §4.3); on a mutating command it must be a loud error, never a silent no-op.
-  if (flags.dryRun && !['init', 'routines', 'skills', 'agents'].includes(cmd)) throw new UsageError('--dry-run is only supported by `aos init`, `aos routines run`, `aos skills sync` and `aos agents sync`');
+  if (flags.dryRun && !['init', 'routines', 'skills', 'agents', 'config'].includes(cmd)) throw new UsageError('--dry-run is only supported by `aos init`, `aos routines run`, `aos skills sync`, `aos agents sync`, `aos config set` and `aos config unset`');
   switch (cmd) {
     case 'init': return init(flags);
     case 'upgrade': return upgrade(flags);
@@ -1404,6 +1425,7 @@ async function main(argv) {
     case 'routines': return routines(sub, flags);
     case 'skills': return skills(sub, flags);
     case 'agents': return agents(sub, flags);
+    case 'config': return config(sub, flags);
     case 'workspace': return workspace(sub, flags);
     case 'doctor': return doctor();
     case 'status': return status();
@@ -1433,7 +1455,7 @@ module.exports = {
   doctor, status, provider, main,
   init, repoRoot, productVersion, upgradeReexecTarget, copyTree, assertVaultOk, dailyNotesJson, buildUserConfig, linkLauncher, vendorRuntime,
   installPlugin, download, obsidianBundle, terminalInstall, personaInterview, checklist,
-  upgrade, uninstall, removeSchedules, terminal, persona, cost, graph, routines, workspace, updateCheck, updateStatus, updateNotice,
+  upgrade, uninstall, removeSchedules, terminal, persona, cost, graph, routines, workspace, config, updateCheck, updateStatus, updateNotice,
   PROVIDERS, HOST_CHOICES, PLUGIN_ID, MARKETPLACE, REPO_SLUG, OBSIDIAN_PLUGIN_ID, DEFAULT_VAULT, RUNTIME_SCRIPTS, USAGE,
   VALUE_FLAGS, BOOL_FLAGS, NEGATABLE_FLAGS,
   UsageError, CheckFailed, out,

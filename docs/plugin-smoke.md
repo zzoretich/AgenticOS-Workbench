@@ -21,6 +21,14 @@ Run before tagging a release, on a vault created by `aos init` (not the develope
 - [ ] Vault root: leaving the field (blur) on a value that is not a directory shows a Notice once ("Vault root: … is not a directory — keeping …") and restores the field to the saved value.
 - [ ] Vault root: typing a valid directory changes nothing until the field loses focus; on blur it saves once and, if it differs from this vault, shows the 10 s explanation once (Task 1 of Plan 5b — no per-keystroke save or Notice); reopen Settings — the saved value is shown, including after closing the modal with Escape while the field was focused.
 
+## Config (both hosts)
+
+- [ ] `aos config` lists every section with a source per row; `aos config set telemetry.redact false --dry-run` prints `(dry run) … (would write agenticos.json)` and changes no file; `aos config unset telemetry.redact` restores the default.
+- [ ] `aos config set persona.enabled false` creates `persona/DISABLED`; `true` removes it. `aos config set vault /tmp` is refused with the `aos init` command; `AOS_HEADLESS=1 aos config set provider none` is refused.
+- [ ] `aos doctor` shows a `config` row; add `"telemetry": {"enabeld": false}` to `brain/config.json` and it warns naming the key.
+- [ ] *Claude Code:* `/aos config get provider` relays the value; `/aos config set codex.effort medium` relays the change line.
+- [ ] *Codex:* `$agenticos:aos config get provider` (direct wiring: `$aos config get provider`) relays the value; the same `set` relays the change line.
+
 ## Pulse
 
 - [ ] LEDs: every manifest pipeline appears (incl. `EMBED`, which reads `EMBED off` under `claude`/`none`); never-ran and `disabled` stages are gray (`is-neutral`) with the reason in the tooltip; nothing red on a fresh vault.
