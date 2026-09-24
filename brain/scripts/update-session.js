@@ -244,15 +244,6 @@ function updateSessionWorkingMemory(summary, now) {
   } catch (_) {}
 }
 
-function extractTextContent(content) {
-  if (typeof content === 'string') return content;
-  if (Array.isArray(content)) {
-    return content.map(c => typeof c === 'string' ? c : (c.text || '')).join(' ');
-  }
-  if (content && typeof content === 'object') return content.text || '';
-  return '';
-}
-
 // Live incident 2026-08-07: slice(-10) on RAW JSONL entries handed qwen a
 // window of tool-results and slash-command envelopes (extracted text mostly
 // empty), and it truthfully summarized "only metadata headers, no conversation

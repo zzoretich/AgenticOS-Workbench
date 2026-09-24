@@ -7,7 +7,7 @@ const path = require('path');
 const R = require('../persona/recheck.js');
 
 // Mid-day UTC: "recorded today" is the LOCAL day, so NOW ± 2 h must stay on one local day in every timezone CI runs in.
-const NOW = new Date('2026-09-22T12:00:00.000Z');
+const NOW = new Date(2026, 8, 22, 12, 0); // Tue 2026-09-22 12:00 local: record() counts local days, so the clock is local too
 const DAY = 86400e3;
 const at = (ms) => new Date(NOW.getTime() + ms);
 

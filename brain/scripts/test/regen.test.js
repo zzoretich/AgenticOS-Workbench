@@ -1,9 +1,6 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert');
-const path = require('path');
-const os = require('os');
-const fs = require('fs');
 const { regenInto } = require('../regen-workspace-insight');
 
 test('regenInto replaces one workspace insight in a snapshot object', async () => {

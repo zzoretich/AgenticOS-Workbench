@@ -1,20 +1,6 @@
-const fs = require('fs');
 const path = require('path');
 const { VAULT, safeStat, listDir, exists, readText, iso } = require('./util');
 const { listDailyNotes } = require('../lib/paths.js');
-
-function walkMarkdown(dir, out = []) {
-  const s = safeStat(dir);
-  if (!s || !s.isDirectory()) return out;
-  for (const name of listDir(dir)) {
-    const p = path.join(dir, name);
-    const st = safeStat(p);
-    if (!st) continue;
-    if (st.isDirectory()) walkMarkdown(p, out);
-    else if (name.endsWith('.md')) out.push(p);
-  }
-  return out;
-}
 
 function daysSince(ms) {
   return Math.floor((Date.now() - ms) / (1000 * 60 * 60 * 24));

@@ -95,7 +95,7 @@ function collectCapabilities(opts = {}) {
     .replace(/\$HOME\b/g, HOME)
     .replace(/(^|[\s"'=])~(?=\/)/g, `$1${HOME}`);
   const harvestPaths = (cmd) => {
-    const matches = expandHome(cmd).match(/(?:[A-Za-z]:[\/\\]|\/)[^\s"']+/g) || [];
+    const matches = expandHome(cmd).match(/(?:[A-Za-z]:[/\\]|\/)[^\s"']+/g) || [];
     for (const m of matches) referencedScripts.add(path.normalize(m).replace(/\\/g, '/'));
   };
   const settingsHooks = settings.hooks || {};
@@ -105,7 +105,6 @@ function collectCapabilities(opts = {}) {
     }
   }
   if (settings.statusLine?.command) harvestPaths(settings.statusLine.command);
-  const hookPathsPresent = hookFiles.map(n => path.join(hooksDir, n).replace(/\\/g, '/'));
   const wired = hookFiles.filter(n => {
     const full = path.join(hooksDir, n).replace(/\\/g, '/');
     for (const ref of referencedScripts) {

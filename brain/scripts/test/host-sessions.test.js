@@ -17,7 +17,7 @@ for (const [slug, n, day] of [['-home-demo-AgenticOS-workspaces-alpha', 2, 10], 
   for (let i = 0; i < n; i++) {
     const f = path.join(claude, slug, `aaaaaaaa-0000-4000-8000-00000000000${i}.jsonl`);
     fs.writeFileSync(f, '{}\n');
-    const t = new Date(2026, 8, day, 12 + i);
+    const t = new Date(Date.UTC(2026, 8, day, 12 + i)); // UTC: lastAt is compared as an ISO (UTC) date
     fs.utimesSync(f, t, t);
   }
 }

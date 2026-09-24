@@ -26,8 +26,7 @@ function conventionsBlock(vault = PATHS.VAULT) {
 }
 
 if (require.main === module) {
-  let raw = '';
-  process.stdin.on('data', (c) => { raw += c; });
+  process.stdin.on('data', () => {}); // drain the hook payload; the block does not depend on it
   process.stdin.on('end', () => {
     try {
       const block = conventionsBlock();

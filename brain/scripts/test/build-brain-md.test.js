@@ -250,7 +250,7 @@ test('CLI entry: spawning the script as `node build-brain-md.js` compiles BRAIN.
     '---\ntype: index\ntags: [brain/bootstrap, status/active]\nupdated: 2026-01-01\n---\n\n# BRAIN\n\n' +
     '## Who\nplaceholder\n\n## Critical rules\n- placeholder\n\n## Active context\n- placeholder\n\n' +
     '## Quick links\n- placeholder\n\n## Last Session\n- placeholder last-session line\n');
-  for (const [file, dvFrom, tag] of [
+  for (const [file, , tag] of [ // [MOC file, the folder it indexes (documentation only), tag]
     ['MOC-reference.md', 'brain/memory/reference', 'reference'],
     ['MOC-projects.md', 'brain/memory/projects', 'projects'],
     ['MOC-patterns.md', 'brain/patterns', 'patterns'],

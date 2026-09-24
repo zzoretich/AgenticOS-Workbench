@@ -1,7 +1,7 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { parse, next, describe, toLaunchd, CronError, LAUNCHD_MAX } = require('../lib/cron.js');
+const { parse, next, describe, toLaunchd, CronError } = require('../lib/cron.js');
 
 const sets = (c) => ({ minute: [...c.minute], hour: [...c.hour], dom: [...c.dom], month: [...c.month], dow: [...c.dow] });
 

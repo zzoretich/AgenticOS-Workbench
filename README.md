@@ -355,7 +355,7 @@ Skills answer to plain phrases: *sitrep* (or `/agenticos:persona-sitrep`), *revi
 
 ### Staying up to date
 
-`aos upgrade` pulls the newest version. To be told when there is one, AgenticOS writes a one-line
+`aos upgrade` pulls the newest version. What each version changed, and anything you need to do after upgrading (its **Upgrading** notes), is in [CHANGELOG.md](CHANGELOG.md) and on the release page. To be told when there is one, AgenticOS writes a one-line
 fragment that is either empty or the update notice, at `<vault>/brain/_index/update-line.txt`. With
 the default vault (`~/AgenticOS`, unless you passed `--vault` to `aos init`):
 
@@ -444,6 +444,9 @@ docs               install, chief of staff, cost, the Obsidian smoke checklist, 
 ```sh
 npm test                 # every suite: tools + cli, brain/scripts, obsidian-plugin
 npm run gate             # the privacy gate — fails on any forbidden term
+npm run lint             # eslint over the JavaScript
+npm run lint:sh          # shellcheck over every tracked shell script (brew/apt install shellcheck)
+npm run typecheck        # tsc over the HUD's TypeScript
 cd extras/cost && python3 -m unittest      # the cost analyzer's tests
 sh cli/rehearsal/first-run.sh              # a complete install in a temp HOME with a fake claude (what CI runs)
 sh cli/rehearsal/codex-host.sh             # a Codex-only machine: direct wiring, then the upgrade to the Codex plugin; hooks and MCP run for real
@@ -452,7 +455,7 @@ npm run build -w obsidian-plugin           # rebuild the HUD bundle
 node tools/brand-assets.js                 # regenerate the brand assets under docs/assets
 ```
 
-`brain/scripts/test/live/` needs a running Ollama and is excluded from `npm test`. The Obsidian plugin's manual checklist is `docs/plugin-smoke.md`; the per-release acceptance runbook is `docs/acceptance.md`.
+The suites never see your shell's `AOS_*`, `BRAIN_*`, `CLAUDE*` or `CODEX_*` variables (`tools/test-env.js` clears them once per run), and CI runs them again in UTC+14 and UTC−11 with those variables exported, so a test that leans on your time zone or your setup fails there. `brain/scripts/test/live/` needs a running Ollama and is excluded from `npm test`. The Obsidian plugin's manual checklist is `docs/plugin-smoke.md`; the per-release acceptance runbook is `docs/acceptance.md`.
 
 <a name="uninstall"></a>
 ## <img src="docs/assets/icon-uninstall.svg" width="36" align="top" alt="" /> Uninstall

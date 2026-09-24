@@ -4,9 +4,10 @@ Run before tagging a release, on a vault created by `aos init` (not the develope
 
 ## Release procedure
 
-1. `npm run version:bump -- X.Y.Z && npm install --package-lock-only --ignore-scripts` (one product version: root `package.json`, `obsidian-plugin/{manifest,package,versions}.json`, `plugin/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`; the install refreshes `package-lock.json`, the seventh surface — npm owns its format, and `--check` verifies it).
-2. `git commit -am "chore: release vX.Y.Z" && git tag vX.Y.Z`; push the tag only after in-chat confirmation.
-3. `release.yml` verifies the bump, runs the gate + plugin tests, builds, and attaches `main.js`, `manifest.json`, `styles.css`.
+1. `CHANGELOG.md`'s `## [Unreleased]` lists what the release changes, with an **Upgrading** subsection for anything a user must do after `aos upgrade` (re-trust hooks under `/hooks`, a new prerequisite, a re-clone).
+2. `npm run version:bump -- X.Y.Z && npm install --package-lock-only --ignore-scripts` (one product version: root `package.json`, `brain/scripts/package.json`, `obsidian-plugin/{manifest,package,versions}.json`, `plugin/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `codex-plugin/.codex-plugin/plugin.json`; the install refreshes `package-lock.json` — npm owns its format, and `--check` verifies it). The bump also rolls `[Unreleased]` into `## [X.Y.Z] — <date>` and fails when it is empty.
+3. `git commit -am "chore: release vX.Y.Z" && git tag vX.Y.Z`; push the tag only after in-chat confirmation.
+4. `release.yml`'s read-only `build` job verifies the bump and the CHANGELOG section, runs the gate, `tsc` and the plugin tests, and builds; its `publish` job (the only one with a write token) creates the release with that CHANGELOG section as the notes and attaches `main.js`, `manifest.json`, `styles.css`.
 
 ## Install paths
 

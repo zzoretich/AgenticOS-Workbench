@@ -1,8 +1,7 @@
 'use strict';
-const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { VAULT, safeStat, listDir, exists, readText, walkSize, lastCommit } = require('./util');
+const { VAULT, safeStat, listDir, exists, readText, lastCommit } = require('./util');
 const { normalizeStatus, firstBodyLine } = require('./projects');
 
 const NOISE_DIRS = new Set([

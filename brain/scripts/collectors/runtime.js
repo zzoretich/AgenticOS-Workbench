@@ -1,5 +1,5 @@
 const path = require('path');
-const { VAULT, PATHS, safeStat, listDir, exists, iso } = require('./util');
+const { PATHS, safeStat, listDir, iso } = require('./util');
 
 function daysSince(ms) {
   return Math.floor((Date.now() - ms) / (1000 * 60 * 60 * 24));

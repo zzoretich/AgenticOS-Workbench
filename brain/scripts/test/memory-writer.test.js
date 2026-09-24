@@ -1,5 +1,5 @@
 'use strict';
-const { test, beforeEach } = require('node:test');
+const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
@@ -10,7 +10,7 @@ fs.mkdirSync(path.join(TMP, 'brain', 'memory', 'feedback'), { recursive: true })
 fs.writeFileSync(path.join(TMP, 'CLAUDE.md'), '# t');
 fs.writeFileSync(path.join(TMP, 'MEMORY.md'), '# Index\n\n- [Existing](brain/memory/user/existing.md) — already here\n');
 process.env.BRAIN_VAULT = TMP;
-const { slugify, deriveTitle, writeMemory } = require('../lib/memory-writer.js');
+const { slugify, writeMemory } = require('../lib/memory-writer.js');
 
 test('slugify matches the plugin semantics (lowercase, dashes, ≤6 words)', () => {
   assert.equal(slugify('Prefers Terse Answers With File Refs Always!!'), 'prefers-terse-answers-with-file-refs');

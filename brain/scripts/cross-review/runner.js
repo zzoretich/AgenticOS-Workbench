@@ -459,7 +459,7 @@ async function turn(args, deps) {
     prompt = (args.write ? HANDOFF_WRITE : HANDOFF_READ) + '\n<brief>\n' + fs.readFileSync(args.brief, 'utf8') + '\n</brief>\n';
   } else {
     prompt = (mode === 'build' ? buildInstructions(args.proof) : REVIEW_INSTRUCTIONS)
-      + `\nPLAN PATH: ${plan}\nPLAN SHA256: ${record.planSha256}\n<plan>\n${planBody.toString('utf8').replace(/^﻿/, '')}\n</plan>\n`;
+      + `\nPLAN PATH: ${plan}\nPLAN SHA256: ${record.planSha256}\n<plan>\n${planBody.toString('utf8').replace(/^\uFEFF/, '')}\n</plan>\n`;
   }
   if (prior) {
     prompt += `\nPRIOR ROUND (your previous ${mode === 'build' ? 'build report' : 'structured review'}):\n${JSON.stringify(prior.response, null, 2)}\n`;

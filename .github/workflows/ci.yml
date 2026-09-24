@@ -7,11 +7,12 @@ on:
 # scopes its own `permissions:` instead of widening this block.
 permissions:
   contents: read
-# Runs queue per ref. A newer push to a pull request supersedes its in-flight run (both jobs are side-effect free, so
+# Runs queue per ref. A newer push to a pull request supersedes its in-flight run (every job is side-effect free, so
 # cancelling is safe); pushes to main are never cancelled, so every commit on main keeps its own pass/fail result.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+# Every action is pinned to a full commit SHA (the comment names its release); .github/dependabot.yml proposes updates.
 jobs:
   test:
     strategy:
@@ -21,17 +22,64 @@ jobs:
         node: [20, 22]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci --ignore-scripts
-      # The privacy gate runs once, with the private terms, in privacy.yml.
-      - run: node --test tools/*.test.js cli/*.test.js
+      # The privacy gate runs once, with the private terms, in privacy.yml. tools/test-env.js clears host variables
+      # (the workspaces' own test scripts preload it too).
+      - run: node --require ./tools/test-env.js --test tools/*.test.js cli/*.test.js
       - run: npm test -w brain/scripts
       - run: npm test -w obsidian-plugin
       - run: cd extras/cost && python3 -m unittest -v
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: eslint (the JavaScript)
+        run: npm run lint
+      - name: shellcheck (every tracked shell script, severity warning)
+        run: |
+          command -v shellcheck >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck; }
+          npm run lint:sh
+      - name: tsc (the HUD)
+        run: npm run typecheck
+      - name: CHANGELOG.md has a section for package.json's version
+        run: node tools/changelog.js check current
+  tz-env:
+    # The whole suite in the two extreme time zones, with a developer's host variables exported: no test may assume
+    # UTC or the machine's zone, and tools/test-env.js must clear every host variable (spec
+    # 2026-09-23-ci-safety-net-design D4-D5).
+    strategy:
+      fail-fast: false
+      matrix:
+        tz: [Pacific/Kiritimati, Pacific/Pago_Pago]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: npm test (TZ=${{ matrix.tz }}, host variables exported)
+        env:
+          TZ: ${{ matrix.tz }}
+          AOS_HOST: codex
+          AOS_VAULT: ${{ runner.temp }}/not-a-vault
+          AOS_CONFIG: ${{ runner.temp }}/agenticos.json
+          BRAIN_AGENT_REDACT: "0"
+          CLAUDE_CONFIG_DIR: ${{ runner.temp }}/claude
+          CLAUDE_PROJECT_DIR: ${{ runner.temp }}
+          CODEX_HOME: ${{ runner.temp }}/codex
+        run: npm test
   first-run:
     strategy:
       fail-fast: false
@@ -39,8 +87,8 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 20
           cache: npm

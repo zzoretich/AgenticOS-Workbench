@@ -11,7 +11,6 @@
  * lib/skills.js is looked up next to this file first, then in the checkout. Every external effect is injectable (opts).
  */
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 
 const VERBS = ['list', 'sync', 'exclude', 'include', 'reset'];
