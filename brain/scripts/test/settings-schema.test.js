@@ -86,3 +86,15 @@ test('isPrefix and the machine keys: hosts and binaries are read-only, never in 
     assert.equal(S.getPath(S.DEFAULTS, k), undefined, k);
   }
 });
+
+test('host and spend tags (spec 2026-09-24-settings-tab D7, D8): every daily cap names its ledger family; host is claude or codex', () => {
+  for (const e of S.SETTINGS) {
+    if (/\.perDayUsd$/.test(e.key)) assert.ok(S.SPEND_FAMILIES.includes(e.spend), `${e.key} spend=${e.spend}`);
+    else assert.equal(e.spend, undefined, `${e.key} is not a daily cap`);
+    if (e.host !== undefined) assert.ok(['claude', 'codex'].includes(e.host), `${e.key} host=${e.host}`);
+  }
+  assert.equal(S.entry('claude.perDayUsd').spend, S.entry('codex.perDayUsd').spend, 'both hook caps share the hook total');
+  for (const k of ['codex.model', 'codex.effort', 'persona.codexModel', 'routines.codexModel', 'crossReview.codexModel']) assert.equal(S.entry(k).host, 'codex', k);
+  for (const k of ['claude.model', 'reasoner.model', 'crossReview.claudeModel']) assert.equal(S.entry(k).host, 'claude', k);
+  assert.equal(S.entry('provider').host, undefined);
+});

@@ -49,7 +49,10 @@ function resolveCtx(opts = {}) {
   const vault = opts.vault || env.AOS_VAULT || (userCfg && userCfg.vault);
   if (!vault) throw new Refused('no vault configured (run `aos init` first)');
   const vaultFile = path.join(vault, 'brain', 'config.json');
-  return { env, configDir, vault, files: { machine, vault: vaultFile }, userCfg: userCfg || {}, vaultCfg: W.readStrict(vaultFile) || {} };
+  const ctx = { env, configDir, vault, files: { machine, vault: vaultFile }, userCfg: userCfg || {}, vaultCfg: W.readStrict(vaultFile) || {}, spend: null };
+  // opts.spend(vault) → today's USD per ledger family (cli/aos.js passes the helpers `aos status` uses).
+  if (typeof opts.spend === 'function') { try { ctx.spend = opts.spend(vault); } catch { ctx.spend = null; } }
+  return ctx;
 }
 
 /** One setting as `list --json` and `get --json` print it: the schema entry, the value in force and its source. */
@@ -59,8 +62,10 @@ function row(e, ctx) {
   const r = {
     key: e.key, section: e.section, label: e.label, help: e.help, type: e.type, values: e.values || null,
     min: e.min ?? null, gt: e.gt ?? null, max: e.max ?? null, int: !!e.int, nullable: !!e.nullable,
-    risk: e.risk || null, applies: e.applies, readonly: !!e.readonly, how: e.how || null,
+    risk: e.risk || null, applies: e.applies, readonly: !!e.readonly, how: e.how || null, host: e.host || null,
     default: def === undefined ? null : def, value, source, changed: !e.machine && !same(value, def), note: null,
+    // Today's spend in the ledger family this daily cap governs (spec 2026-09-24-settings-tab D7); null without a ledger read.
+    spentToday: e.spend && ctx.spend && typeof ctx.spend[e.spend] === 'number' ? ctx.spend[e.spend] : null,
   };
   // D8: persona.enabled and persona/DISABLED move together through `aos config`; `aos persona off` pauses duties alone.
   if (e.key === 'persona.enabled' && value !== false && fs.existsSync(path.join(ctx.vault, 'persona', 'DISABLED'))) {

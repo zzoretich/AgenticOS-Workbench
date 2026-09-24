@@ -240,3 +240,22 @@ test('doctorRow (D12): info with the changed count; a warn naming unknown keys, 
   fs.writeFileSync(w.machineFile, '{');
   assert.match(C.doctorRow({ configDir: w.configDir, vault: w.vault, env: {} }).detail, /agenticos\.json does not parse/);
 });
+
+test('list --json (spec 2026-09-24-settings-tab D7, D8): host on host-specific rows, spentToday on daily caps from opts.spend', async () => {
+  const w = world();
+  w.opts.spend = () => ({ hooks: 0.12, duties: 1.9, reasoner: 0, routines: 0, graph: 0.25, crossReview: 0 });
+  await w.run('list', '--json');
+  const rows = Object.fromEntries(JSON.parse(w.out()).settings.map((r) => [r.key, r]));
+  assert.equal(rows['claude.perDayUsd'].spentToday, 0.12);
+  assert.equal(rows['codex.perDayUsd'].spentToday, 0.12, 'both hook caps govern the same hook total');
+  assert.equal(rows['persona.perDayUsd'].spentToday, 1.9);
+  assert.equal(rows['graph.semantic.perDayUsd'].spentToday, 0.25);
+  assert.equal(rows['claude.perCallUsd'].spentToday, null, 'a per-call cap has no daily total');
+  assert.equal(rows['codex.effort'].host, 'codex');
+  assert.equal(rows['crossReview.claudeModel'].host, 'claude');
+  assert.equal(rows.provider.host, null);
+  w.reset();
+  w.opts.spend = () => { throw new Error('ledger unreadable'); };
+  await w.run('list', '--json');
+  assert.equal(JSON.parse(w.out()).settings.find((r) => r.key === 'claude.perDayUsd').spentToday, null, 'a failed read is null, not an error');
+});

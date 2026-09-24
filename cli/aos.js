@@ -500,6 +500,16 @@ function spendRowsToday(file) {
 function sumUsd(rows, filter) { return rows.filter((r) => filter(String(r.feature || ''))).reduce((s, r) => s + r.usd, 0); }
 /** Today's spend in USD; `filter(feature)` picks the rows (default: every row). */
 function spendToday(file, filter = () => true) { return sumUsd(spendRowsToday(file), filter); }
+/** Today's USD per ledger family, keyed as settings-schema.js SPEND_FAMILIES (spec 2026-09-24-settings-tab D7). Both hook
+ *  caps (claude.perDayUsd, codex.perDayUsd) govern the same hook total. */
+function spendByFamily(vault) {
+  const rows = spendRowsToday(path.join(vault, 'brain', '_index', 'provider-spend.jsonl'));
+  const r6 = (n) => Math.round(n * 1e6) / 1e6;
+  return {
+    hooks: r6(sumUsd(rows, isHookFeature)), duties: r6(sumUsd(rows, isDutyFeature)), reasoner: r6(sumUsd(rows, isReasonFeature)),
+    routines: r6(sumUsd(rows, isRoutineFeature)), graph: r6(sumUsd(rows, isGraphFeature)), crossReview: r6(sumUsd(rows, isCrossReviewFeature)),
+  };
+}
 function status() {
   const cfg = loadConfigOrThrow();
   const idx = path.join(cfg.vault, 'brain', '_index');
@@ -1150,7 +1160,7 @@ async function agents(sub, flags) {
 async function config(sub, flags) {
   const C = require('./config-cmd.js');
   try {
-    return await C.main([...sub, ...(flags.json ? ['--json'] : []), ...(flags.dryRun ? ['--dry-run'] : [])], { io: console, dailyNotesJson });
+    return await C.main([...sub, ...(flags.json ? ['--json'] : []), ...(flags.dryRun ? ['--dry-run'] : [])], { io: console, dailyNotesJson, spend: spendByFamily });
   } catch (e) {
     if (e instanceof C.UsageError) throw new UsageError(e.message);
     throw e;
@@ -1451,7 +1461,7 @@ if (require.main === module) {
 module.exports = {
   parseArgs, deepMerge, configDir, configPath, readJson, readJsonStrict, writeJson, exists, isDir, insideDir, localDay,
   run, which, claudeBin, codexBin, hostsOf, resolveHosts, pluginSourceDir, npmBin, claudeLoggedIn, installedPlugin, python3Version, python3Ok, pythonBin, obsidianDetected, obsidianApp, ollamaBin, httpProbe, ollamaEndpoint, ollamaProbeSkipped, ask,
-  runScript, scriptPath, mcpProbe, spendRowsToday, spendToday, isDutyFeature, isHookFeature, loadConfigOrThrow,
+  runScript, scriptPath, mcpProbe, spendRowsToday, spendToday, spendByFamily, isDutyFeature, isHookFeature, loadConfigOrThrow,
   doctor, status, provider, main,
   init, repoRoot, productVersion, upgradeReexecTarget, copyTree, assertVaultOk, dailyNotesJson, buildUserConfig, linkLauncher, vendorRuntime,
   installPlugin, download, obsidianBundle, terminalInstall, personaInterview, checklist,

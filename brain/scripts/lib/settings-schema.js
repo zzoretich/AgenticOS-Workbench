@@ -13,6 +13,8 @@
  *             next-check | reinstall
  *   vaultOnly the runtime reads the key from brain/config.json alone, so it is always written there (D4)
  *   followUp  { command, why } — printed as a `next:` line after a set (D7)
+ *   host      claude | codex — the setting only matters when that host is enabled (spec 2026-09-24-settings-tab D8)
+ *   spend     hooks | duties | reasoner | routines | graph | crossReview — the ledger family a perDayUsd caps (D7)
  */
 const DEFAULTS = require('../config.default.json');
 
@@ -38,22 +40,22 @@ const ROUTINES_SYNC = { command: 'aos routines sync', why: 'the schedules carry 
 const SKILLS_SYNC = { command: 'aos skills sync', why: 'share or unshare now instead of at the next session end' };
 const AGENTS_SYNC = { command: 'aos agents sync', why: 'share or unshare now instead of at the next session end' };
 
-const perCall = (key, section, label, help) => ({ key, section, label, help, type: 'number', gt: 0, risk: 'spend', applies: 'next-call' });
-const perDay = (key, section, label, help) => ({ key, section, label, help: `${help} 0 means no spend.`, type: 'number', min: 0, risk: 'spend', applies: 'next-call' });
+const perCall = (key, section, label, help, extra = {}) => ({ key, section, label, help, type: 'number', gt: 0, risk: 'spend', applies: 'next-call', ...extra });
+const perDay = (key, section, label, help, extra) => ({ key, section, label, help: `${help} 0 means no spend.`, type: 'number', min: 0, risk: 'spend', applies: 'next-call', ...extra });
 
 const SETTINGS = [
   // ── Provider & models ───────────────────────────────────────────────────────
   { key: 'provider', section: 'provider', label: 'Background provider', type: 'enum', values: ['auto', 'ollama', 'claude', 'codex', 'none'], risk: 'spend', applies: 'next-call',
     help: 'Who answers background work: auto picks Ollama when it answers, then Claude, then Codex; none turns background model calls off.' },
-  { key: 'claude.model', section: 'provider', label: 'Claude model', type: 'model', applies: 'next-call', followUp: ROUTINES_SYNC,
+  { key: 'claude.model', section: 'provider', label: 'Claude model', type: 'model', host: 'claude', applies: 'next-call', followUp: ROUTINES_SYNC,
     help: 'Claude model for background hook calls, and the duty model when the persona interview named none. An alias (haiku) or a full id.' },
-  { key: 'codex.model', section: 'provider', label: 'Codex model', type: 'model', nullable: true, applies: 'next-call',
+  { key: 'codex.model', section: 'provider', label: 'Codex model', type: 'model', host: 'codex', nullable: true, applies: 'next-call',
     help: 'Codex model for background calls; null uses your own Codex default. Never a Claude alias.' },
-  { key: 'codex.effort', section: 'provider', label: 'Codex effort', type: 'enum', values: CODEX_EFFORTS, applies: 'next-call',
+  { key: 'codex.effort', section: 'provider', label: 'Codex effort', type: 'enum', host: 'codex', values: CODEX_EFFORTS, applies: 'next-call',
     help: 'Reasoning effort for background Codex calls.' },
-  { key: 'reasoner.model', section: 'provider', label: 'Reasoner model', type: 'model', applies: 'next-call',
+  { key: 'reasoner.model', section: 'provider', label: 'Reasoner model', type: 'model', host: 'claude', applies: 'next-call',
     help: 'Claude model the Chat tab and other reasoning calls use.' },
-  { key: 'reasoner.codexModel', section: 'provider', label: 'Reasoner model on Codex', type: 'model', nullable: true, applies: 'next-call',
+  { key: 'reasoner.codexModel', section: 'provider', label: 'Reasoner model on Codex', type: 'model', host: 'codex', nullable: true, applies: 'next-call',
     help: 'Codex model for the reasoner when Codex answers it; null falls back to codex.model.' },
   { key: 'reasoner.effort', section: 'provider', label: 'Reasoner effort', type: 'enum', values: REASONER_EFFORTS, applies: 'next-call',
     help: 'Thinking effort for reasoner calls.' },
@@ -63,20 +65,20 @@ const SETTINGS = [
     help: 'Ollama port.' },
 
   // ── Spend limits ────────────────────────────────────────────────────────────
-  perCall('claude.perCallUsd', 'spend', 'Background call cap (Claude)', 'Most one background Claude call may spend, in USD.'),
-  perDay('claude.perDayUsd', 'spend', 'Background daily cap (Claude)', 'Most background hook calls may spend per day on Claude, in USD.'),
-  perCall('codex.perCallUsd', 'spend', 'Background call cap (Codex)', 'Most one background Codex call may spend, in USD (estimated after the call).'),
-  perDay('codex.perDayUsd', 'spend', 'Background daily cap (Codex)', 'Most background hook calls may spend per day on Codex, in USD.'),
+  perCall('claude.perCallUsd', 'spend', 'Background call cap (Claude)', 'Most one background Claude call may spend, in USD.', { host: 'claude' }),
+  perDay('claude.perDayUsd', 'spend', 'Background daily cap (Claude)', 'Most background hook calls may spend per day on Claude, in USD.', { host: 'claude', spend: 'hooks' }),
+  perCall('codex.perCallUsd', 'spend', 'Background call cap (Codex)', 'Most one background Codex call may spend, in USD (estimated after the call).', { host: 'codex' }),
+  perDay('codex.perDayUsd', 'spend', 'Background daily cap (Codex)', 'Most background hook calls may spend per day on Codex, in USD.', { host: 'codex', spend: 'hooks' }),
   perCall('reasoner.perCallUsd', 'spend', 'Reasoner call cap', 'Most one reasoner call may spend, in USD.'),
-  perDay('reasoner.perDayUsd', 'spend', 'Reasoner daily cap', 'Most reasoner calls may spend per day, in USD.'),
+  perDay('reasoner.perDayUsd', 'spend', 'Reasoner daily cap', 'Most reasoner calls may spend per day, in USD.', { spend: 'reasoner' }),
   perCall('persona.perDutyUsd', 'spend', 'Duty cap', 'Most one Chief of Staff duty may spend, in USD.'),
-  perDay('persona.perDayUsd', 'spend', 'Chief of Staff daily cap', 'Most the Chief of Staff duties may spend per day, in USD.'),
+  perDay('persona.perDayUsd', 'spend', 'Chief of Staff daily cap', 'Most the Chief of Staff duties may spend per day, in USD.', { spend: 'duties' }),
   perCall('routines.perRunUsd', 'spend', 'Routine run cap', 'Most one prompt routine run may spend, in USD, unless the routine names its own budget.'),
-  perDay('routines.perDayUsd', 'spend', 'Routines daily cap', 'Most prompt routines may spend per day, in USD.'),
+  perDay('routines.perDayUsd', 'spend', 'Routines daily cap', 'Most prompt routines may spend per day, in USD.', { spend: 'routines' }),
   perCall('graph.semantic.perCallUsd', 'spend', 'Semantic graph call cap', 'Most one semantic graph pass may spend, in USD.'),
-  perDay('graph.semantic.perDayUsd', 'spend', 'Semantic graph daily cap', 'Most the semantic graph pass may spend per day, in USD.'),
+  perDay('graph.semantic.perDayUsd', 'spend', 'Semantic graph daily cap', 'Most the semantic graph pass may spend per day, in USD.', { spend: 'graph' }),
   perCall('crossReview.perCallUsd', 'spend', 'Cross-review call cap', 'Most one cross-review call may spend, in USD.'),
-  perDay('crossReview.perDayUsd', 'spend', 'Cross-review daily cap', 'Most cross-review calls may spend per day, in USD.'),
+  perDay('crossReview.perDayUsd', 'spend', 'Cross-review daily cap', 'Most cross-review calls may spend per day, in USD.', { spend: 'crossReview' }),
   { key: 'cost.enabled', section: 'spend', label: 'Session costing', type: 'bool', applies: 'next-session',
     help: 'Cost every session at its end (needs python3; turning it on installs the analyzer).' },
   { key: 'cost.monthlyBudget', section: 'spend', label: 'Monthly budget', type: 'number', gt: 0, nullable: true, applies: 'next-session',
@@ -111,7 +113,7 @@ const SETTINGS = [
     help: 'The whole Chief of Staff: its context in sessions, the watchdog and the scheduled duties (persona/DISABLED follows it).' },
   { key: 'persona.runner', section: 'persona', label: 'Duty runner', type: 'enum', values: RUNNERS, applies: 'next-duty',
     help: 'Which host runs the duties: auto, claude or codex.' },
-  { key: 'persona.codexModel', section: 'persona', label: 'Duty model on Codex', type: 'model', nullable: true, applies: 'next-duty',
+  { key: 'persona.codexModel', section: 'persona', label: 'Duty model on Codex', type: 'model', host: 'codex', nullable: true, applies: 'next-duty',
     help: 'Codex model for duties; null uses codex.model, then your Codex default.' },
   { key: 'persona.watchdog.graceMinutes', section: 'persona', label: 'Watchdog grace', type: 'number', int: true, min: 1, applies: 'next-session',
     help: 'Minutes past its schedule before a missed duty is flagged.' },
@@ -131,7 +133,7 @@ const SETTINGS = [
     help: 'Let scheduled routines run. Off skips every run; the schedules stay loaded.' },
   { key: 'routines.runner', section: 'routines', label: 'Routine runner', type: 'enum', values: RUNNERS, applies: 'next-routine',
     help: 'Which host runs prompt routines: auto, claude or codex.' },
-  { key: 'routines.codexModel', section: 'routines', label: 'Routine model on Codex', type: 'model', nullable: true, applies: 'next-routine',
+  { key: 'routines.codexModel', section: 'routines', label: 'Routine model on Codex', type: 'model', host: 'codex', nullable: true, applies: 'next-routine',
     help: 'Codex model for prompt routines; null uses codex.model, then your Codex default.' },
   { key: 'routines.tools', section: 'routines', label: 'Routine tools', type: 'string', risk: 'autonomy', applies: 'next-routine',
     help: 'Tools a prompt routine may use, comma-separated (Read,Glob,Grep). Adding a writing tool lets routines change files.' },
@@ -161,9 +163,9 @@ const SETTINGS = [
   // ── Cross-review ────────────────────────────────────────────────────────────
   { key: 'crossReview.enabled', section: 'crossReview', label: 'Cross-review', type: 'bool', applies: 'next-call',
     help: 'Let cross-review and handoff call the other host.' },
-  { key: 'crossReview.claudeModel', section: 'crossReview', label: 'Cross-review Claude model', type: 'model', nullable: true, applies: 'next-call',
+  { key: 'crossReview.claudeModel', section: 'crossReview', label: 'Cross-review Claude model', type: 'model', host: 'claude', nullable: true, applies: 'next-call',
     help: 'Claude model for reviews; null uses Claude Code\'s default.' },
-  { key: 'crossReview.codexModel', section: 'crossReview', label: 'Cross-review Codex model', type: 'model', nullable: true, applies: 'next-call',
+  { key: 'crossReview.codexModel', section: 'crossReview', label: 'Cross-review Codex model', type: 'model', host: 'codex', nullable: true, applies: 'next-call',
     help: 'Codex model for reviews; null uses your Codex default.' },
   { key: 'crossReview.effort', section: 'crossReview', label: 'Cross-review effort', type: 'enum', values: CROSS_EFFORTS, nullable: true, applies: 'next-call',
     help: 'Effort for reviews; null uses each CLI\'s default. Claude takes low to max, Codex minimal to xhigh.' },
@@ -219,6 +221,8 @@ const SETTINGS = [
 ];
 
 const BY_KEY = new Map(SETTINGS.map((e) => [e.key, e]));
+/** The ledger families a daily cap can govern (D7); cli/aos.js sums today's spend per family for `list --json`. */
+const SPEND_FAMILIES = ['hooks', 'duties', 'reasoner', 'routines', 'graph', 'crossReview'];
 
 function isPlainObject(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); }
 
@@ -305,4 +309,4 @@ function dayCap(v, d) {
   return Number.isFinite(n) && n >= 0 ? n : d;
 }
 
-module.exports = { SECTIONS, SETTINGS, DEFAULTS, entry, isPrefix, defaultOf, getPath, leafKeys, parseValue, validate, dayCap, isPlainObject };
+module.exports = { SECTIONS, SETTINGS, SPEND_FAMILIES, DEFAULTS, entry, isPrefix, defaultOf, getPath, leafKeys, parseValue, validate, dayCap, isPlainObject };
