@@ -4,6 +4,17 @@ All notable changes to AgenticOS Workbench. Versions follow the tags. From the n
 
 ## [Unreleased]
 
+### Added
+- ⚙ Settings, pinned to the bottom-left of the Workbench rail: every setting of the whole system in one tab, built from `aos config`. Master switches head it; each row shows where its value comes from (this machine, this vault or the default), when a change applies, and a ↺ to go back to the default; spend limits show today's spend against the cap. A change runs `aos config set`, so a refused value is explained under its field; raising spend or widening an agent's autonomy asks first; a step a change leaves (`aos routines sync`) waits as a button, counted on the ⚙ badge. Also "Open Workbench: Settings" in the command palette and a button in Obsidian's settings pane.
+- `aos config list --json` rows carry `host` (a Claude- or Codex-only setting) and `spentToday` (on each daily cap).
+
+### Changed
+- The HUD's Cost and Telemetry toggles are now the system's own switches, `cost.enabled` and `telemetry.enabled`: turning Telemetry off stops the hooks recording, not just the HUD's view. The old HUD-only values are dropped from the plugin's `data.json`.
+- The Workbench rail scrolls its tab buttons when the pane is short, so none is cut off.
+
+### Upgrading
+- If you turned the HUD's Cost or Telemetry toggle off without changing the system setting, check ⚙ Settings once after upgrading: the HUD now shows what the system does.
+
 ## [0.17.0] — 2026-09-24
 
 ### Added

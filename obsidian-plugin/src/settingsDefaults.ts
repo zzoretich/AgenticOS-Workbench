@@ -1,6 +1,7 @@
 // Pure settings shape + defaults (no obsidian import) so node:test can load it and
 // data modules (nodeResolver) can take the settings object without pulling the UI in.
-import type { VaultConfig } from "./data/aosConfig";
+// Cost and telemetry are not here: they are the system's own switches (cost.enabled, telemetry.enabled), read from the
+// merged config by Plugin.costOn()/telemetryOn() and changed through `aos config` (spec 2026-09-24-settings-tab D10).
 
 export interface AgenticOSSettings {
   statusBarEnabled: boolean;
@@ -17,11 +18,10 @@ export interface AgenticOSSettings {
   vaultRoot: string;         // "" → this Obsidian vault's base path
   claudeConfigDir: string;   // "" → agenticos.json.claudeConfigDir → $CLAUDE_CONFIG_DIR → ~/.claude
   nodePath: string;          // "" → auto (src/data/nodeResolver.ts); a login-shell probe result is saved here
-  costEnabled: boolean;      // gates the COST row, AnchorModal, cost Fix Queue cards, COST DETAIL drawer section;
-                             //   until first saved it follows agenticos.json/brain/config.json cost.enabled (seedToggleDefaults)
-  telemetryEnabled: boolean; // gates the orphan sweep on load and LiveRunsWatcher's mkdir of agent-runs/live;
-                             //   until first saved it follows telemetry.enabled the same way
 }
+
+/** Keys data.json may still hold from earlier versions; loadSettings prunes them (the two HUD-only toggles, D10). */
+export const DEAD_SETTINGS_KEYS = ["snapshotPath", "runsPath", "sessionPath", "snapshotHistoryDir", "refreshDebounceMs", "costEnabled", "telemetryEnabled"];
 
 export const DEFAULT_SETTINGS: AgenticOSSettings = {
   statusBarEnabled: true,
@@ -38,25 +38,4 @@ export const DEFAULT_SETTINGS: AgenticOSSettings = {
   vaultRoot: "",
   claudeConfigDir: "",
   nodePath: "",
-  costEnabled: false,
-  telemetryEnabled: true,
 };
-
-/**
- * First-load defaults for the two toggles that mirror config keys the scripts own
- * (`cost.enabled`, set by `aos cost enable|disable` in agenticos.json; `telemetry.enabled`,
- * honored by telemetry-hook.js). A toggle the user never persisted (key absent from data.json)
- * follows the merged vault config, so the plugin and `aos` agree without a second switch. A
- * persisted value always stands — the user's explicit choice outranks the config.
- * `persisted` is the raw loadData() object; `cfg` is readVaultConfig(vaultRoot).
- */
-export function seedToggleDefaults(
-  settings: AgenticOSSettings,
-  persisted: Record<string, unknown>,
-  cfg: Pick<VaultConfig, "cost" | "telemetry">,
-): AgenticOSSettings {
-  const stored = (k: keyof AgenticOSSettings) => Object.prototype.hasOwnProperty.call(persisted, k);
-  if (!stored("costEnabled")) settings.costEnabled = cfg.cost.enabled === true;
-  if (!stored("telemetryEnabled")) settings.telemetryEnabled = cfg.telemetry.enabled !== false;
-  return settings;
-}

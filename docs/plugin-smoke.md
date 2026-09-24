@@ -17,6 +17,15 @@ Run before tagging a release, on a vault created by `aos init` (not the develope
 
 ## Settings
 
+- [ ] ⚙ Settings sits at the rail's foot (bottom-left) and stays visible in a pane too short for all eleven tabs, which scroll above it; Enter or Space on a focused rail button opens it. "Open Workbench: Settings" in the command palette and "Open Workbench settings" in Obsidian's settings pane open the same tab.
+- [ ] The head reads "N changed from the defaults" and matches the `*` rows of `aos config list`. Every row shows its key, a pill (`this machine` / `this vault` / `default`, the file path on hover) and when it applies; daily caps show "today $x of $cap".
+- [ ] Master switches: turning Telemetry off writes `telemetry.enabled` to `agenticos.json` (check with `aos config get telemetry.enabled`), shows the change as a Notice, and the chip follows; turning Background AI on from `none` asks first ("Turn on paid background calls?"), and Cancel leaves it off.
+- [ ] Raising a daily cap asks first; lowering it does not. Typing `0` in `claude.perCallUsd` shows "must be more than 0 …" under the field without a spawn; typing `70000` in `ollama.port` shows the CLI's "must be at most 65535".
+- [ ] Setting `claude.model` leaves a "⚠ 1 step left: aos routines sync" bar and a `1` on the ⚙ badge; clicking it runs the sync, the bar goes and the badge clears.
+- [ ] ↺ on a changed row puts it back to the default (`aos config unset`); Hosts & install rows are read-only and their "❯_ aos doctor" / "❯_ aos upgrade" buttons open the Term tab running them.
+- [ ] *Claude Code only* (`hosts.codex.enabled: false`): every Codex row (`codex.*`, `*.codexModel`) is dimmed with "Codex is off on this machine; `aos init --host both` turns it on", and still editable. *Codex only* (`hosts.claude.enabled: false`): the Claude rows are dimmed the same way. *Both*: nothing dimmed.
+- [ ] A vault whose runtime predates 0.17 (no `aos config`): the tab says to run `aos upgrade` with a "❯_ aos upgrade" button, and the WORKBENCH section below still works.
+- [ ] The WORKBENCH section and Obsidian's own settings pane show the same plugin rows; a change in one appears in the other on reopen.
 - [ ] Vault root: typing a path that is not a directory (e.g. a file, or a path that does not exist) is ignored while typing — nothing is saved, no Notice.
 - [ ] Vault root: leaving the field (blur) on a value that is not a directory shows a Notice once ("Vault root: … is not a directory — keeping …") and restores the field to the saved value.
 - [ ] Vault root: typing a valid directory changes nothing until the field loses focus; on blur it saves once and, if it differs from this vault, shows the 10 s explanation once (Task 1 of Plan 5b — no per-keystroke save or Notice); reopen Settings — the saved value is shown, including after closing the modal with Escape while the field was focused.
@@ -33,8 +42,7 @@ Run before tagging a release, on a vault created by `aos init` (not the develope
 
 - [ ] LEDs: every manifest pipeline appears (incl. `EMBED`, which reads `EMBED off` under `claude`/`none`); never-ran and `disabled` stages are gray (`is-neutral`) with the reason in the tooltip; nothing red on a fresh vault.
 - [ ] Briefing row label is the persona's name from `persona/IDENTITY.md` (upper-cased); with no persona layer it reads `BRIEFING`. **(Plan 5)** `aos persona rename <name>` changes it on the next refresh — the persona layer and that command ship in Plan 5, so until then verify only the `BRIEFING` fallback and, if you want the named case, hand-write a `persona/IDENTITY.md` with an H1.
-- [ ] COST row absent while `costEnabled` is off or `cost.monthlyBudget` is null; **(Plan 5)** present after `aos cost enable` with a budget and the toggle on — `aos cost enable` returns 1 until Plan 5 ships `extras/cost`, so until then set `cost.monthlyBudget` in `brain/config.json` by hand and turn the toggle on in Settings.
-- [ ] **(Plan 5)** On a fresh install (Cost/Telemetry toggles never saved) `aos cost enable --budget 100` then a plugin reload shows the COST row with **no** toggle change — Settings → Cost module enabled already reads on (seeded from `agenticos.json` `cost.enabled`); flip it off in Settings and `aos cost enable` no longer overrides it (the saved toggle wins). Same precondition: until Plan 5, write `"cost": { "enabled": true }` into `agenticos.json` by hand to exercise the seeding.
+- [ ] COST row absent while `cost.enabled` is false or `cost.monthlyBudget` is null; present on the next render after `aos cost enable --budget 100` (or Session costing on in ⚙ Settings) — the HUD reads the system switch, there is no HUD-only toggle.
 - [ ] Fix Queue shows no anchor/backfill cards while cost is off; `open-health` still appears when health.md has errors.
 - [ ] Command deck `/scan` spawns `scan-vault.js` with the resolved node (notice `▶ /scan`, then `✓ /scan: …`).
 - [ ] Heartbeat pill: absent on a vault whose watchdog never ran; after `aos routines run heartbeat` a green `♥ <age>` pill sits next to the update pill and its tooltip lists each duty with status, last run and next fire. Backdate `checkedAt` in `brain/_index/persona-heartbeat.json` by 2 h → amber within a second (the file is watched); set one duty's `status` to `missed` → rose with `· 1 missed` in the label.
@@ -147,10 +155,10 @@ Precondition for both action rows: the plugin folder must be an `aos init` / `ao
 - [ ] After `aos upgrade`: Install → notice with the spawn-helper count → reload → a shell opens (macOS); Linux with build tools compiles and opens. Windows is not supported in v1.
 - [ ] Rebuild runs `npx --yes @electron/rebuild -v <process.versions.electron> -m <plugin dir> -w node-pty` (the version is visible in the console log line `[agentic-os] rebuild-pty:`).
 
-## Telemetry toggle
+## Telemetry switch
 
-- [ ] With Telemetry off: no `agent-runs/live/` is created on load and no orphan-sweep log line appears; Runs tab still reads existing `runs.jsonl`.
-- [ ] Fresh install with `"telemetry": { "enabled": false }` in `agenticos.json` (or `brain/config.json`) and the toggle never saved: Settings → Telemetry enabled reads off without being touched and the row above holds; the same key drives `telemetry-hook.js`, so `aos` and the plugin agree.
+- [ ] With `telemetry.enabled` false (⚙ Settings → Telemetry, or `aos config set telemetry.enabled false`): no `agent-runs/live/` is created on load and no orphan-sweep log line appears; Runs tab still reads existing `runs.jsonl`; the hooks record nothing either — one key for `telemetry-hook.js` and the plugin.
+- [ ] A `data.json` from 0.17 or earlier that stored `costEnabled`/`telemetryEnabled` loses both keys on the first load (the console logs `pruned dead settings keys`).
 
 ## Review readiness
 
