@@ -105,6 +105,11 @@ function main(argv, env = process.env) {
   if (terms.private.length === 0) {
     if (a.flags.has('--require-private')) {
       console.error('privacy-gate: --require-private, but no private terms loaded (tools/privacy-terms.local.txt or AOS_PRIVACY_TERMS)');
+      // GitHub gives a Dependabot run the Dependabot secrets only, never the Actions secret of the same name.
+      if (env.GITHUB_ACTOR === 'dependabot[bot]') {
+        console.error('privacy-gate: a Dependabot run reads Dependabot secrets only — fix: '
+          + 'gh secret set AOS_PRIVACY_TERMS --app dependabot < tools/privacy-terms.local.txt');
+      }
       process.exit(2);
     }
     console.error(`privacy-gate: no private terms loaded; checking the ${terms.public.length} public terms only`);

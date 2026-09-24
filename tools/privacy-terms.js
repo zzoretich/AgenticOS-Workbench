@@ -4,9 +4,11 @@
  * privacy-terms.js — the privacy gate's term list, in two tiers.
  *   public:  tools/privacy-terms.json, a JSON array of generic terms that say nothing about the owner (committed).
  *   private: tools/privacy-terms.local.txt (gitignored; AOS_PRIVACY_TERMS_FILE overrides the path)
- *            plus the AOS_PRIVACY_TERMS environment variable, which CI fills from the Actions secret of that name.
- *            Both use one format: a term per line, blank lines and `#` comments ignored. Sync the secret from the file:
+ *            plus the AOS_PRIVACY_TERMS environment variable, which CI fills from the Actions secret of that name
+ *            (a Dependabot pull request reads the Dependabot secret of that name instead). Both use one format: a
+ *            term per line, blank lines and `#` comments ignored. Sync both secrets from the file whenever it changes:
  *              gh secret set AOS_PRIVACY_TERMS < tools/privacy-terms.local.txt
+ *              gh secret set AOS_PRIVACY_TERMS --app dependabot < tools/privacy-terms.local.txt
  * Every term is a case-insensitive substring match. A private term that is also public counts as public.
  *
  * Usage: node tools/privacy-terms.js --count                    "<n> public · <n> private"
