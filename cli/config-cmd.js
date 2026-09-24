@@ -40,6 +40,21 @@ function table(lines) {
   return lines.map((l) => `  ${l.map((c, i) => c.padEnd(widths[i])).join('  ')}`.trimEnd()).join('\n');
 }
 
+/**
+ * The models the local Codex offers in its own picker: <codex home>/models_cache.json, which Codex refreshes itself, in
+ * its order, hidden ones left out. null when there is no readable cache, so the schema's list (the pricing table's)
+ * stands. Codex model pickers follow it, so a new Codex model appears without an AgenticOS release.
+ */
+function codexCatalog(env, userCfg) {
+  try {
+    const home = resolveModule('lib/host.js').codexHome(env, userCfg);
+    const cache = JSON.parse(fs.readFileSync(path.join(home, 'models_cache.json'), 'utf8'));
+    const slugs = (Array.isArray(cache && cache.models) ? cache.models : [])
+      .filter((m) => m && typeof m.slug === 'string' && m.slug && m.visibility !== 'hide').map((m) => m.slug);
+    return slugs.length ? [...new Set(slugs)] : null;
+  } catch { return null; }
+}
+
 function resolveCtx(opts = {}) {
   const env = opts.env || process.env;
   const configDir = opts.configDir || resolveModule('lib/host.js').claudeConfigDir(env);
@@ -50,6 +65,7 @@ function resolveCtx(opts = {}) {
   if (!vault) throw new Refused('no vault configured (run `aos init` first)');
   const vaultFile = path.join(vault, 'brain', 'config.json');
   const ctx = { env, configDir, vault, files: { machine, vault: vaultFile }, userCfg: userCfg || {}, vaultCfg: W.readStrict(vaultFile) || {}, spend: null };
+  ctx.codexModels = opts.codexModels !== undefined ? opts.codexModels : codexCatalog(env, userCfg);
   // opts.spend(vault) → today's USD per ledger family (cli/aos.js passes the helpers `aos status` uses).
   if (typeof opts.spend === 'function') { try { ctx.spend = opts.spend(vault); } catch { ctx.spend = null; } }
   return ctx;
@@ -64,7 +80,8 @@ function row(e, ctx) {
     min: e.min ?? null, gt: e.gt ?? null, max: e.max ?? null, int: !!e.int, nullable: !!e.nullable,
     risk: e.risk || null, applies: e.applies, readonly: !!e.readonly, how: e.how || null, host: e.host || null,
     // The Workbench's picker presets, chips and edit buttons (spec 2026-09-24-settings-pickers D2, D4).
-    choices: e.choices || null, unit: e.unit || null, pick: e.pick || null, editIn: e.editIn || null,
+    choices: (e.type === 'model' && e.host === 'codex' && ctx.codexModels) || e.choices || null,
+    unit: e.unit || null, pick: e.pick || null, editIn: e.editIn || null,
     default: def === undefined ? null : def, value, source, changed: !e.machine && !same(value, def), note: null,
     // Today's spend in the ledger family this daily cap governs (spec 2026-09-24-settings-tab D7); null without a ledger read.
     spentToday: e.spend && ctx.spend && typeof ctx.spend[e.spend] === 'number' ? ctx.spend[e.spend] : null,

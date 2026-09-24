@@ -35,7 +35,7 @@ function world({ machine = {}, vaultCfg = DEFAULTS, persona = true, obsidian = t
     enable: async (o) => { calls.push(['enable', o.yes]); const c = JSON.parse(fs.readFileSync(machineFile, 'utf8')); c.cost.enabled = true; fs.writeFileSync(machineFile, JSON.stringify(c)); o.io.log('cost: enabled (python3 3.12)'); },
     disable: (o) => { calls.push(['disable']); const c = JSON.parse(fs.readFileSync(machineFile, 'utf8')); c.cost.enabled = false; fs.writeFileSync(machineFile, JSON.stringify(c)); o.io.log('cost: disabled'); },
   };
-  const opts = { configDir, io, now: NOW, env: {}, costCmd, dailyNotesJson: (layout) => ({ folder: layout.split('/')[0], format: 'YYYY-MM-DD' }) };
+  const opts = { configDir, io, now: NOW, env: { CODEX_HOME: path.join(base, 'codex') }, costCmd, dailyNotesJson: (layout) => ({ folder: layout.split('/')[0], format: 'YYYY-MM-DD' }) };
   const read = (f) => JSON.parse(fs.readFileSync(f, 'utf8'));
   return {
     base, vault, configDir, machineFile, vaultFile, opts, logs, errs, calls,
@@ -271,4 +271,29 @@ test('list --json (spec 2026-09-24-settings-pickers D2, D4): choices, unit, pick
   assert.equal(rows.quickLinks.editIn, 'file');
   assert.equal(rows['telemetry.enabled'].choices, null, 'a toggle has no presets');
   assert.equal(rows.vault.choices, null, 'install keys stay read-only');
+});
+
+test('Codex model pickers follow the local Codex catalog (models_cache.json), hidden models left out; no cache → the pricing list', async () => {
+  const w = world();
+  const codexHome = path.join(w.base, 'codex');
+  const pick = async () => {
+    w.reset();
+    await w.run('list', '--json');
+    return Object.fromEntries(JSON.parse(w.out()).settings.map((r) => [r.key, r.choices]));
+  };
+  const S = require('../brain/scripts/lib/settings-schema.js');
+  assert.deepEqual((await pick())['codex.model'], S.CODEX_MODELS, 'no Codex cache: the pricing table');
+  fs.mkdirSync(codexHome, { recursive: true });
+  fs.writeFileSync(path.join(codexHome, 'models_cache.json'), JSON.stringify({ fetched_at: '2026-09-24T04:00:00Z', models: [
+    { slug: 'gpt-6-sol', visibility: 'list' }, { slug: 'codex-auto-review', visibility: 'hide' }, { slug: 'gpt-5.6-terra', visibility: 'list' }, { slug: 'gpt-5.5' },
+  ] }));
+  const c = await pick();
+  for (const k of ['codex.model', 'reasoner.codexModel', 'persona.codexModel', 'routines.codexModel', 'crossReview.codexModel']) {
+    assert.deepEqual(c[k], ['gpt-6-sol', 'gpt-5.6-terra', 'gpt-5.5'], k);
+  }
+  assert.deepEqual(c['claude.model'], S.CLAUDE_MODELS, 'Claude rows are untouched');
+  fs.writeFileSync(path.join(codexHome, 'models_cache.json'), '{"models": ');
+  assert.deepEqual((await pick())['codex.model'], S.CODEX_MODELS, 'an unreadable cache falls back');
+  w.reset();
+  assert.equal(await w.run('set', 'codex.model', 'gpt-6-sol'), 0, 'any Codex model is still settable');
 });

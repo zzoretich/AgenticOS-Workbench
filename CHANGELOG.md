@@ -6,6 +6,7 @@ All notable changes to AgenticOS Workbench. Versions follow the tags. From the n
 
 ### Fixed
 - BRAIN.md no longer stops updating when active projects outgrow its 850-token budget. Session-end extraction files every new project as active, and the compiler used to fail once they crowded out the "Last Session" block, so every session started with the old BRAIN.md. It now lists active projects newest first (by `updated`), keeps as many as fit, and ends the list with "…and N older active projects" pointing at `brain/_index/MOC-projects.md`. Only pinned rules that overflow on their own still fail the build. The pipeline ledger records the count as `activeProjectsOmitted`.
+- ⚙ Settings' Codex model pickers now list the models your Codex offers (GPT-6 and GPT-5.6 included), read from Codex's own `models_cache.json`, which Codex keeps current; without a Codex cache they fall back to the pricing table's list.
 
 ## [0.19.1] — 2026-09-24
 
