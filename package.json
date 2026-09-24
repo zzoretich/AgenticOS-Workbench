@@ -1,7 +1,7 @@
 {
   "name": "agenticos-workbench",
   "private": true,
-  "version": "0.16.0",
+  "version": "0.17.0",
   "description": "AgenticOS Workbench: a second brain for Claude Code with an Obsidian HUD",
   "license": "MIT",
   "engines": {

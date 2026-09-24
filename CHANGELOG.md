@@ -4,6 +4,8 @@ All notable changes to AgenticOS Workbench. Versions follow the tags. From the n
 
 ## [Unreleased]
 
+## [0.17.0] — 2026-09-24
+
 ### Added
 - `aos config list | get | set | unset`: every setting in one place, with the file each value comes from. `set` validates the value, writes it atomically to the file that actually wins the merge, and runs the side effects the change needs. It works from a terminal, from `/aos config` in Claude Code and from `$agenticos:aos config` in Codex. First step toward the Workbench Settings tab.
 - `aos doctor` has a `config` row that flags unknown keys (typos) and invalid values in `agenticos.json` and `brain/config.json`.
@@ -182,7 +184,8 @@ The first public release: an `aos` CLI, the AgenticOS runtime, a Claude Code plu
 - Update notifications: a GitHub release check surfaced as a session-start notice.
 - Docs: README, install guide, and a release acceptance runbook.
 
-[Unreleased]: https://github.com/zzoretich/AgenticOS-Workbench/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/zzoretich/AgenticOS-Workbench/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.17.0
 [0.16.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.16.0
 [0.15.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.15.0
 [0.14.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.14.0
