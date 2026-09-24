@@ -1878,3 +1878,5 @@
 .aos-sk-pills .is-absent { opacity: 0.45; text-decoration: line-through; }
 .aos-sk-source { flex: 0 0 auto; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .aos-sk-actions { flex: 0 0 auto; font-family: var(--aos-mono); font-size: 10.5px; white-space: nowrap; }
+.aos-ag-ro { margin-left: 6px; font-size: 9.5px; vertical-align: 1px; }
+.aos-ag-warn { color: var(--aos-amber); }
