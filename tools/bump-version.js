@@ -15,9 +15,11 @@
  *   package-lock.json               .version, .packages[""].version, .packages["obsidian-plugin"].version and, when the
  *                                   lock lists it, .packages["brain/scripts"].version — checked, never written (refresh
  *                                   with npm install --package-lock-only --ignore-scripts)
+ * A bump also rolls CHANGELOG.md's [Unreleased] into `## [x.y.z] — <today>` (tools/changelog.js roll; a no-op when that
+ * section exists), and fails when [Unreleased] is empty: a release says what changed.
  * Usage: node tools/bump-version.js <x.y.z> [--check]
  *   --check: exit 1 if any surface differs from <x.y.z> (release.yml runs this against the tag).
- * Exit: 0 ok · 1 mismatch (--check) · 2 usage
+ * Exit: 0 ok · 1 mismatch (--check), or nothing in [Unreleased] to release · 2 usage
  */
 const fs = require('fs');
 const path = require('path');
@@ -113,6 +115,7 @@ function main(argv) {
   const out = bumpFiles(root, version);
   for (const f of out.updated) console.log(`bumped ${f}`);
   for (const f of out.skipped) console.log(`skipped ${f} (missing)`);
+  if (require('./changelog.js').main(['roll', version], { root }) !== 0) process.exitCode = 1;
 }
 
 if (require.main === module) main(process.argv);
