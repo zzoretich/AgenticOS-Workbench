@@ -4,6 +4,8 @@ All notable changes to AgenticOS Workbench. Versions follow the tags. From the n
 
 ## [Unreleased]
 
+## [0.19.1] — 2026-09-24
+
 ### Fixed
 - ⚙ Settings said "no `aos config`, run `aos upgrade`" on 0.19.0: `aos` exited before a pipe had taken all its output, so the Workbench read `aos config list --json` cut off at 64 KB. Every `aos` command now exits only after its output is flushed, and the tab names the real reason when the output does not parse.
 
@@ -220,7 +222,8 @@ The first public release: an `aos` CLI, the AgenticOS runtime, a Claude Code plu
 - Update notifications: a GitHub release check surfaced as a session-start notice.
 - Docs: README, install guide, and a release acceptance runbook.
 
-[Unreleased]: https://github.com/zzoretich/AgenticOS-Workbench/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/zzoretich/AgenticOS-Workbench/compare/v0.19.1...HEAD
+[0.19.1]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.19.1
 [0.19.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.19.0
 [0.18.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.18.0
 [0.17.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.17.0
