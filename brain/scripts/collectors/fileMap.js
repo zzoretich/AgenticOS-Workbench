@@ -64,8 +64,7 @@ function readMap(name) {
 function writeMap(name, map) {
   fs.mkdirSync(MAPS_DIR, { recursive: true });
   const p = path.join(MAPS_DIR, `${name}.json`);
-  fs.writeFileSync(p + '.tmp', JSON.stringify(map, null, 2) + '\n');
-  fs.renameSync(p + '.tmp', p);
+  require('../lib/fsx.js').writeAtomic(p, JSON.stringify(map, null, 2) + '\n');
 }
 
 async function describe(absPath, relPath, chatFn) {

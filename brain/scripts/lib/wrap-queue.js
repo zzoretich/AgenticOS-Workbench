@@ -99,9 +99,7 @@ function readRows() {
 
 function writeRows(rows) {
   const body = rows.map((r) => JSON.stringify(r)).join('\n');
-  const tmp = QUEUE_PATH + '.tmp';
-  fs.writeFileSync(tmp, body ? body + '\n' : '');
-  fs.renameSync(tmp, QUEUE_PATH); // atomic, so a concurrent reader never sees half a spool
+  require('./fsx.js').writeAtomic(QUEUE_PATH, body ? body + '\n' : ''); // atomic, so a concurrent reader never sees half a spool
 }
 
 /**

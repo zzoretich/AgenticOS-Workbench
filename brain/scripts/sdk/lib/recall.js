@@ -98,9 +98,7 @@ function wakePath(vault) { return path.join(vault, 'brain/_index/recall-wake.md'
 function saveIndex(index, vault) {
   const p = indexPath(vault || index.vault);
   fs.mkdirSync(path.dirname(p), { recursive: true });
-  const tmp = p + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(index));
-  fs.renameSync(tmp, p);
+  require('../../lib/fsx.js').writeAtomic(p, JSON.stringify(index));
   return p;
 }
 

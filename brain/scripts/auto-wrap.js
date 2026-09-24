@@ -37,6 +37,7 @@ const { findTranscript } = require('./auto-cost.js');
 const host = require('./lib/host.js');
 const { readTranscriptFile, flattenTurns } = require('./lib/transcript.js');
 const wrapOffsets = require('./lib/wrap-offsets.js');
+const fsx = require('./lib/fsx.js');
 const { getProvider } = require('./sdk/lib/provider.js');
 
 // Fix round 1 (live-fire found the workhorse continuing chat-shaped transcripts
@@ -260,39 +261,43 @@ const GENERATED_HEADINGS = ['## Key Context This Session', '## Open Threads'];
  * against the residual — the file minus the sections this function owns — so
  * the measurement reflects real overhead and repeat runs converge.
  */
-function writeSessionSections(extraction) {
-  const sessionPath = PATHS.SESSION_MD;
-  let content;
-  try { content = fs.readFileSync(sessionPath, 'utf8'); }
-  catch { content = '# SESSION\n\n## Key Context This Session\n\n## Things to Remember\n'; }
+// SESSION.md is shared with the Stop hook's summary, /wrap and the other wrap passes: every writer below changes the
+// file as it is now, under its lock (spec 2026-09-24-locked-writers D3). A missing file starts from this minimal one.
+const EMPTY_SESSION = '# SESSION\n\n## Key Context This Session\n\n## Things to Remember\n';
+const updateSession = (fn) => fsx.updateSync(PATHS.SESSION_MD, fn, { timeoutMs: 5000 });
 
+function writeSessionSections(extraction) {
   const facts = extraction?.facts ?? [];
   const decisions = extraction?.decisions ?? [];
   const feedback = extraction?.feedback ?? [];
   const threads = extraction?.threads ?? [];
 
-  const residual = GENERATED_HEADINGS.reduce((acc, h) => upsertSection(acc, h, ''), content);
+  // The budget is measured against SESSION.md as it is inside the lock, so it stays right when another writer
+  // changed the file since this pass started.
+  updateSession((current) => {
+    const content = current == null ? EMPTY_SESSION : current;
+    const residual = GENERATED_HEADINGS.reduce((acc, h) => upsertSection(acc, h, ''), content);
 
-  const sections = [
-    { name: 'base', text: residual, priority: 0 },
-    { name: 'facts', text: renderBullets(facts), priority: 1 },
-    { name: 'decisions', text: renderBullets(decisions), priority: 2 },
-    { name: 'feedback', text: renderBullets(feedback), priority: 3 },
-    { name: 'threads', text: renderBullets(threads), priority: 4 },
-  ];
-  const { dropped } = fitToBudget(sections, 400);
-  const kept = (name) => !dropped.includes(name);
+    const sections = [
+      { name: 'base', text: residual, priority: 0 },
+      { name: 'facts', text: renderBullets(facts), priority: 1 },
+      { name: 'decisions', text: renderBullets(decisions), priority: 2 },
+      { name: 'feedback', text: renderBullets(feedback), priority: 3 },
+      { name: 'threads', text: renderBullets(threads), priority: 4 },
+    ];
+    const { dropped } = fitToBudget(sections, 400);
+    const kept = (name) => !dropped.includes(name);
 
-  const keyContextBody = [
-    kept('facts') ? renderBullets(facts) : '',
-    kept('decisions') ? renderBullets(decisions) : '',
-    kept('feedback') ? renderBullets(feedback) : '',
-  ].filter(Boolean).join('\n');
-  const threadsBody = kept('threads') ? renderBullets(threads) : '';
+    const keyContextBody = [
+      kept('facts') ? renderBullets(facts) : '',
+      kept('decisions') ? renderBullets(decisions) : '',
+      kept('feedback') ? renderBullets(feedback) : '',
+    ].filter(Boolean).join('\n');
+    const threadsBody = kept('threads') ? renderBullets(threads) : '';
 
-  let next = upsertSection(content, '## Key Context This Session', keyContextBody);
-  next = upsertSection(next, '## Open Threads', threadsBody);
-  fs.writeFileSync(sessionPath, next);
+    const next = upsertSection(content, '## Key Context This Session', keyContextBody);
+    return upsertSection(next, '## Open Threads', threadsBody);
+  });
 }
 
 /**
@@ -302,13 +307,10 @@ function writeSessionSections(extraction) {
  * removes the section (upsertSection's empty-body contract).
  */
 function writePendingDraftsSection(count) {
-  const sessionPath = PATHS.SESSION_MD;
-  let content;
-  try { content = fs.readFileSync(sessionPath, 'utf8'); } catch { return; }
   const body = count > 0
     ? `- ${count} draft feedback rule${count === 1 ? '' : 's'} pending review — say "review feedback drafts" to batch-approve (feedback-autoloop skill).`
     : '';
-  fs.writeFileSync(sessionPath, upsertSection(content, '## Pending Feedback Drafts', body));
+  updateSession((content) => (content == null ? null : upsertSection(content, '## Pending Feedback Drafts', body)));
 }
 
 /**
@@ -317,20 +319,12 @@ function writePendingDraftsSection(count) {
  * wrap-session.js's SESSION.md reset.
  */
 function writeWrapStatus(sessionId, providerName) {
-  const sessionPath = PATHS.SESSION_MD;
-  let content;
-  try { content = fs.readFileSync(sessionPath, 'utf8'); }
-  catch { content = '# SESSION\n\n## Key Context This Session\n\n## Things to Remember\n'; }
   const body = `- Session ${sessionId} not wrapped (provider: ${providerName}) — run ${host.invocationHint('wrap')}.`;
-  fs.writeFileSync(sessionPath, upsertSection(content, '## Wrap Status', body));
+  updateSession((content) => upsertSection(content == null ? EMPTY_SESSION : content, '## Wrap Status', body));
 }
 
 function clearWrapStatus() {
-  const sessionPath = PATHS.SESSION_MD;
-  let content;
-  try { content = fs.readFileSync(sessionPath, 'utf8'); } catch { return; }
-  if (!content.includes('## Wrap Status')) return;
-  fs.writeFileSync(sessionPath, upsertSection(content, '## Wrap Status', ''));
+  updateSession((content) => (content == null || !content.includes('## Wrap Status') ? null : upsertSection(content, '## Wrap Status', '')));
 }
 
 /** One draft per explicit {quote, rule, why} (the wrap_session tool's shape). */

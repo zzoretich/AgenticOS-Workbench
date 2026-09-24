@@ -13,6 +13,7 @@ const path = require('path');
 const { PATHS, dailyNotePath } = require('./lib/paths.js');
 const { deriveTitle, deriveDescription, writeMemory } = require('./lib/memory-writer.js');
 const { appendTrail } = require('./lib/promote-log.js');
+const fsx = require('./lib/fsx.js');
 
 const VAULT = PATHS.VAULT;
 const SESSION_WM = path.join(VAULT, 'brain/_index/SESSION.md');
@@ -130,13 +131,11 @@ function appendToMemoryFile(fullPath, text, type = 'reference') {
   try {
     fs.mkdirSync(path.dirname(fullPath), { recursive: true });
     const today = todayStr();
-    if (fs.existsSync(fullPath)) {
-      const existing = fs.readFileSync(fullPath, 'utf8');
-      const stamped = existing.replace(/updated: \d{4}-\d{2}-\d{2}/, `updated: ${today}`);
-      fs.writeFileSync(fullPath, stamped + `\n- ${today}: ${text}\n`);
-    } else {
-      const title = text.slice(0, 60);
-      const body = `---
+    const title = text.slice(0, 60);
+    // One locked create-or-append (spec 2026-09-24-locked-writers D3).
+    fsx.updateSync(fullPath, (existing) => {
+      if (existing != null) return existing.replace(/updated: \d{4}-\d{2}-\d{2}/, `updated: ${today}`) + `\n- ${today}: ${text}\n`;
+      return `---
 type: memory
 tags: [memory/${type}, status/active]
 created: ${today}
@@ -151,8 +150,7 @@ ${text}
 ## History
 - ${today}: promoted from SESSION.md
 `;
-      fs.writeFileSync(fullPath, body);
-    }
+    }, { timeoutMs: 5000 });
   } catch (e) {
     console.error('append failed:', e.message);
     throw e;
@@ -161,21 +159,18 @@ ${text}
 
 function ensureIndexEntry(relPath, text, type = 'reference') {
   try {
-    let idx = readFile(MEMORY_INDEX);
-    if (idx.includes(relPath)) return;
     const title = path.basename(relPath, '.md').replace(/-/g, ' ');
     const section = TYPE_SECTION[type] || 'Reference';
     const entry = `- [${title}](${relPath}) — ${text.slice(0, 80)}\n`;
     // Append under the matching section header. Match the header by prefix so
     // "## Feedback (how to work)" is found (and we don't append a duplicate
-    // "## Feedback" section).
+    // "## Feedback" section). Locked, against the index as it is now.
     const re = new RegExp(`(##\\s+${section}\\b[^\\n]*\\n(?:[^\\n]*\\n)*?)`, 'i');
-    if (re.test(idx)) {
-      idx = idx.replace(re, `$1${entry}`);
-    } else {
-      idx += `\n## ${section}\n${entry}`;
-    }
-    fs.writeFileSync(MEMORY_INDEX, idx);
+    fsx.updateSync(MEMORY_INDEX, (text0) => {
+      const idx = text0 == null ? '' : text0;
+      if (idx.includes(relPath)) return idx;
+      return re.test(idx) ? idx.replace(re, `$1${entry}`) : `${idx}\n## ${section}\n${entry}`;
+    }, { timeoutMs: 5000 });
   } catch (_) {}
 }
 
@@ -192,11 +187,9 @@ function appendSessionWrap(promoted, skipped = []) {
   }
   for (const s of skipped) lines.push(`Skipped: ${s.title} — ${s.reason}`);
   try {
-    if (!fs.existsSync(logFile)) {
-      fs.mkdirSync(path.dirname(logFile), { recursive: true });
-      fs.writeFileSync(logFile, `---\ntype: daily-note\ndate: ${today}\ntags: [daily-note]\n---\n\n# ${today}\n\n## Claude Code Sessions\n`);
-    }
-    fs.appendFileSync(logFile, lines.join('\n') + '\n');
+    // Under the daily note's lock: the Stop hook rewrites the note's last-active marker under it, and an append that
+    // landed mid-rewrite was lost.
+    fsx.updateSync(logFile, (t) => (t == null ? `---\ntype: daily-note\ndate: ${today}\ntags: [daily-note]\n---\n\n# ${today}\n\n## Claude Code Sessions\n` : t) + lines.join('\n') + '\n', { timeoutMs: 5000 });
   } catch (_) {}
 }
 
@@ -221,7 +214,7 @@ updated: ${todayStr()}
 
 ## Promote to Memory on Close
 `;
-  try { fs.writeFileSync(SESSION_WM, template); } catch (_) {}
+  try { fsx.updateSync(SESSION_WM, () => template, { timeoutMs: 5000 }); } catch (_) {}
 }
 
 function main() {

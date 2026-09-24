@@ -11,6 +11,7 @@
 const fs = require('fs');
 const path = require('path');
 const { PATHS } = require('./paths.js');
+const fsx = require('./fsx.js');
 
 const VAULT = PATHS.VAULT;
 const INDEX_PATH = path.join(VAULT, 'MEMORY.md');
@@ -94,9 +95,9 @@ function writeMemory({ type, slug, title, description, body, source, session }) 
 
   const heading = `## ${TYPE_HEADING[type]}`;
   const entry = `- [${resolvedTitle}](${rel}) — ${description}`;
-  let idx;
-  try { idx = fs.readFileSync(INDEX_PATH, 'utf8'); } catch { idx = '# Index\n'; }
-  fs.writeFileSync(INDEX_PATH, insertIndexLine(idx, heading, entry));
+  // Locked read-change-write (spec 2026-09-24-locked-writers D3): auto-wrap, wrap_session and a reconcile's wrap can
+  // add lines at once, and a plain rewrite kept only the last one's.
+  fsx.updateSync(INDEX_PATH, (idx) => insertIndexLine(idx == null ? '# Index\n' : idx, heading, entry), { timeoutMs: 5000 });
 
   return { memoryPath: rel, slug: s, indexUpdated: true };
 }

@@ -51,10 +51,7 @@ function readState() {
 }
 function writeState(st) {
   try {
-    fs.mkdirSync(path.dirname(STATE_PATH), { recursive: true });
-    const tmp = STATE_PATH + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(st, null, 2) + '\n');
-    fs.renameSync(tmp, STATE_PATH);
+    require('../../lib/fsx.js').writeAtomic(STATE_PATH, JSON.stringify(st, null, 2) + '\n');
   } catch { /* state is a cache; losing it only costs a re-probe */ }
 }
 function isFresh(entry, ttlMs, now) {

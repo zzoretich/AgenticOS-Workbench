@@ -35,6 +35,7 @@ const { PATHS } = require('./lib/paths.js');
 const { estimateTokens } = require('./lib/text-budget.js');
 const { readFrontmatter } = require('./collectors/util.js');
 const { withReport } = require('./lib/pipeline-report.js');
+const fsx = require('./lib/fsx.js');
 
 // Raised 500 → 850 on 2026-09-04: the fixed skeleton + quick links + Who
 // paragraph (~950 chars) left room for only ~9 bullets, and 7 pinned rules +
@@ -214,9 +215,7 @@ function composeBrainMd(meta, memIndex, lastSession, shown, omitted) {
 }
 
 function writeAtomic(absPath, content) {
-  const tmp = absPath + '.tmp';
-  fs.writeFileSync(tmp, content);
-  fs.renameSync(tmp, absPath);
+  fsx.writeAtomic(absPath, content); // a temp name of its own (lib/fsx.js), never a shared `<file>.tmp`
 }
 
 /** Replaces (or, if absent, appends) ONLY the "## Manual index" section of a MOC body. */
@@ -303,11 +302,21 @@ async function buildBrainMd({ report }) {
       'active project left out) — prune pinned rules');
   }
 
-  const lastSession = clampToChars(meta.lastSession, headroomChars);
-  const brainMdContent = composeBrainMd(meta, memIndex, lastSession, shown, omitted);
+  // Compose and write under BRAIN.md's lock, with the Last Session as it is now: the Stop hook's summary takes the
+  // same lock, and one that landed after readExistingBrainMeta() used to be overwritten by this compile (spec
+  // 2026-09-24-locked-writers D4). The headroom above was priced without the block, so a newer one still fits.
+  let current = meta.lastSession;
+  let lastSession = '';
+  let brainMdContent = '';
+  fsx.withLockSync(PATHS.BRAIN_MD, () => {
+    let raw = '';
+    try { raw = fs.readFileSync(PATHS.BRAIN_MD, 'utf8'); } catch { /* first-ever compile */ }
+    if (raw) current = extractLastSession(raw);
+    lastSession = clampToChars(current, headroomChars);
+    brainMdContent = composeBrainMd(meta, memIndex, lastSession, shown, omitted);
+    fsx.writeAtomic(PATHS.BRAIN_MD, brainMdContent);
+  }, { timeoutMs: 5000 });
   const tokens = estimateTokens(brainMdContent);
-
-  writeAtomic(PATHS.BRAIN_MD, brainMdContent);
   wrote.push('brain/_index/BRAIN.md');
 
   if (report) {
@@ -319,10 +328,10 @@ async function buildBrainMd({ report }) {
     report.counts.activeProjectsOmitted = omitted;
     // Surfaced rather than silent: a clamp means the Stop-hook summary is
     // outrunning the budget and BRAIN.md is showing a trimmed one.
-    report.counts.lastSessionClampedChars = meta.lastSession.length - lastSession.length;
+    report.counts.lastSessionClampedChars = current.length - lastSession.length;
   }
 
-  return { tokens, wrote, lastSessionClamped: lastSession !== meta.lastSession, projectsOmitted: omitted };
+  return { tokens, wrote, lastSessionClamped: lastSession !== current, projectsOmitted: omitted };
 }
 
 if (require.main === module) {

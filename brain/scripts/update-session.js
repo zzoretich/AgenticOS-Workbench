@@ -22,6 +22,7 @@ const { summarize } = require('./sdk/lib/qwen.js');
 const { getProvider } = require('./sdk/lib/provider.js');
 const { workingMemoryFromTranscript } = require('./lib/heuristics.js');
 const { markerPath } = require('./lib/markers.js');
+const fsx = require('./lib/fsx.js');
 
 const VAULT = PATHS.VAULT;
 const BRAIN = PATHS.BRAIN_MD;
@@ -196,10 +197,9 @@ function loadTranscript(transcriptPath) {
 function writeLastActive(now, turns) {
   const marker = `\n<!-- last-active: ${now} | turns: ${turns} -->\n`;
   try {
+    // Locked, and brief: this runs inside the Stop hook, so a busy note skips one marker rather than wait.
     if (fs.existsSync(sessionFile)) {
-      const content = fs.readFileSync(sessionFile, 'utf8');
-      const cleaned = content.replace(/\n<!-- last-active:.*-->\n/g, '');
-      fs.writeFileSync(sessionFile, cleaned + marker);
+      fsx.updateSync(sessionFile, (content) => (content == null ? null : content.replace(/\n<!-- last-active:.*-->\n/g, '') + marker), { timeoutMs: 500 });
     }
   } catch (_) {}
 }
@@ -216,7 +216,7 @@ function writeSummaryMarker(file, state) {
 function writeSessionSummary(summary, now) {
   try {
     const block = `\n\n## Auto-Summary @ ${now}\n${summary}\n`;
-    fs.appendFileSync(sessionFile, block);
+    fsx.updateSync(sessionFile, (t) => (t == null ? '' : t) + block, { timeoutMs: 5000 }); // the note's lock: see writeLastActive
   } catch (_) {}
 }
 
@@ -259,10 +259,11 @@ function renderLastSession(brainContent, summary, date) {
   return brainContent.replace(/\s*$/, `\n\n${newSection}\n`);
 }
 
+// BRAIN.md and SESSION.md are shared with build-brain-md, auto-wrap and /wrap: every write takes the file's lock and
+// changes the file as it is now, not as it was read earlier (spec 2026-09-24-locked-writers D3).
 function updateBrainLastSession(summary, date) {
   try {
-    const brain = fs.readFileSync(BRAIN, 'utf8');
-    fs.writeFileSync(BRAIN, renderLastSession(brain, summary, date));
+    fsx.updateSync(BRAIN, (brain) => (brain == null ? null : renderLastSession(brain, summary, date)), { timeoutMs: 5000 });
   } catch (_) {}
 }
 
@@ -278,8 +279,7 @@ function renderWorkingMemory(sessionContent, summary, now) {
 
 function updateSessionWorkingMemory(summary, now) {
   try {
-    const s = fs.readFileSync(SESSION_MD, 'utf8');
-    fs.writeFileSync(SESSION_MD, renderWorkingMemory(s, summary, now));
+    fsx.updateSync(SESSION_MD, (s) => (s == null ? null : renderWorkingMemory(s, summary, now)), { timeoutMs: 5000 });
   } catch (_) {}
 }
 
