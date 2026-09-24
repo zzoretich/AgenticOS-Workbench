@@ -36,10 +36,10 @@ test('the build is byte-stable, and check reports missing, edited, stale and non
   assert.deepEqual(check(a, dir), [], 'write replaces the tree, stale files included');
 });
 
-test('25 skills: the 18 commands and 9 skills of plugin/, cost and wrap merged, each named, described and marked', () => {
+test('26 skills: the 19 commands and 9 skills of plugin/, cost and wrap merged, each named, described and marked', () => {
   const files = build();
   const skills = [...files.keys()].filter((k) => /^skills\/[^/]+\/SKILL\.md$/.test(k));
-  assert.equal(skills.length, 25);
+  assert.equal(skills.length, 26);
   const expected = new Set([
     ...fs.readdirSync(path.join(ROOT, 'plugin', 'commands')).filter((f) => f.endsWith('.md')).map((f) => f.slice(0, -3)),
     ...fs.readdirSync(path.join(ROOT, 'plugin', 'skills')),

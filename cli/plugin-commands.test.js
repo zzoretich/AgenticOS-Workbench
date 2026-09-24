@@ -6,9 +6,9 @@ const path = require('path');
 
 const DIR = path.resolve(__dirname, '..', 'plugin', 'commands');
 const EXPECTED = ['remember', 'feedback', 'pattern', 'project', 'wrap', 'brain', 'scan', 'ask-brain', 'reflect-week',
-  'consolidate-memory', 'compress', 'standup', 'cost', 'aos', 'routines', 'todo', 'propose', 'skills'];
+  'consolidate-memory', 'compress', 'standup', 'cost', 'aos', 'routines', 'todo', 'propose', 'skills', 'agents'];
 
-test('exactly the 18 contract commands exist', () => {
+test('exactly the 19 contract commands exist', () => {
   assert.deepEqual(fs.readdirSync(DIR).filter((f) => f.endsWith('.md')).map((f) => f.slice(0, -3)).sort(), [...EXPECTED].sort());
 });
 
