@@ -738,7 +738,7 @@ function installPlugin(ctx, bin) {
   else if (inst.stdout.trim()) out.log(inst.stdout.trim());
 }
 
-/** "5 hook entries, the MCP registration, 26 skills" — what removeDirectWiring took out, or '' when nothing. */
+/** "5 hook entries, the MCP registration, 27 skills" — what removeDirectWiring took out, or '' when nothing. */
 function directWiringSummary(d) {
   return [d.hooks && `${d.hooks} hook entries`, d.mcp && 'the MCP registration', d.skills && `${d.skills} skills`].filter(Boolean).join(', ');
 }

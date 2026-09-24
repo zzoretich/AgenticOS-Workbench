@@ -1,0 +1,39 @@
+---
+description: Read and manage the vault's notifications (the Workbench Notifications tab) — show unread items, mark read, archive; and how any agent posts one with `aos notify post`
+allowed-tools: Bash, Read
+argument-hint: [list [--unread] [--from <slug>] [--level <level>] | read <id>...|--all | archive <id>... | post ... | prune]
+---
+
+The notifications live in `<vault>/brain/notifications/` and the Workbench **Notifications** tab shows the same items.
+Arguments: $ARGUMENTS
+
+Run `aos notify` with those arguments in the shell (fallback launcher: `sh "${CLAUDE_PLUGIN_ROOT}/bin/aos" notify`).
+
+**No arguments:** run `aos notify list --unread --json`. For each item, give one line: the level (`BREAKING` in
+capitals), the sender, the title and the time. Newest first. If there are more than 10, show the 10 newest and say
+how many remain. Then offer to open one, mark them read, or archive them. To open an item, read the file at its
+`path` under the vault and show its body.
+
+**`read`, `archive`, `unarchive`, `unread`, `list`, `prune`:** pass them through, then confirm the result in one sentence.
+
+**Posting (for agents, skills and routines).** `aos notify post` is the one way to post. It checks the input, writes
+the file atomically, and for `breaking` and `alert` it raises a desktop alert (while `notifications.osAlert` is on):
+
+```sh
+aos notify post --from <sender-slug> --level breaking|alert|edition|info --title "<one line>" \
+  [--tag <word>]... [--body-file <file>|-] [--actions-json <file>|-] [--json]
+```
+
+- `--from`: a kebab-case sender name (the agent, routine or duty).
+- The body is Markdown. `--body-file -` reads it from stdin.
+- Levels:
+  - `breaking`: urgent, rare.
+  - `alert`: needs attention.
+  - `edition`: a scheduled report.
+  - `info`: everything else.
+- A sender that posts more than `notifications.maxPerSenderPerHour` items in an hour has the extra items written as `info`, with no desktop alert.
+- Actions are a JSON array. Only two kinds are accepted, and anything else is refused:
+  - `{"kind":"ask","label":"Deep dive","skill":"<skill-name>","arg":"<one line>"}`: the tab opens a new session running that skill with the argument.
+  - `{"kind":"react","label":"More like this","value":1,"ref":"<story-id>"}` (`value` -1 for less): the tab records the vote in `brain/notifications/reactions.jsonl`, which the sender can read back.
+- Add `"anchor":"<heading-slug>"` to show an action under that `##` heading of the body.
+- Test a post with `--dry-run`, which prints the file and writes nothing.

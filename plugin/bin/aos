@@ -90,6 +90,7 @@ case "$NAME" in
   interview) SCRIPT=persona/interview.js ;;
   run-duty) exec sh "$VAULT/brain/scripts/persona/run-duty.sh" "$@" ;;
   run-routine) SCRIPT=routines/run-routine.js ;;
+  notify) SCRIPT=notify.js ;;
   cross-review) SCRIPT=cross-review/runner.js ;;
   skills-sync) SCRIPT=skills-sync.js ;;
   doctor|status|upgrade|uninstall|persona|cost|graph|routines|skills|agents|config|workspace|terminal|provider|update-check|update-status|update-notice) SCRIPT=cli/aos.js; set -- "$NAME" "$@" ;;
