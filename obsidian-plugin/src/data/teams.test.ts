@@ -1,0 +1,185 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import * as fs from "fs";
+import * as path from "path";
+import { createRequire } from "module";
+import {
+  TEAMS_DIR, Team, TeamsAdapter, readTeams, teamFrom, parseJsonl, parseFrontmatter, memberStatus, pendingGates, gateBadge,
+  orderTeams, boardColumns, gateCards, isBudgetGate, budgetFloor, budgetPresets, stepBudget, splitMentions, sessionCommand,
+  redirectPrompt, expectOf, channelView, touchesTeams, usd, shq,
+} from "./teams";
+import { parseAgents } from "./agents";
+import { touchesBadges } from "./badges";
+
+// The fixture vault is read by both sides (spec 2026-09-28-agent-teams-design §6): this module and brain/scripts/lib/teams.js.
+const VAULT = path.resolve(__dirname, "fixtures/teams-vault");
+const REPO = path.resolve(__dirname, "../../..");
+const store = createRequire(__filename)(path.join(REPO, "brain/scripts/lib/teams.js"));
+const ROOT = store.teamsRoot(VAULT);
+
+/** The Obsidian adapter's shape over the fixture folder: vault-relative paths. */
+export function fsAdapter(vault: string): TeamsAdapter {
+  const abs = (p: string) => path.join(vault, p);
+  return {
+    async list(p) {
+      const ents = fs.readdirSync(abs(p), { withFileTypes: true });
+      return { files: ents.filter((e) => e.isFile()).map((e) => `${p}/${e.name}`), folders: ents.filter((e) => e.isDirectory()).map((e) => `${p}/${e.name}`) };
+    },
+    async read(p) { return fs.readFileSync(abs(p), "utf8"); },
+    async exists(p) { return fs.existsSync(abs(p)); },
+  };
+}
+
+let cached: Team[] | null = null;
+async function teams(): Promise<Team[]> { return (cached ??= await readTeams(fsAdapter(VAULT))); }
+async function team(id: string): Promise<Team> { const t = (await teams()).find((x) => x.id === id); assert.ok(t, `no team ${id}`); return t; }
+
+test("the same teams as the runtime's listTeams: folders with a TEAM.md and a valid id", async () => {
+  assert.deepEqual((await teams()).map((t) => t.id), store.listTeams(ROOT));
+  assert.deepEqual(store.listTeams(ROOT), ["broken", "lab", "ops"]);
+});
+
+test("each team parses to the runtime's roster, stages, gates and state", async () => {
+  for (const id of ["lab", "ops"]) {
+    const t = await team(id);
+    const js = store.readTeam(ROOT, id);
+    assert.equal(t.error, null);
+    assert.deepEqual([t.name, t.lead, t.reportsTo, t.parent, t.disabled], [js.name, js.lead, js.reportsTo ?? null, js.parent ?? null, js.disabled]);
+    assert.deepEqual(t.stages, js.stages);
+    assert.deepEqual(t.gates, js.gates);
+    assert.deepEqual(t.members.map((m) => [m.id, m.name, m.role, m.agent, m.provider, m.model, m.effort, m.stage, m.paused]),
+      js.members.map((m: Record<string, unknown>) => [m.id, m.name, m.role, m.agent, m.provider, m.model, m.effort, [].concat((m.stage ?? []) as never), !!m.paused]));
+    assert.deepEqual(t.state, store.readState(js));
+  }
+  const lab = await team("lab");
+  assert.equal(lab.members[0].id, "lead");
+  assert.equal((store.readTeam(ROOT, "lab").members[1] as { voice: string }).voice, "Practical; shows the commit range, and it's brief.");
+  assert.equal(lab.state.length, 3);
+  assert.equal(lab.budgetDefault, 10);
+});
+
+test("the board is the runtime's: the last snapshot per id, in first-seen order; bad lines skipped, the torn tail left out", async () => {
+  for (const id of ["lab", "ops"]) {
+    const t = await team(id);
+    assert.deepEqual(t.board.map((i) => i.raw), [...store.boardItems(store.readTeam(ROOT, id)).values()]);
+  }
+  const lab = await team("lab");
+  assert.deepEqual(lab.board.map((i) => i.id), ["site-00", "site-01", "site-02", "site-03"]);
+  assert.equal(lab.skipped, 2);   // one hand-edited board line, one channel line
+  assert.equal(lab.torn, true);   // site-04's append is still in flight
+  assert.deepEqual(lab.board[2].owners, ["builder"]);
+});
+
+test("the channel, member status, pending gates and live markers match the runtime", async () => {
+  for (const id of ["lab", "ops"]) {
+    const t = await team(id);
+    const js = store.readTeam(ROOT, id);
+    assert.deepEqual(t.channel.map((p) => [p.ts, p.from, p.item, p.kind, p.text]),
+      store.tail(js, { n: 1000 }).map((r: Record<string, unknown>) => [r.ts, r.from, r.item, r.kind, r.text]));
+    assert.deepEqual(memberStatus(t).map((m) => [m.id, m.lead, m.status, m.item, m.lastRun]), store.memberStatus(js).map((m: Record<string, unknown>) => [m.id, m.lead, m.status, m.item, m.lastRun]));
+    assert.deepEqual(pendingGates(t).map((i) => i.id), store.pendingGates(js).map((i: { id: string }) => i.id));
+    assert.deepEqual(t.live.map((m) => m.run), store.liveMarkers(js).map((m: { run: string }) => m.run));
+  }
+  const s = memberStatus(await team("lab"));
+  assert.deepEqual(s.map((m) => [m.id, m.status, m.item]), [["lead", "idle", "site-01"], ["builder", "working", "site-02"], ["reviewer", "blocked", "site-03"]]);
+  assert.equal(s[2].lastRun?.status, "killed");
+  assert.ok(memberStatus(await team("ops")).every((m) => m.status === "paused"), "a disabled team's members are all paused");
+});
+
+test("a TEAM.md the subset refuses is a team with its error, as the runtime refuses it", async () => {
+  const b = await team("broken");
+  assert.match(b.error ?? "", /unsupported TEAM\.md line: - one/);
+  assert.throws(() => store.readTeam(ROOT, "broken"), /unsupported TEAM\.md line: - one/);
+  assert.deepEqual([b.members, b.board], [[], []]);
+  assert.throws(() => parseFrontmatter("no frontmatter"), /no frontmatter/);
+});
+
+test("JSONL: a complete last row without a newline is read; an unparsable one is torn, not skipped", () => {
+  assert.deepEqual(parseJsonl('{"a":1}\n{"b":2}'), { rows: [{ a: 1 }, { b: 2 }], skipped: 0, torn: false });
+  assert.deepEqual(parseJsonl('{"a":1}\nnope\n[1]\n{"b"'), { rows: [{ a: 1 }], skipped: 2, torn: true });
+  assert.deepEqual(parseJsonl(null), { rows: [], skipped: 0, torn: false });
+});
+
+test("the badge counts pending gates across readable teams, a disabled team's included", async () => {
+  assert.equal(gateBadge(await teams()), 3);
+  assert.equal(gateBadge(await readTeams(fsAdapter(VAULT), { boardOnly: true })), 3);
+  const board = (await readTeams(fsAdapter(VAULT), { boardOnly: true })).find((t) => t.id === "lab");
+  assert.deepEqual([board?.channel.length, board?.live.length, board?.runs.length], [0, 0, 0]);
+});
+
+test("teams are listed parent first, children indented; a parent cycle still lists every team", async () => {
+  assert.deepEqual(orderTeams(await teams()).map((x) => [x.team.id, x.depth]), [["broken", 0], ["lab", 0], ["ops", 1]]);
+  const a = teamFrom({ id: "a", teamMd: "---\nparent: b\n---\n", board: null, channel: null, runs: null, markers: [], state: null, disabled: false });
+  const b = teamFrom({ id: "b", teamMd: "---\nparent: a\n---\n", board: null, channel: null, runs: null, markers: [], state: null, disabled: false });
+  assert.deepEqual(orderTeams([a, b]).map((x) => x.team.id), ["a", "b"]);
+});
+
+test("gate cards: longest waiting first, since the gate first went pending, with the lead's pitch and the budget gate", async () => {
+  const cards = gateCards(await teams());
+  assert.deepEqual(cards.map((c) => [c.team.id, c.item.id, c.since, c.budget]), [
+    ["lab", "site-01", "2026-09-20T12:00:00.000Z", true],
+    ["ops", "rel-01", "2026-09-21T08:00:00.000Z", false],
+    ["ops", "rel-02", "2026-09-21T09:00:00.000Z", true],
+  ]);
+  assert.match(cards[0].pitch?.text ?? "", /I propose \$20/);
+  assert.equal(isBudgetGate(await team("ops"), cards[2].item), true, "ops funds work at its own first stage, plan");
+});
+
+test("budgets: presets are half, the proposal and double; the floor is spend plus what live Claude runs hold", async () => {
+  assert.deepEqual(budgetPresets(20), [10, 20, 40]);
+  assert.deepEqual(budgetPresets(25), [13, 25, 50]);
+  assert.deepEqual(budgetPresets(0, 5), [3, 5, 10]);
+  assert.deepEqual(budgetPresets(0, 0), [5, 10, 20]);
+  const lab = await team("lab");
+  assert.equal(budgetFloor(lab, lab.board.find((i) => i.id === "site-02")!), 14.7);
+  assert.equal(budgetFloor(lab, lab.board.find((i) => i.id === "site-01")!), 3.44);
+  assert.equal(stepBudget(20, 1, [10, 20, 40], 3.44), 25);
+  assert.equal(stepBudget(20, -1, [10, 20, 40], 3.44), 15);
+  assert.equal(stepBudget(5, -1, [10, 20, 40], 3.44), null);
+  assert.equal(stepBudget(1000, 1, [10, 20, 40], 0), null);
+  assert.equal(stepBudget(13, 1, [13, 25, 50], 0), 15);
+});
+
+test("the work board: one column per stage, done items apart, unknown stages in a last column", async () => {
+  assert.deepEqual(boardColumns(await team("lab")).map((c) => [c.stage, c.items.map((i) => i.id), c.done.map((i) => i.id)]), [
+    ["discuss", ["site-01"], []], ["plan", [], []], ["execute", ["site-02"], []], ["verify", ["site-03"], []], ["ship", [], ["site-00"]],
+  ]);
+  assert.deepEqual(boardColumns(await team("ops")).map((c) => c.stage), ["plan", "build", "ship", "other"]);
+});
+
+test("the channel view filters by item and keeps the last posts", async () => {
+  const lab = await team("lab");
+  assert.deepEqual(channelView(lab, "site-01").map((p) => p.kind), ["assign", "handoff", "gate"]);
+  assert.equal(channelView(lab, null, 2).length, 2);
+});
+
+test("mentions: members and the user are known, a word@word is not a mention", () => {
+  const parts = splitMentions("See notes@lead, ask @user or @builder, not @stranger.", ["lead", "builder"]);
+  assert.deepEqual(parts.filter((p) => p.mention).map((p) => [p.text, p.known]), [["@user", true], ["@builder", true], ["@stranger", false]]);
+  assert.equal(parts.map((p) => p.text).join(""), "See notes@lead, ask @user or @builder, not @stranger.");
+});
+
+test("session commands: the agent's run command per host, a prompt single-quoted, null where the host lacks the agent", async () => {
+  const agents = parseAgents(JSON.stringify({ schema: 1, agents: [
+    { id: "team-lead", name: "team-lead", on: { claude: { invoke: "@agent-team-lead", run: "claude --agent team-lead" }, codex: { invoke: "team-lead", run: "codex 'Use the team-lead agent. Ask me what it should work on.'" } } },
+    { id: "team-builder", name: "team-builder", on: { claude: { invoke: "@agent-team-builder", run: "claude --agent team-builder" } } },
+  ] }));
+  assert.equal(sessionCommand(agents, "team-lead", "claude"), "claude --agent team-lead");
+  assert.equal(sessionCommand(agents, "team-lead", "claude", "it's $20"), `claude --agent team-lead 'it'\\''s $20'`);
+  assert.equal(sessionCommand(agents, "team-lead", "codex", "go"), "codex 'Use the team-lead agent for this. go'");
+  assert.equal(sessionCommand(agents, "team-builder", "codex"), null);
+  assert.equal(sessionCommand(agents, "nobody", "claude"), null);
+  assert.equal(sessionCommand(agents, null, "claude"), null);
+  assert.equal(shq("a'b"), `'a'\\''b'`);
+
+  const lab = await team("lab");
+  const it = lab.board.find((i) => i.id === "site-01")!;
+  assert.equal(expectOf(it), '{"ts":"2026-09-20T12:45:00.000Z"}');
+  assert.match(redirectPrompt(lab, it), /aos team gate redirect lab site-01 --expect '\{"ts":"2026-09-20T12:45:00\.000Z"\}' --note/);
+});
+
+test("dollar amounts, and the paths a vault event must touch to refresh the tab or its badge", () => {
+  assert.deepEqual([usd(3.44), usd(20), usd(125.5), usd(null)], ["$3.44", "$20", "$126", "–"]);
+  assert.ok(touchesTeams(TEAMS_DIR) && touchesTeams(`${TEAMS_DIR}/lab/board.jsonl`) && !touchesTeams("persona/teamsx"));
+  assert.ok(touchesBadges(`${TEAMS_DIR}/lab/board.jsonl`));
+});
