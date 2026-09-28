@@ -64,6 +64,8 @@ export interface VaultConfig {
   skills: { sync: boolean; exclude: string[] };
   // Universal agents (spec 2026-09-23-universal-agents D6): the Agents tab reads the runtime's cache, not these; mirrored likewise.
   agents: { sync: boolean; exclude: string[] };
+  // The status line (spec 2026-09-28-statusline-design): the status bar reads the runtime's statusline.json, not these.
+  statusline: { segments: string[]; links: boolean; subagents: boolean; refreshSeconds: number; codexItems: string[] };
 }
 
 export interface ProviderState {
@@ -103,6 +105,10 @@ export const VAULT_CONFIG_DEFAULTS: VaultConfig = {
   crossReview: { enabled: true, claudeModel: null, codexModel: null, effort: null, perCallUsd: 3.0, perDayUsd: 10.0, timeoutSec: 600, rounds: 5 },
   skills: { sync: true, exclude: [] },
   agents: { sync: true, exclude: [] },
+  statusline: {
+    segments: ["needs-you", "runs", "spend", "health"], links: true, subagents: true, refreshSeconds: 5,
+    codexItems: ["model-with-reasoning", "task-progress", "project-name", "git-branch", "context-used", "five-hour-limit", "weekly-limit"],
+  },
 };
 
 export const PROVIDER_STATE_PATH = "brain/_index/provider-state.json";

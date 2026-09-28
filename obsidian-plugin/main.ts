@@ -2,7 +2,7 @@ import { Plugin, WorkspaceLeaf, TAbstractFile, Events, Notice } from "obsidian";
 import { SidebarHUDView, VIEW_TYPE_SIDEBAR_HUD } from "./src/views/SidebarHUD";
 import { MemoryInspectorView, VIEW_TYPE_MEMORY_INSPECTOR, consumePendingMemory } from "./src/views/MemoryInspectorView";
 import { RunInspectorView, VIEW_TYPE_RUN_INSPECTOR, consumePendingRunId } from "./src/views/RunInspectorView";
-import { WorkbenchView, VIEW_TYPE_WORKBENCH } from "./src/views/WorkbenchView";
+import { WorkbenchView, VIEW_TYPE_WORKBENCH, WORKBENCH_TAB_IDS } from "./src/views/WorkbenchView";
 import type { TermTab } from "./src/views/TermTab";
 import type { PulseTab } from "./src/views/PulseTab";
 import type { RunsTab } from "./src/views/RunsTab";
@@ -11,6 +11,8 @@ import { setPluginDir as setTerminalPluginDir } from "./src/data/terminalSession
 import { AgenticOSSettings, AgenticOSSettingTab, DEFAULT_SETTINGS } from "./src/settings";
 import { loadSnapshot, SNAPSHOT_PATH } from "./src/data/snapshot";
 import { loadRuns, RUNS_PATH, touchesRuns, formatRelative } from "./src/data/runs";
+import { loadStatusline, isStale as statuslineStale, barSegments, workbenchTabFrom, STATUSLINE_PATH } from "./src/data/statusline";
+import type { BarTone } from "./src/data/statusline";
 import { CaptureModal } from "./src/ui/CaptureModal";
 import { HeartbeatClient } from "./src/data/heartbeatClient";
 import { LiveRunsWatcher } from "./src/data/liveRuns";
@@ -40,10 +42,14 @@ import * as path from "path";
 const SNAPSHOT_REFRESH_MS = 15 * 60_000;
 const SNAPSHOT_STALE_MS = 15 * 60_000;
 
+/** Status bar tones → the classes styled under .aos-statusbar (the bar sits outside .aos-root). */
+const STATUS_TONE: Record<BarTone, string> = { violet: "aos-text-violet", rose: "aos-text-rose", amber: "aos-text-amber", cyan: "aos-text-cyan", dim: "aos-dim" };
+
 export default class AgenticOSPlugin extends Plugin {
   settings!: AgenticOSSettings;
   private statusBarEl: HTMLElement | null = null;
   private statusBarTimer: number | null = null;
+  private statuslineRefreshing = false;
   private runsWatcher: fs.FSWatcher | null = null;
   private runsBytesSeen: number = 0;
   private snapshotRefreshing: boolean = false;
@@ -116,8 +122,15 @@ export default class AgenticOSPlugin extends Plugin {
     this.rebuildStatusBar();
 
     this.registerEvent(this.app.vault.on("modify", (file: TAbstractFile) => {
-      if (file.path === SNAPSHOT_PATH || touchesRuns(file.path)) this.refreshStatusBar();
+      if (file.path === SNAPSHOT_PATH || file.path === STATUSLINE_PATH || touchesRuns(file.path)) this.refreshStatusBar();
     }));
+
+    // Terminal status lines link here (statusline spec D10): obsidian://agenticos?vault=<name>&tab=<rail id>. Only a rail
+    // tab id opens a tab; anything else just opens the Workbench.
+    this.registerObsidianProtocolHandler("agenticos", (params) => {
+      const tab = workbenchTabFrom(params, WORKBENCH_TAB_IDS);
+      void (tab ? this.openWorkbenchTab(tab) : this.activate(VIEW_TYPE_WORKBENCH));
+    });
 
     this.app.workspace.onLayoutReady(async () => {
       if (this.settings.autoOpenSidebarOnStart) await this.activate(VIEW_TYPE_SIDEBAR_HUD, "right");
@@ -323,7 +336,7 @@ export default class AgenticOSPlugin extends Plugin {
       leaf = workspace.getLeaf("tab");
       await leaf.setViewState({ type: viewType, active: true });
     }
-    if (leaf) workspace.revealLeaf(leaf);
+    if (leaf) await workspace.revealLeaf(leaf);
   }
 
   // ── Heartbeat / SSE binding ──────────────────────────────────────────
@@ -358,28 +371,52 @@ export default class AgenticOSPlugin extends Plugin {
 
   async refreshStatusBar(): Promise<void> {
     if (!this.statusBarEl) return;
-    const snap = await loadSnapshot(this.app);
-    const runs = await loadRuns(this.app, 1);
+    const [snap, runs, model] = await Promise.all([loadSnapshot(this.app), loadRuns(this.app, 1), loadStatusline(this.app)]);
+    if (!this.statusBarEl) return;
     this.statusBarEl.empty();
     const wrap = this.statusBarEl.createSpan({ cls: "aos-sbar-wrap" });
     const up = this.hb.getStatus().up;
     wrap.createSpan({ text: "⚡", cls: up ? "aos-text-cyan" : "aos-dim" });
     wrap.createSpan({ text: up ? " live" : " idle", cls: up ? "aos-text-cyan" : "aos-dim" });
-    if (!snap) {
+    if (model) {
+      // What needs you, from the runtime's statusline.json (statusline spec §4.4); each segment opens where it is handled.
+      const segs = barSegments(model);
+      if (!segs.length) wrap.createSpan({ text: " · all clear", cls: "aos-dim" });
+      for (const seg of segs) {
+        wrap.createSpan({ text: " · " });
+        const el = wrap.createSpan({ text: seg.text, cls: STATUS_TONE[seg.tone] });
+        el.setAttr("aria-label", seg.title);
+        if (!seg.tab && !seg.file) continue;
+        el.addClass("aos-sbar-link");
+        el.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (seg.tab) void this.openWorkbenchTab(seg.tab);
+          else if (seg.file) void this.app.workspace.openLinkText(seg.file, "", false);
+        });
+      }
+    } else if (!snap) {
       wrap.createSpan({ text: " · no snapshot", cls: "aos-text-amber" });
-      return;
+    } else {
+      // A runtime that predates the status line model: the inventory it always showed.
+      wrap.createSpan({ text: ` · ${snap.capabilities.agents.count}a · ${snap.capabilities.commands.count}c · ${snap.config.memoryMd?.pointers ?? 0}m · ${snap.capabilities.skills.count}s` });
+      if (runs[0]) {
+        const ok = runs[0].status === "ok";
+        wrap.createSpan({ text: " · " });
+        wrap.createSpan({ text: `last ${runs[0].script} ${formatRelative(runs[0].started_at)}`, cls: ok ? "aos-text-cyan" : "aos-text-rose" });
+      }
     }
-    wrap.createSpan({ text: ` · ${snap.capabilities.agents.count}a · ${snap.capabilities.commands.count}c · ${snap.config.memoryMd?.pointers ?? 0}m · ${snap.capabilities.skills.count}s` });
-    if (runs[0]) {
-      const ok = runs[0].status === "ok";
-      wrap.createSpan({ text: " · " });
-      wrap.createSpan({ text: `last ${runs[0].script} ${formatRelative(runs[0].started_at)}`, cls: ok ? "aos-text-cyan" : "aos-text-rose" });
-    }
-    const issues = snap.health?.issues ?? [];
+    const issues = snap?.health?.issues ?? [];
     const errs = issues.filter(i => i.severity === "error").length;
     const warns = issues.filter(i => i.severity === "warn").length;
     if (errs > 0) wrap.createSpan({ text: ` · ${errs}err`, cls: "aos-text-rose" });
     else if (warns > 0) wrap.createSpan({ text: ` · ${warns}warn`, cls: "aos-text-amber" });
+    if (statuslineStale(model) && !this.statuslineRefreshing) {
+      // D3: a stale or missing model is rebuilt by the runtime in the background, once at a time; the file's modify
+      // event repaints the bar. A runtime without statusline.js leaves the flag set, so it is tried once per load.
+      this.statuslineRefreshing = true;
+      this.runBrainScript("brain/scripts/statusline.js", ["refresh"], () => { this.statuslineRefreshing = false; },
+        { quiet: true, env: { AOS_VAULT: this.vaultRoot(), AOS_CONFIG: path.join(this.claudeConfigDir(), "agenticos.json") } });
+    }
   }
 
   // ── Live runs tail (Node fs.watch on absolute path) ──────────────────
@@ -488,6 +525,9 @@ export default class AgenticOSPlugin extends Plugin {
   async openWorkbenchTab(tab: string): Promise<void> {
     await this.activate(VIEW_TYPE_WORKBENCH);
     const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_WORKBENCH)[0];
+    // A leaf restored from the saved layout stays deferred until shown, and its view is not a WorkbenchView yet: load it
+    // so the switch lands (loadIfDeferred is Obsidian 1.7.2+; older builds never defer).
+    if (leaf && typeof leaf.loadIfDeferred === "function") await leaf.loadIfDeferred();
     const view = leaf?.view;
     if (view instanceof WorkbenchView) view.setTab(tab);
   }
