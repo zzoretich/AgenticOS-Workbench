@@ -59,7 +59,7 @@ export function renderRoster(host: HTMLElement, ctx: TeamsCtx): void {
       const a = r.createEl("a", { cls: "aos-link", text: k.name, href: "#" });
       a.addEventListener("click", (e) => { e.preventDefault(); ctx.select(k.id, "roster"); });
       const g = k.error ? 0 : pendingGates(k).length;
-      r.createSpan({ cls: "aos-dim", text: k.error ? " · unreadable TEAM.md" : ` · lead ${k.lead} · ${k.members.length} members${g ? ` · ${g} gate${g === 1 ? "" : "s"} waiting` : ""}` });
+      r.createSpan({ cls: "aos-dim", text: k.error ? ` · unreadable ${k.errorFile ?? "TEAM.md"}` : ` · lead ${k.lead} · ${k.members.length} members${g ? ` · ${g} gate${g === 1 ? "" : "s"} waiting` : ""}` });
     }
   }
 }

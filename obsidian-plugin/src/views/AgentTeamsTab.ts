@@ -236,7 +236,7 @@ export class AgentTeamsTab {
     const bar = host.createDiv({ cls: "aos-at-teams", attr: { role: "tablist", "aria-label": "Teams" } });
     for (const { team: t, depth } of order) {
       const on = t.id === this.ui.team;
-      const b = bar.createEl("button", { cls: `aos-at-teamchip${on ? " is-active" : ""}${t.disabled ? " is-paused" : ""}${t.error ? " is-broken" : ""}`, attr: { role: "tab", "aria-selected": String(on), tabindex: on ? "0" : "-1", title: t.error ? `TEAM.md: ${t.error}` : `${t.name}: lead ${t.lead}${t.disabled ? ", paused" : ""}` } });
+      const b = bar.createEl("button", { cls: `aos-at-teamchip${on ? " is-active" : ""}${t.disabled ? " is-paused" : ""}${t.error ? " is-broken" : ""}`, attr: { role: "tab", "aria-selected": String(on), tabindex: on ? "0" : "-1", title: t.error ? `${t.errorFile ?? "TEAM.md"}: ${t.error}` : `${t.name}: lead ${t.lead}${t.disabled ? ", paused" : ""}` } });
       if (depth) b.createSpan({ cls: "aos-at-depth", text: "› ".repeat(depth) });
       b.createSpan({ text: t.name });
       const g = t.error ? 0 : pendingGates(t).length;
@@ -268,11 +268,14 @@ export class AgentTeamsTab {
     const head = section.createDiv({ cls: "aos-at-teamhead" });
     head.createSpan({ cls: "aos-at-teamname", text: t.name });
     if (t.error) {
+      const file = t.errorFile ?? "TEAM.md";
       const box = section.createDiv({ cls: "aos-st-failure" });
-      box.createDiv({ text: `persona/teams/${t.id}/TEAM.md could not be read: ${t.error}` });
-      box.createDiv({ cls: "aos-dim", text: "The frontmatter allows key: value, inline [a, b] and {a: 1}, and one members: list of flat maps." });
-      const open = box.createEl("button", { cls: "aos-ws-action", text: "Open TEAM.md" });
-      open.addEventListener("click", () => this.openFile(`${TEAMS_DIR}/${t.id}/TEAM.md`));
+      box.createDiv({ text: `${TEAMS_DIR}/${t.id}/${file}: ${t.error}` });
+      if (file === "TEAM.md" && !t.error.startsWith("could not be read")) {
+        box.createDiv({ cls: "aos-dim", text: "The frontmatter allows key: value, inline [a, b] and {a: 1}, and one members: list of flat maps." });
+      }
+      const open = box.createEl("button", { cls: "aos-ws-action", text: `Open ${file}` });
+      open.addEventListener("click", () => this.openFile(`${TEAMS_DIR}/${t.id}/${file}`));
       return;
     }
     const lead = t.members.find((m) => m.id === t.lead);

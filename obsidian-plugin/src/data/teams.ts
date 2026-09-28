@@ -45,6 +45,8 @@ export interface Team {
   /** The item's last snapshot before its current pending gate opened: a pitch posted before it was for an earlier gate. */
   pendingAfter: Record<string, string>;
   skipped: number; torn: boolean; error: string | null;
+  /** The file `error` is about, in the team's folder. */
+  errorFile: "TEAM.md" | "board.jsonl" | null;
   /** Files that exist but could not be read (the channel, runs, state or a live marker): shown, never taken as empty. */
   warnings: string[];
 }
@@ -216,10 +218,10 @@ export interface TeamFiles {
 export function teamFrom(f: TeamFiles): Team {
   const base: Team = {
     id: f.id, name: f.id, lead: "", reportsTo: null, parent: null, stages: DEFAULT_STAGES, gates: [], budgetDefault: 0,
-    disabled: f.disabled, members: [], state: [], board: [], channel: [], runs: [], live: [], pendingSince: {}, pendingAfter: {}, skipped: 0, torn: false, error: null, warnings: [],
+    disabled: f.disabled, members: [], state: [], board: [], channel: [], runs: [], live: [], pendingSince: {}, pendingAfter: {}, skipped: 0, torn: false, error: null, errorFile: null, warnings: [],
   };
   let fm: Record<string, Scalar>;
-  try { fm = parseFrontmatter(f.teamMd); } catch (e) { return { ...base, error: (e as Error).message }; }
+  try { fm = parseFrontmatter(f.teamMd); } catch (e) { return { ...base, error: (e as Error).message, errorFile: "TEAM.md" }; }
   const board = parseJsonl(f.board);
   const channel = parseJsonl(f.channel);
   const runs = parseJsonl(f.runs);
@@ -346,17 +348,19 @@ export function isBudgetGate(t: Team, it: BoardItem): boolean {
 /** What live Claude runs on the item hold of its budget: the floor, with spend, below which the CLI refuses a budget. */
 export function budgetFloor(t: Team, it: BoardItem): number {
   const held = t.live.filter((m) => m.item === it.id && m.provider === "claude").reduce((s, m) => s + m.reservedUsd, 0);
-  return Math.round((it.budget.spentUsd + held) * 100) / 100;
+  // Up to the next cent: spend is recorded to a fraction of a cent, and the CLI compares against the exact total.
+  return Math.ceil((it.budget.spentUsd + held) * 100 - 1e-6) / 100;
 }
 
 /** The largest phase budget the CLI takes (lib/teams.js usdOf). */
 export const MAX_BUDGET_USD = 10000;
 
-/** The budget choices on a gate card: half the proposal, the proposal, double it (whole dollars, each at least $1, none
- *  above the CLI's maximum). */
+/** The budget choices on a gate card: half the proposal and double it (whole dollars, at least $1), and the proposal
+ *  itself; none at $0 or above the CLI's maximum. */
 export function budgetPresets(proposal: number, fallback = 10): number[] {
   const p = proposal > 0 ? proposal : fallback > 0 ? fallback : 10;
-  return [...new Set([Math.max(1, Math.round(p / 2)), Math.round(p * 100) / 100, Math.round(p * 2)])].filter((n) => n <= MAX_BUDGET_USD).sort((a, b) => a - b);
+  const asked = Math.round(p * 100) / 100;
+  return [...new Set([Math.max(1, Math.round(p / 2)), asked, Math.max(1, Math.round(p * 2))])].filter((n) => n > 0 && n <= MAX_BUDGET_USD).sort((a, b) => a - b);
 }
 
 /** The amount a budget control starts on: `want` when the CLI would take it, else the smallest preset at or above the
@@ -505,10 +509,10 @@ export async function readTeams(a: TeamsAdapter, { boardOnly = false } = {}): Pr
     const md = await read(`${dir}/TEAM.md`);
     const disabled = await a.exists(`${dir}/DISABLED`).catch(() => false);
     const blank = { id, teamMd: "", board: null, channel: null, runs: null, markers: [], state: null, disabled };
-    if (md.error) { out.push({ ...teamFrom(blank), error: `TEAM.md could not be read: ${md.error}` }); continue; }
+    if (md.error) { out.push({ ...teamFrom(blank), error: `could not be read: ${md.error}`, errorFile: "TEAM.md" }); continue; }
     if (md.text === null) continue;
     const board = await read(`${dir}/board.jsonl`);
-    if (board.error) { out.push({ ...teamFrom({ ...blank, teamMd: md.text }), board: [], error: `board.jsonl could not be read: ${board.error}` }); continue; }
+    if (board.error) { out.push({ ...teamFrom({ ...blank, teamMd: md.text }), board: [], error: `could not be read: ${board.error}`, errorFile: "board.jsonl" }); continue; }
     const warnings: string[] = [];
     const extra = async (name: string) => {
       if (boardOnly) return null;

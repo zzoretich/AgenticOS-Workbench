@@ -79,6 +79,7 @@ test("the channel, member status, pending gates and live markers match the runti
 test("a TEAM.md the subset refuses is a team with its error, as the runtime refuses it", async () => {
   const b = await team("broken");
   assert.match(b.error ?? "", /unsupported TEAM\.md line: - one/);
+  assert.equal(b.errorFile, "TEAM.md");
   assert.throws(() => store.readTeam(ROOT, "broken"), /unsupported TEAM\.md line: - one/);
   assert.deepEqual([b.members, b.board], [[], []]);
   assert.throws(() => parseFrontmatter("no frontmatter"), /no frontmatter/);
@@ -90,10 +91,10 @@ test("a file that exists but cannot be read is an error or a warning, never an e
     return { ...a, async read(p) { if (bad.test(p)) throw new Error("EACCES: permission denied"); return a.read(p); } };
   };
   const board = (await readTeams(failing(/lab\/board\.jsonl$/))).find((t) => t.id === "lab")!;
-  assert.match(board.error ?? "", /^board\.jsonl could not be read: EACCES/);
+  assert.deepEqual([board.errorFile, board.error], ["board.jsonl", "could not be read: EACCES: permission denied"]);
   assert.equal(gateBadge([board]), 0, "its gates are unknown, and the tab says why");
   const md = (await readTeams(failing(/ops\/TEAM\.md$/))).find((t) => t.id === "ops")!;
-  assert.match(md.error ?? "", /^TEAM\.md could not be read: EACCES/);
+  assert.deepEqual([md.errorFile, md.error], ["TEAM.md", "could not be read: EACCES: permission denied"]);
   assert.equal(md.disabled, true);
   const ch = (await readTeams(failing(/lab\/(channel\.jsonl|running\/lab-site-02-builder-c\.json)$/))).find((t) => t.id === "lab")!;
   assert.equal(ch.error, null);
@@ -153,9 +154,12 @@ test("budgets: presets are half, the proposal and double; the floor is spend plu
   assert.deepEqual(budgetPresets(25), [13, 25, 50]);
   assert.deepEqual(budgetPresets(0, 5), [3, 5, 10]);
   assert.deepEqual(budgetPresets(0, 0), [5, 10, 20]);
+  assert.deepEqual(budgetPresets(0.01), [0.01, 1], "a tiny proposal: never a $0 choice");
   const lab = await team("lab");
   assert.equal(budgetFloor(lab, lab.board.find((i) => i.id === "site-02")!), 14.7);
   assert.equal(budgetFloor(lab, lab.board.find((i) => i.id === "site-01")!), 3.44);
+  const frac = { ...lab.board[1], budget: { usd: 20, spentUsd: 3.4435, codexRuns: 0 } };
+  assert.equal(budgetFloor(lab, frac), 3.45, "spend recorded past the cent: the floor rounds up, as the CLI compares exactly");
   assert.equal(stepBudget(20, 1, [10, 20, 40], 3.44), 25);
   assert.equal(stepBudget(20, -1, [10, 20, 40], 3.44), 15);
   assert.equal(stepBudget(5, -1, [10, 20, 40], 3.44), null);
