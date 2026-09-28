@@ -52,7 +52,7 @@ The Obsidian status bar shows inventory counts (`12a · 21c · 80m · 40s`) rath
   `lib/config-write.js` `readStrict`. Nothing writes `settings.json` or `config.toml` today; readers of `config.toml`
   are line regexes (`codexMcpServers`, `trustedPluginHooks`).
 - `cli/aos.js`: `doctor()` `add(name, ok, detail, level)`, the `upgrade()` `act(...)` steps, `uninstall()`, and
-  `agenticos.json` `hosts.<host>.*` machine state (precedent `hosts.codex.install`).
+  `lib/host.js` `enabledHosts()`, which reads a missing `hosts` block as no hosts (so install state must not create one).
 - HUD: `main.ts` `rebuildStatusBar`/`refreshStatusBar` (30 s), `openWorkbenchTab(tab)`, `RAIL` ids
   (`agent-teams`, `notifications`, …), `runBrainScript`, and the `personaHeartbeat.ts` parse/load pattern. There is no
   protocol handler. `activate()` does not await `revealLeaf`, and `aos-dim` is unstyled inside the status bar.
@@ -74,8 +74,8 @@ aos statusline preview [--width N]        # render against a sample payload
 **Claude install** (`lib/statusline-install.js`):
 1. `readStrict` the user-scope `settings.json` and refuse invalid JSON.
 2. Copy it once to `settings.json.aos-statusline.bak`.
-3. Record the previous `statusLine` and `subagentStatusLine` in `agenticos.json`
-   `hosts.claude.statusline = {command, previous, previousSubagent, installedAt}`. A re-install keeps the first
+3. Record the previous `statusLine` and `subagentStatusLine` in `agenticos-statusline.json` beside `agenticos.json`
+   (machine-local; never under `hosts`, which would change `enabledHosts()`): `claude = {command, previous, previousSubagent, installedAt}`. A re-install keeps the first
    `previous` unless someone else has taken the slot since, in which case that newcomer becomes `previous` and is chained.
 4. Write `statusLine = {type:'command', command, refreshInterval: statusline.refreshSeconds, hideVimModeIndicator: true}`
    and, when `statusline.subagents` is on, `subagentStatusLine`.
@@ -84,7 +84,7 @@ aos statusline preview [--width N]        # render against a sample payload
 - `[tui]` exists without `status_line`: insert the key.
 - No `[tui]`: append the table.
 - `status_line` already set (as a key or dotted): refuse unless `--force`, which records the old line for uninstall.
-- `hosts.codex.statusline` records what was written. Uninstall removes our line only if it is unchanged.
+- The same state file's `codex` entry records what was written. Uninstall removes our line only if it is unchanged.
 
 ### 4.2 Model (`lib/statusline-model.js`, pure over an injected vault and clock)
 

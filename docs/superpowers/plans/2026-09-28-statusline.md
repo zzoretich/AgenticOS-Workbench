@@ -23,7 +23,7 @@ committed per logical unit.
 |---|---|---|
 | `brain/scripts/lib/statusline-model.js` | new | Pure producer over (vault, clock, cfg): gates, live markers (this host, `kill(pid,0)`), unread alert levels, flags (D5), spend family nearest cap (D6), health; `read`/`write`/`isStale` for `statusline.json` |
 | `brain/scripts/lib/statusline-render.js` | new | Pure renderer: payload + model + columns → ≤3 lines; segment priorities; OSC 8 (D10); subagent JSONL rows; git cache |
-| `brain/scripts/lib/statusline-install.js` | new | Claude `settings.json` and Codex `config.toml` install/uninstall/status, backups, `hosts.<host>.statusline` state, chain bookkeeping (D2, D7, D8, D9) |
+| `brain/scripts/lib/statusline-install.js` | new | Claude `settings.json` and Codex `config.toml` install/uninstall/status, backups, the machine-local `agenticos-statusline.json` state, chain bookkeeping (D2, D7, D8, D9) |
 | `brain/scripts/statusline.js` | new | The verb parser; `render` reads stdin, fires the chain, renders, and triggers a stale refresh under a lock (D3) |
 | `brain/scripts/test/statusline-{model,render,install}.test.js` + `test/fixtures/statusline/` | new | Fixture vault, payloads, a fake Claude config dir and Codex home |
 | `brain/scripts/config.default.json`, `lib/settings-schema.js` + its test | changed | The `statusline` section and its five keys |
@@ -115,5 +115,5 @@ committed per logical unit.
 
 - A concurrent `settings.json` write by Claude Code (`/config`) between our read and our rename. Mitigation: the
   read-modify-write window is milliseconds, and `status` re-reads and reports a mismatch.
-- A chained command that hangs: it is detached and killed after 5 s, and it never blocks our render.
+- A chained command that hangs: it runs detached with its stdout ignored, so it never blocks our render.
 - A project-scope `statusLine` that overrides ours: `status` reports the override and leaves it alone.
