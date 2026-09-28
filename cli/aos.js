@@ -55,6 +55,7 @@ const USAGE = `usage:
   aos agents [list [--all] [--json] | sync [--dry-run] [--json] | exclude <name> | include <name> | reset <name>]
   aos config [list [--json] | get <key> [--json] | set <key> <value> [--dry-run] [--json] | unset <key> [--dry-run]]
   aos workspace [list [--json] | new <name> | adopt <path> [--name <slug>]]
+  aos statusline [install [--host claude|codex] [--force] [--chain-output] | uninstall [--host claude|codex] | status [--json] | preview [--width N] | refresh]
   aos update-status [--statusline | --snooze <N>d|<N>h | --off]
   aos update-check [--quiet]
   aos terminal install`;
@@ -114,6 +115,28 @@ function loadConfigOrThrow() {
   return c;
 }
 function scriptPath(vault, rel) { return path.join(vault, 'brain', 'scripts', rel); }
+
+// ── status line (spec 2026-09-28-statusline-design) ───────────────────────────
+/** The vault's vendored status line installer, or null for a runtime that predates it. */
+function statuslineLib(vault) {
+  const p = vault && scriptPath(vault, 'lib/statusline-install.js');
+  return p && exists(p) ? require(p) : null;
+}
+/** Its context: statusline.* by config precedence (brain/config.json, then agenticos.json). */
+function statuslineCtx(vault, cfg) {
+  const vaultCfg = readJson(path.join(vault, 'brain', 'config.json'), {}) || {};
+  return { vault, userConfigFile: configPath(), userCfg: cfg, cfg: { statusline: { ...(vaultCfg.statusline || {}), ...((cfg && cfg.statusline) || {}) } }, env: process.env };
+}
+/** Take an installed status line out of the host configs, before the vault that runs it is unwired or removed. */
+function removeStatusline(vault, cfg, host = null) {
+  const SLI = statuslineLib(vault);
+  if (!SLI || !exists(SLI.statePath(configPath()))) return;
+  try {
+    for (const r of SLI.uninstall(statuslineCtx(vault, cfg), { host })) {
+      if (!r.skipped) out.log(`status line (${r.host}): removed${r.restored ? `; restored ${r.restored}` : ''}${r.notes && r.notes.length ? ` (${r.notes.join('; ')})` : ''}`);
+    }
+  } catch (e) { out.warn(`status line: ${e.message}; run aos statusline uninstall yourself`); }
+}
 
 // ── processes ─────────────────────────────────────────────────────────────────
 function run(cmd, args, { cwd, env, capture = false, allowFail = false, input } = {}) {
@@ -445,6 +468,16 @@ async function doctor() {
     else add('update check', !st.lastError,
       `checked ${st.checkedAt} · latest ${st.latest || '(none published)'}${st.lastError ? ` · ${st.lastError}` : ''}`,
       'warn');
+  }
+  const SLI = statuslineLib(vault);
+  if (SLI) {
+    try {
+      const st = SLI.status(statuslineCtx(vault, cfg));
+      const c = st.claude;
+      if (!c.installed && !st.codex.installed) add('status line', true, 'not installed (opt-in: aos statusline install)', 'info');
+      if (c.installed) add('status line', c.ownsSlot, c.ownsSlot ? `installed${c.chained ? ` · chains ${c.chained}` : ''}` : `taken by ${c.current || 'nothing'} — aos statusline install takes it back and chains it`, 'warn');
+      if (st.codex.installed) add('codex footer', st.codex.present, st.codex.present ? 'built-in items (Codex runs no status line command; what needs you arrives at session start)' : `the status_line in ${st.codex.file} changed since install`, 'warn');
+    } catch (e) { add('status line', false, e.message, 'warn'); }
   }
   const { host, port } = ollamaEndpoint(cfg);
   if (ollamaProbeSkipped()) add('ollama reachable', false, `${host}:${port} not probed (AOS_SKIP_OLLAMA_PROBE=1)`, 'info');
@@ -1270,6 +1303,14 @@ async function upgrade(flags) {
     // not parse would drop every key the user has set. Refuse and stop the upgrade instead.
     writeJson(p, deepMerge(defaults, readJsonStrict(p, {}) || {}));
   });
+  const SLI = statuslineLib(vault);
+  if (SLI && exists(SLI.statePath(configPath()))) {
+    // D9: our own entries follow this runtime; a slot someone else took is left to `aos statusline install`.
+    await act('point the installed status line at this runtime', () => {
+      const done = SLI.reapply(statuslineCtx(vault, cfg));
+      if (done.length) out.log(`  updated: ${done.join(', ')}`);
+    });
+  }
   await act('install or refresh the pinned graphify and seed .graphifyignore', () => {
     // graphify spec D3: reinstall only when the installed version is not the pin. Upgrade is never gated (prereqs D9):
     // a machine without uv keeps upgrading, and doctor's `uv installed` row says what is missing.
@@ -1325,6 +1366,7 @@ async function uninstall(flags) {
     // Partial: unwire one host and keep everything else (vault, config, launcher, the other host).
     if (!['claude', 'codex'].includes(flags.host)) throw new UsageError('uninstall --host takes claude or codex');
     if (!cfg || !cfg.vault) throw new CheckFailed(`no ${configPath()} — nothing to unwire`);
+    removeStatusline(cfg.vault, cfg, flags.host);
     if (flags.host === 'codex') {
       unwireCodex(cfg);
     } else {
@@ -1340,6 +1382,7 @@ async function uninstall(flags) {
     out.log(`hosts now: ${[next.hosts.claude.enabled && 'claude', next.hosts.codex.enabled && 'codex'].filter(Boolean).join(', ') || 'none'}`);
     return 0;
   }
+  if (cfg && cfg.vault) removeStatusline(cfg.vault, cfg);
   if (hosts.codex) unwireCodex(cfg);
   const bin = hosts.claude ? claudeBin(cfg) : null;
   if (bin) {
