@@ -80,3 +80,18 @@ test('rows appended while another process rewrites the log are never lost (the r
   assert.equal(lines.length, 200);
   assert.equal(new Set(lines).size, 200);
 });
+
+test('a row appended after a last line with no newline starts a line of its own', () => {
+  const file = path.join(DIR, 'torn.jsonl');
+  fs.writeFileSync(file, '{"a":1}\n{"b":2,"to');
+  fsx.appendLineSync(file, '{"c":3}');
+  assert.equal(fs.readFileSync(file, 'utf8'), '{"a":1}\n{"b":2,"to\n{"c":3}\n');
+  fsx.appendLineSync(file, '{"d":4}', { lock: true });
+  assert.equal(fs.readFileSync(file, 'utf8').split('\n').pop(), '', 'one newline each, no blank lines');
+  assert.deepEqual(fs.readFileSync(file, 'utf8').split('\n').slice(-3), ['{"c":3}', '{"d":4}', '']);
+  const fresh = path.join(DIR, 'sub', 'new.jsonl');
+  fsx.appendLineSync(fresh, 'x');
+  fs.writeFileSync(path.join(DIR, 'empty.jsonl'), '');
+  fsx.appendLineSync(path.join(DIR, 'empty.jsonl'), 'y');
+  assert.deepEqual([fs.readFileSync(fresh, 'utf8'), fs.readFileSync(path.join(DIR, 'empty.jsonl'), 'utf8')], ['x\n', 'y\n']);
+});

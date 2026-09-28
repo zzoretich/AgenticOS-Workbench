@@ -1,7 +1,7 @@
 # Agent Teams: design
 
 **Date:** 2026-09-28
-**Status:** approved design (2026-09-28); PR 1 on `feat/agent-teams`
+**Status:** approved design (2026-09-28); PR 1 merged (#59); PR 2, the tab, on `feat/agent-teams-tab` (§4.5)
 **Scope:** named agent teams in the vault. A lead agent runs a board of work items through stages and gates, with
 headless seats on Claude Code or Codex, each in its own git worktree. `aos team` is the one reader and writer; a new
 **Agent Teams** tab shows every team and lets the user manage it, talk to it and decide its gates.
@@ -104,6 +104,26 @@ Agents. The badge counts gates pending across teams, and `touchesBadges` covers 
   agent's run command from `agents.json`).
 - **Work board:** one column per stage. A gate card has Approve (the Discuss gate adds budget presets and − / +
   steppers) and Redirect, which opens the lead in the terminal.
+
+### 4.5 PR 2: how the tab came out (2026-09-28)
+
+- **Layout (the user's pick):** "Needs you" first, the pending gate cards of every team; then team chips in tree order
+  (a child indented under its `parent`); then Board · Roster · Interact · Manage for the chosen team, Board by default.
+- **Reads:** `data/teams.ts` parses the files by `lib/teams.js`'s rules, which the shared fixture vault proves, from disk
+  at the plugin's vault root: the folder `aos team` writes, which can differ from the open Obsidian vault. The badge
+  reads boards only, on vault events and once a minute (a vault outside Obsidian sends no events). **Writes:** only `aos team` through `runAos`'s `cli` override, each board write with the
+  whole rendered snapshot as `--expect` (a timestamp alone can repeat within a millisecond); reads that overlap apply
+  only the newest. While the tab is showing it re-reads every 30 s and runs `aos team list --json`
+  about once a minute, which records any killed run (so a stale marker never shows a member working for good) and names
+  the presets `set` takes. Unsent messages are kept per team.
+- **Gates:** the gate on a team's first stage funds the work: presets are half, the proposal (`budget.usd`) and double,
+  − / + walk a fixed ladder, and nothing goes below spend plus what live Claude runs hold. Approve asks first. Redirect
+  opens the lead's agent with a prompt naming the gate and the exact line that records it: this vault's own
+  `team.js` with `AOS_VAULT` set (never the terminal's `aos` config), every value shell-quoted, the whole snapshot as
+  `--expect`; the host's folder (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`) leads the command when a new terminal would use
+  another. Where that host lacks the lead's agent, a plain session gets the same prompt.
+- **Runtime change:** `aos team list` lists a team whose `TEAM.md` does not parse as a row with its error, rather than
+  failing, and its `--json` carries `presets`.
 
 ## 5. Host parity
 

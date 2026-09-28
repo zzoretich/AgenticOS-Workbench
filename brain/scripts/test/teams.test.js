@@ -327,6 +327,22 @@ test('the CLI: list, status --json, usage is exit 2, a refusal is exit 1, and a 
   assert.match((await cli(w, ['tail', 'dev', '--item', 'x-01'])).out, /costs \$40 so far/);
 });
 
+test('list: an unreadable TEAM.md is a row with its error, and --json carries the presets set accepts', async () => {
+  const w = world();
+  fs.mkdirSync(path.join(w.root, 'broken'));
+  fs.writeFileSync(path.join(w.root, 'broken', 'TEAM.md'), '---\nid: broken\ntags:\n  - one\n---\n');
+  const r = await cli(w, ['list', '--json']);
+  assert.equal(r.code, 0, r.err);
+  const j = JSON.parse(r.out);
+  assert.deepEqual(j.teams.map((t) => [t.team, t.error || null]), [['broken', 'unsupported TEAM.md line: - one'], ['dev', null]]);
+  assert.deepEqual([j.presets.provider, j.presets.effort], [T.PROVIDERS, T.EFFORTS]);
+  assert.deepEqual(j.presets.model, T.presetsFor('model'));
+  assert.ok(j.presets.model.includes('inherit') && j.presets.model.includes('claude-sonnet-5'));
+  const S = require('../lib/settings-schema.js');
+  assert.deepEqual(j.presets.models, { claude: S.CLAUDE_MODELS, codex: S.CODEX_MODELS });
+  assert.match((await cli(w, ['list'])).out, /broken\s+unreadable: unsupported TEAM\.md line: - one/);
+});
+
 test('put never records the user\'s decisions or dispatch\'s bookkeeping, even as the lead (AT-01)', () => {
   const w = world();
   T.put(w.t(), { from: 'lead', json: JSON.stringify(AT_GATE) });
@@ -339,6 +355,18 @@ test('put never records the user\'s decisions or dispatch\'s bookkeeping, even a
   refused({ gate: null, status: 'working' }, /waits on the user at the discuss gate/);
   refused({ status: 'working' }, /stay until the user decides/);
   assert.equal(T.put(w.t(), { from: 'lead', json: '{"id":"x-01","title":"renamed","budget":{"usd":25}}' }).title, 'renamed', 'other fields and a repeated budget are fine');
+});
+
+test('an item\'s snapshots never share a ts, so an --expect of the last one seen catches any change', () => {
+  const w = world();
+  const now = new Date('2026-09-28T12:00:00.000Z');
+  const seen = T.put(w.t(), { from: 'lead', json: JSON.stringify(AT_GATE), now });
+  const same = T.put(w.t(), { from: 'lead', json: '{"id":"x-01","added":"in the same millisecond"}', now });
+  assert.equal(same.ts, '2026-09-28T12:00:00.001Z');
+  assert.throws(() => T.decideGate(w.t(), { item: 'x-01', verb: 'approve', expect: JSON.stringify(seen), env: INTERACTIVE, now }), /--expect failed on x-01: ts is/);
+  const back = T.put(w.t(), { from: 'lead', json: '{"id":"x-01","title":"after a clock step back"}', now: new Date('2026-09-28T11:00:00.000Z') });
+  assert.equal(back.ts, '2026-09-28T12:00:00.002Z');
+  assert.equal(T.put(w.t(), { from: 'lead', json: '{"id":"x-02"}', now }).ts, now.toISOString(), 'another item keeps its own clock');
 });
 
 test('the sweep stops a seat that outlived its killed dispatcher (AT-08)', async () => {

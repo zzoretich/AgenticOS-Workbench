@@ -13,10 +13,12 @@ import { ProposalsTab } from "./ProposalsTab";
 import { TodoTab } from "./TodoTab";
 import { SettingsTab } from "./SettingsTab";
 import { NotificationsTab } from "./NotificationsTab";
+import { AgentTeamsTab } from "./AgentTeamsTab";
 import { PROPOSALS_DIR } from "../data/proposals";
 import { NOTIFICATIONS_DIR, STATE_PATH, notificationId, parseNotification, parseState, unreadBadge, Level } from "../data/notifications";
 import { badgeText, proposalBadge, todoBadge, touchesBadges } from "../data/badges";
 import { TODO_PATH, localDay } from "../data/todos";
+import { readTeams, diskAdapter, gateBadge } from "../data/teams";
 
 export const VIEW_TYPE_WORKBENCH = "agentic-os-workbench";
 
@@ -33,6 +35,7 @@ const RAIL: RailTab[] = [
   { id: "routines", icon: "⟳", label: "Routines" },
   { id: "skills", icon: "✦", label: "Skills" },
   { id: "agents", icon: "♟", label: "Agents" },
+  { id: "agent-teams", icon: "⁂", label: "Agent Teams" },
   { id: "chat", icon: "✎", label: "Chat" },
   { id: "term", icon: "❯_", label: "Term" },
 ];
@@ -47,6 +50,8 @@ export class WorkbenchView extends ItemView {
   private clockTimer: number | null = null;
   private badgeEls: Record<string, HTMLElement> = {};
   private badgeTimer: number | null = null;
+  private teamsReads = 0;
+  private teamsShown = 0;
   private tabs: Partial<Record<string, { mount(h: HTMLElement): void; refresh(): Promise<void>; unmount(): void }>> = {};
   private activeTab = "pulse";
 
@@ -114,6 +119,8 @@ export class WorkbenchView extends ItemView {
     this.registerEvent(this.app.vault.on("modify", (f) => onPath(f)));
     this.registerEvent(this.app.vault.on("delete", (f) => onPath(f)));
     this.registerEvent(this.app.vault.on("rename", (f, oldPath) => onPath(f, oldPath)));
+    // A vault root outside Obsidian sends no vault events, so the gate badge is also recounted once a minute.
+    this.registerInterval(window.setInterval(() => void this.refreshTeamsBadge(), 60_000));
     void this.refreshBadges();
   }
 
@@ -149,6 +156,23 @@ export class WorkbenchView extends ItemView {
     this.setBadge("todo", todoBadge(todo, localDay(new Date())));
     const n = await this.notificationBadge();
     this.setBadge("notifications", n.count, n.breaking);
+    await this.refreshTeamsBadge();
+  }
+
+  /** Gates waiting on the user across every team (spec 2026-09-28-agent-teams-design D12), read from boards only, in the
+   *  vault `aos team` writes: the plugin's vault root, which need not be the open Obsidian vault. */
+  private async refreshTeamsBadge(): Promise<void> {
+    const seq = this.nextTeamsRead();
+    try { this.setTeamsBadge(gateBadge(await readTeams(diskAdapter(this.plugin.vaultRoot()), { boardOnly: true })), seq); } catch { /* unreadable: no badge */ }
+  }
+
+  /** Team reads (this view's and the tab's) overlap: each takes a number when it starts, and a count from a read that
+   *  started before the one already shown is dropped, so the badge never goes back to an older count. */
+  nextTeamsRead(): number { return ++this.teamsReads; }
+  setTeamsBadge(n: number, seq: number): void {
+    if (seq < this.teamsShown) return;
+    this.teamsShown = seq;
+    this.setBadge("agent-teams", n);
   }
 
   /** Unread notifications (spec 2026-09-24-notifications-design §4.3). Reads state.json and only the unread item files,
@@ -208,6 +232,7 @@ export class WorkbenchView extends ItemView {
     if (id === "routines") return new RoutinesTab(this.plugin, this);
     if (id === "skills") return new SkillsTab(this.plugin, this);
     if (id === "agents") return new AgentsTab(this.plugin, this);
+    if (id === "agent-teams") return new AgentTeamsTab(this.plugin, this);
     if (id === "chat") return new ChatTab(this.plugin, this);
     if (id === "term") return new TermTab(this.plugin, this);
     if (id === "settings") return new SettingsTab(this.plugin, this);

@@ -1,0 +1,6 @@
+{"schema":1,"ts":"2026-09-20T10:00:00.000Z","team":"lab","from":"lead","item":"site-01","kind":"assign","text":"@builder takes site-01 discuss."}
+{"schema":1,"ts":"2026-09-20T11:55:00.000Z","team":"lab","from":"builder","item":"site-01","kind":"handoff","text":"Spec written; 5 requirements. Back to @lead."}
+{"schema":1,"ts":"2026-09-20T12:00:00.000Z","team":"lab","from":"lead","item":"site-01","kind":"gate","text":"Discuss gate open on site-01: scope is the landing page; I propose $20, with $3.44 spent. See notes@lead, or ask @user."}
+not json at all
+{"schema":1,"ts":"2026-09-20T12:30:00.000Z","team":"lab","from":"dispatch","item":"site-03","kind":"blocker","text":"reviewer's codex run on site-03 was killed."}
+{"schema":1,"ts":"2026-09-20T12:40:00.000Z","team":"lab","from":"user","item":null,"kind":"note","text":"@lead what is next after site-02?"}

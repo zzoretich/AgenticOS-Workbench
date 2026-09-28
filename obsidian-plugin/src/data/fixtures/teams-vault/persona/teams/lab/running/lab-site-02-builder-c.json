@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "run": "lab-site-02-builder-c",
+  "team": "lab",
+  "member": "builder",
+  "item": "site-02",
+  "provider": "claude",
+  "model": "claude-sonnet-5",
+  "effort": "high",
+  "pid": 999999,
+  "pidStart": 0,
+  "host": "fixture-host",
+  "startedAt": "2026-09-20T12:50:00.000Z",
+  "reservedUsd": 6.5,
+  "log": "workspaces/_worktrees/.logs/x",
+  "worktree": "workspaces/_worktrees/lab/site-02/builder"
+}

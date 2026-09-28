@@ -286,7 +286,11 @@ function writeItem(t, patch, { by, now = new Date(), existing }) {
     if (!t.gates.includes(next.gate.name)) throw new UsageError(`gate must be one of ${t.gates.join(', ') || '(none: TEAM.md lists no gates)'}`);
     if (!GATE_STATES.includes(next.gate.state)) throw new UsageError(`gate state must be one of ${GATE_STATES.join(', ')}`);
   }
-  const row = { schema: 1, ...next, ts: now.toISOString(), by };
+  // An item's snapshots are strictly ordered by ts: one written in the same millisecond as the item's last (or behind
+  // it, after a clock step) is stamped 1 ms later, so every change moves ts and an --expect naming it catches the change.
+  const last = Date.parse((existing && existing.ts) || '');
+  const at = Number.isFinite(last) && now.getTime() <= last ? new Date(last + 1) : now;
+  const row = { schema: 1, ...next, ts: at.toISOString(), by };
   appendJsonl(path.join(t.dir, 'board.jsonl'), row);
   return row;
 }

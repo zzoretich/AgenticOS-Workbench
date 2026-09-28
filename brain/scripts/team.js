@@ -132,10 +132,21 @@ async function main(argv, {
     switch (verb) {
       case undefined:
       case 'list': {
-        const rows = T.listTeams(root).map((id) => { const t = team(id); return { ...statusOf(t), open: [...T.boardItems(t).values()].filter((i) => i.status !== 'done').length }; });
-        if (flags.json) { json({ schema: 1, teams: rows }); return 0; }
+        // One unreadable TEAM.md is a row with its error, not a failed list: the Agent Teams tab sweeps through this verb.
+        const rows = T.listTeams(root).map((id) => {
+          let t;
+          try { t = team(id); } catch (e) { return { schema: 1, team: id, error: e.message }; }
+          return { ...statusOf(t), open: [...T.boardItems(t).values()].filter((i) => i.status !== 'done').length };
+        });
+        // The presets `set` accepts, so a picker offers exactly those (D4: no free text), and which models each provider
+        // runs: a seat on one provider ignores the other's model (team-run.js modelFor).
+        const S = require('./lib/settings-schema.js');
+        const presets = { ...Object.fromEntries(T.SET_KEYS.map((k) => [k, T.presetsFor(k)])), models: { claude: S.CLAUDE_MODELS, codex: S.CODEX_MODELS } };
+        if (flags.json) { json({ schema: 1, teams: rows, presets }); return 0; }
         if (!rows.length) { say('No teams yet. `aos team init` seeds an example team in persona/teams/example/.'); return 0; }
-        say(table([['team', 'lead', 'members', 'open', 'gates', ''], ...rows.map((r) => [r.team, r.lead, r.members.length, r.open, r.pendingGates.length, r.disabled ? 'DISABLED' : ''])]));
+        say(table([['team', 'lead', 'members', 'open', 'gates', ''], ...rows.map((r) => (r.error
+          ? [r.team, '', '', '', '', `unreadable: ${r.error}`]
+          : [r.team, r.lead, r.members.length, r.open, r.pendingGates.length, r.disabled ? 'DISABLED' : '']))]));
         return 0;
       }
       case 'status': { need(1, '<team>'); const s = statusOf(team(rest[0])); if (flags.json) json(s); else say(renderStatus(s)); return 0; }
