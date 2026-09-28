@@ -235,7 +235,11 @@ test("session commands: the agent's run command per host, a prompt single-quoted
   const it = lab.board.find((i) => i.id === "site-01")!;
   assert.deepEqual(JSON.parse(expectOf(it)), it.raw, "the whole rendered snapshot");
   assert.equal(expectOf({ ...it, raw: {} }), '{"ts":"2026-09-20T12:45:00.000Z"}');
-  assert.match(redirectPrompt(lab, it), /aos team gate redirect lab site-01 --expect '\{"ts":"2026-09-20T12:45:00\.000Z","stage":"discuss","status":"gate"\}' --note/);
+  assert.ok(redirectPrompt(lab, it).includes(`aos team gate redirect 'lab' 'site-01' --expect ${shq(expectOf(it))} --note`));
+  const stage = "review' ; touch x ; #";
+  const odd = { ...it, stage, raw: { ...it.raw, stage } };
+  assert.ok(redirectPrompt(lab, odd).includes(`--expect ${shq(expectOf(odd))} --note`), "an apostrophe in a stage stays inside the quotes");
+  assert.ok(!redirectPrompt(lab, odd).includes(`${stage}"`), "never the raw stage text outside shq");
 });
 
 test("dollar amounts, and the paths a vault event must touch to refresh the tab or its badge", () => {

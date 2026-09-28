@@ -1,5 +1,6 @@
 import { Notice, TFile } from "obsidian";
 import type { TAbstractFile } from "obsidian";
+import * as os from "os";
 import * as path from "path";
 import type AgenticOSPlugin from "../../main";
 import type { WorkbenchView } from "./WorkbenchView";
@@ -7,7 +8,7 @@ import { ConfirmModal } from "../ui/ConfirmModal";
 import { readAgenticosJson, sessionHosts, invocationHint, SessionHost, claudeConfigDir as envClaudeConfigDir } from "../data/aosConfig";
 import { AgentsCache, AGENTS_PATH, emptyAgents, readAgents, agentsStale } from "../data/agents";
 import { AOS_CLI } from "../data/aosRun";
-import { Team, TEAMS_DIR, readTeams, diskAdapter, teamCommand, claudeEnvPrefix, touchesTeams, gateBadge, gateCards, orderTeams, pendingGates, boardColumns } from "../data/teams";
+import { Team, TEAMS_DIR, readTeams, diskAdapter, teamCommand, envPrefix, touchesTeams, gateBadge, gateCards, orderTeams, pendingGates, boardColumns } from "../data/teams";
 import { TeamRunner, teamRunner, teamFailure, presetsOf, Presets, ListJson, LIST_ARGS, INIT_ARGS, pauseArgs } from "../data/teamWriter";
 import { TeamsCtx, TeamsUiState, TeamsView, Confirm, VIEWS, errorLine } from "./teams/ui";
 import { renderBoard, renderGateCard } from "./teams/BoardPane";
@@ -164,11 +165,22 @@ export class AgentTeamsTab {
     } catch { new Notice(`Cannot open ${abs}`); }
   }
 
+  /** The folder each host's session should use, as the runtime resolves it (lib/host.js), set on the command only when
+   *  a new terminal would find another. */
+  private hostEnv(): Record<SessionHost, string> {
+    const envCodex = path.resolve(process.env.CODEX_HOME || path.join(os.homedir(), ".codex"));
+    const cfgCodex = readAgenticosJson(this.plugin.claudeConfigDir())?.hosts?.codex?.home;
+    return {
+      claude: envPrefix("CLAUDE_CONFIG_DIR", this.plugin.claudeConfigDir(), envClaudeConfigDir()),
+      codex: envPrefix("CODEX_HOME", cfgCodex || envCodex, envCodex),
+    };
+  }
+
   private ctx(team: Team): TeamsCtx {
     return {
       app: this.plugin.app, teams: this.teams, team, agents: this.agents, hosts: this.hosts, presets: this.presets, now: new Date(), ui: this.ui,
-      teamCmd: teamCommand(this.plugin.vaultRoot(), readAgenticosJson(this.plugin.claudeConfigDir())?.vault, this.plugin.nodeBin()),
-      claudeEnv: claudeEnvPrefix(this.plugin.claudeConfigDir(), envClaudeConfigDir()),
+      teamCmd: teamCommand(this.plugin.vaultRoot(), this.plugin.nodeBin()),
+      hostEnv: this.hostEnv(),
       busy: (k) => this.busyKeys.has(k), error: (k) => this.errors.get(k) ?? null,
       act: (k, args, confirm) => this.act(k, args, confirm),
       term: (cmd) => this.wb.runInTerm(cmd),

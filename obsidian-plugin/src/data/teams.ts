@@ -432,30 +432,29 @@ export function shq(s: string): string { return `'${s.replace(/'/g, `'\\''`)}'`;
 /**
  * What a "Talk to" or Redirect button types into a fresh terminal on `host`: the agent's own run command from
  * agents.json, plus an opening prompt when there is one. Codex has no `--agent`, so its prompt asks for the agent by
- * name. Null when that host does not have the agent. `claudeEnv` leads a Claude command (see claudeEnvPrefix).
+ * name. Null when that host does not have the agent. `env` leads the command (see envPrefix).
  */
-export function sessionCommand(agents: AgentsCache, agent: string | null, host: AgentHost, prompt?: string, claudeEnv = ""): string | null {
+export function sessionCommand(agents: AgentsCache, agent: string | null, host: AgentHost, prompt?: string, env = ""): string | null {
   if (!agent) return null;
   const row = agents.agents.find((a) => a.id === agent) ?? agents.agents.find((a) => a.name === agent);
   const run = row?.on[host]?.run ?? null;
   if (!run) return null;
-  if (host === "codex") return prompt ? `codex ${shq(`Use the ${agent} agent for this. ${prompt}`)}` : run;
-  return `${claudeEnv}${run}${prompt ? ` ${shq(prompt)}` : ""}`;
+  if (host === "codex") return `${env}${prompt ? `codex ${shq(`Use the ${agent} agent for this. ${prompt}`)}` : run}`;
+  return `${env}${run}${prompt ? ` ${shq(prompt)}` : ""}`;
 }
 
-/** `CLAUDE_CONFIG_DIR='<dir>' ` when the plugin is set to a Claude config folder other than the one a new terminal
- *  would use (`envDefault`), so a session started from the tab sees the same agents the tab lists; else nothing. */
-export function claudeEnvPrefix(configDir: string, envDefault: string): string {
-  return path.resolve(configDir) === path.resolve(envDefault) ? "" : `CLAUDE_CONFIG_DIR=${shq(configDir)} `;
+/** `NAME='<value>' ` when the folder the plugin uses for a host (CLAUDE_CONFIG_DIR, CODEX_HOME) is not the one a new
+ *  terminal would use (`envDefault`), so a session started from the tab sees the agents the tab lists; else nothing. */
+export function envPrefix(name: string, value: string, envDefault: string): string {
+  return path.resolve(value) === path.resolve(envDefault) ? "" : `${name}=${shq(value)} `;
 }
 
 /**
- * How a lead's session runs `aos team` against the vault this tab shows. The `aos` launcher always uses the vault
- * agenticos.json names; when the plugin is set to another vault root, the command runs that vault's own team.js with
- * AOS_VAULT set, so a decision is recorded where the tab read it.
+ * How a session started from the tab runs `aos team` against the vault this tab shows: that vault's own team.js with
+ * AOS_VAULT set. The `aos` launcher is not used, since it takes the vault from whichever agenticos.json the terminal's
+ * environment finds, which need not be this one.
  */
-export function teamCommand(vaultRoot: string, configVault: string | null | undefined, node: string): string {
-  if (configVault && path.resolve(configVault) === path.resolve(vaultRoot)) return "aos team";
+export function teamCommand(vaultRoot: string, node: string): string {
   return `AOS_VAULT=${shq(vaultRoot)} ${shq(node)} ${shq(path.join(vaultRoot, "brain", "scripts", "team.js"))}`;
 }
 
@@ -463,16 +462,14 @@ export function teamCommand(vaultRoot: string, configVault: string | null | unde
  *  a timestamp alone could repeat within a millisecond. It goes as one argv entry, never through a shell. */
 export function expectOf(it: BoardItem): string { return JSON.stringify(Object.keys(it.raw ?? {}).length ? it.raw : { ts: it.ts }); }
 
-/** The --expect a lead types from a prompt: only fields without free text (a title could hold an apostrophe), so it
- *  quotes safely in a shell. */
-export function promptExpectOf(it: BoardItem): string { return JSON.stringify({ ts: it.ts, stage: it.stage, status: it.status }); }
 
 /** The lead's opening prompt for a redirect: the user says what should change in the session, and the lead records it. */
 export function redirectPrompt(t: Team, it: BoardItem, team = "aos team"): string {
+  // Every value from the files is quoted with shq, so a title, stage or id holding an apostrophe cannot break the command.
   const gate = titleCase(it.gate?.name ?? "the");
   return `The user is redirecting the ${gate} gate on ${it.id}${it.title ? ` (${it.title})` : ""} in the ${t.id} team. `
     + "Ask the user what should change. Record their answer with this command, the note in single quotes: "
-    + `${team} gate redirect ${t.id} ${it.id} --expect '${promptExpectOf(it)}' --note '<what should change>'. Then take the next step.`;
+    + `${team} gate redirect ${shq(t.id)} ${shq(it.id)} --expect ${shq(expectOf(it))} --note '<what should change>'. Then take the next step.`;
 }
 
 // ── storage ──

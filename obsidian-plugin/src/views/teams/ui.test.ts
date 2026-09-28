@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseAgents } from "../../data/agents";
-import { teamFrom, teamCommand, claudeEnvPrefix } from "../../data/teams";
+import { teamFrom, teamCommand, envPrefix, redirectPrompt, expectOf, shq } from "../../data/teams";
 import { TeamsCtx, redirectCommand, talkCommand, since, postTime } from "./ui";
 import { addable } from "./ManagePane";
 
@@ -15,7 +15,7 @@ const TEAM = teamFrom({
 const IT = TEAM.board[0];
 
 function ctx(agents: unknown[]): TeamsCtx {
-  return { agents: parseAgents(JSON.stringify({ schema: 1, agents })), hosts: ["codex"], teamCmd: "aos team", claudeEnv: "" } as unknown as TeamsCtx;
+  return { agents: parseAgents(JSON.stringify({ schema: 1, agents })), hosts: ["codex"], teamCmd: "aos team", hostEnv: { claude: "", codex: "" } } as unknown as TeamsCtx;
 }
 const LEAD_BOTH = { id: "team-lead", name: "team-lead", on: {
   claude: { invoke: "@agent-team-lead", run: "claude --agent team-lead" },
@@ -25,7 +25,8 @@ const LEAD_BOTH = { id: "team-lead", name: "team-lead", on: {
 test("Codex: Redirect asks for the lead's agent by name, with the gate and the exact record line", () => {
   const cmd = redirectCommand(ctx([LEAD_BOTH]), TEAM, IT, "codex");
   assert.match(cmd, /^codex 'Use the team-lead agent for this\. The user is redirecting the Discuss gate on site-01 \(Landing page\) in the lab team\./);
-  assert.match(cmd, /aos team gate redirect lab site-01 --expect '\\''\{"ts":"2026-09-20T12:45:00\.000Z","stage":"discuss","status":"gate"\}'\\'' --note/);
+  assert.ok(cmd.endsWith(shq(`Use the team-lead agent for this. ${redirectPrompt(TEAM, IT)}`)));
+  assert.ok(redirectPrompt(TEAM, IT).includes(`aos team gate redirect 'lab' 'site-01' --expect ${shq(expectOf(IT))} --note`));
   assert.match(redirectCommand(ctx([LEAD_BOTH]), TEAM, IT, "claude"), /^claude --agent team-lead 'The user is redirecting/);
 });
 
@@ -56,17 +57,18 @@ test("Add a member offers only agents member add can find: its file carries the 
   assert.deepEqual([addable(a), addable(b), addable(c)], [true, false, true]);
 });
 
-test("a session records into the vault the tab shows, with the Claude config folder the plugin uses", () => {
-  assert.equal(teamCommand("/v/one", "/v/one/", "/bin/node"), "aos team", "the usual case: aos is the tab's vault");
-  assert.equal(teamCommand("/v/two", "/v/one", "/opt/node"), "AOS_VAULT='/v/two' '/opt/node' '/v/two/brain/scripts/team.js'");
-  assert.equal(teamCommand("/v/two", null, "/opt/node").startsWith("AOS_VAULT='/v/two'"), true, "no agenticos.json vault: explicit");
-  assert.equal(claudeEnvPrefix("/h/.claude", "/h/.claude/"), "");
-  assert.equal(claudeEnvPrefix("/h/work-claude", "/h/.claude"), "CLAUDE_CONFIG_DIR='/h/work-claude' ");
-  const c = { ...ctx([LEAD_BOTH]), hosts: ["claude"], teamCmd: "AOS_VAULT='/v/two' '/opt/node' '/v/two/brain/scripts/team.js'", claudeEnv: "CLAUDE_CONFIG_DIR='/h/work-claude' " } as TeamsCtx;
-  const cmd = redirectCommand(c, TEAM, IT, "claude");
-  assert.match(cmd, /^CLAUDE_CONFIG_DIR='\/h\/work-claude' claude --agent team-lead '/);
-  assert.match(cmd, /AOS_VAULT='\\''\/v\/two'\\'' '\\''\/opt\/node'\\'' '\\''\/v\/two\/brain\/scripts\/team\.js'\\'' gate redirect lab site-01/);
+test("a session records into the vault the tab shows, with each host's folder the plugin uses", () => {
+  assert.equal(teamCommand("/v/two", "/opt/node"), "AOS_VAULT='/v/two' '/opt/node' '/v/two/brain/scripts/team.js'", "never the terminal's own aos config");
+  assert.equal(envPrefix("CLAUDE_CONFIG_DIR", "/h/.claude", "/h/.claude/"), "");
+  assert.equal(envPrefix("CLAUDE_CONFIG_DIR", "/h/work-claude", "/h/.claude"), "CLAUDE_CONFIG_DIR='/h/work-claude' ");
+  assert.equal(envPrefix("CODEX_HOME", "/h/work-codex", "/h/.codex"), "CODEX_HOME='/h/work-codex' ");
+  const c = { ...ctx([LEAD_BOTH]), hosts: ["claude", "codex"], teamCmd: teamCommand("/v/two", "/opt/node"),
+    hostEnv: { claude: "CLAUDE_CONFIG_DIR='/h/work-claude' ", codex: "CODEX_HOME='/h/work-codex' " } } as TeamsCtx;
+  const prompt = redirectPrompt(TEAM, IT, c.teamCmd);
+  assert.ok(prompt.includes("AOS_VAULT='/v/two' '/opt/node' '/v/two/brain/scripts/team.js' gate redirect 'lab' 'site-01'"));
+  assert.equal(redirectCommand(c, TEAM, IT, "claude"), `CLAUDE_CONFIG_DIR='/h/work-claude' claude --agent team-lead ${shq(prompt)}`);
+  assert.equal(redirectCommand(c, TEAM, IT, "codex"), `CODEX_HOME='/h/work-codex' codex ${shq(`Use the team-lead agent for this. ${prompt}`)}`);
   assert.equal(talkCommand(c, "team-lead", "claude"), "CLAUDE_CONFIG_DIR='/h/work-claude' claude --agent team-lead");
-  assert.equal(talkCommand(c, "team-lead", "codex"), LEAD_BOTH.on.codex.run, "Codex does not read CLAUDE_CONFIG_DIR");
-  assert.match(redirectCommand({ ...c, agents: parseAgents("{}") } as TeamsCtx, TEAM, IT, "claude"), /^CLAUDE_CONFIG_DIR='\/h\/work-claude' claude '/);
+  assert.equal(talkCommand(c, "team-lead", "codex"), `CODEX_HOME='/h/work-codex' ${LEAD_BOTH.on.codex.run}`);
+  assert.equal(redirectCommand({ ...c, agents: parseAgents("{}") } as TeamsCtx, TEAM, IT, "codex"), `CODEX_HOME='/h/work-codex' codex ${shq(prompt)}`);
 });

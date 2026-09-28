@@ -118,8 +118,10 @@ Agents. The badge counts gates pending across teams, and `touchesBadges` covers 
   the presets `set` takes. Unsent messages are kept per team.
 - **Gates:** the gate on a team's first stage funds the work: presets are half, the proposal (`budget.usd`) and double,
   − / + walk a fixed ladder, and nothing goes below spend plus what live Claude runs hold. Approve asks first. Redirect
-  opens the lead's agent with a prompt naming the gate and the exact `gate redirect … --expect … --note` line; where
-  that host lacks the lead's agent, a plain session gets the same prompt.
+  opens the lead's agent with a prompt naming the gate and the exact line that records it: this vault's own
+  `team.js` with `AOS_VAULT` set (never the terminal's `aos` config), every value shell-quoted, the whole snapshot as
+  `--expect`; the host's folder (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`) leads the command when a new terminal would use
+  another. Where that host lacks the lead's agent, a plain session gets the same prompt.
 - **Runtime change:** `aos team list` lists a team whose `TEAM.md` does not parse as a row with its error, rather than
   failing, and its `--json` carries `presets`.
 
