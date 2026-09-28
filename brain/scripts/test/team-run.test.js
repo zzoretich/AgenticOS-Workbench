@@ -25,8 +25,9 @@ const mode = process.env.FAKE_MODE || 'post';
 const member = args[args.indexOf('--agent') + 1].replace(/^seat-/, '');
 const item = args[1].split('\\n')[0];
 if (mode === 'fail') { process.stdout.write(JSON.stringify({ type: 'result', subtype: 'error_max_budget_usd', is_error: true, total_cost_usd: 0.3, result: '' })); process.exit(1); }
-fs.writeFileSync(member + '.txt', member + ' was here\\n');
+fs.writeFileSync(member + '.txt', member + ' was here ' + Date.now() + ' ' + Math.random() + '\\n');
 if (mode !== 'dirty') { execFileSync('git', ['add', '-A']); execFileSync('git', ['commit', '-qm', member + ': work']); }
+if (mode === 'failcommit') { process.stdout.write(JSON.stringify({ type: 'result', subtype: 'error_during_execution', is_error: true, total_cost_usd: 0.2, result: '' })); process.exit(1); }
 if (mode === 'hang') { fs.writeFileSync(process.env.FAKE_PIDFILE, String(process.pid)); setInterval(() => {}, 1 << 30); return; }
 if (mode === 'post') execFileSync(process.execPath, [process.env.TEAM_JS, 'post', 'dev', '--from', member, '--item', item, '--kind', 'handoff', member + ' done at $40; next is lead']);
 process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, total_cost_usd: 0.5, result: 'Work done.\\nhandoff: ' + member + ' finished', session_id: 'sess-1', usage: { input_tokens: 10, output_tokens: 5 } }));
@@ -104,7 +105,8 @@ function world() {
   return { root, vault, claudeDir, codexDir, repo, hosts, argsLog, lcLog, env, t, cfg: { hosts } };
 }
 
-function put(w, patch) { T.put(w.t(), { from: 'lead', json: JSON.stringify(patch) }); }
+// Fixture writes: gates and budgets are the user's (put refuses them, AT-01), so fixtures write the board directly.
+function put(w, patch) { const t = w.t(); T.withBoard(t, () => T.writeItem(t, patch, { by: 'fixture', existing: T.boardItems(t).get(patch.id) || null })); }
 async function dispatch(w, args, extra = {}) {
   const out = [];
   const err = [];
@@ -176,12 +178,12 @@ test('a claude seat runs in its worktree, posts, spends, and fast-forwards the t
   put(w, base());
   const r = await dispatch(w, ['planner', 'demo-01']);
   assert.equal(r.code, 0, r.err || r.out);
-  assert.match(r.out, /planner on demo-01 via claude claude-sonnet-5\/high .* \$0\.50 · 1 commit\(s\) merged into team\/demo-01\/trunk · posted handoff/);
+  assert.match(r.out, /planner on demo-01 via claude claude-sonnet-5\/high .* \$0\.50 · 1 commit\(s\) merged into team\/dev\/demo-01\/trunk · posted handoff/);
   const call = jsonl(w.argsLog)[0];
   for (const a of ['--agent', 'seat-planner', '--model', 'claude-sonnet-5', '--effort', 'high', '--permission-mode', 'auto', '--max-budget-usd', '25.00']) assert.ok(call.args.includes(a), a);
-  assert.match(call.cwd, /\/workspaces\/_worktrees\/demo-01\/planner$/);
+  assert.match(call.cwd, /\/workspaces\/_worktrees\/dev\/demo-01\/planner$/);
   assert.equal(fs.existsSync(call.cwd), false, 'a clean worktree is removed');
-  assert.equal(sh(w.repo, 'git', ['log', '-1', '--format=%s', 'team/demo-01/trunk']), 'planner: work');
+  assert.equal(sh(w.repo, 'git', ['log', '-1', '--format=%s', 'team/dev/demo-01/trunk']), 'planner: work');
   assert.equal(sh(w.repo, 'git', ['log', '-1', '--format=%s', 'main']), 'init', 'main is untouched');
   const it = item(w, 'demo-01');
   assert.deepEqual([it.budget.spentUsd, it.by], [0.5, 'dispatch']);
@@ -190,7 +192,7 @@ test('a claude seat runs in its worktree, posts, spends, and fast-forwards the t
   const runs = jsonl(path.join(w.t().dir, 'runs.jsonl'));
   assert.equal(runs.length, 1);
   assert.deepEqual([runs[0].status, runs[0].session, runs[0].usd, runs[0].commits], ['ok', 'sess-1', 0.5, 1]);
-  assert.match(runs[0].run, /^demo-01-planner-/);
+  assert.match(runs[0].run, /^dev-demo-01-planner-/);
   assert.deepEqual(T.liveMarkers(w.t()), [], 'the marker goes once the row is written');
 });
 
@@ -244,8 +246,11 @@ test('uncommitted work keeps the worktree and blocks the next run of that seat',
   const w = world();
   put(w, base());
   assert.equal((await dispatch(w, ['planner', 'demo-01'], { FAKE_MODE: 'dirty' })).code, 3);
-  assert.ok(fs.existsSync(path.join(w.vault, 'workspaces', '_worktrees', 'demo-01', 'planner', 'planner.txt')));
+  assert.ok(fs.existsSync(path.join(w.vault, 'workspaces', '_worktrees', 'dev', 'demo-01', 'planner', 'planner.txt')));
   assert.match(T.tail(w.t()).pop().text, /uncommitted changes/);
+  assert.equal(jsonl(path.join(w.t().dir, 'runs.jsonl'))[0].status, 'blocked', 'a dirty run is blocked, not ok (AT-07)');
+  const waited = await main(['wait', 'dev', 'demo-01', 'planner', '--since', '2000-01-01T00:00:00Z'], { stdout: () => {}, stderr: () => {}, vault: w.vault });
+  assert.equal(waited, 3, 'wait exits 3 when the run it returns is not ok');
   assert.match((await dispatch(w, ['planner', 'demo-01'])).err, /left its worktree/);
 });
 
@@ -364,4 +369,54 @@ test('--detach on Linux runs the dispatch as a transient systemd user unit', asy
   assert.ok(args.includes(`--setenv=AOS_VAULT=${w.vault}`));
   assert.deepEqual(args.slice(args.indexOf('--') + 1), [process.execPath, TEAM_JS, 'dispatch', 'dev', 'planner', 'demo-01']);
   assert.ok(!args.some((a) => /^--setenv=AOS_HEADLESS=/.test(a)), 'a seat gets AOS_HEADLESS from the dispatcher, not the unit');
+});
+
+// ── the review's fixes (AT-02, AT-03, AT-05, AT-06) ──
+
+test('a failed run keeps its commits on its branch, and the lead takes them with aos team merge (AT-03)', async () => {
+  const w = world();
+  put(w, base({ stage: 'execute', owner: ['builder'], gate: APPROVED }));
+  const r = await dispatch(w, ['builder', 'demo-01'], { FAKE_MODE: 'failcommit' });
+  assert.equal(r.code, 3);
+  assert.match(r.out, /1 commit\(s\) held on team\/dev\/demo-01\/builder/);
+  assert.equal(sh(w.repo, 'git', ['rev-list', '--count', 'team/dev/demo-01/trunk..team/dev/demo-01/builder']), '1', 'not merged');
+  assert.deepEqual(item(w, 'demo-01').builders.claude, [], 'held work built nothing');
+  const run = jsonl(path.join(w.t().dir, 'runs.jsonl'))[0];
+  assert.deepEqual([run.status, run.commits, run.merged], ['failed', 1, false]);
+  assert.match(T.tail(w.t()).pop().text, /aos team merge dev demo-01 builder --from lead takes them/);
+  const io = { stdout: () => {}, stderr: () => {}, vault: w.vault };
+  assert.equal(await main(['merge', 'dev', 'demo-01', 'builder', '--from', 'builder'], io), 1, 'only the lead merges');
+  assert.equal(await main(['merge', 'dev', 'demo-01', 'builder', '--from', 'lead'], io), 0);
+  assert.equal(sh(w.repo, 'git', ['log', '-1', '--format=%s', 'team/dev/demo-01/trunk']), 'builder: work');
+});
+
+test('parallel Claude seats share one budget: a live run holds its reservation, and --max-usd splits it (AT-02)', async () => {
+  const w = world();
+  put(w, base({ stage: 'verify', owner: ['reviewer', 'planner'], gate: APPROVED, builders: { claude: [], codex: ['platform'] } }));
+  const hold = (usd) => { fs.mkdirSync(T.runningDir(w.t()), { recursive: true }); fs.writeFileSync(path.join(T.runningDir(w.t()), 'held.json'), JSON.stringify({ run: 'held', member: 'planner', item: 'demo-01', provider: 'claude', pid: process.pid, pidStart: T.processStart(process.pid), host: os.hostname(), reservedUsd: usd })); };
+  hold(20);
+  const first = await dispatch(w, ['reviewer', 'demo-01']);
+  assert.equal(first.code, 0, `${first.out}\n${first.err}`);
+  assert.ok(jsonl(w.argsLog)[0].args.join(' ').includes('--max-budget-usd 5.00'), 'only what the live run does not hold');
+  hold(24.5);
+  assert.match((await dispatch(w, ['reviewer', 'demo-01'])).err, /held by live runs/);
+  fs.rmSync(path.join(T.runningDir(w.t()), 'held.json'));
+  const third = await dispatch(w, ['reviewer', 'demo-01', '--max-usd', '3']);
+  assert.equal(third.code, 0, `${third.out}\n${third.err}`);
+  assert.ok(jsonl(w.argsLog).pop().args.join(' ').includes('--max-budget-usd 3.00'));
+});
+
+test('a codex seat runs its own Codex definition and model; a claude seat needs its Claude Code file (AT-05, AT-06)', async () => {
+  const w = world();
+  const codexModel = require('../lib/settings-schema.js').CODEX_MODELS[0];
+  fs.mkdirSync(path.join(w.codexDir, 'agents'), { recursive: true });
+  fs.writeFileSync(path.join(w.codexDir, 'agents', 'seat-platform.toml'), 'name = "seat-platform"\ndeveloper_instructions = "AGENT=platform, the Codex-native definition."\n');
+  T.setMember(w.t(), { memberId: 'platform', key: 'model', value: codexModel, env: {} });
+  put(w, base({ stage: 'execute', owner: ['platform', 'builder'], gate: APPROVED }));
+  assert.equal((await dispatch(w, ['platform', 'demo-01'])).code, 0);
+  const call = jsonl(w.argsLog)[0];
+  assert.match(call.stdin, /the Codex-native definition/);
+  assert.deepEqual(call.args.slice(call.args.indexOf('-m'), call.args.indexOf('-m') + 2), ['-m', codexModel]);
+  fs.rmSync(path.join(w.claudeDir, 'agents', 'seat-builder.md'));
+  assert.match((await dispatch(w, ['builder', 'demo-01'])).err, /no Claude Code agent file/);
 });

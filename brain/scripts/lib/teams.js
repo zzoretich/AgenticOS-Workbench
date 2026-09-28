@@ -301,6 +301,19 @@ function parsePatch(json) {
   return patch;
 }
 
+/** What `put` may never change, because the user decides it (gates, budgets) or dispatch records it (spend, builders):
+ *  a seat that calls `put --from <lead>` can still not approve its own gate or raise its budget (AT-01). */
+function guardPut(existing, patch) {
+  const cur = existing || {};
+  const g = patch.gate;
+  if (g && g.state && g.state !== 'pending' && !matches(cur.gate, g)) throw new Refusal(`a ${g.state} gate is the user's decision: aos team gate approve|redirect records it`);
+  const b = patch.budget || {};
+  for (const k of ['usd', 'spentUsd', 'codexRuns']) {
+    if (b[k] !== undefined && Number(b[k]) !== Number((cur.budget || {})[k] || 0)) throw new Refusal(k === 'usd' ? "the phase budget is the user's decision: aos team budget sets it" : `budget.${k} is recorded by dispatch`);
+  }
+  if (patch.builders !== undefined && !matches(cur.builders || null, patch.builders)) throw new Refusal('builders are recorded by dispatch when a seat merges its work');
+}
+
 /** The lead's board write: merges `json` into the item's last snapshot. Holds the lock unless `locked` says the caller does. */
 function put(t, { from, json, expect, now, locked = false }) {
   const run = () => {
@@ -308,6 +321,7 @@ function put(t, { from, json, expect, now, locked = false }) {
     const patch = parsePatch(json);
     const existing = boardItems(t).get(patch.id) || null;
     checkExpect(patch.id, existing, expect);
+    guardPut(existing, patch);
     return writeItem(t, patch, { by: from, now, existing });
   };
   return locked ? run() : withBoard(t, run);
@@ -505,6 +519,15 @@ function reapKilledRuns(t, { alive = dispatchAlive, host = os.hostname(), now = 
       let m;
       try { m = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { continue; }
       if (!m || !m.run || m.host !== host || alive(m.pid, m.pidStart)) continue;
+      // A seat that outlived its dispatcher (SIGKILL) is stopped before the run is recorded (AT-08).
+      let orphan = null;
+      if (Number.isInteger(m.seatPid) && Number.isFinite(m.seatStart)) {
+        try {
+          process.kill(m.seatPid, 0);
+          const s = processStart(m.seatPid);
+          if (s !== null && Math.abs(s - m.seatStart) <= 2000) { process.kill(m.seatPid, 'SIGTERM'); orphan = m.seatPid; }
+        } catch { /* gone */ }
+      }
       if (!closed.has(m.run)) {
         const started = Date.parse(m.startedAt || '');
         const ms = Number.isFinite(started) ? Math.max(0, now - started) : null;
@@ -516,7 +539,7 @@ function reapKilledRuns(t, { alive = dispatchAlive, host = os.hostname(), now = 
         closed.add(m.run);
         const mins = ms == null ? '?' : (ms / 60000).toFixed(1);
         const wt = m.worktree && fs.existsSync(path.resolve(t.vault, m.worktree)) ? `${m.worktree} is still there` : `${m.worktree || '?'} is gone`;
-        const text = `${m.member}'s ${m.provider} run on ${m.item} was killed: its dispatcher (pid ${m.pid}) is gone ${mins} min after the run started, and it wrote no end row. Worktree ${wt}; log ${m.log}.*`;
+        const text = `${m.member}'s ${m.provider} run on ${m.item} was killed: its dispatcher (pid ${m.pid}) is gone ${mins} min after the run started, and it wrote no end row.${orphan ? ` Its seat (pid ${orphan}) was still running and was stopped.` : ''} Worktree ${wt}; log ${m.log}.*`;
         try { post(t, { from: 'dispatch', item: m.item, kind: 'blocker', text }); } catch { post(t, { from: 'dispatch', kind: 'blocker', text }); }
         reaped.push({ ...m, ms });
       }
@@ -596,7 +619,7 @@ function readState(t) {
 module.exports = {
   KINDS, DEFAULT_STAGES, STATUSES, GATE_STATES, PROVIDERS, EFFORTS, SET_KEYS, ID_RE, ITEM_RE, Refusal, UsageError,
   teamsRoot, parseScalar, formatScalar, parseFrontmatter, rewriteMember, addMemberBlock, removeMemberBlock, readTeam, listTeams,
-  readJsonl, appendJsonl, boardItems, owners, member, leadOf, post, tail, withLock, withBoard, matches, checkExpect, writeItem, put,
+  guardPut, readJsonl, appendJsonl, boardItems, owners, member, leadOf, post, tail, withLock, withBoard, matches, checkExpect, writeItem, put,
   decideGate, setBudget, setPaused, presetsFor, setMember, agentFiles, addMember, removeMember, initTeam,
   runningDir, processStart, dispatchAlive, liveMarkers, reapKilledRuns, runLine, waitForRun, memberStatus, pendingGates, readState,
 };

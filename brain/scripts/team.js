@@ -18,7 +18,8 @@ const USAGE = `usage: aos team list [--json]
        aos team tail <team> [--item <id>] [-n 20] [--json]
        aos team post <team> --from <id> [--item <id>] [--kind <kind>] <text...>
        aos team put <team> --from <lead> [--expect '<json>'] '<patch json>'
-       aos team dispatch <team> <member> <item> [--wave N[,M]] [--note <text>] [--provider claude|codex] [--timeout-min 120] [--dry-run | --detach]
+       aos team dispatch <team> <member> <item> [--wave N[,M]] [--note <text>] [--provider claude|codex] [--max-usd N] [--timeout-min 120] [--dry-run | --detach]
+       aos team merge <team> <item> <member> --from <lead>
        aos team wait <team> <item> <member> [--since <iso>] [--timeout-min 180] [--json]
        aos team gate approve|redirect <team> <item> --expect '<json>' [--usd N] [--note <text>]
        aos team budget <team> <item> <usd> --expect '<json>'
@@ -28,7 +29,7 @@ const USAGE = `usage: aos team list [--json]
        aos team init [<id>]
 `;
 const BOOL = new Set(['json', 'dry-run', 'detach']);
-const VALUE = new Set(['from', 'item', 'kind', 'expect', 'wave', 'note', 'provider', 'timeout-min', 'since', 'usd']);
+const VALUE = new Set(['from', 'item', 'kind', 'expect', 'wave', 'note', 'provider', 'timeout-min', 'since', 'usd', 'max-usd']);
 
 /** { flags, positional, pass } — `pass` is argv without --detach, for the detached run to repeat. */
 function parseArgs(argv) {
@@ -177,9 +178,16 @@ async function main(argv, {
         const c = cfg || require('./lib/config.js').loadConfig();
         const r = await TR.dispatch({
           team: rest[0], member: rest[1], item: rest[2], waves: flags.wave, note: flags.note, provider: flags.provider,
-          timeoutMin: flags['timeout-min'], dryRun: !!flags['dry-run'], detach: !!flags.detach, args: pass.slice(1),
+          timeoutMin: flags['timeout-min'], maxUsd: flags['max-usd'], dryRun: !!flags['dry-run'], detach: !!flags.detach, args: pass.slice(1),
         }, { vault: v, cfg: c, env, stderr, platform, ...(dirs || hostDirs(env)) });
         if (r.out) say(r.out);
+        return r.code;
+      }
+      case 'merge': {
+        need(3, '<team> <item> <member>');
+        team(rest[0]);
+        const r = require('./lib/team-run.js').mergeSeat({ team: rest[0], item: rest[1], member: rest[2], from: flags.from }, { vault: v });
+        say(r.out);
         return r.code;
       }
       case 'wait': {
@@ -187,7 +195,7 @@ async function main(argv, {
         const r = T.waitForRun(team(rest[0]), { item: rest[1], member: rest[2], since: flags.since, timeoutMin: flags['timeout-min'] || 180 });
         if (r.code !== 0) { stderr(`team: ${r.err}\n`); return 1; }
         if (flags.json) json(r.row); else say(`run ended: ${T.runLine(r.row)}`);
-        return 0;
+        return r.row.status === 'ok' ? 0 : 3; // failed, killed or blocked: the lead has a blocker to read (AT-07)
       }
       case 'gate': {
         need(3, 'approve|redirect <team> <item>');

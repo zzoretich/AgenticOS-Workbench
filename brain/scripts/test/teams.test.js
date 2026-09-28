@@ -108,7 +108,8 @@ test('put: only the lead writes, each row carries its own time and writer, and -
   assert.ok(Date.parse(row.ts) >= before);
   assert.deepEqual([row.by, row.schema, row.budget.usd], ['lead', 1, 25], 'a new item gets the default budget');
   // The 2026-09-24 incident: a second approval from a stale read must not drag an item back.
-  T.put(w.t(), { from: 'lead', json: JSON.stringify({ id: 'x-01', stage: 'execute', owner: 'builder', status: 'working', gate: { name: 'discuss', state: 'approved' } }) });
+  const t0 = w.t();
+  T.withBoard(t0, () => T.writeItem(t0, { id: 'x-01', stage: 'execute', owner: 'builder', status: 'working', gate: { name: 'discuss', state: 'approved' } }, { by: 'fixture', existing: T.boardItems(t0).get('x-01') }));
   const lines = () => fs.readFileSync(path.join(w.t().dir, 'board.jsonl'), 'utf8').split('\n').filter(Boolean).length;
   const n = lines();
   assert.throws(() => T.put(w.t(), { from: 'lead', expect: '{"status":"gate","gate":{"state":"pending"}}', json: '{"id":"x-01","stage":"plan"}' }),
@@ -320,4 +321,28 @@ test('the CLI: list, status --json, usage is exit 2, a refusal is exit 1, and a 
   assert.match(ok.out, /^discuss gate approved on x-01: now plan\/working with lead/);
   assert.equal((await cli(w, ['gate', 'approve', 'dev', 'x-01', '--expect', JSON.stringify({ ts })])).code, 1, 'the rendered card is stale now');
   assert.match((await cli(w, ['tail', 'dev', '--item', 'x-01'])).out, /costs \$40 so far/);
+});
+
+test('put never records the user\'s decisions or dispatch\'s bookkeeping, even as the lead (AT-01)', () => {
+  const w = world();
+  T.put(w.t(), { from: 'lead', json: JSON.stringify(AT_GATE) });
+  const refused = (patch, re) => assert.throws(() => T.put(w.t(), { from: 'lead', json: JSON.stringify({ id: 'x-01', ...patch }) }), re);
+  refused({ gate: { name: 'discuss', state: 'approved' } }, /approved gate is the user's decision/);
+  refused({ gate: { name: 'discuss', state: 'redirected', note: 'x' } }, /redirected gate is the user's decision/);
+  refused({ budget: { usd: 500 } }, /phase budget is the user's decision/);
+  refused({ budget: { spentUsd: 0.01 } }, /recorded by dispatch/);
+  refused({ builders: { claude: ['builder'] } }, /builders are recorded by dispatch/);
+  assert.equal(T.put(w.t(), { from: 'lead', json: '{"id":"x-01","gate":{"name":"ship","state":"pending"},"budget":{"usd":25}}' }).gate.name, 'ship', 'opening a gate and repeating the budget are fine');
+});
+
+test('the sweep stops a seat that outlived its killed dispatcher (AT-08)', async () => {
+  const w = world();
+  T.put(w.t(), { from: 'lead', json: '{"id":"x-01","owner":"builder","status":"working"}' });
+  const seat = spawn('sleep', ['30']);
+  const pidStart = T.processStart(seat.pid);
+  marker(w.t(), { run: 'orphaned', member: 'builder', item: 'x-01', provider: 'claude', pid: deadPid(), host: os.hostname(), startedAt: new Date().toISOString(), log: 'l', worktree: 'w', seatPid: seat.pid, seatStart: pidStart });
+  T.reapKilledRuns(w.t());
+  assert.match(T.tail(w.t()).pop().text, new RegExp(`Its seat \\(pid ${seat.pid}\\) was still running and was stopped`));
+  const how = await new Promise((resolve) => { seat.once('exit', (code, sig) => resolve(sig)); setTimeout(() => resolve('still running'), 3000); });
+  assert.equal(how, 'SIGTERM');
 });

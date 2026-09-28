@@ -123,11 +123,14 @@ function checkedOut(repo, name) {
   return gitTry(repo, ['worktree', 'list', '--porcelain']).out.split('\n').some((l) => l === `branch refs/heads/${name}`);
 }
 
+/** An item's branches and a seat's worktree, scoped by team so two teams on one project never share them (AT-04). */
+function branchNames(teamId, itemId, memberId, worktrees) {
+  return { trunk: `team/${teamId}/${itemId}/trunk`, seat: `team/${teamId}/${itemId}/${memberId}`, wt: path.join(worktrees, teamId, itemId, memberId) };
+}
+
 /** Cut the trunk and the seat branch and add the worktree. → { trunk, seat, wt, base } */
-function prepareWorktree(repo, worktrees, it, memberId) {
-  const trunk = `team/${it.id}/trunk`;
-  const seat = `team/${it.id}/${memberId}`;
-  const wt = path.join(worktrees, it.id, memberId);
+function prepareWorktree(repo, names, it, memberId) {
+  const { trunk, seat, wt } = names;
   gitTry(repo, ['worktree', 'prune']);
   if (fs.existsSync(wt)) refuse(`a ${memberId} run on ${it.id} is still going, or left its worktree at ${wt}; once it is done: git -C ${repo} worktree remove ${wt}`);
   if (!gitTry(repo, ['rev-parse', '--verify', '--quiet', 'HEAD']).ok) git(repo, ['commit', '--allow-empty', '-m', `chore: start ${path.basename(repo)}`]);
@@ -167,13 +170,24 @@ function mergeBack(repo, trunk, seat) {
 
 // ── the seat ──
 
-/** The agent's instructions: its Claude definition's body, else its Codex definition's developer_instructions. */
-function agentBody(agent, { claudeDir, codexDir }) {
+/** The agent's instructions for the host that runs it (AT-06). A Claude seat needs its Claude Code definition (`--agent`
+ *  loads it). A Codex seat uses its Codex definition, else the Claude one's body (the two are mirrors after `aos agents sync`). */
+function agentBody(agent, { claudeDir, codexDir }, provider = 'claude') {
   const A = require('./agent-translate.js');
   const where = T.agentFiles(agent, { claudeDir, codexDir });
-  if (where.claude) { const r = A.readClaude(fs.readFileSync(where.claude, 'utf8')); if (r.ok && r.body.trim()) return r.body.trim(); }
-  if (where.codex) { const r = A.readCodex(fs.readFileSync(where.codex, 'utf8')); if (r.ok && r.instructions.trim()) return r.instructions.trim(); }
-  return refuse(`no agent named ${agent} in either host's agents folder`);
+  const fromClaude = () => { if (!where.claude) return null; const r = A.readClaude(fs.readFileSync(where.claude, 'utf8')); return r.ok && r.body.trim() ? r.body.trim() : null; };
+  const fromCodex = () => { if (!where.codex) return null; const r = A.readCodex(fs.readFileSync(where.codex, 'utf8')); return r.ok && r.instructions.trim() ? r.instructions.trim() : null; };
+  if (provider === 'claude') return fromClaude() || refuse(`${agent} has no Claude Code agent file, which claude --agent needs (aos agents sync mirrors a Codex one)`);
+  return fromCodex() || fromClaude() || refuse(`no agent named ${agent} in either host's agents folder`);
+}
+
+/** The model a seat runs on for `provider` (AT-05): the member's model when it names one of that provider's models, else the
+ *  provider's default (codex: cfg.codex.model or the user's Codex default; claude: the CLI's default). */
+function modelFor(provider, m, cfg) {
+  const want = typeof m.model === 'string' && m.model && m.model !== 'inherit' ? m.model : null;
+  const codexModels = require('./settings-schema.js').CODEX_MODELS;
+  if (provider === 'codex') return want && codexModels.includes(want) ? want : (typeof (cfg.codex && cfg.codex.model) === 'string' && cfg.codex.model) || null;
+  return want && !codexModels.includes(want) ? want : null;
 }
 
 function promptFor(it, { waves, note }) {
@@ -221,6 +235,7 @@ function runSeat(bin, argv, { cwd, env, stdin, outFd, errFd, timeoutMs, ctl, gra
     if (ctl.caught) { finish(); return; } // signalled before the seat started: it never runs
     try { child = spawn(bin, argv, { cwd, env, stdio: ['pipe', outFd, errFd] }); } catch (e) { res.error = e; finish(); return; }
     ctl.stop = stop;
+    if (ctl.onSpawn && child.pid) ctl.onSpawn(child.pid);
     timer = setTimeout(() => { res.timedOut = true; stop(); }, timeoutMs);
     child.on('error', (e) => { if (child.pid === undefined) { res.error = e; finish(); } });
     child.on('close', (code, signal) => { res.status = code; res.signal = signal; finish(); });
@@ -270,43 +285,60 @@ async function dispatch(opts, ctx) {
   if (!bin) refuse(`${m.id} runs on ${provider}, and no ${provider} CLI was found on this machine`);
   const agent = m.agent || `${t.id}-${m.id}`;
   const dirs = { claudeDir: ctx.claudeDir, codexDir: ctx.codexDir };
-  const body = agentBody(agent, dirs);
+  const body = agentBody(agent, dirs, provider);
   const str = (v) => (typeof v === 'string' && v && v !== 'inherit' ? v : null);
-  const model = provider === 'claude' ? str(m.model) : str(cfg.codex && cfg.codex.model);
+  const model = modelFor(provider, m, cfg);
   const effort = str(m.effort);
+  const maxUsd = opts.maxUsd === undefined || opts.maxUsd === null ? null : Number(opts.maxUsd);
+  if (maxUsd !== null && !(maxUsd > 0)) refuse('--max-usd must be a dollar amount above 0');
   const worktrees = path.join(vault, 'workspaces', '_worktrees');
+  const names = branchNames(t.id, item.id, m.id, worktrees);
   const prompt = promptFor(item, opts);
   const plan = {
     team: t.id, member: m.id, item: item.id, provider, bin, agent, model: model || `${provider} default`, effort: effort || `${provider} default`,
-    budgetLeftUsd: left, repo, trunk: `team/${item.id}/trunk`, branch: `team/${item.id}/${m.id}`,
-    worktree: path.join(worktrees, item.id, m.id), prompt, warnings,
+    budgetLeftUsd: left, maxUsd, repo, trunk: names.trunk, branch: names.seat, worktree: names.wt, prompt, warnings,
   };
   if (opts.dryRun) return { code: 0, out: JSON.stringify(plan, null, 2), plan };
   for (const w of warnings) stderr(`team: warning: ${w}\n`);
   if (opts.detach) return detach(t, plan, opts.args || [], { ...ctx, worktrees });
 
-  const { trunk, seat, wt, base } = prepareWorktree(repo, worktrees, item, m.id);
-  const gitDir = path.resolve(wt, git(wt, ['rev-parse', '--git-common-dir']));
   const logDir = path.join(worktrees, '.logs');
   fs.mkdirSync(logDir, { recursive: true });
-  const logBase = path.join(logDir, `${item.id}-${m.id}-${stamp()}`);
+  const logBase = path.join(logDir, `${t.id}-${item.id}-${m.id}-${stamp()}`);
   const outFile = `${logBase}.final.txt`;
   const log = path.relative(vault, logBase);
-  const { argv, stdin } = H.seatArgs(provider, { agent, prompt, body, model, effort, budget: left, addDir: t.dir, cwd: wt, gitDir, outFile });
   const runsFile = path.join(t.dir, 'runs.jsonl');
   const who = { team: t.id, member: m.id, item: item.id, provider, model, effort };
-
-  // From here the run is live: its marker says so until its row is in runs.jsonl, and a catchable kill stops the seat.
   const runId = path.basename(logBase);
   const startIso = new Date().toISOString();
   const marker = path.join(T.runningDir(t), `${runId}.json`);
+  const markerBase = {
+    schema: 1, run: runId, ...who, pid: process.pid, pidStart: T.processStart(process.pid), host: os.hostname(), startedAt: startIso, log,
+    worktree: path.relative(vault, names.wt),
+  };
+  // The run's budget is reserved under the board lock together with its marker, so parallel Claude seats on one item can
+  // never spend more than its budget between them (AT-02); --max-usd leaves the rest for a parallel seat.
+  const reserved = T.withBoard(t, () => {
+    const b = T.boardItems(t).get(item.id).budget || {};
+    const held = T.liveMarkers(t).filter((x) => x.item === item.id && x.provider === 'claude').reduce((s, x) => s + (Number(x.reservedUsd) || 0), 0);
+    const avail = Math.round(((Number(b.usd) || 0) - (Number(b.spentUsd) || 0) - held) * 100) / 100;
+    if (provider === 'claude' && !(avail > 0)) refuse(`${item.id}'s phase budget is spent or held by live runs ($${held} held); only the user raises it`);
+    const mine = provider === 'claude' ? Math.min(avail, maxUsd === null ? avail : maxUsd) : 0;
+    writeMarker(marker, { ...markerBase, reservedUsd: mine });
+    return mine;
+  });
+  let prepared;
+  try { prepared = prepareWorktree(repo, names, item, m.id); } catch (e) { fs.rmSync(marker, { force: true }); throw e; }
+  const { trunk, seat, wt, base } = prepared;
+  const gitDir = path.resolve(wt, git(wt, ['rev-parse', '--git-common-dir']));
+  const { argv, stdin } = H.seatArgs(provider, { agent, prompt, body, model, effort, budget: provider === 'claude' ? reserved : undefined, addDir: t.dir, cwd: wt, gitDir, outFile });
+
+  // From here the run is live: its marker says so until its row is in runs.jsonl, and a catchable kill stops the seat.
   const ctl = { caught: null, stop: null };
   const onSignal = (sig) => { if (!ctl.caught) ctl.caught = sig; if (ctl.stop) ctl.stop(); };
   for (const s of CAUGHT_SIGNALS) process.on(s, onSignal);
-  writeMarker(marker, {
-    schema: 1, run: runId, ...who, pid: process.pid, pidStart: T.processStart(process.pid), host: os.hostname(), startedAt: startIso, log,
-    worktree: path.relative(vault, wt),
-  });
+  // The seat's own pid joins the marker, so a sweep after a SIGKILL can stop a seat that outlived its dispatcher (AT-08).
+  ctl.onSpawn = (pid) => { try { writeMarker(marker, { ...markerBase, reservedUsd: reserved, seatPid: pid, seatStart: T.processStart(pid) }); } catch { /* best effort */ } };
   const lead = T.leadOf(t);
   const telemetry = startTelemetry(lead && lead.agent, agent, `team ${t.id}: ${m.id} on ${item.id}`);
   const t0 = Date.now();
@@ -357,7 +389,11 @@ async function dispatch(opts, ctx) {
     // The worktree: keep it when the seat left uncommitted work, so nothing is lost.
     const dirty = gitTry(wt, ['status', '--porcelain']).out;
     if (!dirty) gitTry(repo, ['worktree', 'remove', wt]);
-    const merged = mergeBack(repo, trunk, seat);
+    // Only a clean, successful run merges. A failed, killed or dirty run's commits stay on its branch until the lead takes
+    // them with `aos team merge` (AT-03), and it builds nothing.
+    const merged = !failed && !dirty ? mergeBack(repo, trunk, seat)
+      : { commits: Number(gitTry(repo, ['rev-list', '--count', `${trunk}..${seat}`]).out) || 0, held: true };
+    const heldNote = merged.held && merged.commits ? `; its ${merged.commits} commit(s) stay on ${seat}, and aos team merge ${t.id} ${item.id} ${m.id} --from ${t.lead} takes them` : '';
 
     // The item's spend, under the board lock so parallel seats never lose an update. The phase budget caps Claude
     // dollars; a Codex run counts as a run (D8).
@@ -367,7 +403,7 @@ async function dispatch(opts, ctx) {
       const patch = { id: item.id, budget: provider === 'claude'
         ? { spentUsd: Math.round(((Number(b.spentUsd) || 0) + usd) * 10000) / 10000 }
         : { codexRuns: (Number(b.codexRuns) || 0) + 1 } };
-      if (cur.stage === 'execute' && merged.commits > 0) { // a run that committed nothing built nothing
+      if (cur.stage === 'execute' && merged.commits > 0 && !merged.held && !merged.conflict) { // only merged work built anything
         const list = ((cur.builders && cur.builders[provider]) || []).slice();
         if (!list.includes(m.id)) { list.push(m.id); patch.builders = { [provider]: list }; }
       }
@@ -383,22 +419,23 @@ async function dispatch(opts, ctx) {
     }
     const mins = (ms / 60000).toFixed(1);
     const rel = (p) => path.relative(vault, p);
-    if (killed) T.post(t, { from: 'dispatch', item: item.id, kind: 'blocker', text: `${m.id}'s run on ${item.id} was killed (the dispatcher got ${killed}) after ${mins} min, and the seat was stopped; log ${log}.*` });
-    else if (failed) T.post(t, { from: 'dispatch', item: item.id, kind: 'blocker', text: `${m.id}'s run failed (${failed}) after ${mins} min; log ${log}.*` });
+    if (killed) T.post(t, { from: 'dispatch', item: item.id, kind: 'blocker', text: `${m.id}'s run on ${item.id} was killed (the dispatcher got ${killed}) after ${mins} min, and the seat was stopped${heldNote}; log ${log}.*` });
+    else if (failed) T.post(t, { from: 'dispatch', item: item.id, kind: 'blocker', text: `${m.id}'s run failed (${failed}) after ${mins} min${heldNote}; log ${log}.*` });
     if (dirty) T.post(t, { from: 'dispatch', item: item.id, kind: 'blocker', text: `${m.id} left uncommitted changes in ${rel(wt)}; the lead decides: commit, discard or re-run` });
     if (merged.conflict) T.post(t, { from: 'dispatch', item: item.id, kind: 'blocker', text: `${seat} was not merged into ${trunk}: ${merged.conflict}` });
 
-    const status = killed ? 'killed' : failed ? 'failed' : 'ok';
+    // A run that finished but left uncommitted work or a conflict is `blocked`: its seat is done, the lead is not (AT-07).
+    const status = killed ? 'killed' : failed ? 'failed' : dirty || merged.conflict ? 'blocked' : 'ok';
     T.appendJsonl(runsFile, {
       schema: 1, ts: new Date().toISOString(), ...who, run: runId, startedAt: startIso, ms,
       usd: Math.round(usd * 1e6) / 1e6, status, error: failed, session, base, head: merged.head || null,
-      commits: merged.commits, merged: !merged.conflict, posted: postedKind, log,
+      commits: merged.commits, merged: !merged.conflict && !merged.held, posted: postedKind, log,
     });
     closed = true;
     await endTelemetry(telemetry, { costUsd: usd, status: status === 'ok' ? 'ok' : 'error', reply: parseFinal(final).text || null });
     const cost = provider === 'claude' ? `$${usd.toFixed(2)}` : `codex run (~$${usd.toFixed(2)})`;
     const summary = `team: ${m.id} on ${item.id} via ${provider}${model ? ` ${model}` : ''}${effort ? `/${effort}` : ''} · ${mins} min · ${cost}`
-      + ` · ${merged.commits} commit(s)${merged.conflict ? ' NOT merged' : ` merged into ${trunk}`}`
+      + ` · ${merged.commits} commit(s)${merged.conflict ? ' NOT merged' : merged.held ? ` held on ${seat}` : ` merged into ${trunk}`}`
       + ` · ${postedKind ? `posted ${postedKind}` : 'no post'}${killed ? ` · KILLED: ${failed}` : failed ? ` · FAILED: ${failed}` : ''}`;
     return { code: failed || merged.conflict || dirty ? 3 : 0, out: summary };
   } catch (e) {
@@ -417,6 +454,24 @@ async function dispatch(opts, ctx) {
     if (closed) { try { fs.unlinkSync(marker); } catch { /* already gone */ } }
     for (const s of CAUGHT_SIGNALS) process.removeListener(s, onSignal);
   }
+}
+
+/** `aos team merge`: the lead takes a seat branch that a failed, killed or dirty run left held into the trunk (AT-03). */
+function mergeSeat(opts, { vault }) {
+  const t = T.readTeam(T.teamsRoot(vault), opts.team);
+  if (opts.from !== t.lead) refuse(`only the lead (${t.lead}) merges a held seat branch`);
+  const item = T.boardItems(t).get(opts.item);
+  if (!item) refuse(`no board item ${opts.item} on ${t.id}`);
+  const repo = projectRepo(vault, item);
+  const names = branchNames(t.id, item.id, opts.member, path.join(vault, 'workspaces', '_worktrees'));
+  if (!branchExists(repo, names.seat)) refuse(`there is no branch ${names.seat}`);
+  if (fs.existsSync(names.wt)) refuse(`${names.seat} still has its worktree at ${path.relative(vault, names.wt)}: commit or discard what is there, then remove it`);
+  if (!branchExists(repo, names.trunk)) git(repo, ['branch', names.trunk, 'HEAD']);
+  const merged = mergeBack(repo, names.trunk, names.seat);
+  if (merged.conflict) refuse(`${names.seat} was not merged: ${merged.conflict}`);
+  const text = `merged ${merged.commits} held commit(s) from ${names.seat} into ${names.trunk}`;
+  if (merged.commits) T.post(t, { from: t.lead, item: item.id, kind: 'note', text });
+  return { code: 0, out: merged.commits ? text : `${names.seat} has nothing the trunk lacks` };
 }
 
 // ── --detach ──
@@ -526,4 +581,4 @@ function detach(t, plan, args, ctx) {
   ].join('\n') };
 }
 
-module.exports = { dispatch, preflight, resolveProvider, gateAllows, projectRepo, prepareWorktree, mergeBack, agentBody, parseFinal, promptFor, runSeat, detach, detachedEnv, launchdJob, plistXml, GRACE_MS };
+module.exports = { dispatch, mergeSeat, branchNames, modelFor, preflight, resolveProvider, gateAllows, projectRepo, prepareWorktree, mergeBack, agentBody, parseFinal, promptFor, runSeat, detach, detachedEnv, launchdJob, plistXml, GRACE_MS };
