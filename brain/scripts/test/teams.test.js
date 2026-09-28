@@ -357,6 +357,18 @@ test('put never records the user\'s decisions or dispatch\'s bookkeeping, even a
   assert.equal(T.put(w.t(), { from: 'lead', json: '{"id":"x-01","title":"renamed","budget":{"usd":25}}' }).title, 'renamed', 'other fields and a repeated budget are fine');
 });
 
+test('an item\'s snapshots never share a ts, so an --expect of the last one seen catches any change', () => {
+  const w = world();
+  const now = new Date('2026-09-28T12:00:00.000Z');
+  const seen = T.put(w.t(), { from: 'lead', json: JSON.stringify(AT_GATE), now });
+  const same = T.put(w.t(), { from: 'lead', json: '{"id":"x-01","added":"in the same millisecond"}', now });
+  assert.equal(same.ts, '2026-09-28T12:00:00.001Z');
+  assert.throws(() => T.decideGate(w.t(), { item: 'x-01', verb: 'approve', expect: JSON.stringify(seen), env: INTERACTIVE, now }), /--expect failed on x-01: ts is/);
+  const back = T.put(w.t(), { from: 'lead', json: '{"id":"x-01","title":"after a clock step back"}', now: new Date('2026-09-28T11:00:00.000Z') });
+  assert.equal(back.ts, '2026-09-28T12:00:00.002Z');
+  assert.equal(T.put(w.t(), { from: 'lead', json: '{"id":"x-02"}', now }).ts, now.toISOString(), 'another item keeps its own clock');
+});
+
 test('the sweep stops a seat that outlived its killed dispatcher (AT-08)', async () => {
   const w = world();
   T.put(w.t(), { from: 'lead', json: '{"id":"x-01","owner":"builder","status":"working"}' });

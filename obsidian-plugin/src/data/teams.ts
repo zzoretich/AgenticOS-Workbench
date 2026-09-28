@@ -458,8 +458,8 @@ export function teamCommand(vaultRoot: string, node: string): string {
   return `AOS_VAULT=${shq(vaultRoot)} ${shq(node)} ${shq(path.join(vaultRoot, "brain", "scripts", "team.js"))}`;
 }
 
-/** The --expect a write the tab runs sends (D3): the whole snapshot the user saw, so a change to any field refuses it, as
- *  a timestamp alone could repeat within a millisecond. It goes as one argv entry, never through a shell. */
+/** The --expect a write the tab runs sends (D3): the whole snapshot the user saw. Its ts changes with every write to
+ *  the item (lib/teams.js writeItem never repeats one), so any later snapshot refuses it. It goes as one argv entry. */
 export function expectOf(it: BoardItem): string { return JSON.stringify(Object.keys(it.raw ?? {}).length ? it.raw : { ts: it.ts }); }
 
 
