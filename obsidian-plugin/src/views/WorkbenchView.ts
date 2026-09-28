@@ -13,10 +13,12 @@ import { ProposalsTab } from "./ProposalsTab";
 import { TodoTab } from "./TodoTab";
 import { SettingsTab } from "./SettingsTab";
 import { NotificationsTab } from "./NotificationsTab";
+import { AgentTeamsTab } from "./AgentTeamsTab";
 import { PROPOSALS_DIR } from "../data/proposals";
 import { NOTIFICATIONS_DIR, STATE_PATH, notificationId, parseNotification, parseState, unreadBadge, Level } from "../data/notifications";
 import { badgeText, proposalBadge, todoBadge, touchesBadges } from "../data/badges";
 import { TODO_PATH, localDay } from "../data/todos";
+import { readTeams, gateBadge } from "../data/teams";
 
 export const VIEW_TYPE_WORKBENCH = "agentic-os-workbench";
 
@@ -33,6 +35,7 @@ const RAIL: RailTab[] = [
   { id: "routines", icon: "⟳", label: "Routines" },
   { id: "skills", icon: "✦", label: "Skills" },
   { id: "agents", icon: "♟", label: "Agents" },
+  { id: "agent-teams", icon: "⁂", label: "Agent Teams" },
   { id: "chat", icon: "✎", label: "Chat" },
   { id: "term", icon: "❯_", label: "Term" },
 ];
@@ -149,6 +152,8 @@ export class WorkbenchView extends ItemView {
     this.setBadge("todo", todoBadge(todo, localDay(new Date())));
     const n = await this.notificationBadge();
     this.setBadge("notifications", n.count, n.breaking);
+    // Gates waiting on the user across every team (spec 2026-09-28-agent-teams-design D12): boards only, no channel.
+    try { this.setBadge("agent-teams", gateBadge(await readTeams(this.app.vault.adapter, { boardOnly: true }))); } catch { /* no persona/teams yet */ }
   }
 
   /** Unread notifications (spec 2026-09-24-notifications-design §4.3). Reads state.json and only the unread item files,
@@ -208,6 +213,7 @@ export class WorkbenchView extends ItemView {
     if (id === "routines") return new RoutinesTab(this.plugin, this);
     if (id === "skills") return new SkillsTab(this.plugin, this);
     if (id === "agents") return new AgentsTab(this.plugin, this);
+    if (id === "agent-teams") return new AgentTeamsTab(this.plugin, this);
     if (id === "chat") return new ChatTab(this.plugin, this);
     if (id === "term") return new TermTab(this.plugin, this);
     if (id === "settings") return new SettingsTab(this.plugin, this);
