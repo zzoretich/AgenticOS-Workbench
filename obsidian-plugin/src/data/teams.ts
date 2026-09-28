@@ -443,15 +443,20 @@ export function sessionCommand(agents: AgentsCache, agent: string | null, host: 
   return host === "claude" ? `${run} ${shq(prompt)}` : `codex ${shq(`Use the ${agent} agent for this. ${prompt}`)}`;
 }
 
-/** The --expect a write sends: the snapshot the user saw, by its timestamp (D3). */
-export function expectOf(it: BoardItem): string { return JSON.stringify({ ts: it.ts }); }
+/** The --expect a write the tab runs sends (D3): the whole snapshot the user saw, so a change to any field refuses it, as
+ *  a timestamp alone could repeat within a millisecond. It goes as one argv entry, never through a shell. */
+export function expectOf(it: BoardItem): string { return JSON.stringify(Object.keys(it.raw ?? {}).length ? it.raw : { ts: it.ts }); }
+
+/** The --expect a lead types from a prompt: only fields without free text (a title could hold an apostrophe), so it
+ *  quotes safely in a shell. */
+export function promptExpectOf(it: BoardItem): string { return JSON.stringify({ ts: it.ts, stage: it.stage, status: it.status }); }
 
 /** The lead's opening prompt for a redirect: the user says what should change in the session, and the lead records it. */
 export function redirectPrompt(t: Team, it: BoardItem): string {
   const gate = titleCase(it.gate?.name ?? "the");
   return `The user is redirecting the ${gate} gate on ${it.id}${it.title ? ` (${it.title})` : ""} in the ${t.id} team. `
     + "Ask the user what should change. Record their answer with this command, the note in single quotes: "
-    + `aos team gate redirect ${t.id} ${it.id} --expect '${expectOf(it)}' --note '<what should change>'. Then take the next step.`;
+    + `aos team gate redirect ${t.id} ${it.id} --expect '${promptExpectOf(it)}' --note '<what should change>'. Then take the next step.`;
 }
 
 // ── storage ──

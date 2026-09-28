@@ -50,6 +50,8 @@ export class WorkbenchView extends ItemView {
   private clockTimer: number | null = null;
   private badgeEls: Record<string, HTMLElement> = {};
   private badgeTimer: number | null = null;
+  private teamsReads = 0;
+  private teamsShown = 0;
   private tabs: Partial<Record<string, { mount(h: HTMLElement): void; refresh(): Promise<void>; unmount(): void }>> = {};
   private activeTab = "pulse";
 
@@ -160,7 +162,17 @@ export class WorkbenchView extends ItemView {
   /** Gates waiting on the user across every team (spec 2026-09-28-agent-teams-design D12), read from boards only, in the
    *  vault `aos team` writes: the plugin's vault root, which need not be the open Obsidian vault. */
   private async refreshTeamsBadge(): Promise<void> {
-    try { this.setBadge("agent-teams", gateBadge(await readTeams(diskAdapter(this.plugin.vaultRoot()), { boardOnly: true }))); } catch { /* unreadable: no badge */ }
+    const seq = this.nextTeamsRead();
+    try { this.setTeamsBadge(gateBadge(await readTeams(diskAdapter(this.plugin.vaultRoot()), { boardOnly: true })), seq); } catch { /* unreadable: no badge */ }
+  }
+
+  /** Team reads (this view's and the tab's) overlap: each takes a number when it starts, and a count from a read that
+   *  started before the one already shown is dropped, so the badge never goes back to an older count. */
+  nextTeamsRead(): number { return ++this.teamsReads; }
+  setTeamsBadge(n: number, seq: number): void {
+    if (seq < this.teamsShown) return;
+    this.teamsShown = seq;
+    this.setBadge("agent-teams", n);
   }
 
   /** Unread notifications (spec 2026-09-24-notifications-design §4.3). Reads state.json and only the unread item files,

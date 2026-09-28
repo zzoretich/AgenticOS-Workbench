@@ -51,6 +51,7 @@ export class AgentTeamsTab {
   private sweepAt = 0;
   private sweeping = false;
   private agentsSyncAt = 0;
+  private readGen = 0;
   private channelKey: string | null = null;
   private refocus: { sel: string; index: number } | null = null;
 
@@ -83,12 +84,16 @@ export class AgentTeamsTab {
   }
 
   async refresh(): Promise<void> {
-    try {
-      this.teams = await readTeams(diskAdapter(this.plugin.vaultRoot()));
-      this.readError = null;
-    } catch (e) {
-      this.readError = `${TEAMS_DIR} could not be read: ${e instanceof Error ? e.message : String(e)}`;
-    }
+    // Reads overlap (mount, file events, actions, the clock): only the newest one's result is applied, so a read that
+    // started before a gate was approved can never bring the pending card back.
+    const gen = ++this.readGen;
+    const seq = this.wb.nextTeamsRead();
+    let teams: Team[] | null = null;
+    let err: string | null = null;
+    try { teams = await readTeams(diskAdapter(this.plugin.vaultRoot())); } catch (e) { err = `${TEAMS_DIR} could not be read: ${e instanceof Error ? e.message : String(e)}`; }
+    if (gen !== this.readGen) return;
+    if (teams) this.teams = teams;
+    this.readError = err;
     this.agents = readAgents(this.plugin.vaultRoot());
     // Talk, Redirect and Add a member read the agents list; ask for a fresh one when it is old, as the Agents tab does,
     // at most once a minute. Its file event re-reads it.
@@ -100,7 +105,7 @@ export class AgentTeamsTab {
     }
     this.hosts = sessionHosts(readAgenticosJson(this.plugin.claudeConfigDir()));
     this.loaded = true;
-    this.wb.setBadge("agent-teams", gateBadge(this.teams));
+    if (teams) this.wb.setTeamsBadge(gateBadge(teams), seq);
     if (this.teams.some((t) => t.torn)) { if (this.tornRetries++ < TORN_RETRIES) this.schedule(TORN_RETRY_MS); } else this.tornRetries = 0;
     if (this.teams.length && Date.now() - this.sweepAt > SWEEP_EVERY_MS) void this.sweep();
     this.render();

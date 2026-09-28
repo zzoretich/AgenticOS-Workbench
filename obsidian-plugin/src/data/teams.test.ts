@@ -233,8 +233,9 @@ test("session commands: the agent's run command per host, a prompt single-quoted
 
   const lab = await team("lab");
   const it = lab.board.find((i) => i.id === "site-01")!;
-  assert.equal(expectOf(it), '{"ts":"2026-09-20T12:45:00.000Z"}');
-  assert.match(redirectPrompt(lab, it), /aos team gate redirect lab site-01 --expect '\{"ts":"2026-09-20T12:45:00\.000Z"\}' --note/);
+  assert.deepEqual(JSON.parse(expectOf(it)), it.raw, "the whole rendered snapshot");
+  assert.equal(expectOf({ ...it, raw: {} }), '{"ts":"2026-09-20T12:45:00.000Z"}');
+  assert.match(redirectPrompt(lab, it), /aos team gate redirect lab site-01 --expect '\{"ts":"2026-09-20T12:45:00\.000Z","stage":"discuss","status":"gate"\}' --note/);
 });
 
 test("dollar amounts, and the paths a vault event must touch to refresh the tab or its badge", () => {

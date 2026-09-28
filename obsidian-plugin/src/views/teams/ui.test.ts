@@ -25,7 +25,7 @@ const LEAD_BOTH = { id: "team-lead", name: "team-lead", on: {
 test("Codex: Redirect asks for the lead's agent by name, with the gate and the exact record line", () => {
   const cmd = redirectCommand(ctx([LEAD_BOTH]), TEAM, IT, "codex");
   assert.match(cmd, /^codex 'Use the team-lead agent for this\. The user is redirecting the Discuss gate on site-01 \(Landing page\) in the lab team\./);
-  assert.match(cmd, /aos team gate redirect lab site-01 --expect '\\''\{"ts":"2026-09-20T12:45:00\.000Z"\}'\\'' --note/);
+  assert.match(cmd, /aos team gate redirect lab site-01 --expect '\\''\{"ts":"2026-09-20T12:45:00\.000Z","stage":"discuss","status":"gate"\}'\\'' --note/);
   assert.match(redirectCommand(ctx([LEAD_BOTH]), TEAM, IT, "claude"), /^claude --agent team-lead 'The user is redirecting/);
 });
 

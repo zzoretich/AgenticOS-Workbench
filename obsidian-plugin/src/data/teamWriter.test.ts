@@ -33,7 +33,7 @@ function world() {
 const ok = (r: AosResult) => assert.equal(r.code, 0, r.stderr);
 
 test("argument builders: --expect is the rendered row's ts, a note is addressed to the lead as one argv entry", () => {
-  const it = { id: "site-01", ts: "2026-09-20T12:45:00.000Z" } as never;
+  const it = { id: "site-01", ts: "2026-09-20T12:45:00.000Z", raw: {} } as never;
   assert.deepEqual(approveArgs("lab", it), ["gate", "approve", "lab", "site-01", "--expect", '{"ts":"2026-09-20T12:45:00.000Z"}']);
   assert.deepEqual(approveArgs("lab", it, 40).slice(-2), ["--usd", "40"]);
   assert.deepEqual(budgetArgs("lab", it, 12.5), ["budget", "lab", "site-01", "12.5", "--expect", '{"ts":"2026-09-20T12:45:00.000Z"}']);
@@ -97,6 +97,7 @@ test("approve a budget gate from the card: the item moves on with the budget pic
   assert.match((await w.team("lab")).channel.pop()?.text ?? "", /^Discuss gate approved by the user at \$25; @lead takes the next step/);
   assert.equal((await w.team("lab")).skipped, 3, "the torn fragment is now a skipped line, and the approval is not lost with it");
   const again = await w.runner.run(approveArgs("lab", seen, 25));
+  assert.equal(JSON.parse(approveArgs("lab", seen, 25)[5]).title, "Landing page", "--expect is the whole snapshot the card showed");
   assert.equal(again.code, 1);
   assert.equal(teamFailure(again).stale, true);
 });
@@ -137,6 +138,19 @@ test("manage: pause and resume, set a preset, refuse a value off the list, add a
   const busy = await w.runner.run(removeMemberArgs("lab", "reviewer"));
   assert.equal(busy.code, 1);
   assert.match(teamFailure(busy).text, /reviewer still owns site-03; reassign first/);
+});
+
+test("a snapshot that differs from the card in any field is refused, even with the same ts", async () => {
+  const w = world();
+  const seen = await w.item("lab", "site-01");
+  const board = path.join(w.vault, "persona/teams/lab/board.jsonl");
+  // Its own line: the fixture's board ends in a torn tail.
+  fs.appendFileSync(board, "\n" + JSON.stringify({ ...seen.raw, title: "Changed in the same millisecond" }) + "\n");
+  assert.equal((await w.item("lab", "site-01")).ts, seen.ts, "same ts, different snapshot");
+  const r = await w.runner.run(approveArgs("lab", seen, 25));
+  assert.equal(r.code, 1);
+  assert.equal(teamFailure(r).stale, true);
+  assert.equal((await w.item("lab", "site-01")).gate?.state, "pending");
 });
 
 test("a note to the lead lands in the channel as the user's, dollar signs intact", async () => {
