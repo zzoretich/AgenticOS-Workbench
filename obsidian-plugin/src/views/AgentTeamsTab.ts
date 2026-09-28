@@ -152,6 +152,15 @@ export class AgentTeamsTab {
     return ok;
   }
 
+  /** No terminal session could start. A lead's next step or a redirect must not be lost after its decision is recorded,
+   *  so the command goes to the clipboard and a notice that stays until dismissed names it. */
+  private noTerminal(cmd: string): void {
+    const say = (copied: boolean) => new Notice(`No terminal could start, so this did not run. Run it in a terminal${copied ? " (it is on the clipboard)" : ""}:\n${cmd}`, 0);
+    const clip = typeof navigator === "undefined" ? undefined : navigator.clipboard;
+    if (!clip) { say(false); return; }
+    clip.writeText(cmd).then(() => say(true), () => say(false));
+  }
+
   /** A vault-relative file of the teams' vault: in Obsidian when that is the open vault, else with the system's app. */
   private openFile(p: string): void {
     const base = (this.plugin.app.vault.adapter as unknown as { getBasePath?: () => string }).getBasePath?.();
@@ -183,7 +192,7 @@ export class AgentTeamsTab {
       hostEnv: this.hostEnv(),
       busy: (k) => this.busyKeys.has(k), error: (k) => this.errors.get(k) ?? null,
       act: (k, args, confirm) => this.act(k, args, confirm),
-      term: (cmd) => this.wb.runInTerm(cmd),
+      term: (cmd) => { if (!this.wb.runInTerm(cmd)) this.noTerminal(cmd); },
       render: () => this.render(),
       select: (id, view, item) => {
         if (id !== this.ui.team) { this.ui.channelItem = null; this.ui.openItem = null; }

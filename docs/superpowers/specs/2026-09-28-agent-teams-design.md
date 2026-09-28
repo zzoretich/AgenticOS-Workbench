@@ -125,8 +125,9 @@ Agents. The badge counts gates pending across teams, and `touchesBadges` covers 
 - **The lead's next step (after 0.20.2):** a recorded Approve, and a recorded budget raise on a `paused` item, open the
   team's lead in the terminal with a prompt saying what the user decided, that it is already recorded, and this vault's
   `aos team` line. It opens the lead's agent on the lead's own `provider` when that host is enabled and has it, else on
-  the first enabled host that has it, else a plain session with the same prompt; the Approve dialog names that host
-  first. A cancelled or refused write opens nothing. The lead picks the seat and dispatches it: the tab still never
+  the first enabled host that has it, else a plain session told which lead to act as and to read its team's
+  `TEAM.md`; the Approve dialog names that host first. A cancelled or refused write opens nothing, and when no terminal
+  can start, the tab copies the command and shows it in a notice that stays until dismissed. The lead picks the seat and dispatches it: the tab still never
   dispatches (D10).
 - **Runtime change:** `aos team list` lists a team whose `TEAM.md` does not parse as a row with its error, rather than
   failing, and its `--json` carries `presets`.

@@ -200,7 +200,9 @@ export class WorkbenchView extends ItemView {
   }
 
   /** Opens a fresh Term session in the vault running `command`, and shows it (the Proposals tab's Review button). */
-  runInTerm(command: string): void {
+  /** Runs `command` in a new Term session and shows it. False when no session could start (the Term tab then shows
+   *  its install hint), so a caller whose command must not be lost can say so. */
+  runInTerm(command: string): boolean {
     let id: string | null = null;
     try {
       const sess = this.plugin.terminalPool.create({ cwd: this.plugin.vaultRoot() });
@@ -209,6 +211,7 @@ export class WorkbenchView extends ItemView {
     } catch { /* no terminal support: the Term tab renders its install hint */ }
     this.setTab("term");
     if (id) (this.tabs.term as TermTab | undefined)?.showSession(id);
+    return id !== null;
   }
 
   private registerDomListenerClock(el: HTMLElement): void {

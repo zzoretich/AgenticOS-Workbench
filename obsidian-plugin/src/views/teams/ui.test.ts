@@ -86,13 +86,17 @@ test("next step: the lead's own provider first, else the first enabled host with
   const onCodex = withLead(TEAM, "codex");
   const p = nextStepPrompt(onCodex, IT, "approved", 40);
   const both = { ...ctx([LEAD_BOTH]), hosts: ["claude", "codex"] } as TeamsCtx;
-  assert.deepEqual(nextStepCommand(both, onCodex, p), { host: "codex", command: `codex ${shq(`Use the team-lead agent for this. ${p}`)}` });
+  assert.deepEqual(nextStepCommand(both, onCodex, p), { host: "codex", command: `codex ${shq(`Use the team-lead agent for this. ${p}`)}`, plain: false });
   assert.equal(nextStepCommand(both, TEAM, p)?.host, "claude", "no provider named: the first enabled host");
   assert.equal(nextStepCommand({ ...both, hosts: ["claude"] }, onCodex, p)?.command, `claude --agent team-lead ${shq(p)}`, "its own host is off");
   const claudeOnly = { ...LEAD_BOTH, on: { claude: LEAD_BOTH.on.claude } };
-  assert.deepEqual(nextStepCommand({ ...both, agents: ctx([claudeOnly]).agents }, onCodex, p), { host: "claude", command: `claude --agent team-lead ${shq(p)}` }, "its host lacks the agent");
+  assert.deepEqual(nextStepCommand({ ...both, agents: ctx([claudeOnly]).agents }, onCodex, p), { host: "claude", command: `claude --agent team-lead ${shq(p)}`, plain: false }, "its host lacks the agent");
+  // No host has the agent: a plain session, told which lead to act as and where the team's rules are.
   const none = { ...both, agents: parseAgents("{}"), hostEnv: { claude: "", codex: "CODEX_HOME='/h/work-codex' " } } as TeamsCtx;
-  assert.deepEqual(nextStepCommand(none, onCodex, p), { host: "codex", command: `CODEX_HOME='/h/work-codex' codex ${shq(p)}` }, "no host has the agent");
+  const role = "Act as lead (lead), the lead of the lab team: its agent, team-lead, is not installed for this host, so read the team's rules in persona/teams/lab/TEAM.md first. ";
+  assert.deepEqual(nextStepCommand(none, onCodex, p), { host: "codex", command: `CODEX_HOME='/h/work-codex' codex ${shq(role + p)}`, plain: true });
+  const noAgent = { ...onCodex, members: onCodex.members.map((m) => (m.id === "lead" ? { ...m, agent: null } : m)) };
+  assert.ok(nextStepCommand(both, noAgent, p)!.command.startsWith(`codex 'Act as lead (lead), the lead of the lab team: read the team'\\''s rules in`), "a lead with no agent at all");
   assert.equal(nextStepCommand({ ...both, hosts: [] }, onCodex, p), null);
 });
 
@@ -147,6 +151,13 @@ test("Approve opens the lead to take the next step, only once the gate is record
   root.press(/^Approve/);
   await settle();
   assert.match(acts[0].confirm!.message, /Enable Claude Code or Codex, or start \S+ yourself to take it\.$/, "no host: the dialog says so");
+  const plain = pane(TEAM, true, ["codex"]);
+  plain.c.agents = parseAgents("{}");
+  renderGateCard(plain.root as unknown as HTMLElement, plain.c, { team: TEAM, item: it, since: null, pitch: null, budget: true }, { showTeam: false });
+  plain.root.press(/^Approve/);
+  await settle();
+  assert.match(plain.acts[0].confirm!.message, /No enabled host has lead's agent, so a plain Codex session opens as lead to take it\.$/);
+  assert.match(plain.opened[0], /^codex 'Act as lead \(lead\), the lead of the lab team:/);
 });
 
 test("a raised budget on a paused item opens the lead; on a working item, or refused, it opens nothing", async () => {

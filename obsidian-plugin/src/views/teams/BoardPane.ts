@@ -67,7 +67,9 @@ export function renderGateCard(parent: HTMLElement, ctx: TeamsCtx, card: GateCar
     void ctx.act(key, approveArgs(t.id, it, pick), {
       title: `Approve the ${gate} gate on ${it.id}?`,
       message: `${it.title ? `${it.title}. ` : ""}${it.id} moves on from ${it.stage}, and ${lead} takes the next step${budget}. `
-        + (next ? `${lead} opens in ${HOST_LABEL[next.host]} to take it.` : `Enable Claude Code or Codex, or start ${lead} yourself to take it.`),
+        + (!next ? `Enable Claude Code or Codex, or start ${lead} yourself to take it.`
+          : next.plain ? `No enabled host has ${lead}'s agent, so a plain ${HOST_LABEL[next.host]} session opens as ${lead} to take it.`
+            : `${lead} opens in ${HOST_LABEL[next.host]} to take it.`),
       cta: "Approve",
     }).then((ok) => { if (ok && next) ctx.term(next.command); });
   });
