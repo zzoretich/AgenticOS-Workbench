@@ -22,3 +22,5 @@ brain/scripts/cost/data/
 # lib/fsx.js: a writer's lock and temp files, present only for the moment of a write
 *.lock
 *.tmp
+# aos team: a live run's marker, present only while the run is going
+persona/teams/*/running/

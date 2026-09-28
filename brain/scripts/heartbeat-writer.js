@@ -17,7 +17,9 @@
  * telemetry without a persona file get a heartbeat too.
  *
  * Orchestrators: config `roster.orchestrators` ({ name: { nickname, trigger, match } }) names
- * agents whose runs roll up their spawned specialists under one card. Empty by default.
+ * agents whose runs roll up their spawned specialists under one card. Empty by default. Every agent
+ * team's lead (persona/teams/<id>/TEAM.md) joins it too, so its seats roll up under it; a config entry
+ * for the same agent wins (spec 2026-09-28-agent-teams D9).
  *
  * Best-effort: never throws, never blocks. Writes only when content changes
  * (keeps file mtimes — and the roster's freshness badges — honest).
@@ -54,7 +56,23 @@ function orchestratorFor(roster, rec) {
   const hay = `${rec.prompt || ''} ${rec.script || ''}`;
   return roster.find(o => o.re.test(hay)) || null;
 }
-const ROSTER = buildRoster((loadConfig().roster || {}).orchestrators); // `"roster": null` in brain/config.json must not crash the hook at load
+/** { <lead agent>: { nickname, trigger } } for every team in <vault>/persona/teams; {} when there are none or one is unreadable. */
+function teamOrchestrators(vault) {
+  const out = {};
+  try {
+    const T = require('./lib/teams.js');
+    const root = T.teamsRoot(vault);
+    for (const id of T.listTeams(root)) {
+      try {
+        const t = T.readTeam(root, id);
+        const lead = T.leadOf(t);
+        if (lead && lead.agent) out[String(lead.agent)] = { nickname: lead.name || lead.id, trigger: `aos team ${t.id}` };
+      } catch { /* one bad TEAM.md never hides the others */ }
+    }
+  } catch { /* no teams */ }
+  return out;
+}
+const ROSTER = buildRoster({ ...teamOrchestrators(VAULT), ...((loadConfig().roster || {}).orchestrators || {}) }); // `"roster": null` in brain/config.json must not crash the hook at load
 const NICKNAMES = Object.fromEntries(ROSTER.map(o => [o.name, o.nickname]));
 
 /** next_fire for an agent that is also a scheduled routine (rows = routines-store.overview()): its next fire as ISO, else null. */
@@ -264,4 +282,4 @@ if (require.main === module) {
   withReport('heartbeat-writer', async (report) => { await main(report); })
     .catch(() => { /* best-effort: never fail the hook */ });
 }
-module.exports = { main, buildRoster, orchestratorFor, nextFireFor };
+module.exports = { main, buildRoster, orchestratorFor, nextFireFor, teamOrchestrators };

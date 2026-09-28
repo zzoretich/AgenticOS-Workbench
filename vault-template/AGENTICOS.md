@@ -27,6 +27,7 @@ Under Codex CLI every `/name` below is the plugin skill `$agenticos:name` (`$age
 - `/feedback` · `/pattern` · `/project` — write a memory of that type
 - `/wrap` — promote `#promote` items, extract this session's memories in-session (`wrap_session`), summarize into today's daily note, reset `SESSION.md`
 - `/brain` — show current state · `/scan` — refresh the dashboard
+- `/team` · `$agenticos:team`: your agent teams (`aos team`), boards and pending gates first; a lead dispatches seats with `aos team dispatch … --detach` and returns with the `wait` line it prints, and only you decide a gate
 - `/ask-brain <q>` · `/standup` · `/reflect-week` · `/consolidate-memory` · `/compress <file>` — a script assembles the context, you answer or write it in-session (pass `--local` to let the local provider do it)
 - `/cost` — session costing (only after `aos cost enable`)
 - `/aos doctor|status|provider|persona|config` — maintenance; `aos config` lists every setting and changes one (`set <key> <value>`, `unset <key>`)

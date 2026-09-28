@@ -5,9 +5,11 @@ All notable changes to AgenticOS Workbench. Versions follow the tags. From the n
 ## [Unreleased]
 
 ### Upgrading
+- Add `persona/teams/*/running/` to your vault's `.gitignore` (new vaults get it): a live agent-team run's marker exists only while the run is going.
 - Add `*.lock` and `*.tmp` to your vault's `.gitignore` (new vaults get them): a writer's lock and temp files exist only for the moment of a write, but an auto-backup at that moment would commit them.
 
 ### Added
+- **Agent teams** (`aos team`, `/team` · `$agenticos:team`): named teams in `persona/teams/<team>/` with a roster (`TEAM.md`), a work board, a team thread and a run log. A lead moves items through stages and gates and dispatches headless seats, each in its own git worktree, on the provider its `TEAM.md` row names; a reviewer marked `opposite` runs on the provider that did not build the work. Gates, budgets, pausing and roster changes are the user's decisions and are refused under `AOS_HEADLESS=1`, and every board write can be a compare-and-set with `--expect`. A killed run still leaves a trace (a live-run marker, signal traps, a sweep), `dispatch --detach` hands a run to launchd or a systemd user unit, and `aos team wait` tells a lead's caller when a run ended. Spend is recorded as `team:<team>:<member>` (Codex priced from tokens), shown by `aos status` and kept out of the hook cap; each item's phase budget caps its Claude spend. A team's lead joins the Runs tab's orchestrator roster, so its seats roll up under it. `aos team init` seeds an example team. Only a clean, successful seat run merges into the item's trunk; the lead takes held work with `aos team merge`, and parallel seats split an item's budget with `--max-usd`.
 - `summary.everyPrompts` (default 10) and `summary.minMinutes` (default 15): how often the working-memory summary refreshes BRAIN.md's Last Session, as pickers in ⚙ Settings → Memory & scanning.
 
 ### Changed
