@@ -1,11 +1,12 @@
 import { Notice, TFile } from "obsidian";
 import type { TAbstractFile } from "obsidian";
+import * as path from "path";
 import type AgenticOSPlugin from "../../main";
 import type { WorkbenchView } from "./WorkbenchView";
 import { ConfirmModal } from "../ui/ConfirmModal";
 import { readAgenticosJson, sessionHosts, invocationHint, SessionHost } from "../data/aosConfig";
 import { AgentsCache, AGENTS_PATH, emptyAgents, readAgents } from "../data/agents";
-import { Team, TEAMS_DIR, readTeams, touchesTeams, gateBadge, gateCards, orderTeams, pendingGates, boardColumns } from "../data/teams";
+import { Team, TEAMS_DIR, readTeams, diskAdapter, touchesTeams, gateBadge, gateCards, orderTeams, pendingGates, boardColumns } from "../data/teams";
 import { TeamRunner, teamRunner, teamFailure, presetsOf, Presets, ListJson, LIST_ARGS, INIT_ARGS, pauseArgs } from "../data/teamWriter";
 import { TeamsCtx, TeamsUiState, TeamsView, Confirm, VIEWS, errorLine } from "./teams/ui";
 import { renderBoard, renderGateCard } from "./teams/BoardPane";
@@ -81,7 +82,7 @@ export class AgentTeamsTab {
 
   async refresh(): Promise<void> {
     try {
-      this.teams = await readTeams(this.plugin.app.vault.adapter);
+      this.teams = await readTeams(diskAdapter(this.plugin.vaultRoot()));
       this.readError = null;
     } catch (e) {
       this.readError = `${TEAMS_DIR} could not be read: ${e instanceof Error ? e.message : String(e)}`;
@@ -135,10 +136,17 @@ export class AgentTeamsTab {
     return ok;
   }
 
+  /** A vault-relative file of the teams' vault: in Obsidian when that is the open vault, else with the system's app. */
   private openFile(p: string): void {
-    const f = this.plugin.app.vault.getAbstractFileByPath(p);
-    if (f instanceof TFile) void this.plugin.app.workspace.getLeaf("tab").openFile(f);
-    else new Notice(`Cannot open: ${p}`);
+    const base = (this.plugin.app.vault.adapter as unknown as { getBasePath?: () => string }).getBasePath?.();
+    const f = base && path.resolve(base) === path.resolve(this.plugin.vaultRoot()) ? this.plugin.app.vault.getAbstractFileByPath(p) : null;
+    if (f instanceof TFile) { void this.plugin.app.workspace.getLeaf("tab").openFile(f); return; }
+    const abs = path.join(this.plugin.vaultRoot(), p);
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { shell } = require("electron");
+      void shell.openPath(abs).then((err: string) => { if (err) new Notice(`Cannot open ${abs}: ${err}`); });
+    } catch { new Notice(`Cannot open ${abs}`); }
   }
 
   private ctx(team: Team): TeamsCtx {

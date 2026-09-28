@@ -6,7 +6,7 @@ import { createRequire } from "module";
 import {
   TEAMS_DIR, Team, TeamsAdapter, readTeams, teamFrom, parseJsonl, parseFrontmatter, memberStatus, pendingGates, gateBadge,
   orderTeams, boardColumns, gateCards, isBudgetGate, budgetFloor, budgetPresets, budgetPick, stepBudget, splitMentions, sessionCommand,
-  redirectPrompt, expectOf, channelView, touchesTeams, usd, shq, gatePitch, MAX_BUDGET_USD,
+  redirectPrompt, expectOf, channelView, touchesTeams, usd, shq, gatePitch, MAX_BUDGET_USD, diskAdapter,
 } from "./teams";
 import { parseAgents } from "./agents";
 import { touchesBadges } from "./badges";
@@ -17,18 +17,8 @@ const REPO = path.resolve(__dirname, "../../..");
 const store = createRequire(__filename)(path.join(REPO, "brain/scripts/lib/teams.js"));
 const ROOT = store.teamsRoot(VAULT);
 
-/** The Obsidian adapter's shape over the fixture folder: vault-relative paths. */
-export function fsAdapter(vault: string): TeamsAdapter {
-  const abs = (p: string) => path.join(vault, p);
-  return {
-    async list(p) {
-      const ents = fs.readdirSync(abs(p), { withFileTypes: true });
-      return { files: ents.filter((e) => e.isFile()).map((e) => `${p}/${e.name}`), folders: ents.filter((e) => e.isDirectory()).map((e) => `${p}/${e.name}`) };
-    },
-    async read(p) { return fs.readFileSync(abs(p), "utf8"); },
-    async exists(p) { return fs.existsSync(abs(p)); },
-  };
-}
+/** The tab reads the fixture vault through the same disk adapter it uses at the plugin's vault root. */
+const fsAdapter = (vault: string): TeamsAdapter => diskAdapter(vault);
 
 let cached: Team[] | null = null;
 async function teams(): Promise<Team[]> { return (cached ??= await readTeams(fsAdapter(VAULT))); }
@@ -115,6 +105,18 @@ test("a file that exists but cannot be read is an error or a warning, never an e
   assert.deepEqual(await readTeams(none), []);
 });
 
+test("the disk adapter: a symlinked team folder is a team, a missing path is not there, any other error is thrown", async () => {
+  const base = fs.mkdtempSync(path.join(require("os").tmpdir(), "aos-teams-disk-"));
+  fs.cpSync(VAULT, path.join(base, "v"), { recursive: true });
+  fs.symlinkSync(path.join(base, "v", "persona/teams/lab"), path.join(base, "v", "persona/teams/mirror"));
+  const a = diskAdapter(path.join(base, "v"));
+  assert.deepEqual((await readTeams(a)).map((t) => t.id), ["broken", "lab", "mirror", "ops"]);
+  assert.equal(await a.exists("persona/teams/nope/TEAM.md"), false);
+  fs.writeFileSync(path.join(base, "file"), "x");
+  await assert.rejects(diskAdapter(path.join(base, "file")).exists("persona/teams"), /ENOTDIR/, "a path under a file is an error, not missing");
+  assert.deepEqual(await readTeams(diskAdapter(path.join(base, "none"))), [], "no persona/teams: no teams");
+});
+
 test("JSONL: a complete last row without a newline is read; an unparsable one is torn, not skipped", () => {
   assert.deepEqual(parseJsonl('{"a":1}\n{"b":2}'), { rows: [{ a: 1 }, { b: 2 }], skipped: 0, torn: false });
   assert.deepEqual(parseJsonl('{"a":1}\nnope\n[1]\n{"b"'), { rows: [{ a: 1 }], skipped: 2, torn: true });
@@ -157,14 +159,17 @@ test("budgets: presets are half, the proposal and double; the floor is spend plu
   assert.equal(stepBudget(20, 1, [10, 20, 40], 3.44), 25);
   assert.equal(stepBudget(20, -1, [10, 20, 40], 3.44), 15);
   assert.equal(stepBudget(5, -1, [10, 20, 40], 3.44), null);
-  assert.equal(stepBudget(1000, 1, [10, 20, 40], 0), null);
+  assert.equal(stepBudget(10000, 1, [10, 20, 40], 0), null, "the CLI's maximum is the top");
   assert.equal(stepBudget(13, 1, [13, 25, 50], 0), 15);
+  assert.equal(stepBudget(1000, 1, [1000], 0), 1250, "past $1,000 the ladder goes on to the CLI's maximum");
+  assert.equal(stepBudget(7500, 1, [], 0), 10000);
 });
 
 test("budgets stay inside what the CLI takes: nothing above $10,000, and no amount at all when the floor is past it", () => {
   assert.equal(MAX_BUDGET_USD, 10000);
   assert.deepEqual(budgetPresets(6000), [3000, 6000], "double $6,000 is over the cap");
-  assert.equal(stepBudget(6000, 1, [3000, 6000], 0), null);
+  assert.equal(stepBudget(6000, 1, [3000, 6000], 0), 7500);
+  assert.equal(stepBudget(10000, 1, [3000, 6000], 0), null);
   assert.equal(budgetPick(20, [10, 20, 40], 3.44), 20);
   assert.equal(budgetPick(20, [10, 20, 40], 30), 40, "below the floor: the next preset up");
   assert.equal(budgetPick(20, [10, 20, 40], 55.5), 55.5, "past every preset: the floor itself");

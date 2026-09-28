@@ -7,25 +7,13 @@ import {
   TEAM_CLI, LIST_ARGS, teamRunner, approveArgs, budgetArgs, pauseArgs, setArgs, addMemberArgs, removeMemberArgs, postArgs,
   presetsOf, teamFailure, modelChoices, ignoredModel, ListJson, Presets,
 } from "./teamWriter";
-import { Team, TeamsAdapter, readTeams, budgetFloor } from "./teams";
+import { Team, readTeams, budgetFloor, diskAdapter } from "./teams";
 import type { AosResult } from "./aosRun";
 
 // The writes run the real brain/scripts/team.js (spec 2026-09-28-agent-teams-design D3) against a copy of the fixture
 // vault that teams.test.ts shares with lib/teams.js, and the tab's own reader checks what landed.
 const FIXTURE = path.resolve(__dirname, "fixtures/teams-vault");
 const CLI = path.resolve(__dirname, "../../../brain/scripts/team.js");
-
-function adapter(vault: string): TeamsAdapter {
-  const abs = (p: string) => path.join(vault, p);
-  return {
-    async list(p) {
-      const ents = fs.readdirSync(abs(p), { withFileTypes: true });
-      return { files: ents.filter((e) => e.isFile()).map((e) => `${p}/${e.name}`), folders: ents.filter((e) => e.isDirectory()).map((e) => `${p}/${e.name}`) };
-    },
-    async read(p) { return fs.readFileSync(abs(p), "utf8"); },
-    async exists(p) { return fs.existsSync(abs(p)); },
-  };
-}
 
 function world() {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "aos-teams-hud-"));
@@ -39,7 +27,7 @@ function world() {
   fs.writeFileSync(path.join(configDir, "agents", "team-scout.md"), "---\nname: team-scout\ndescription: Looks ahead.\n---\nScout.\n");
   const env = { ...process.env, CLAUDE_CONFIG_DIR: configDir, CODEX_HOME: path.join(base, "codex") };
   const runner = teamRunner({ node: process.execPath, vault, configDir, cli: CLI, env });
-  const team = async (id: string): Promise<Team> => (await readTeams(adapter(vault))).find((t) => t.id === id)!;
+  const team = async (id: string): Promise<Team> => (await readTeams(diskAdapter(vault))).find((t) => t.id === id)!;
   const item = async (id: string, itemId: string) => (await team(id)).board.find((i) => i.id === itemId)!;
   return { vault, runner, team, item };
 }

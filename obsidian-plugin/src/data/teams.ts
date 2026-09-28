@@ -5,6 +5,8 @@
 //
 // JSONL follows the prototype reader's rule: a bad complete line is someone's hand edit and is skipped (and counted); an
 // unparsable last line with no newline is an append still in flight, so it is left out and the tab reads again.
+import * as fs from "fs";
+import * as path from "path";
 import { stepIn } from "./settingsModel";
 import type { AgentsCache, AgentHost } from "./agents";
 
@@ -367,8 +369,11 @@ export function budgetPick(want: number, presets: number[], floor: number): numb
   return f <= MAX_BUDGET_USD ? f : null;
 }
 
-/** The − / + ladder the steppers walk (plus the card's own presets). */
-export const BUDGET_LADDER = [1, 2, 5, 10, 15, 20, 25, 30, 40, 50, 60, 75, 100, 125, 150, 200, 250, 300, 400, 500, 750, 1000];
+/** The − / + ladder the steppers walk (plus the card's own presets), up to the CLI's maximum. */
+export const BUDGET_LADDER = [
+  1, 2, 5, 10, 15, 20, 25, 30, 40, 50, 60, 75, 100, 125, 150, 200, 250, 300, 400, 500, 750,
+  1000, 1250, 1500, 2000, 2500, 3000, 4000, 5000, 6000, 7500, 10000,
+];
 
 /** The next amount below (-1) or above (+1) `current`, never under `floor`; null at the ends. */
 export function stepBudget(current: number, dir: -1 | 1, presets: number[], floor: number): number | null {
@@ -451,6 +456,32 @@ export interface TeamsAdapter {
   list(path: string): Promise<{ files: string[]; folders: string[] }>;
   read(path: string): Promise<string>;
   exists(path: string): Promise<boolean>;
+}
+
+/**
+ * The teams of the vault at `root` on disk, by vault-relative paths. The tab and its badge read through this, at the
+ * plugin's vault root, because that is where `aos team` writes: the root can be set to a folder other than the open
+ * Obsidian vault, and reading one vault while writing another would show a team the actions do not touch. A symlinked
+ * folder counts as a folder; `exists` is false only for a path that is not there, and any other error is thrown.
+ */
+export function diskAdapter(root: string): TeamsAdapter {
+  const abs = (p: string) => path.join(root, p);
+  return {
+    async list(p) {
+      const files: string[] = [];
+      const folders: string[] = [];
+      for (const e of await fs.promises.readdir(abs(p), { withFileTypes: true })) {
+        const rel = `${p}/${e.name}`;
+        const dir = e.isDirectory() || (e.isSymbolicLink() && (await fs.promises.stat(abs(rel)).then((s) => s.isDirectory(), () => false)));
+        if (dir) folders.push(rel); else if (e.isFile() || e.isSymbolicLink()) files.push(rel);
+      }
+      return { files, folders };
+    },
+    read: (p) => fs.promises.readFile(abs(p), "utf8"),
+    async exists(p) {
+      try { await fs.promises.access(abs(p)); return true; } catch (e) { if ((e as NodeJS.ErrnoException).code === "ENOENT") return false; throw e; }
+    },
+  };
 }
 
 const why = (e: unknown) => (e instanceof Error ? e.message : String(e));

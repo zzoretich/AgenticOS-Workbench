@@ -109,8 +109,9 @@ Agents. The badge counts gates pending across teams, and `touchesBadges` covers 
 
 - **Layout (the user's pick):** "Needs you" first, the pending gate cards of every team; then team chips in tree order
   (a child indented under its `parent`); then Board · Roster · Interact · Manage for the chosen team, Board by default.
-- **Reads:** `data/teams.ts` parses the files by `lib/teams.js`'s rules, which the shared fixture vault proves; the
-  badge reads boards only. **Writes:** only `aos team` through `runAos`'s `cli` override, each board write with the
+- **Reads:** `data/teams.ts` parses the files by `lib/teams.js`'s rules, which the shared fixture vault proves, from disk
+  at the plugin's vault root: the folder `aos team` writes, which can differ from the open Obsidian vault. The badge
+  reads boards only, on vault events and once a minute (a vault outside Obsidian sends no events). **Writes:** only `aos team` through `runAos`'s `cli` override, each board write with the
   rendered row's `ts` as `--expect`. While the tab is showing it re-reads every 30 s and runs `aos team list --json`
   about once a minute, which records any killed run (so a stale marker never shows a member working for good) and names
   the presets `set` takes. Unsent messages are kept per team.

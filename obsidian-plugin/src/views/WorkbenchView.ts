@@ -18,7 +18,7 @@ import { PROPOSALS_DIR } from "../data/proposals";
 import { NOTIFICATIONS_DIR, STATE_PATH, notificationId, parseNotification, parseState, unreadBadge, Level } from "../data/notifications";
 import { badgeText, proposalBadge, todoBadge, touchesBadges } from "../data/badges";
 import { TODO_PATH, localDay } from "../data/todos";
-import { readTeams, gateBadge } from "../data/teams";
+import { readTeams, diskAdapter, gateBadge } from "../data/teams";
 
 export const VIEW_TYPE_WORKBENCH = "agentic-os-workbench";
 
@@ -117,6 +117,8 @@ export class WorkbenchView extends ItemView {
     this.registerEvent(this.app.vault.on("modify", (f) => onPath(f)));
     this.registerEvent(this.app.vault.on("delete", (f) => onPath(f)));
     this.registerEvent(this.app.vault.on("rename", (f, oldPath) => onPath(f, oldPath)));
+    // A vault root outside Obsidian sends no vault events, so the gate badge is also recounted once a minute.
+    this.registerInterval(window.setInterval(() => void this.refreshTeamsBadge(), 60_000));
     void this.refreshBadges();
   }
 
@@ -152,8 +154,13 @@ export class WorkbenchView extends ItemView {
     this.setBadge("todo", todoBadge(todo, localDay(new Date())));
     const n = await this.notificationBadge();
     this.setBadge("notifications", n.count, n.breaking);
-    // Gates waiting on the user across every team (spec 2026-09-28-agent-teams-design D12): boards only, no channel.
-    try { this.setBadge("agent-teams", gateBadge(await readTeams(this.app.vault.adapter, { boardOnly: true }))); } catch { /* no persona/teams yet */ }
+    await this.refreshTeamsBadge();
+  }
+
+  /** Gates waiting on the user across every team (spec 2026-09-28-agent-teams-design D12), read from boards only, in the
+   *  vault `aos team` writes: the plugin's vault root, which need not be the open Obsidian vault. */
+  private async refreshTeamsBadge(): Promise<void> {
+    try { this.setBadge("agent-teams", gateBadge(await readTeams(diskAdapter(this.plugin.vaultRoot()), { boardOnly: true }))); } catch { /* unreadable: no badge */ }
   }
 
   /** Unread notifications (spec 2026-09-24-notifications-design §4.3). Reads state.json and only the unread item files,
