@@ -27,6 +27,7 @@ const item = args[1].split('\\n')[0];
 if (mode === 'fail') { process.stdout.write(JSON.stringify({ type: 'result', subtype: 'error_max_budget_usd', is_error: true, total_cost_usd: 0.3, result: '' })); process.exit(1); }
 fs.writeFileSync(member + '.txt', member + ' was here ' + Date.now() + ' ' + Math.random() + '\\n');
 if (mode !== 'dirty') { execFileSync('git', ['add', '-A']); execFileSync('git', ['commit', '-qm', member + ': work']); }
+if (mode === 'selfapprove') { const env = { ...process.env }; delete env.AOS_HEADLESS; execFileSync(process.execPath, [process.env.TEAM_JS, 'budget', 'dev', item, '99', '--expect', '{}'], { env }); }
 if (mode === 'failcommit') { process.stdout.write(JSON.stringify({ type: 'result', subtype: 'error_during_execution', is_error: true, total_cost_usd: 0.2, result: '' })); process.exit(1); }
 if (mode === 'hang') { fs.writeFileSync(process.env.FAKE_PIDFILE, String(process.pid)); setInterval(() => {}, 1 << 30); return; }
 if (mode === 'post') execFileSync(process.execPath, [process.env.TEAM_JS, 'post', 'dev', '--from', member, '--item', item, '--kind', 'handoff', member + ' done at $40; next is lead']);
@@ -392,10 +393,12 @@ test('a failed run keeps its commits on its branch, and the lead takes them with
   const io = { stdout: () => {}, stderr: () => {}, vault: w.vault };
   assert.equal(await main(['merge', 'dev', 'demo-01', 'builder', '--from', 'builder'], io), 1, 'only the lead merges');
   assert.equal(await main(['merge', 'dev', 'demo-01', 'builder', '--from', 'lead'], { ...io, env: { AOS_HEADLESS: '1' } }), 1, 'never from a headless run (AT-R4)');
+  put(w, { id: 'demo-01', stage: 'verify', owner: ['reviewer'] }); // the lead moved on before merging (AT-REV-02)
   assert.equal(await main(['merge', 'dev', 'demo-01', 'builder', '--from', 'lead'], io), 0);
   assert.equal(sh(w.repo, 'git', ['log', '-1', '--format=%s', 'team/dev/demo-01/trunk']), 'builder: work');
   assert.deepEqual(item(w, 'demo-01').builders.claude, ['builder'], 'merged execute work counts as built (AT-R3)');
   assert.equal(await main(['merge', 'dev', 'demo-01', 'builder', '--from', 'lead'], io), 1, 'nothing held any more');
+  assert.equal(jsonl(path.join(w.t().dir, 'runs.jsonl')).length, 1, 'still one row per run (AT-REV-03)');
 });
 
 test('parallel Claude seats share one budget: a live run holds its reservation, and --max-usd splits it (AT-02)', async () => {
@@ -428,4 +431,13 @@ test('a codex seat runs its own Codex definition and model; a claude seat needs 
   assert.deepEqual(call.args.slice(call.args.indexOf('-m'), call.args.indexOf('-m') + 2), ['-m', codexModel]);
   fs.rmSync(path.join(w.claudeDir, 'agents', 'seat-builder.md'));
   assert.match((await dispatch(w, ['builder', 'demo-01'])).err, /no Claude Code agent file/);
+});
+
+test('a user decision recorded on the item while its seat ran is flagged, and the run is blocked (AT-REV-01)', async () => {
+  const w = world();
+  put(w, base());
+  const r = await dispatch(w, ['planner', 'demo-01'], { FAKE_MODE: 'selfapprove' });
+  assert.equal(r.code, 0, r.err);
+  assert.equal(jsonl(path.join(w.t().dir, 'runs.jsonl'))[0].status, 'blocked');
+  assert.ok(T.tail(w.t()).some((p) => p.from === 'dispatch' && /budget \$99\) was recorded while planner's run was going; confirm you made it/.test(p.text)));
 });

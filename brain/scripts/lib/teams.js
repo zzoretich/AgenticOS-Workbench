@@ -361,7 +361,13 @@ function decideGate(t, { item, verb, usd, note, expect, env = process.env, now =
     if (verb === 'approve') {
       const i = t.stages.indexOf(cur.stage);
       patch.stage = t.stages[Math.min(i + 1, t.stages.length - 1)] || cur.stage;
-      if (usd !== undefined) patch.budget = { usd: usdOf(usd) };
+      if (usd !== undefined) {
+        const amount = usdOf(usd);
+        const spent = Number((cur.budget && cur.budget.spentUsd) || 0);
+        const held = liveMarkers(t).filter((x) => x.item === item && x.provider === 'claude').reduce((s, x) => s + (Number(x.reservedUsd) || 0), 0);
+        if (amount < spent + held) throw new Refusal(`${item} has spent $${spent} and live runs hold $${held}, so its budget cannot go below $${Math.round((spent + held) * 100) / 100}`); // AT-REV-06
+        patch.budget = { usd: amount };
+      }
     }
     return writeItem(t, patch, { by: 'user', now, existing: cur });
   });
@@ -530,6 +536,8 @@ function reapKilledRuns(t, { alive = dispatchAlive, host = os.hostname(), now = 
       if (!m || !m.run || m.host !== host || alive(m.pid, m.pidStart)) continue;
       // A seat that outlived its dispatcher (SIGKILL) is stopped before the run is recorded (AT-08).
       let orphan = null;
+      // A live seat whose identity cannot be checked (no ps) keeps its marker until it is gone (AT-REV-04).
+      if (Number.isInteger(m.seatPid) && !Number.isFinite(m.seatStart)) { try { process.kill(m.seatPid, 0); continue; } catch { /* gone */ } }
       if (Number.isInteger(m.seatPid) && Number.isFinite(m.seatStart)) {
         try {
           process.kill(m.seatPid, 0);

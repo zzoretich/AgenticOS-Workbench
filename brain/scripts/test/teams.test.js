@@ -354,3 +354,12 @@ test('the sweep stops a seat that outlived its killed dispatcher (AT-08)', async
   assert.match(T.tail(w.t()).pop().text, new RegExp(`Its seat \\(pid ${seat.pid}\\) was still running and was stopped`));
   assert.throws(() => process.kill(pid, 0), 'the seat is gone: SIGKILL after it ignored SIGTERM');
 });
+
+test('gate approval with --usd honours what live runs hold (AT-REV-06)', () => {
+  const w = world();
+  T.put(w.t(), { from: 'lead', json: JSON.stringify(AT_GATE) });
+  fs.mkdirSync(T.runningDir(w.t()), { recursive: true });
+  fs.writeFileSync(path.join(T.runningDir(w.t()), 'held.json'), JSON.stringify({ run: 'held', member: 'builder', item: 'x-01', provider: 'claude', pid: process.pid, host: 'another-machine.local', reservedUsd: 30 }));
+  assert.throws(() => T.decideGate(w.t(), { item: 'x-01', verb: 'approve', usd: 20, expect: '{}', env: INTERACTIVE }), /cannot go below \$30/);
+  assert.equal(T.decideGate(w.t(), { item: 'x-01', verb: 'approve', usd: 40, expect: '{}', env: INTERACTIVE }).budget.usd, 40);
+});

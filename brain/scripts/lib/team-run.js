@@ -114,7 +114,10 @@ function projectRepo(vault, it) {
   if (!under(workspaces, repo)) refuse(`${it.id}'s path ${it.path} is not a project under workspaces/`);
   if (!fs.existsSync(repo)) refuse(`${it.path} does not exist`);
   // Real paths too, so a symlink under workspaces/ cannot point a seat at a repository elsewhere (AT-R2).
-  if (!under(fs.realpathSync(workspaces), fs.realpathSync(repo))) refuse(`${it.id}'s path ${it.path} leads outside workspaces/`);
+  const realVault = fs.realpathSync(vault);
+  const realWs = fs.realpathSync(workspaces);
+  if (realWs !== path.join(realVault, 'workspaces')) refuse('workspaces/ resolves outside the vault'); // AT-REV-05
+  if (!under(realWs, fs.realpathSync(repo))) refuse(`${it.id}'s path ${it.path} leads outside workspaces/`);
   const top = gitTry(repo, ['rev-parse', '--show-toplevel']);
   if (!top.ok || fs.realpathSync(top.out) !== fs.realpathSync(repo)) refuse(`${it.path} is not its own git repository (the lead runs git init there first)`);
   return repo;
@@ -310,7 +313,7 @@ async function dispatch(opts, ctx) {
   const outFile = `${logBase}.final.txt`;
   const log = path.relative(vault, logBase);
   const runsFile = path.join(t.dir, 'runs.jsonl');
-  const who = { team: t.id, member: m.id, item: item.id, provider, model, effort };
+  const who = { team: t.id, member: m.id, item: item.id, stage: item.stage, provider, model, effort };
   const runId = path.basename(logBase);
   const startIso = new Date().toISOString();
   const marker = path.join(T.runningDir(t), `${runId}.json`);
@@ -426,8 +429,12 @@ async function dispatch(opts, ctx) {
     if (dirty) T.post(t, { from: 'dispatch', item: item.id, kind: 'blocker', text: `${m.id} left uncommitted changes in ${rel(wt)}; the lead decides: commit, discard or re-run` });
     if (merged.conflict) T.post(t, { from: 'dispatch', item: item.id, kind: 'blocker', text: `${seat} was not merged into ${trunk}: ${merged.conflict}` });
 
+    // A seat runs as the user's account and could strip AOS_HEADLESS; a decision recorded on its item while it ran is
+    // flagged for the user to confirm (AT-REV-01).
+    const decided = T.readJsonl(path.join(t.dir, 'board.jsonl')).filter((x) => x.id === item.id && x.by === 'user' && x.ts >= startIso);
+    if (decided.length) T.post(t, { from: 'dispatch', item: item.id, kind: 'blocker', text: `a user decision on ${item.id} (${decided.map((x) => (x.gate && x.gate.state !== 'pending' ? `${x.gate.name} ${x.gate.state}` : `budget $${x.budget && x.budget.usd}`)).join(', ')}) was recorded while ${m.id}'s run was going; confirm you made it before anything moves` });
     // A run that finished but left uncommitted work or a conflict is `blocked`: its seat is done, the lead is not (AT-07).
-    const status = killed ? 'killed' : failed ? 'failed' : dirty || merged.conflict ? 'blocked' : 'ok';
+    const status = killed ? 'killed' : failed ? 'failed' : dirty || merged.conflict || decided.length ? 'blocked' : 'ok';
     T.appendJsonl(runsFile, {
       schema: 1, ts: new Date().toISOString(), ...who, run: runId, startedAt: startIso, ms,
       usd: Math.round(usd * 1e6) / 1e6, status, error: failed, session, base, head: merged.head || null,
@@ -468,23 +475,23 @@ function mergeSeat(opts, { vault, env = process.env }) {
   if (!item) refuse(`no board item ${opts.item} on ${t.id}`);
   if (item.status === 'done') refuse(`${item.id} is done`);
   const last = T.readJsonl(path.join(t.dir, 'runs.jsonl')).filter((r) => r.item === item.id && r.member === opts.member).pop();
-  if (!last || last.merged !== false || !(last.commits > 0)) refuse(`${opts.member}'s last run on ${item.id} holds no unmerged work`);
+  if (!last || last.merged !== false) refuse(`${opts.member}'s last run on ${item.id} holds no unmerged work`);
   const repo = projectRepo(vault, item);
   const names = branchNames(t.id, item.id, opts.member, path.join(vault, 'workspaces', '_worktrees'));
   if (!branchExists(repo, names.seat)) refuse(`there is no branch ${names.seat}`);
   if (fs.existsSync(names.wt)) refuse(`${names.seat} still has its worktree at ${path.relative(vault, names.wt)}: commit or discard what is there, then remove it`);
   if (!branchExists(repo, names.trunk)) git(repo, ['branch', names.trunk, 'HEAD']);
+  if (!Number(git(repo, ['rev-list', '--count', `${names.trunk}..${names.seat}`]))) refuse(`${names.seat} holds nothing the trunk lacks`);
   const merged = mergeBack(repo, names.trunk, names.seat);
   if (merged.conflict) refuse(`${names.seat} was not merged: ${merged.conflict}`);
   // Merged execute work counts as built on the run's provider, so reviewers still land on the other one (AT-R3).
   T.withBoard(t, () => {
     const cur = T.boardItems(t).get(item.id);
     const p = last.provider;
-    if (cur.stage !== 'execute' || !merged.commits || !['claude', 'codex'].includes(p)) return;
+    if ((last.stage || cur.stage) !== 'execute' || !merged.commits || !['claude', 'codex'].includes(p)) return; // the run's own stage (AT-REV-02)
     const list = ((cur.builders && cur.builders[p]) || []).slice();
     if (!list.includes(opts.member)) { list.push(opts.member); T.writeItem(t, { id: item.id, builders: { [p]: list } }, { by: 'dispatch', existing: cur }); }
   });
-  T.appendJsonl(path.join(t.dir, 'runs.jsonl'), { ...last, ts: new Date().toISOString(), status: 'merged', merged: true, head: merged.head || null, error: null, usd: 0, ms: 0 });
   const text = `merged ${merged.commits} held commit(s) from ${names.seat} into ${names.trunk}`;
   if (merged.commits) T.post(t, { from: t.lead, item: item.id, kind: 'note', text });
   return { code: 0, out: merged.commits ? text : `${names.seat} has nothing the trunk lacks` };
