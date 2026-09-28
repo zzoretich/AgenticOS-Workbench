@@ -111,8 +111,9 @@ Agents. The badge counts gates pending across teams, and `touchesBadges` covers 
   (a child indented under its `parent`); then Board · Roster · Interact · Manage for the chosen team, Board by default.
 - **Reads:** `data/teams.ts` parses the files by `lib/teams.js`'s rules, which the shared fixture vault proves; the
   badge reads boards only. **Writes:** only `aos team` through `runAos`'s `cli` override, each board write with the
-  rendered row's `ts` as `--expect`. While the tab is open it runs `aos team list --json` at most once a minute, which
-  records any killed run (so a stale marker never shows a member working for good) and names the presets `set` takes.
+  rendered row's `ts` as `--expect`. While the tab is showing it re-reads every 30 s and runs `aos team list --json`
+  about once a minute, which records any killed run (so a stale marker never shows a member working for good) and names
+  the presets `set` takes. Unsent messages are kept per team.
 - **Gates:** the gate on a team's first stage funds the work: presets are half, the proposal (`budget.usd`) and double,
   − / + walk a fixed ladder, and nothing goes below spend plus what live Claude runs hold. Approve asks first. Redirect
   opens the lead's agent with a prompt naming the gate and the exact `gate redirect … --expect … --note` line; where

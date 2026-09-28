@@ -13,8 +13,10 @@ import { renderRoster } from "./teams/RosterPane";
 import { renderInteract } from "./teams/InteractPane";
 import { renderManage } from "./teams/ManagePane";
 
-/** How often the tab asks `aos team list` to sweep killed runs (and name the presets) while it is in use. */
-const SWEEP_EVERY_MS = 60_000;
+/** While the tab is showing it re-reads every TICK_MS (ages move on) and asks `aos team list` to sweep killed runs,
+ *  and name the presets, once SWEEP_EVERY_MS has passed: a dispatcher that died silently is recorded within a minute. */
+const TICK_MS = 30_000;
+const SWEEP_EVERY_MS = 45_000;
 /** A torn tail is an append in flight: read again shortly, a few times at most. */
 const TORN_RETRY_MS = 400;
 const TORN_RETRIES = 5;
@@ -35,7 +37,7 @@ export class AgentTeamsTab {
   private presets: Presets | null = null;
   private runtimeNote: string | null = null;
   private ui: TeamsUiState = {
-    team: null, view: "board", gateUsd: new Map(), budgetUsd: new Map(), openItem: null, showDone: new Set(), channelItem: null, draft: "",
+    team: null, view: "board", gateUsd: new Map(), budgetUsd: new Map(), openItem: null, showDone: new Set(), channelItem: null, drafts: new Map(),
   };
   private busyKeys = new Set<string>();
   private errors = new Map<string, string>();
@@ -45,6 +47,8 @@ export class AgentTeamsTab {
   private tornRetries = 0;
   private sweepAt = 0;
   private sweeping = false;
+  private channelKey: string | null = null;
+  private refocus: { sel: string; index: number } | null = null;
 
   constructor(private plugin: AgenticOSPlugin, private wb: WorkbenchView) {}
 
@@ -60,8 +64,7 @@ export class AgentTeamsTab {
       this.wb.registerEvent(vault.on("delete", (f) => watch(f)));
       this.wb.registerEvent(vault.on("rename", (f, oldPath) => watch(f, oldPath)));
     }
-    // "running 12m" and "waiting 3h" age while the tab is open.
-    if (this.tick === null) this.tick = window.setInterval(() => { if (this.wb.isTabActive("agent-teams")) this.render(); }, 60_000);
+    if (this.tick === null) this.tick = window.setInterval(() => { if (this.wb.isTabActive("agent-teams")) void this.refresh(); }, TICK_MS);
     void this.refresh();
   }
 
@@ -107,7 +110,7 @@ export class AgentTeamsTab {
         this.runtimeNote = f.upgrade ? f.text : `aos team list failed: ${f.text}`;
       }
     } finally { this.sweeping = false; }
-    this.render();
+    this.schedule();   // re-read what the sweep recorded, without waiting for its file events
   }
 
   private async act(key: string, args: string[], confirm?: Confirm): Promise<boolean> {
@@ -161,6 +164,11 @@ export class AgentTeamsTab {
     const top = scroller?.scrollTop ?? 0;
     const active = document.activeElement;
     const typing = active instanceof HTMLTextAreaElement && active.classList.contains("aos-at-msg") ? { start: active.selectionStart, end: active.selectionEnd } : null;
+    // The channel follows new posts only when the reader is already at its end; reading further up, it stays put.
+    const ch = host.querySelector<HTMLElement>(".aos-at-channel");
+    const chKey = `${this.ui.team ?? ""}/${this.ui.channelItem ?? ""}`;
+    const follow = !ch || this.channelKey !== chKey || ch.scrollHeight - ch.scrollTop - ch.clientHeight < 24;
+    const chTop = ch?.scrollTop ?? 0;
     host.empty();
     host.addClass("aos-at");
 
@@ -186,6 +194,13 @@ export class AgentTeamsTab {
     this.renderTeam(host, team);
 
     if (scroller) scroller.scrollTop = top;
+    const ch2 = host.querySelector<HTMLElement>(".aos-at-channel");
+    if (ch2) ch2.scrollTop = follow ? ch2.scrollHeight : chTop;
+    this.channelKey = ch2 ? chKey : null;
+    if (this.refocus) {
+      host.querySelectorAll<HTMLElement>(this.refocus.sel)[this.refocus.index]?.focus();
+      this.refocus = null;
+    }
     if (typing) {
       const box = host.querySelector<HTMLTextAreaElement>("textarea.aos-at-msg");
       if (box && !box.disabled) { box.focus(); box.setSelectionRange(typing.start, typing.end); }
@@ -196,7 +211,7 @@ export class AgentTeamsTab {
     const bar = host.createDiv({ cls: "aos-at-teams", attr: { role: "tablist", "aria-label": "Teams" } });
     for (const { team: t, depth } of order) {
       const on = t.id === this.ui.team;
-      const b = bar.createEl("button", { cls: `aos-at-teamchip${on ? " is-active" : ""}${t.disabled ? " is-paused" : ""}${t.error ? " is-broken" : ""}`, attr: { role: "tab", "aria-selected": String(on), title: t.error ? `TEAM.md: ${t.error}` : `${t.name}: lead ${t.lead}${t.disabled ? ", paused" : ""}` } });
+      const b = bar.createEl("button", { cls: `aos-at-teamchip${on ? " is-active" : ""}${t.disabled ? " is-paused" : ""}${t.error ? " is-broken" : ""}`, attr: { role: "tab", "aria-selected": String(on), tabindex: on ? "0" : "-1", title: t.error ? `TEAM.md: ${t.error}` : `${t.name}: lead ${t.lead}${t.disabled ? ", paused" : ""}` } });
       if (depth) b.createSpan({ cls: "aos-at-depth", text: "› ".repeat(depth) });
       b.createSpan({ text: t.name });
       const g = t.error ? 0 : pendingGates(t).length;
@@ -204,6 +219,23 @@ export class AgentTeamsTab {
       if (t.error) b.createSpan({ cls: "aos-at-chipmark", text: "!" });
       b.addEventListener("click", () => this.ctx(t).select(t.id));
     }
+    this.tabKeys(bar, ".aos-at-teamchip");
+  }
+
+  /** A tablist's keys: arrows move to the previous or next tab and select it, Home and End to the ends. The selection
+   *  re-renders the tab, so focus is put back on the tab at the same place afterwards. */
+  private tabKeys(list: HTMLElement, sel: string): void {
+    list.addEventListener("keydown", (e) => {
+      const tabs = Array.from(list.querySelectorAll<HTMLElement>(sel));
+      const i = tabs.indexOf(document.activeElement as HTMLElement);
+      if (i < 0 || !tabs.length) return;
+      const n = tabs.length;
+      const j = { ArrowRight: (i + 1) % n, ArrowDown: (i + 1) % n, ArrowLeft: (i - 1 + n) % n, ArrowUp: (i - 1 + n) % n, Home: 0, End: n - 1 }[e.key];
+      if (j === undefined) return;
+      e.preventDefault();
+      this.refocus = { sel, index: j };
+      tabs[j].click();
+    });
   }
 
   private renderTeam(host: HTMLElement, t: Team): void {
@@ -240,11 +272,12 @@ export class AgentTeamsTab {
     const count: Partial<Record<TeamsView, string>> = { board: open ? String(open) : "", roster: String(t.members.length) };
     for (const v of VIEWS) {
       const on = this.ui.view === v.id;
-      const b = tabs.createEl("button", { cls: `aos-at-view${on ? " is-active" : ""}`, attr: { role: "tab", "aria-selected": String(on) } });
+      const b = tabs.createEl("button", { cls: `aos-at-view${on ? " is-active" : ""}`, attr: { role: "tab", "aria-selected": String(on), tabindex: on ? "0" : "-1" } });
       b.createSpan({ text: v.label });
       if (count[v.id]) b.createSpan({ cls: "aos-dim aos-at-viewcount", text: count[v.id] });
       b.addEventListener("click", () => { this.ui.view = v.id; this.render(); });
     }
+    this.tabKeys(tabs, ".aos-at-view");
     const pane = section.createDiv({ cls: `aos-at-pane aos-at-pane-${this.ui.view}`, attr: { role: "tabpanel" } });
     const ctx = this.ctx(t);
     if (this.ui.view === "board") renderBoard(pane, ctx);

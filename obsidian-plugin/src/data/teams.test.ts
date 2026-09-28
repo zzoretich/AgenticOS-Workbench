@@ -5,8 +5,8 @@ import * as path from "path";
 import { createRequire } from "module";
 import {
   TEAMS_DIR, Team, TeamsAdapter, readTeams, teamFrom, parseJsonl, parseFrontmatter, memberStatus, pendingGates, gateBadge,
-  orderTeams, boardColumns, gateCards, isBudgetGate, budgetFloor, budgetPresets, stepBudget, splitMentions, sessionCommand,
-  redirectPrompt, expectOf, channelView, touchesTeams, usd, shq,
+  orderTeams, boardColumns, gateCards, isBudgetGate, budgetFloor, budgetPresets, budgetPick, stepBudget, splitMentions, sessionCommand,
+  redirectPrompt, expectOf, channelView, touchesTeams, usd, shq, gatePitch, MAX_BUDGET_USD,
 } from "./teams";
 import { parseAgents } from "./agents";
 import { touchesBadges } from "./badges";
@@ -140,6 +140,34 @@ test("budgets: presets are half, the proposal and double; the floor is spend plu
   assert.equal(stepBudget(13, 1, [13, 25, 50], 0), 15);
 });
 
+test("budgets stay inside what the CLI takes: nothing above $10,000, and no amount at all when the floor is past it", () => {
+  assert.equal(MAX_BUDGET_USD, 10000);
+  assert.deepEqual(budgetPresets(6000), [3000, 6000], "double $6,000 is over the cap");
+  assert.equal(stepBudget(6000, 1, [3000, 6000], 0), null);
+  assert.equal(budgetPick(20, [10, 20, 40], 3.44), 20);
+  assert.equal(budgetPick(20, [10, 20, 40], 30), 40, "below the floor: the next preset up");
+  assert.equal(budgetPick(20, [10, 20, 40], 55.5), 55.5, "past every preset: the floor itself");
+  assert.equal(budgetPick(12000, [3000, 6000], 0), 3000);
+  assert.equal(budgetPick(20, [], 12000), null, "spent past the cap: nothing can be approved");
+});
+
+test("the pitch is the team's case for the gate now pending, never an earlier gate's", () => {
+  const md = "---\nid: t\nlead: lead\ngates: [discuss, ship]\nmembers:\n  - id: lead\n---\n";
+  const row = (ts: string, gate: object | null, status = "gate") => JSON.stringify({ id: "x-01", ts, stage: gate ? "verify" : "plan", status, gate });
+  const post = (ts: string, from: string, text: string) => JSON.stringify({ ts, from, item: "x-01", kind: "gate", text });
+  const board = [
+    row("2026-09-20T10:00:00.000Z", { name: "discuss", state: "pending" }),
+    row("2026-09-20T11:00:00.000Z", { name: "discuss", state: "approved", by: "user" }, "working"),
+    row("2026-09-21T09:00:00.000Z", { name: "ship", state: "pending" }),
+  ].join("\n") + "\n";
+  const early = [post("2026-09-20T10:01:00.000Z", "lead", "Discuss gate: I propose $20."), post("2026-09-20T11:00:00.000Z", "user", "Discuss gate approved by the user")];
+  const team = (posts: string[]) => teamFrom({ id: "t", teamMd: md, board, channel: posts.join("\n") + "\n", runs: null, markers: [], state: null, disabled: false });
+  assert.equal(gatePitch(team(early), "x-01"), null, "only the old Discuss proposal: no pitch for the Ship gate");
+  const t = team([...early, post("2026-09-21T08:59:00.000Z", "lead", "Ship gate: verified, ready."), post("2026-09-21T09:05:00.000Z", "dispatch", "not a member")]);
+  assert.equal(gatePitch(t, "x-01")?.text, "Ship gate: verified, ready.", "a post just before the gate row still counts");
+  assert.equal(t.pendingSince["x-01"], "2026-09-21T09:00:00.000Z");
+});
+
 test("the work board: one column per stage, done items apart, unknown stages in a last column", async () => {
   assert.deepEqual(boardColumns(await team("lab")).map((c) => [c.stage, c.items.map((i) => i.id), c.done.map((i) => i.id)]), [
     ["discuss", ["site-01"], []], ["plan", [], []], ["execute", ["site-02"], []], ["verify", ["site-03"], []], ["ship", [], ["site-00"]],
@@ -179,7 +207,7 @@ test("session commands: the agent's run command per host, a prompt single-quoted
 });
 
 test("dollar amounts, and the paths a vault event must touch to refresh the tab or its badge", () => {
-  assert.deepEqual([usd(3.44), usd(20), usd(125.5), usd(null)], ["$3.44", "$20", "$126", "–"]);
+  assert.deepEqual([usd(3.44), usd(20), usd(125.5), usd(1000), usd(3.4435), usd(null)], ["$3.44", "$20", "$125.50", "$1000", "$3.44", "–"]);
   assert.ok(touchesTeams(TEAMS_DIR) && touchesTeams(`${TEAMS_DIR}/lab/board.jsonl`) && !touchesTeams("persona/teamsx"));
   assert.ok(touchesBadges(`${TEAMS_DIR}/lab/board.jsonl`));
 });

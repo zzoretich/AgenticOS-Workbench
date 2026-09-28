@@ -21,7 +21,7 @@ export interface TeamsUiState {
   openItem: string | null;          // the board item whose detail is open
   showDone: Set<string>;            // "<team>/<stage>" columns showing their done items
   channelItem: string | null;       // the Interact filter
-  draft: string;                    // the unsent message to the lead
+  drafts: Map<string, string>;      // team id → its unsent message to the lead (never carried to another team)
 }
 
 export interface Confirm { title: string; message: string; cta: string }

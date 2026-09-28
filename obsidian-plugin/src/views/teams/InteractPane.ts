@@ -46,21 +46,19 @@ export function renderInteract(host: HTMLElement, ctx: TeamsCtx): void {
     cls: "aos-at-msg",
     attr: { rows: "2", placeholder: `Message @${t.lead}. Enter sends, Shift+Enter adds a line.`, "aria-label": `Message to ${leadName}`, maxlength: "3900" },
   });
-  box.value = ctx.ui.draft;
+  const draft = ctx.ui.drafts.get(t.id) ?? "";
+  box.value = draft;
   box.disabled = busy;
   const send = form.createEl("button", { cls: "mod-cta aos-at-send", text: busy ? "Posting…" : "Send", attr: { type: "submit" } });
-  send.disabled = busy || !ctx.ui.draft.trim();
-  box.addEventListener("input", () => { ctx.ui.draft = box.value; send.disabled = busy || !box.value.trim(); });
+  send.disabled = busy || !draft.trim();
+  box.addEventListener("input", () => { ctx.ui.drafts.set(t.id, box.value); send.disabled = busy || !box.value.trim(); });
   const submit = () => {
-    const args = postArgs(t.id, t.lead, ctx.ui.draft);
+    const args = postArgs(t.id, t.lead, ctx.ui.drafts.get(t.id) ?? "");
     if (!args || busy) return;
-    void ctx.act(key, args).then((ok) => { if (ok) { ctx.ui.draft = ""; ctx.render(); } });
+    void ctx.act(key, args).then((ok) => { if (ok) { ctx.ui.drafts.delete(t.id); ctx.render(); } });
   };
   box.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); submit(); } });
   form.addEventListener("submit", (e) => { e.preventDefault(); submit(); });
   host.createDiv({ cls: "aos-dim aos-at-hint", text: `Posts as you. ${leadName} reads the channel on its next step; Talk to ${leadName} starts one now.` });
   errorLine(host, ctx.error(key));
-
-  // Newest at the bottom, in view.
-  window.requestAnimationFrame(() => { list.scrollTop = list.scrollHeight; });
 }

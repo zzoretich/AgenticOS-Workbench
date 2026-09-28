@@ -40,6 +40,8 @@ export interface Team {
   state: string[]; board: BoardItem[]; channel: Post[]; runs: RunRow[]; live: Marker[];
   /** When each pending gate began waiting, by item id (the first snapshot of the current pending gate). */
   pendingSince: Record<string, string>;
+  /** The item's last snapshot before its current pending gate opened: a pitch posted before it was for an earlier gate. */
+  pendingAfter: Record<string, string>;
   skipped: number; torn: boolean; error: string | null;
 }
 
@@ -159,18 +161,27 @@ function itemFrom(r: Row): BoardItem {
   };
 }
 
-/** When each item's current pending gate began: the first snapshot of an unbroken run of that gate pending. */
-function pendingSinceOf(rows: Row[]): Record<string, string> {
-  const since: Record<string, { name: string; ts: string }> = {};
+/** When each item's current pending gate began (the first snapshot of an unbroken run of that gate pending), and the
+ *  snapshot just before that run, which bounds the lead's pitch for this gate from below. */
+function pendingSinceOf(rows: Row[]): { since: Record<string, string>; after: Record<string, string> } {
+  const since: Record<string, { name: string; ts: string; after: string }> = {};
+  const last: Record<string, string> = {};
   for (const r of rows) {
     if (typeof r.id !== "string") continue;
+    const ts = str(r.ts) ?? "";
     const g = obj(r.gate);
-    if (!g || g.state !== "pending") { delete since[r.id]; continue; }
-    const name = str(g.name) ?? "gate";
-    if (since[r.id]?.name !== name) since[r.id] = { name, ts: str(r.ts) ?? "" };
+    if (!g || g.state !== "pending") delete since[r.id];
+    else {
+      const name = str(g.name) ?? "gate";
+      if (since[r.id]?.name !== name) since[r.id] = { name, ts, after: last[r.id] ?? "" };
+    }
+    last[r.id] = ts;
   }
-  const out: Record<string, string> = {};
-  for (const [id, v] of Object.entries(since)) if (v.ts) out[id] = v.ts;
+  const out = { since: {} as Record<string, string>, after: {} as Record<string, string> };
+  for (const [id, v] of Object.entries(since)) {
+    if (v.ts) out.since[id] = v.ts;
+    if (v.after) out.after[id] = v.after;
+  }
   return out;
 }
 
@@ -201,7 +212,7 @@ export interface TeamFiles {
 export function teamFrom(f: TeamFiles): Team {
   const base: Team = {
     id: f.id, name: f.id, lead: "", reportsTo: null, parent: null, stages: DEFAULT_STAGES, gates: [], budgetDefault: 0,
-    disabled: f.disabled, members: [], state: [], board: [], channel: [], runs: [], live: [], pendingSince: {}, skipped: 0, torn: false, error: null,
+    disabled: f.disabled, members: [], state: [], board: [], channel: [], runs: [], live: [], pendingSince: {}, pendingAfter: {}, skipped: 0, torn: false, error: null,
   };
   let fm: Record<string, Scalar>;
   try { fm = parseFrontmatter(f.teamMd); } catch (e) { return { ...base, error: (e as Error).message }; }
@@ -209,6 +220,7 @@ export function teamFrom(f: TeamFiles): Team {
   const channel = parseJsonl(f.channel);
   const runs = parseJsonl(f.runs);
   const budget = obj(fm.budget);
+  const pending = pendingSinceOf(board.rows);
   return {
     ...base,
     name: str(fm.name) ?? f.id, lead: fm.lead == null ? "" : String(fm.lead), reportsTo: str(fm.reportsTo), parent: str(fm.parent),
@@ -221,7 +233,8 @@ export function teamFrom(f: TeamFiles): Team {
     channel: channel.rows.map(postFrom),
     runs: runs.rows.map(runFrom),
     live: f.markers.map((t) => { try { const o = obj(JSON.parse(t)); return o ? markerFrom(o) : null; } catch { return null; } }).filter((m): m is Marker => m !== null),
-    pendingSince: pendingSinceOf(board.rows),
+    pendingSince: pending.since,
+    pendingAfter: pending.after,
     skipped: board.skipped + channel.skipped + runs.skipped,
     torn: board.torn || channel.torn || runs.torn,
   };
@@ -311,8 +324,11 @@ export function runTone(status: string): Tone {
   return status === "ok" ? "is-ok" : status === "failed" || status === "killed" ? "is-failed" : status === "blocked" ? "is-stale" : "is-neutral";
 }
 
+/** "$20", "$125.50", "$3.44": whole dollars plain, anything else to the cent, as the CLI records it. */
 export function usd(n: number | null | undefined): string {
-  return n == null || !Number.isFinite(n) ? "–" : `$${n.toFixed(n >= 100 || Number.isInteger(n) ? 0 : 2)}`;
+  if (n == null || !Number.isFinite(n)) return "–";
+  const cents = Math.round(n * 100);
+  return cents % 100 === 0 ? `$${cents / 100}` : `$${(cents / 100).toFixed(2)}`;
 }
 export function titleCase(s: string): string { return s ? s[0].toUpperCase() + s.slice(1) : s; }
 
@@ -329,10 +345,24 @@ export function budgetFloor(t: Team, it: BoardItem): number {
   return Math.round((it.budget.spentUsd + held) * 100) / 100;
 }
 
-/** The budget choices on a gate card: half the proposal, the proposal, double it (whole dollars, each at least $1). */
+/** The largest phase budget the CLI takes (lib/teams.js usdOf). */
+export const MAX_BUDGET_USD = 10000;
+
+/** The budget choices on a gate card: half the proposal, the proposal, double it (whole dollars, each at least $1, none
+ *  above the CLI's maximum). */
 export function budgetPresets(proposal: number, fallback = 10): number[] {
   const p = proposal > 0 ? proposal : fallback > 0 ? fallback : 10;
-  return [...new Set([Math.max(1, Math.round(p / 2)), Math.round(p * 100) / 100, Math.round(p * 2)])].sort((a, b) => a - b);
+  return [...new Set([Math.max(1, Math.round(p / 2)), Math.round(p * 100) / 100, Math.round(p * 2)])].filter((n) => n <= MAX_BUDGET_USD).sort((a, b) => a - b);
+}
+
+/** The amount a budget control starts on: `want` when the CLI would take it, else the smallest preset at or above the
+ *  floor, else the floor itself; null when even the floor is above the maximum (nothing can be approved). */
+export function budgetPick(want: number, presets: number[], floor: number): number | null {
+  if (want >= floor && want > 0 && want <= MAX_BUDGET_USD) return want;
+  const up = presets.find((p) => p >= floor);
+  if (up !== undefined) return up;
+  const f = Math.max(1, Math.ceil(floor * 100) / 100);
+  return f <= MAX_BUDGET_USD ? f : null;
 }
 
 /** The − / + ladder the steppers walk (plus the card's own presets). */
@@ -340,13 +370,15 @@ export const BUDGET_LADDER = [1, 2, 5, 10, 15, 20, 25, 30, 40, 50, 60, 75, 100, 
 
 /** The next amount below (-1) or above (+1) `current`, never under `floor`; null at the ends. */
 export function stepBudget(current: number, dir: -1 | 1, presets: number[], floor: number): number | null {
-  const next = stepIn([...BUDGET_LADDER, ...presets].filter((n) => n >= floor && n > 0), current, dir);
-  return next;
+  return stepIn([...BUDGET_LADDER, ...presets].filter((n) => n >= floor && n > 0 && n <= MAX_BUDGET_USD), current, dir);
 }
 
-/** The lead's own words on the gate: its last `gate` post on the item that is not the user's decision. */
+/** The team's own case for the gate now pending: the last `gate` post on the item by a member (not the user's decision,
+ *  not dispatch) made after the snapshot before this gate opened, so an earlier gate's proposal never stands in for it. */
 export function gatePitch(t: Team, itemId: string): Post | null {
-  return [...t.channel].reverse().find((p) => p.item === itemId && p.kind === "gate" && p.from !== "user") ?? null;
+  const after = t.pendingAfter[itemId] ?? "";
+  const members = new Set(t.members.map((m) => m.id));
+  return [...t.channel].reverse().find((p) => p.item === itemId && p.kind === "gate" && members.has(p.from) && (!after || p.ts > after)) ?? null;
 }
 
 export interface GateCard { team: Team; item: BoardItem; since: string | null; pitch: Post | null; budget: boolean }

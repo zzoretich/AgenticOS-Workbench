@@ -2,8 +2,8 @@
 // item's detail, and the gate card the "Needs you" strip shares. Approve and budget changes go through `aos team` with
 // the rendered row's ts as --expect (D3); Redirect opens the lead in the terminal to take the user's note (D10).
 import {
-  Team, BoardItem, GateCard, boardColumns, itemTone, isBudgetGate, budgetFloor, budgetPresets, stepBudget, gatePitch, pendingGates,
-  channelView, runTone, usd, titleCase,
+  Team, BoardItem, GateCard, boardColumns, itemTone, isBudgetGate, budgetFloor, budgetPresets, budgetPick, stepBudget, gatePitch,
+  pendingGates, channelView, runTone, usd, titleCase, MAX_BUDGET_USD,
 } from "../../data/teams";
 import { approveArgs, budgetArgs } from "../../data/teamWriter";
 import { TeamsCtx, itemKey, statusChip, errorLine, postRow, mentionText, since, hostButtons, redirectCommand, HOST_LABEL } from "./ui";
@@ -34,16 +34,17 @@ export function renderGateCard(parent: HTMLElement, ctx: TeamsCtx, card: GateCar
   }
 
   let pick: number | null = null;
+  let noBudget: string | null = null;
   if (card.budget) {
     const floor = budgetFloor(t, it);
     const presets = budgetPresets(it.budget.usd, t.budgetDefault);
-    const proposal = it.budget.usd > 0 ? it.budget.usd : presets[1];
-    const chosen = ctx.ui.gateUsd.get(itemKey(t, it)) ?? proposal;
-    pick = chosen >= floor ? chosen : presets.find((p) => p >= floor) ?? Math.ceil(floor);
+    const proposal = it.budget.usd > 0 ? it.budget.usd : presets[Math.floor(presets.length / 2)] ?? t.budgetDefault;
+    pick = budgetPick(ctx.ui.gateUsd.get(itemKey(t, it)) ?? proposal, presets, floor);
     const row = el.createDiv({ cls: "aos-at-budget", attr: { role: "group", "aria-label": "Phase budget" } });
     row.createSpan({ cls: "aos-at-label", text: "Budget" });
     const set = (n: number) => { ctx.ui.gateUsd.set(itemKey(t, it), n); ctx.render(); };
-    for (const p of presets) {
+    if (pick === null) noBudget = `${usd(floor)} is already spent or held, more than the ${usd(MAX_BUDGET_USD)} a phase budget can be. Redirect to talk it over with the lead.`;
+    for (const p of pick === null ? [] : presets) {
       const b = row.createEl("button", {
         cls: `aos-at-preset${p === pick ? " is-active" : ""}`, text: `${usd(p)}${p === it.budget.usd ? " proposed" : ""}`,
         attr: { "aria-pressed": String(p === pick), title: p < floor ? `below the ${usd(floor)} already spent or held` : `approve with a ${usd(p)} phase budget` },
@@ -51,13 +52,13 @@ export function renderGateCard(parent: HTMLElement, ctx: TeamsCtx, card: GateCar
       b.disabled = busy || p < floor;
       b.addEventListener("click", () => set(p));
     }
-    stepper(row, pick, (dir) => stepBudget(pick!, dir, presets, floor), set, busy);
+    if (pick !== null) { const at = pick; stepper(row, at, (dir) => stepBudget(at, dir, presets, floor), set, busy); }
     if (floor > 0) row.createSpan({ cls: "aos-dim aos-at-floor", text: `at least ${usd(floor)}`, attr: { title: "spent so far, plus what live Claude runs hold" } });
   }
 
   const acts = el.createDiv({ cls: "aos-at-gateacts" });
   const approve = acts.createEl("button", { cls: "mod-cta aos-at-approve", text: busy ? "Recording…" : `Approve${pick != null ? ` · ${usd(pick)}` : ""}` });
-  approve.disabled = busy;
+  approve.disabled = busy || noBudget !== null;
   approve.addEventListener("click", () => {
     const lead = t.members.find((m) => m.id === t.lead);
     const budget = pick != null ? ` with a ${usd(pick)} phase budget (${usd(it.budget.spentUsd)} spent so far)` : "";
@@ -70,6 +71,7 @@ export function renderGateCard(parent: HTMLElement, ctx: TeamsCtx, card: GateCar
   hostButtons(acts, ctx, "Redirect", (h) => redirectCommand(ctx, t, it, h),
     (h) => `Opens ${t.members.find((m) => m.id === t.lead)?.name ?? "the lead"} in ${HOST_LABEL[h]}: say what should change, and the lead records the redirect`,
     "Redirect: enable a host to talk to the lead");
+  errorLine(el, noBudget);
   errorLine(el, ctx.error(key));
 }
 
@@ -195,9 +197,9 @@ function budgetEditor(parent: HTMLElement, ctx: TeamsCtx, t: Team, it: BoardItem
   const row = parent.createDiv({ cls: "aos-at-budget", attr: { role: "group", "aria-label": "Phase budget" } });
   row.createSpan({ cls: "aos-at-label", text: "Budget" });
   const set = (n: number) => { ctx.ui.budgetUsd.set(itemKey(t, it), n); ctx.render(); };
-  stepper(row, chosen, (dir) => stepBudget(chosen, dir, cur > 0 ? [cur] : [], floor), set, busy);
+  stepper(row, chosen, (dir) => stepBudget(chosen, dir, cur > 0 && cur <= MAX_BUDGET_USD ? [cur] : [], floor), set, busy);
   const apply = row.createEl("button", { cls: "aos-ws-action aos-at-btn", text: busy ? "Saving…" : chosen === cur ? "Set budget" : `Set to ${usd(chosen)}` });
-  apply.disabled = busy || chosen === cur || chosen < floor;
+  apply.disabled = busy || chosen === cur || chosen < floor || chosen > MAX_BUDGET_USD;
   apply.addEventListener("click", () => void ctx.act(key, budgetArgs(t.id, it, chosen)).then((ok) => { if (ok) ctx.ui.budgetUsd.delete(itemKey(t, it)); }));
   if (it.status === "paused") row.createSpan({ cls: "aos-at-hint", text: "paused at its budget: raising it lets work resume" });
   else if (floor > 0) row.createSpan({ cls: "aos-dim aos-at-floor", text: `at least ${usd(floor)}` });
