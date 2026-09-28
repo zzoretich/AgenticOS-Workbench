@@ -30,6 +30,12 @@
  *     adds the structured reply (claude --json-schema <schema JSON>, codex --output-schema <schemaFile>). mode 'build'
  *     writes: claude acceptEdits with the user's own permissions, codex workspace-write. An effort the host's CLI does
  *     not take is left off here; the runner refuses it before it gets this far.
+ *   seatArgs(host, { agent, prompt, body, model, effort, budget, addDir, cwd, gitDir, outFile })  →  { argv, stdin }
+ *     one agent-team seat in its own git worktree (spec 2026-09-28-agent-teams D5). claude: `-p --agent <agent>` in auto
+ *     permission mode with no prompts (the classifier approves routine work and denies the rest, never bypassed), capped at
+ *     the item's budget left, with the team folder added so the seat can post. codex: `exec -` in the workspace-write sandbox
+ *     rooted at the worktree, the repository's git dir added so it can commit, network on for package installs, our hooks
+ *     off, and the agent's instructions (`body`) inlined ahead of the prompt, since codex exec has no agent flag.
  *   codexMcpServers(home)  →  the names of the [mcp_servers.<name>] tables in <home>/config.toml ([] when unreadable).
  *   CLI: node lib/headless.js --resolve [--kind persona|routines]  prints `host<TAB>bin<TAB>model<TAB>codex home`,
  *        exit 3 (reason on stderr) when no runner resolves. run-duty.sh reads it.
@@ -198,6 +204,37 @@ function crossArgs(host, { mode, schema, schemaFile, outFile, model, effort, bud
   return { argv };
 }
 
+/** What a codex seat reads after its instructions: it cannot always post itself, so its last line is its post. */
+const SEAT_CODEX_TAIL = [
+  'You are running under Codex, in a workspace-write sandbox rooted at this worktree, with network access for installing packages.',
+  'Your last message must be your one-line channel post, starting with its kind, for example',
+  '`handoff: waves 1-2 done (a1b2c3d..e4f5a6b); wave 3 is next`. The dispatcher posts it when you cannot.',
+].join('\n');
+
+/** { argv, stdin } for one agent-team seat on `host` (module comment). */
+function seatArgs(host, { agent, prompt = '', body = '', model, effort, budget, addDir, cwd, gitDir, outFile } = {}) {
+  const set = (v) => v !== undefined && v !== null && v !== '' && v !== 'inherit';
+  if (host === 'codex') {
+    const argv = ['exec', '-', '--skip-git-repo-check', '-s', 'workspace-write'];
+    if (cwd) argv.push('-C', String(cwd));
+    if (gitDir) argv.push('--add-dir', String(gitDir));
+    argv.push('-c', 'sandbox_workspace_write.network_access=true', '-c', 'features.hooks=false', '-c', 'approval_policy="never"', '--json');
+    if (outFile) argv.push('-o', String(outFile));
+    if (set(model)) argv.push('-m', String(model));
+    if (CODEX_EFFORTS.includes(effort)) argv.push('-c', `model_reasoning_effort="${effort}"`);
+    const parts = [body, SEAT_CODEX_TAIL, prompt].map((s) => String(s || '').trim()).filter(Boolean);
+    return { argv, stdin: parts.join('\n\n---\n\n') };
+  }
+  if (!agent) throw new Error('seatArgs: a claude seat needs its agent');
+  const argv = ['-p', String(prompt), '--agent', String(agent), '--output-format', 'json',
+    '--permission-mode', 'auto', '--permission-prompts', 'none'];
+  if (set(budget)) argv.push('--max-budget-usd', Number(budget).toFixed(2));
+  if (addDir) argv.push('--add-dir', String(addDir));
+  if (set(model)) argv.push('--model', String(model));
+  if (CROSS_CLAUDE_EFFORTS.includes(effort)) argv.push('--effort', effort);
+  return { argv, stdin: '' };
+}
+
 /** The child's env: headless, never CLAUDECODE, and the recorded Codex home unless the environment names one already. */
 function headlessEnv(base = process.env, { codexHome = null } = {}) {
   const env = { ...base, AOS_HEADLESS: '1' };
@@ -218,4 +255,4 @@ function main(argv) {
 
 if (require.main === module) process.exit(main(process.argv.slice(2)));
 
-module.exports = { resolveRunner, graphRunner, resolveBin, runnerArgs, crossArgs, codexMcpServers, headlessEnv, hostEnabled, codexHomeOf, HOSTS, CODEX_EFFORTS, CLAUDE_EFFORTS, CROSS_CLAUDE_EFFORTS, CROSS_MODES, CODEX_OFF };
+module.exports = { resolveRunner, graphRunner, resolveBin, runnerArgs, crossArgs, seatArgs, codexMcpServers, headlessEnv, hostEnabled, codexHomeOf, HOSTS, CODEX_EFFORTS, CLAUDE_EFFORTS, CROSS_CLAUDE_EFFORTS, CROSS_MODES, CODEX_OFF, SEAT_CODEX_TAIL };
