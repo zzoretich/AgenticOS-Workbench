@@ -1278,11 +1278,6 @@ async function upgrade(flags) {
     } catch (e) { out.warn(`graph: ${e.message}`); }
   });
   if (flags.obsidian !== false) await obsidianBundle(ctx);
-  await act('rebuild indexes (scan-vault, build-brain-md, recall --warm)', () => {
-    runScript(vault, 'scan-vault', ['--quiet'], { allowFail: true });
-    runScript(vault, 'build-brain-md', [], { allowFail: true });
-    runScript(vault, 'recall', ['--warm'], { allowFail: true });
-  });
   await act('share user skills and agents between the hosts (skills-sync)', () => {
     runScript(vault, 'skills-sync', [], { allowFail: true });
   });
@@ -1300,6 +1295,12 @@ async function upgrade(flags) {
       pluginVersion: plugin ? u.pluginVersionFrom(plugin.installPath) : null,
       configDir: configDir(),
     });
+  });
+  // After the update check: scan-vault copies its verdict into the snapshot the Workbench's update badge reads.
+  await act('rebuild indexes (scan-vault, build-brain-md, recall --warm)', () => {
+    runScript(vault, 'scan-vault', ['--quiet'], { allowFail: true });
+    runScript(vault, 'build-brain-md', [], { allowFail: true });
+    runScript(vault, 'recall', ['--warm'], { allowFail: true });
   });
   // A Workbench left as it was is said plainly, not folded into "upgraded" (the warning above says why).
   if (ctx.bundle === 'kept') out.warn(`the Obsidian Workbench was not updated to v${version}; it still runs the bundle it had. Fix the warning above, then run aos upgrade again.`);

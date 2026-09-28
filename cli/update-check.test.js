@@ -555,3 +555,61 @@ test('aos.js dispatches the three update commands and rejects a bad flag', () =>
   const help = aos(['help']);
   assert.match(help.stdout, /aos update-status/);
 });
+
+// The Workbench (the Obsidian plugin's manifest in the vault) counts toward "installed": notices, statusline, badge.
+function hudManifest(vault, version) {
+  const d = path.join(vault, '.obsidian', 'plugins', 'agentic-os');
+  fs.mkdirSync(d, { recursive: true });
+  fs.writeFileSync(path.join(d, 'manifest.json'), JSON.stringify({ id: 'agentic-os', version }));
+}
+
+test('runCheck counts a Workbench left on an older version as behind, and the notice names it', async () => {
+  const w = vaultWorld();
+  hudManifest(w.vault, '0.1.0');
+  const s = await check(w, { vaultVersion: '0.2.0', pluginVersion: '0.2.0', get: fakeGet({ body: release('v0.2.0') }) });
+  assert.deepEqual([s.hudVersion, s.installed, s.behind], ['0.1.0', '0.1.0', true]);
+  assert.equal(w.line(), '⬆ AgenticOS 0.2.0\n');
+  assert.equal(U.renderNotice(s, NOW3()), 'AgenticOS Workbench 0.2.0 available (plugin 0.2.0, vault 0.2.0, Workbench 0.1.0) — run `aos upgrade`');
+  hudManifest(w.vault, '0.2.0');
+  const t = await check(w, { vaultVersion: '0.2.0', pluginVersion: '0.2.0', get: fakeGet({ body: release('v0.2.0') }) });
+  assert.deepEqual([t.hudVersion, t.installed, t.behind], ['0.2.0', '0.2.0', false], 'replaced: nothing pending');
+});
+
+test('a vault without the Workbench (aos init --no-obsidian) is judged by the plugin and vault alone', async () => {
+  const w = vaultWorld();
+  const s = await check(w, { vaultVersion: '0.2.0', pluginVersion: '0.2.0', get: fakeGet({ body: release('v0.2.0') }) });
+  assert.deepEqual([s.hudVersion, s.installed, s.behind], [null, '0.2.0', false]);
+  assert.equal(U.hudVersionFrom(null), null);
+  assert.equal(U.lowestVersion('0.3.0', null, '0.2.1', '0.2.0'), '0.2.0');
+});
+
+test('update-notice re-reads the Workbench manifest at session start', async () => {
+  const w = cmdWorld();
+  U.writeState(w.vault, {
+    schema: U.SCHEMA, checkedAt: NOW().toISOString(), latest: '0.2.0', url: null, pluginVersion: '0.2.0', vaultVersion: '0.2.0',
+    installed: '0.2.0', behind: false, snooze: null, lastError: null, consecutiveFailures: 0,
+  });
+  hudManifest(w.vault, '0.1.0');
+  assert.equal(await U.cmdUpdateNotice({ vault: w.vault, configDir: w.configDir, io: w.io, now: NOW, spawnFn: () => {} }), 0);
+  const s = U.readState(w.vault);
+  assert.deepEqual([s.hudVersion, s.installed, s.behind], ['0.1.0', '0.1.0', true]);
+  assert.match(w.outs[0], /\(plugin 0\.2\.0, vault 0\.2\.0, Workbench 0\.1\.0\)/);
+});
+
+test('a Workbench bundle with a missing or invalid manifest is incomplete and counts as behind', async () => {
+  const dir = (w) => path.join(w.vault, '.obsidian', 'plugins', 'agentic-os');
+  for (const setup of [
+    (w) => { fs.mkdirSync(dir(w), { recursive: true }); fs.writeFileSync(path.join(dir(w), 'main.js'), 'x'); },
+    (w) => { fs.mkdirSync(dir(w), { recursive: true }); fs.writeFileSync(path.join(dir(w), 'manifest.json'), '{ torn'); },
+    (w) => hudManifest(w.vault, 'not-a-version'),
+  ]) {
+    const w = vaultWorld();
+    setup(w);
+    const s = await check(w, { vaultVersion: '0.2.0', pluginVersion: '0.2.0', get: fakeGet({ body: release('v0.2.0') }) });
+    assert.deepEqual([s.hudVersion, s.installed, s.behind], [U.HUD_INCOMPLETE, U.HUD_INCOMPLETE, true]);
+    assert.match(U.renderNotice(s, NOW3()), /\(plugin 0\.2\.0, vault 0\.2\.0, Workbench incomplete\)/);
+  }
+  const empty = vaultWorld();
+  fs.mkdirSync(path.join(empty.vault, '.obsidian', 'plugins', 'agentic-os'), { recursive: true });
+  assert.equal(U.hudVersionFrom(empty.vault), null, 'an empty plugin folder is no bundle');
+});
