@@ -44,7 +44,10 @@ test("Talk has no fallback: a member whose agent a host lacks gets no button the
 test("ages and post times", () => {
   const now = new Date("2026-09-28T12:00:00.000Z");
   assert.deepEqual([since("2026-09-28T11:48:00.000Z", now), since("2026-09-28T09:00:00.000Z", now), since("2026-09-20T12:00:00.000Z", now), since(null, now)], ["12m", "3h", "8d", "?"]);
-  assert.match(postTime("2026-09-20T12:00:00.000Z", now), /^09-20 \d\d:\d\d$/);
+  // Local time, as the tab shows it: in UTC+14 that post is already on the 21st.
+  const then = new Date("2026-09-20T12:00:00.000Z");
+  const day = `${String(then.getMonth() + 1).padStart(2, "0")}-${String(then.getDate()).padStart(2, "0")}`;
+  assert.match(postTime(then.toISOString(), now), new RegExp(`^${day} \\d\\d:\\d\\d$`));
   assert.match(postTime(now.toISOString(), now), /^\d\d:\d\d$/);
 });
 
