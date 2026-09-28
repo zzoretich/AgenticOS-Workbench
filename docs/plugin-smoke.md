@@ -17,7 +17,7 @@ Run before tagging a release, on a vault created by `aos init` (not the develope
 
 ## Settings
 
-- [ ] ⚙ Settings sits at the rail's foot (bottom-left) and stays visible in a pane too short for all eleven tabs, which scroll above it; Enter or Space on a focused rail button opens it. "Open Workbench: Settings" in the command palette and "Open Workbench settings" in Obsidian's settings pane open the same tab.
+- [ ] ⚙ Settings sits at the rail's foot (bottom-left) and stays visible in a pane too short for all thirteen tabs, which scroll above it; Enter or Space on a focused rail button opens it. "Open Workbench: Settings" in the command palette and "Open Workbench settings" in Obsidian's settings pane open the same tab.
 - [ ] The head reads "N changed from the defaults" and matches the `*` rows of `aos config list`. Every row shows its key, a pill (`this machine` / `this vault` / `default`, the file path on hover) and when it applies; daily caps show "today $x of $cap".
 - [ ] Master switches: turning Telemetry off writes `telemetry.enabled` to `agenticos.json` (check with `aos config get telemetry.enabled`), shows the change as a Notice, and the chip follows; turning Background AI on from `none` asks first ("Turn on paid background calls?"), and Cancel leaves it off.
 - [ ] No text box anywhere in ⚙ Settings or Obsidian's pane (spec 2026-09-24-settings-pickers): toggles, pickers, chips and buttons only. Every number row has − / + around its picker; + on a daily cap raises it to the next preset and asks first, − never asks; − is disabled at the lowest preset and + at the highest.
@@ -91,6 +91,20 @@ Run before tagging a release, on a vault created by `aos init` (not the develope
 - [ ] `aos team put example --from lead '{"id":"demo-01","status":"gate","gate":{"name":"discuss","state":"pending"}}'` then `AOS_HEADLESS=1 aos team gate approve example demo-01 --expect '{}'` is refused (exit 1); without `AOS_HEADLESS` it moves the item to plan with the lead as owner and posts the decision.
 - [ ] A seat dispatched with `--detach` survives closing the terminal; its `wait` line exits with the run's row, and `kill -9` of the dispatcher is recorded as `killed` by the next `aos team board`.
 - [ ] In a Claude Code session, `/team` lists the teams with pending gates first. In a Codex session, `$agenticos:team` does the same (`$team` with direct wiring).
+
+## Agent Teams tab (both hosts)
+
+- [ ] The Agent Teams rail button (⁂) sits right after Agents, and "Open Workbench: Agent Teams" in the command palette opens it. With no `persona/teams/` it says "No teams yet" with the `/team` hint for the enabled hosts; **Seed the example team** runs `aos team init` and the Example team appears.
+- [ ] Put `demo-01` at the Discuss gate (the `aos team put` line above). Within a second, **with another tab active**, an amber `1` appears on the rail. The tab leads with NEEDS YOU · 1: the card shows the item, "Discuss gate", how long it has waited, the spend, the lead's last `gate` post, the budget presets (half, the proposal, double) and − / +. A preset below the spend is disabled.
+- [ ] **Approve · $X** asks first, and Cancel writes nothing. Approve moves `demo-01` to plan, Interact shows "Discuss gate approved by the user at $X", and the badge clears. With a gate pending again, click Approve, and while the dialog is open run `aos team put example --from lead '{"id":"demo-01","title":"changed"}'` in a terminal: confirming is refused with "demo-01 changed after this view was drawn, so nothing was written", and the card redraws.
+- [ ] **Redirect ❯_** opens Term running the lead's agent (`claude --agent team-lead '…'`); the prompt names the gate and the exact `aos team gate redirect example demo-01 --expect '…' --note '…'` line. With both hosts enabled there is one button per host.
+- [ ] Board: one column per stage, ◆ on a stage with a gate, status chips (working cyan, gate amber, blocked rose, done green, done items folded into "N done"). A detached dispatch shows "<member> · <provider> · Nm" on its card. Clicking a card opens its detail: facts, posts, runs, and a budget stepper whose "Set to $X" is refused below spend plus live holds, with the CLI's reason under it.
+- [ ] Roster: every member with a provider pill, model and effort, status (idle, working, blocked, paused), current item and last run; `❯_ claude` / `❯_ codex` start the member's agent. A team whose `TEAM.md` names a `parent:` is indented under it in the team chips and listed under IN THE TREE.
+- [ ] Interact: the channel with @mentions highlighted and item filter chips. "keep it under $40, it's fine" posts as `you`, addressed `@lead`, exactly as typed (`aos team tail example`). Enter sends, Shift+Enter adds a line, and an unsent message keeps its text and focus when a new post lands.
+- [ ] Manage has no text box. The provider, model and effort pickers offer only the presets (the lead's provider has no `opposite`), and a change rewrites one line of `TEAM.md`. The Team running switch writes or removes `DISABLED` (the chip dims, and the paused banner offers Resume); a member's switch sets `paused`. Add a member lists your agents not on the team; Remove asks first and is refused for a member who owns an open item.
+- [ ] A `TEAM.md` with an unsupported line gives its chip a rose `!` and an error card naming the line, with Open TEAM.md; the other teams work, and `aos team list` shows it as unreadable.
+- [ ] *Codex only* (`hosts.claude.enabled: false`): every Talk and Redirect button runs `codex '…'` (the agent's Codex starter, or "Use the <agent> agent for this. …"), no Claude button shows, and Approve works the same. *Claude Code only*: only `claude --agent …` buttons.
+- [ ] `kill -9` a detached dispatcher, then open the tab: within a minute the member leaves "working" (the tab's `aos team list` sweep records the killed run), and its blocker shows in Interact.
 
 ## Spaces / Memory / Runs
 
