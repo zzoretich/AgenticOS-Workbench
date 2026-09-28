@@ -573,14 +573,15 @@ async function bundleRun({ stale, nodeModules, buildFails = false }) {
   out.warn = (m) => warns.push(m);
   process.env.AOS_NPM_BIN = npm;
   process.env.TMPDIR = path.join(vault, 'no-such-tmp'); // the release fallback stays offline: it cannot stage
+  const ctx = { repo, vault, written: [], act: async (_what, fn) => fn() };
   try {
-    await obsidianBundle({ repo, vault, written: [], act: async (_what, fn) => fn() });
+    await obsidianBundle(ctx);
   } finally {
     out.warn = prev.warn;
     for (const [k, v] of [['AOS_NPM_BIN', prev.npm], ['TMPDIR', prev.tmp]]) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
   }
   const installed = path.join(vault, '.obsidian', 'plugins', 'agentic-os', 'main.js');
-  return { warns, installed: fs.existsSync(installed) ? fs.readFileSync(installed, 'utf8') : null };
+  return { warns, bundle: ctx.bundle, installed: fs.existsSync(installed) ? fs.readFileSync(installed, 'utf8') : null };
 }
 
 test('obsidianBundle rebuilds a checkout that can build, so a stale main.js is never installed', async () => {
@@ -592,10 +593,15 @@ test('obsidianBundle refuses a main.js older than its sources when it cannot reb
   const noDeps = await bundleRun({ stale: true, nodeModules: false });
   assert.equal(noDeps.installed, null);
   assert.ok(noDeps.warns.some((m) => /older than the plugin's sources, so it is not installed; run npm ci/.test(m)), noDeps.warns.join('\n'));
-  const failed = await bundleRun({ stale: true, nodeModules: true, buildFails: true });
-  assert.equal(failed.installed, null);
-  assert.ok(failed.warns.some((m) => /and the build failed/.test(m)), failed.warns.join('\n'));
-  assert.equal((await bundleRun({ stale: false, nodeModules: false })).installed, 'old build', 'a current main.js with no way to build installs as before');
+  for (const stale of [true, false]) {
+    const failed = await bundleRun({ stale, nodeModules: true, buildFails: true });
+    assert.equal(failed.installed, null, `a failed build installs nothing (main.js ${stale ? 'older' : 'newer'} than the sources)`);
+    assert.ok(failed.warns.some((m) => /the Obsidian build failed, so obsidian-plugin\/main\.js .* is not installed/.test(m)), failed.warns.join('\n'));
+    assert.equal(failed.bundle, 'kept');
+  }
+  const current = await bundleRun({ stale: false, nodeModules: false });
+  assert.equal(current.installed, 'old build', 'a current main.js with no way to build installs as before');
+  assert.equal(current.bundle, 'installed');
 });
 
 function initialized() {

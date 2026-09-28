@@ -868,9 +868,12 @@ async function obsidianBundle(ctx) {
     const built = isDir(path.join(ctx.repo, 'node_modules'))
       ? run(npmBin(), ['run', 'build', '-w', 'obsidian-plugin'], { cwd: ctx.repo, allowFail: true }).status === 0
       : null;
-    if (exists(main) && fs.statSync(main).mtimeMs < bundleSourcesMs(src)) {
-      out.warn(`obsidian-plugin/main.js is older than the plugin's sources${built === false ? ' and the build failed' : ''}, so it is not installed; `
-        + `${built === null ? 'run npm ci in the checkout' : 'fix npm run build -w obsidian-plugin'}, then aos upgrade. Trying the release bundle instead.`);
+    ctx.bundle = 'kept';   // until a bundle is installed: upgrade() reports a Workbench it did not replace
+    if (exists(main) && built === false) {
+      // A failed build leaves whatever main.js was there before, whatever its time: never install it.
+      out.warn('the Obsidian build failed, so obsidian-plugin/main.js (from an earlier build) is not installed; fix npm run build -w obsidian-plugin, then aos upgrade. Trying the release bundle instead.');
+    } else if (exists(main) && fs.statSync(main).mtimeMs < bundleSourcesMs(src)) {
+      out.warn("obsidian-plugin/main.js is older than the plugin's sources, so it is not installed; run npm ci in the checkout, then aos upgrade. Trying the release bundle instead.");
     } else if (exists(main)) {
       // dest is created only once a source is known, so a run that installs nothing leaves no empty plugin folder.
       fs.mkdirSync(dest, { recursive: true });
@@ -879,6 +882,7 @@ async function obsidianBundle(ctx) {
         fs.copyFileSync(path.join(src, f), path.join(dest, f));
         ctx.written.push(`.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/${f}`);
       }
+      ctx.bundle = 'installed';
       return;
     }
     const version = (readJson(path.join(src, 'manifest.json')) || {}).version;
@@ -908,6 +912,7 @@ async function obsidianBundle(ctx) {
         ctx.written.push(`.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/${f}`);
       }
       if (exists(path.join(src, 'package.json'))) fs.copyFileSync(path.join(src, 'package.json'), path.join(dest, 'package.json'));
+      ctx.bundle = 'installed';
     } finally {
       fs.rmSync(staging, { recursive: true, force: true });
     }
@@ -1296,7 +1301,9 @@ async function upgrade(flags) {
       configDir: configDir(),
     });
   });
-  out.log(`upgraded to v${version}. Memory, notes and persona were not touched.`);
+  // A Workbench left as it was is said plainly, not folded into "upgraded" (the warning above says why).
+  if (ctx.bundle === 'kept') out.warn(`the Obsidian Workbench was not updated to v${version}; it still runs the bundle it had. Fix the warning above, then run aos upgrade again.`);
+  out.log(`upgraded to v${version}${ctx.bundle === 'kept' ? ', except the Obsidian Workbench' : ''}. Memory, notes and persona were not touched.`);
   return 0;
 }
 
