@@ -2126,6 +2126,7 @@ a.aos-at-itemid:hover { text-decoration: underline; text-underline-offset: 2px; 
 .aos-at-pick { display: flex; flex-direction: column; gap: 2px; }
 .aos-at-pick select { font-family: var(--aos-mono); font-size: 11px; height: auto; padding: 2px 22px 2px 6px; }
 .aos-at-danger:hover:not(:disabled) { color: var(--aos-rose); border-color: var(--aos-rose); }
+.aos-at-note { flex-basis: 100%; color: var(--aos-amber); font-size: 10.5px; }
 .aos-at-add { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0 4px; }
 .aos-at-add select { font-family: var(--aos-mono); font-size: 11px; height: auto; padding: 2px 22px 2px 6px; max-width: 320px; }
 .aos-at-add .aos-at-hint { margin: 0; }

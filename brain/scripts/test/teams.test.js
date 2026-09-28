@@ -338,6 +338,8 @@ test('list: an unreadable TEAM.md is a row with its error, and --json carries th
   assert.deepEqual([j.presets.provider, j.presets.effort], [T.PROVIDERS, T.EFFORTS]);
   assert.deepEqual(j.presets.model, T.presetsFor('model'));
   assert.ok(j.presets.model.includes('inherit') && j.presets.model.includes('claude-sonnet-5'));
+  const S = require('../lib/settings-schema.js');
+  assert.deepEqual(j.presets.models, { claude: S.CLAUDE_MODELS, codex: S.CODEX_MODELS });
   assert.match((await cli(w, ['list'])).out, /broken\s+unreadable: unsupported TEAM\.md line: - one/);
 });
 

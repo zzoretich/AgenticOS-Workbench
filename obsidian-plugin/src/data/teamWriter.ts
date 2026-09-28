@@ -58,15 +58,38 @@ export function postArgs(team: string, lead: string, text: string): string[] | n
 
 // ── what the CLI says back ──
 
-export interface Presets { provider: string[]; model: string[]; effort: string[] }
-export interface ListJson { schema: 1; teams: { team: string; error?: string }[]; presets?: Partial<Presets> }
+export interface Presets {
+  provider: string[]; model: string[]; effort: string[];
+  /** Which models each provider runs; null from a runtime that does not say, when every model is offered. */
+  models: { claude: string[]; codex: string[] } | null;
+}
+export interface ListJson { schema: 1; teams: { team: string; error?: string }[]; presets?: Record<string, unknown> }
 
 /** The presets from `list --json`; null when this vault's runtime predates them (the pickers then show values only). */
 export function presetsOf(j: ListJson | null): Presets | null {
   const p = j && j.presets;
   const arr = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : null);
   const provider = arr(p?.provider), model = arr(p?.model), effort = arr(p?.effort);
-  return provider && model && effort ? { provider, model, effort } : null;
+  const m = p && typeof p.models === "object" && p.models ? p.models as Record<string, unknown> : null;
+  const claude = arr(m?.claude), codex = arr(m?.codex);
+  return provider && model && effort ? { provider, model, effort, models: claude && codex ? { claude, codex } : null } : null;
+}
+
+/**
+ * The models a seat's picker offers: `inherit` and its provider's own models (a seat on one provider ignores the other's,
+ * team-run.js modelFor); an `opposite` seat runs on either, so it gets both. Every preset when the runtime does not say.
+ */
+export function modelChoices(p: Presets, provider: string | null): string[] {
+  if (!p.models) return p.model;
+  const own = provider === "claude" ? p.models.claude : provider === "codex" ? p.models.codex : [...p.models.claude, ...p.models.codex];
+  return p.model.filter((v) => v === "inherit" || own.includes(v));
+}
+
+/** What a seat's model setting does on its provider: null when it is used, else what runs instead. */
+export function ignoredModel(p: Presets, provider: string | null, model: string | null): string | null {
+  if (!p.models || !model || model === "inherit" || provider === "opposite") return null;
+  const own = provider === "codex" ? p.models.codex : p.models.claude;
+  return own.includes(model) ? null : `not a ${provider === "codex" ? "Codex" : "Claude"} model: the ${provider === "codex" ? "Codex" : "Claude Code"} default runs`;
 }
 
 export interface TeamFailure { text: string; stale: boolean; upgrade: boolean }

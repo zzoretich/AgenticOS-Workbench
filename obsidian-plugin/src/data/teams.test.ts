@@ -94,6 +94,27 @@ test("a TEAM.md the subset refuses is a team with its error, as the runtime refu
   assert.throws(() => parseFrontmatter("no frontmatter"), /no frontmatter/);
 });
 
+test("a file that exists but cannot be read is an error or a warning, never an empty file", async () => {
+  const failing = (bad: RegExp): TeamsAdapter => {
+    const a = fsAdapter(VAULT);
+    return { ...a, async read(p) { if (bad.test(p)) throw new Error("EACCES: permission denied"); return a.read(p); } };
+  };
+  const board = (await readTeams(failing(/lab\/board\.jsonl$/))).find((t) => t.id === "lab")!;
+  assert.match(board.error ?? "", /^board\.jsonl could not be read: EACCES/);
+  assert.equal(gateBadge([board]), 0, "its gates are unknown, and the tab says why");
+  const md = (await readTeams(failing(/ops\/TEAM\.md$/))).find((t) => t.id === "ops")!;
+  assert.match(md.error ?? "", /^TEAM\.md could not be read: EACCES/);
+  assert.equal(md.disabled, true);
+  const ch = (await readTeams(failing(/lab\/(channel\.jsonl|running\/lab-site-02-builder-c\.json)$/))).find((t) => t.id === "lab")!;
+  assert.equal(ch.error, null);
+  assert.deepEqual(ch.warnings, ["lab-site-02-builder-c.json could not be read: EACCES: permission denied", "channel.jsonl could not be read: EACCES: permission denied"]);
+  assert.equal(ch.board.length, 4, "the board still reads");
+  const unlisted = { ...fsAdapter(VAULT), async list(): Promise<{ files: string[]; folders: string[] }> { throw new Error("EIO"); } };
+  await assert.rejects(readTeams(unlisted), /EIO/);
+  const none = { ...fsAdapter(VAULT), async exists() { return false; } };
+  assert.deepEqual(await readTeams(none), []);
+});
+
 test("JSONL: a complete last row without a newline is read; an unparsable one is torn, not skipped", () => {
   assert.deepEqual(parseJsonl('{"a":1}\n{"b":2}'), { rows: [{ a: 1 }, { b: 2 }], skipped: 0, torn: false });
   assert.deepEqual(parseJsonl('{"a":1}\nnope\n[1]\n{"b"'), { rows: [{ a: 1 }], skipped: 2, torn: true });
@@ -152,7 +173,7 @@ test("budgets stay inside what the CLI takes: nothing above $10,000, and no amou
 });
 
 test("the pitch is the team's case for the gate now pending, never an earlier gate's", () => {
-  const md = "---\nid: t\nlead: lead\ngates: [discuss, ship]\nmembers:\n  - id: lead\n---\n";
+  const md = "---\nid: t\nlead: lead\ngates: [discuss, ship]\nmembers:\n  - id: lead\n  - id: builder\n---\n";
   const row = (ts: string, gate: object | null, status = "gate") => JSON.stringify({ id: "x-01", ts, stage: gate ? "verify" : "plan", status, gate });
   const post = (ts: string, from: string, text: string) => JSON.stringify({ ts, from, item: "x-01", kind: "gate", text });
   const board = [
@@ -163,8 +184,9 @@ test("the pitch is the team's case for the gate now pending, never an earlier ga
   const early = [post("2026-09-20T10:01:00.000Z", "lead", "Discuss gate: I propose $20."), post("2026-09-20T11:00:00.000Z", "user", "Discuss gate approved by the user")];
   const team = (posts: string[]) => teamFrom({ id: "t", teamMd: md, board, channel: posts.join("\n") + "\n", runs: null, markers: [], state: null, disabled: false });
   assert.equal(gatePitch(team(early), "x-01"), null, "only the old Discuss proposal: no pitch for the Ship gate");
-  const t = team([...early, post("2026-09-21T08:59:00.000Z", "lead", "Ship gate: verified, ready."), post("2026-09-21T09:05:00.000Z", "dispatch", "not a member")]);
-  assert.equal(gatePitch(t, "x-01")?.text, "Ship gate: verified, ready.", "a post just before the gate row still counts");
+  const t = team([...early, post("2026-09-21T08:59:00.000Z", "lead", "Ship gate: verified, ready."), post("2026-09-21T09:05:00.000Z", "dispatch", "not a member"),
+    post("2026-09-21T09:10:00.000Z", "builder", "a seat's gate note")]);
+  assert.equal(gatePitch(t, "x-01")?.text, "Ship gate: verified, ready.", "the lead's post, even with a seat's later one, and one just before the gate row counts");
   assert.equal(t.pendingSince["x-01"], "2026-09-21T09:00:00.000Z");
 });
 

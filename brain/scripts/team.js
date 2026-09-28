@@ -138,8 +138,10 @@ async function main(argv, {
           try { t = team(id); } catch (e) { return { schema: 1, team: id, error: e.message }; }
           return { ...statusOf(t), open: [...T.boardItems(t).values()].filter((i) => i.status !== 'done').length };
         });
-        // The presets `set` accepts, so a picker offers exactly those (D4: no free text).
-        const presets = Object.fromEntries(T.SET_KEYS.map((k) => [k, T.presetsFor(k)]));
+        // The presets `set` accepts, so a picker offers exactly those (D4: no free text), and which models each provider
+        // runs: a seat on one provider ignores the other's model (team-run.js modelFor).
+        const S = require('./lib/settings-schema.js');
+        const presets = { ...Object.fromEntries(T.SET_KEYS.map((k) => [k, T.presetsFor(k)])), models: { claude: S.CLAUDE_MODELS, codex: S.CODEX_MODELS } };
         if (flags.json) { json({ schema: 1, teams: rows, presets }); return 0; }
         if (!rows.length) { say('No teams yet. `aos team init` seeds an example team in persona/teams/example/.'); return 0; }
         say(table([['team', 'lead', 'members', 'open', 'gates', ''], ...rows.map((r) => (r.error

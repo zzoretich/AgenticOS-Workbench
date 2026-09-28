@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { parseAgents } from "../../data/agents";
 import { teamFrom } from "../../data/teams";
 import { TeamsCtx, redirectCommand, talkCommand, since, postTime } from "./ui";
+import { addable } from "./ManagePane";
 
 // Host parity for the tab's terminal buttons (spec 2026-09-28-agent-teams-design §5): each enabled host gets its own
 // command, and a Redirect still reaches a session that can record it when the lead's agent is missing on that host.
@@ -44,4 +45,13 @@ test("ages and post times", () => {
   assert.deepEqual([since("2026-09-28T11:48:00.000Z", now), since("2026-09-28T09:00:00.000Z", now), since("2026-09-20T12:00:00.000Z", now), since(null, now)], ["12m", "3h", "8d", "?"]);
   assert.match(postTime("2026-09-20T12:00:00.000Z", now), /^09-20 \d\d:\d\d$/);
   assert.match(postTime(now.toISOString(), now), /^\d\d:\d\d$/);
+});
+
+test("Add a member offers only agents member add can find: its file carries the agent's name", () => {
+  const [a, b, c] = parseAgents(JSON.stringify({ schema: 1, agents: [
+    { id: "team-scout", name: "team-scout", origin: { host: "claude", scope: "user", path: "/x/agents/team-scout.md" }, on: { claude: { invoke: "@agent-team-scout", path: "/x/agents/team-scout.md", run: "claude --agent team-scout" } } },
+    { id: "reviewer", name: "reviewer", origin: { host: "claude", scope: "user", path: "/x/agents/my-reviewer.md" }, on: { claude: { invoke: "@agent-reviewer", path: "/x/agents/my-reviewer.md", run: "claude --agent reviewer" } } },
+    { id: "ops-bot", name: "ops-bot", origin: { host: "codex", scope: "user", path: "/y/agents/ops-bot.toml" }, on: { codex: { invoke: "ops-bot", path: "/y/agents/ops-bot.toml", run: "codex 'Use the ops-bot agent.'" } } },
+  ] })).agents;
+  assert.deepEqual([addable(a), addable(b), addable(c)], [true, false, true]);
 });

@@ -5,7 +5,7 @@ import * as os from "os";
 import * as path from "path";
 import {
   TEAM_CLI, LIST_ARGS, teamRunner, approveArgs, budgetArgs, pauseArgs, setArgs, addMemberArgs, removeMemberArgs, postArgs,
-  presetsOf, teamFailure, ListJson,
+  presetsOf, teamFailure, modelChoices, ignoredModel, ListJson, Presets,
 } from "./teamWriter";
 import { Team, TeamsAdapter, readTeams, budgetFloor } from "./teams";
 import type { AosResult } from "./aosRun";
@@ -83,7 +83,22 @@ test("list --json through the runner: an unreadable team is a row, and the prese
   const p = presetsOf(r.json);
   assert.deepEqual([p?.provider, p?.effort], [["claude", "codex", "opposite"], ["inherit", "low", "medium", "high"]]);
   assert.ok(p?.model.includes("inherit"));
+  assert.ok(p?.models && p.models.claude.includes("claude-sonnet-5") && !p.models.codex.includes("claude-sonnet-5"));
   assert.equal(presetsOf({ schema: 1, teams: [] }), null, "an older runtime sends no presets");
+});
+
+test("a seat's model picker offers what its provider runs, and says when a set model is ignored", () => {
+  const p: Presets = { provider: ["claude", "codex", "opposite"], effort: ["inherit"], model: ["inherit", "sonnet", "claude-sonnet-5", "gpt-5.5"],
+    models: { claude: ["sonnet", "claude-sonnet-5"], codex: ["gpt-5.5"] } };
+  assert.deepEqual(modelChoices(p, "claude"), ["inherit", "sonnet", "claude-sonnet-5"]);
+  assert.deepEqual(modelChoices(p, "codex"), ["inherit", "gpt-5.5"]);
+  assert.deepEqual(modelChoices(p, "opposite"), p.model);
+  assert.deepEqual(modelChoices({ ...p, models: null }, "codex"), p.model, "an older runtime: every preset");
+  assert.equal(ignoredModel(p, "codex", "claude-sonnet-5"), "not a Codex model: the Codex default runs");
+  assert.equal(ignoredModel(p, "claude", "gpt-5.5"), "not a Claude model: the Claude Code default runs");
+  assert.equal(ignoredModel(p, "codex", "gpt-5.5"), null);
+  assert.equal(ignoredModel(p, "opposite", "gpt-5.5"), null);
+  assert.equal(ignoredModel(p, "codex", "inherit"), null);
 });
 
 test("approve a budget gate from the card: the item moves on with the budget picked, and the old card is refused", async () => {

@@ -2,9 +2,9 @@
 // a picker, a switch or a button, never a text box (ui/noTextBoxes.test.ts scans this file): provider, model and effort
 // offer only the presets `aos team set` accepts, which `aos team list --json` names; a member is added by picking one of
 // the user's own agents, and removed after a confirm. Each change is one `aos team` call that rewrites TEAM.md.
-import { groupAgents } from "../../data/agents";
+import { groupAgents, AgentRow } from "../../data/agents";
 import { Member } from "../../data/teams";
-import { setArgs, pauseArgs, addMemberArgs, removeMemberArgs } from "../../data/teamWriter";
+import { setArgs, pauseArgs, addMemberArgs, removeMemberArgs, modelChoices, ignoredModel } from "../../data/teamWriter";
 import { TeamsCtx, errorLine } from "./ui";
 
 type SetKey = "provider" | "model" | "effort";
@@ -39,9 +39,12 @@ function memberRow(table: HTMLElement, ctx: TeamsCtx, m: Member, p: TeamsCtx["pr
   const picks = row.createDiv({ cls: "aos-at-picks" });
   for (const { key, label } of KEYS) {
     const k = `set:${t.id}:${m.id}:${key}`;
-    // The lead runs in the user's own session, so it has no opposite provider (lib/teams.js setMember refuses it).
-    const options = p ? p[key].filter((v) => !(lead && key === "provider" && v === "opposite")) : [];
-    picker(picks, key, label, options, m[key], !p || ctx.busy(k), (v) => void ctx.act(k, setArgs(t.id, m.id, key, v)));
+    // The lead runs in the user's own session, so it has no opposite provider (lib/teams.js setMember refuses it); a
+    // seat's model picker offers only what its provider runs.
+    const options = !p ? [] : key === "model" ? modelChoices(p, m.provider) : p[key].filter((v) => !(lead && key === "provider" && v === "opposite"));
+    const ignored = p && key === "model" ? ignoredModel(p, m.provider, m.model) : null;
+    picker(picks, key, label, options, m[key], !p || ctx.busy(k), (v) => void ctx.act(k, setArgs(t.id, m.id, key, v)), ignored);
+    if (ignored) picks.createDiv({ cls: "aos-at-note", text: `${m.model}: ${ignored}` });
   }
   switchChip(row, ctx, `pause:${t.id}:${m.id}`, m.paused ? "paused" : "on", !m.paused, (on) => pauseArgs(t.id, !on, m.id),
     `Paused, ${m.name} is never dispatched`);
@@ -62,14 +65,15 @@ function memberRow(table: HTMLElement, ctx: TeamsCtx, m: Member, p: TeamsCtx["pr
   }
 }
 
-/** A labelled select of presets; a value outside them stays visible as "(custom)" and is left as is. */
-function picker(parent: HTMLElement, key: SetKey, label: string, options: string[], current: string | null, disabled: boolean, onPick: (v: string) => void): void {
-  const wrap = parent.createEl("label", { cls: `aos-at-pick aos-at-pick-${key}` });
+/** A labelled select of presets; a value outside them stays visible, marked "(ignored)" when its provider does not run
+ *  it and "(custom)" otherwise, and is left as is until another is picked. */
+function picker(parent: HTMLElement, key: SetKey, label: string, options: string[], current: string | null, disabled: boolean, onPick: (v: string) => void, ignored: string | null = null): void {
+  const wrap = parent.createEl("label", { cls: `aos-at-pick aos-at-pick-${key}`, attr: ignored ? { title: ignored } : {} });
   wrap.createSpan({ cls: "aos-at-label", text: label });
   const sel = wrap.createEl("select", { cls: "dropdown" });
   const cur = current ?? "inherit";
   const list = options.includes(cur) ? options : [cur, ...options];
-  for (const v of list) sel.createEl("option", { value: v, text: options.includes(v) ? v : `${v} (custom)` });
+  for (const v of list) sel.createEl("option", { value: v, text: options.includes(v) ? v : `${v} (${ignored ? "ignored" : "custom"})` });
   sel.value = cur;
   sel.disabled = disabled || !options.length;
   sel.addEventListener("change", () => { if (sel.value !== cur && options.includes(sel.value)) onPick(sel.value); });
@@ -91,11 +95,15 @@ function addMember(host: HTMLElement, ctx: TeamsCtx): void {
   const key = `add:${t.id}`;
   const busy = ctx.busy(key);
   const taken = new Set(t.members.map((m) => m.agent).filter(Boolean));
-  const free = groupAgents(ctx.agents.agents).yours.filter((a) => !taken.has(a.id)).sort((a, b) => a.name.localeCompare(b.name));
+  const mine = groupAgents(ctx.agents.agents).yours.filter((a) => !taken.has(a.id));
+  const free = mine.filter(addable).sort((a, b) => a.name.localeCompare(b.name));
+  const left = mine.length - free.length;
   const row = host.createDiv({ cls: "aos-at-add" });
   row.createSpan({ cls: "aos-at-label", text: "Add a member" });
+  const leftOut = () => { if (left) host.createDiv({ cls: "aos-dim aos-at-hint", text: `${left} of your agents ${left === 1 ? "is" : "are"} left out: ${left === 1 ? "its file is" : "their files are"} named differently from the agent, and aos team member add finds an agent by its file name` }); };
   if (!free.length) {
-    row.createSpan({ cls: "aos-dim", text: ctx.agents.agents.length ? "every one of your agents is on this team" : "no agents listed yet: create one, then sync in the Agents tab" });
+    row.createSpan({ cls: "aos-dim", text: !ctx.agents.agents.length ? "no agents listed yet: create one, then sync in the Agents tab" : mine.length ? "none of your agents can be added here" : "every one of your agents is on this team" });
+    leftOut();
     errorLine(host, ctx.error(key));
     return;
   }
@@ -108,5 +116,13 @@ function addMember(host: HTMLElement, ctx: TeamsCtx): void {
   sel.addEventListener("change", () => { add.disabled = busy || !sel.value; });
   add.addEventListener("click", () => { if (sel.value) void ctx.act(key, addMemberArgs(t.id, sel.value)); });
   row.createSpan({ cls: "aos-dim aos-at-hint", text: "joins as a Member on every stage, on the host that has the agent; set its seat above" });
+  leftOut();
   errorLine(host, ctx.error(key));
+}
+
+/** Whether `aos team member add` can find this agent: it looks for <agents>/<name>.md or .toml by the name it is given,
+ *  so an agent whose file is named differently from the agent is refused (lib/teams.js agentFiles). */
+export function addable(a: AgentRow): boolean {
+  const base = (p: string | undefined) => (p ? (p.split("/").pop() ?? "").replace(/\.(md|toml)$/, "") : null);
+  return [a.on.claude?.path, a.on.codex?.path].some((p) => base(p) === a.id);
 }

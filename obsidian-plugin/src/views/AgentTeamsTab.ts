@@ -36,6 +36,7 @@ export class AgentTeamsTab {
   private hosts: SessionHost[] = ["claude"];
   private presets: Presets | null = null;
   private runtimeNote: string | null = null;
+  private readError: string | null = null;
   private ui: TeamsUiState = {
     team: null, view: "board", gateUsd: new Map(), budgetUsd: new Map(), openItem: null, showDone: new Set(), channelItem: null, drafts: new Map(),
   };
@@ -79,7 +80,12 @@ export class AgentTeamsTab {
   }
 
   async refresh(): Promise<void> {
-    this.teams = await readTeams(this.plugin.app.vault.adapter);
+    try {
+      this.teams = await readTeams(this.plugin.app.vault.adapter);
+      this.readError = null;
+    } catch (e) {
+      this.readError = `${TEAMS_DIR} could not be read: ${e instanceof Error ? e.message : String(e)}`;
+    }
     this.agents = readAgents(this.plugin.vaultRoot());
     this.hosts = sessionHosts(readAgenticosJson(this.plugin.claudeConfigDir()));
     this.loaded = true;
@@ -177,6 +183,7 @@ export class AgentTeamsTab {
     head.createSpan({ cls: "aos-rt-title", text: "AGENT TEAMS" });
     if (this.teams.length) head.createSpan({ cls: "aos-dim aos-rt-count", text: `${cards.length} gate${cards.length === 1 ? "" : "s"} waiting · ${this.teams.length} team${this.teams.length === 1 ? "" : "s"}` });
     if (this.runtimeNote) host.createDiv({ cls: "aos-rt-banner", text: this.runtimeNote });
+    if (this.readError) host.createDiv({ cls: "aos-st-failure", text: `${this.readError}. The teams below are as last read.` });
 
     if (!this.loaded) return;
     if (!this.teams.length) { this.renderEmpty(host); return; }
@@ -256,6 +263,7 @@ export class AgentTeamsTab {
       const st = section.createDiv({ cls: "aos-at-state" });
       for (const l of t.state) st.createDiv({ text: l });
     }
+    for (const w of t.warnings) section.createDiv({ cls: "aos-at-error", text: w });
     if (t.skipped) section.createDiv({ cls: "aos-dim aos-at-hint", text: `${t.skipped} line${t.skipped === 1 ? "" : "s"} in this team's JSONL files could not be read and are skipped` });
     if (t.disabled) {
       const k = `pause:${t.id}`;

@@ -43,6 +43,8 @@ export interface Team {
   /** The item's last snapshot before its current pending gate opened: a pitch posted before it was for an earlier gate. */
   pendingAfter: Record<string, string>;
   skipped: number; torn: boolean; error: string | null;
+  /** Files that exist but could not be read (the channel, runs, state or a live marker): shown, never taken as empty. */
+  warnings: string[];
 }
 
 const str = (v: unknown): string | null => (typeof v === "string" && v ? v : null);
@@ -212,7 +214,7 @@ export interface TeamFiles {
 export function teamFrom(f: TeamFiles): Team {
   const base: Team = {
     id: f.id, name: f.id, lead: "", reportsTo: null, parent: null, stages: DEFAULT_STAGES, gates: [], budgetDefault: 0,
-    disabled: f.disabled, members: [], state: [], board: [], channel: [], runs: [], live: [], pendingSince: {}, pendingAfter: {}, skipped: 0, torn: false, error: null,
+    disabled: f.disabled, members: [], state: [], board: [], channel: [], runs: [], live: [], pendingSince: {}, pendingAfter: {}, skipped: 0, torn: false, error: null, warnings: [],
   };
   let fm: Record<string, Scalar>;
   try { fm = parseFrontmatter(f.teamMd); } catch (e) { return { ...base, error: (e as Error).message }; }
@@ -373,12 +375,11 @@ export function stepBudget(current: number, dir: -1 | 1, presets: number[], floo
   return stepIn([...BUDGET_LADDER, ...presets].filter((n) => n >= floor && n > 0 && n <= MAX_BUDGET_USD), current, dir);
 }
 
-/** The team's own case for the gate now pending: the last `gate` post on the item by a member (not the user's decision,
- *  not dispatch) made after the snapshot before this gate opened, so an earlier gate's proposal never stands in for it. */
+/** The lead's case for the gate now pending: its last `gate` post on the item made after the snapshot before this gate
+ *  opened, so an earlier gate's proposal never stands in for it, and a seat's gate post never speaks for the lead. */
 export function gatePitch(t: Team, itemId: string): Post | null {
   const after = t.pendingAfter[itemId] ?? "";
-  const members = new Set(t.members.map((m) => m.id));
-  return [...t.channel].reverse().find((p) => p.item === itemId && p.kind === "gate" && members.has(p.from) && (!after || p.ts > after)) ?? null;
+  return [...t.channel].reverse().find((p) => p.item === itemId && p.kind === "gate" && p.from === t.lead && (!after || p.ts > after)) ?? null;
 }
 
 export interface GateCard { team: Team; item: BoardItem; since: string | null; pitch: Post | null; budget: boolean }
@@ -452,28 +453,49 @@ export interface TeamsAdapter {
   exists(path: string): Promise<boolean>;
 }
 
-/** Every team folder with a TEAM.md. `boardOnly` (the rail badge) skips the channel, runs, state and markers. */
+const why = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+/**
+ * Every team folder with a TEAM.md. `boardOnly` (the rail badge) skips the channel, runs, state and markers. A file
+ * that is missing reads as empty; one that exists but cannot be read is never taken as empty: an unreadable TEAM.md or
+ * board makes the team an error (its gates unknown, not zero), anything else a warning on the team. Throws when
+ * persona/teams exists but cannot be listed.
+ */
 export async function readTeams(a: TeamsAdapter, { boardOnly = false } = {}): Promise<Team[]> {
-  let folders: string[] = [];
-  try { folders = (await a.list(TEAMS_DIR)).folders; } catch { return []; }
-  const readOr = async (p: string): Promise<string | null> => { try { return (await a.exists(p)) ? await a.read(p) : null; } catch { return null; } };
+  if (!(await a.exists(TEAMS_DIR))) return [];
+  const folders = (await a.list(TEAMS_DIR)).folders;
+  const read = async (p: string): Promise<{ text: string | null; error: string | null }> => {
+    try { return (await a.exists(p)) ? { text: await a.read(p), error: null } : { text: null, error: null }; } catch (e) { return { text: null, error: why(e) }; }
+  };
   const out: Team[] = [];
   for (const dir of folders.sort()) {
     const id = dir.split("/").pop() ?? "";
     if (!TEAM_ID_RE.test(id)) continue;
-    const teamMd = await readOr(`${dir}/TEAM.md`);
-    if (teamMd === null) continue;
+    const md = await read(`${dir}/TEAM.md`);
+    const disabled = await a.exists(`${dir}/DISABLED`).catch(() => false);
+    const blank = { id, teamMd: "", board: null, channel: null, runs: null, markers: [], state: null, disabled };
+    if (md.error) { out.push({ ...teamFrom(blank), error: `TEAM.md could not be read: ${md.error}` }); continue; }
+    if (md.text === null) continue;
+    const board = await read(`${dir}/board.jsonl`);
+    if (board.error) { out.push({ ...teamFrom({ ...blank, teamMd: md.text }), board: [], error: `board.jsonl could not be read: ${board.error}` }); continue; }
+    const warnings: string[] = [];
+    const extra = async (name: string) => {
+      if (boardOnly) return null;
+      const r = await read(`${dir}/${name}`);
+      if (r.error) warnings.push(`${name} could not be read: ${r.error}`);
+      return r.text;
+    };
     const markers: string[] = [];
-    if (!boardOnly) {
-      let files: string[] = [];
-      try { files = (await a.list(`${dir}/running`)).files; } catch { /* no live runs */ }
-      for (const f of files.filter((x) => x.endsWith(".json"))) { const t = await readOr(f); if (t !== null) markers.push(t); }
+    if (!boardOnly && (await a.exists(`${dir}/running`).catch(() => false))) {
+      try {
+        for (const f of (await a.list(`${dir}/running`)).files.filter((x) => x.endsWith(".json"))) {
+          const r = await read(f);
+          if (r.text !== null) markers.push(r.text); else if (r.error) warnings.push(`${f.split("/").pop()} could not be read: ${r.error}`);
+        }
+      } catch (e) { warnings.push(`running/ could not be listed: ${why(e)}`); }
     }
-    out.push(teamFrom({
-      id, teamMd, board: await readOr(`${dir}/board.jsonl`),
-      channel: boardOnly ? null : await readOr(`${dir}/channel.jsonl`), runs: boardOnly ? null : await readOr(`${dir}/runs.jsonl`),
-      markers, state: boardOnly ? null : await readOr(`${dir}/STATE.md`), disabled: await a.exists(`${dir}/DISABLED`).catch(() => false),
-    }));
+    const t = teamFrom({ id, teamMd: md.text, board: board.text, channel: await extra("channel.jsonl"), runs: await extra("runs.jsonl"), markers, state: await extra("STATE.md"), disabled });
+    out.push({ ...t, warnings });
   }
   return out;
 }
