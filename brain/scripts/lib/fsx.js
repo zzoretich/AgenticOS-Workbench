@@ -120,11 +120,28 @@ function updateSync(file, fn, opts = {}) {
   }, opts);
 }
 
-/** Append one line (a trailing newline is added). opts.lock: wait up to opts.timeoutMs for a rewrite to finish. */
+/** Whether `file` is missing, empty, or ends in a newline: whether a line appended now starts a line of its own. */
+function endsLine(file) {
+  let fd;
+  try { fd = fs.openSync(file, 'r'); } catch { return true; }
+  try {
+    const { size } = fs.fstatSync(fd);
+    if (!size) return true;
+    const last = Buffer.alloc(1);
+    fs.readSync(fd, last, 0, 1, size - 1);
+    return last[0] === 0x0a;
+  } finally { fs.closeSync(fd); }
+}
+
+/**
+ * Append one line (a trailing newline is added). opts.lock: wait up to opts.timeoutMs for a rewrite to finish. A file
+ * whose last line has no newline (a crash mid-append, a hand edit) gets one first, so this row is never joined to that
+ * fragment and lost with it; racing an append in flight costs at most a blank line, which every reader skips.
+ */
 function appendLineSync(file, line, opts = {}) {
   const write = () => {
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.appendFileSync(file, `${String(line).replace(/\n+$/, '')}\n`);
+    fs.appendFileSync(file, `${endsLine(file) ? '' : '\n'}${String(line).replace(/\n+$/, '')}\n`);
   };
   if (!opts.lock) return write();
   return withLockSync(file, write, { timeoutMs: 1000, onBusy: 'run', ...opts });

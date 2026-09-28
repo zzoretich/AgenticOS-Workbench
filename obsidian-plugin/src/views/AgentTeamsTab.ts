@@ -5,7 +5,8 @@ import type AgenticOSPlugin from "../../main";
 import type { WorkbenchView } from "./WorkbenchView";
 import { ConfirmModal } from "../ui/ConfirmModal";
 import { readAgenticosJson, sessionHosts, invocationHint, SessionHost } from "../data/aosConfig";
-import { AgentsCache, AGENTS_PATH, emptyAgents, readAgents } from "../data/agents";
+import { AgentsCache, AGENTS_PATH, emptyAgents, readAgents, agentsStale } from "../data/agents";
+import { AOS_CLI } from "../data/aosRun";
 import { Team, TEAMS_DIR, readTeams, diskAdapter, touchesTeams, gateBadge, gateCards, orderTeams, pendingGates, boardColumns } from "../data/teams";
 import { TeamRunner, teamRunner, teamFailure, presetsOf, Presets, ListJson, LIST_ARGS, INIT_ARGS, pauseArgs } from "../data/teamWriter";
 import { TeamsCtx, TeamsUiState, TeamsView, Confirm, VIEWS, errorLine } from "./teams/ui";
@@ -49,6 +50,7 @@ export class AgentTeamsTab {
   private tornRetries = 0;
   private sweepAt = 0;
   private sweeping = false;
+  private agentsSyncAt = 0;
   private channelKey: string | null = null;
   private refocus: { sel: string; index: number } | null = null;
 
@@ -88,6 +90,14 @@ export class AgentTeamsTab {
       this.readError = `${TEAMS_DIR} could not be read: ${e instanceof Error ? e.message : String(e)}`;
     }
     this.agents = readAgents(this.plugin.vaultRoot());
+    // Talk, Redirect and Add a member read the agents list; ask for a fresh one when it is old, as the Agents tab does,
+    // at most once a minute. Its file event re-reads it.
+    if (agentsStale(this.agents) && Date.now() - this.agentsSyncAt > 60_000) {
+      this.agentsSyncAt = Date.now();
+      this.plugin.runBrainScript(AOS_CLI, ["agents", "sync"], () => this.schedule(), {
+        env: { AOS_VAULT: this.plugin.vaultRoot(), AOS_CONFIG: path.join(this.plugin.claudeConfigDir(), "agenticos.json") },
+      });
+    }
     this.hosts = sessionHosts(readAgenticosJson(this.plugin.claudeConfigDir()));
     this.loaded = true;
     this.wb.setBadge("agent-teams", gateBadge(this.teams));

@@ -18,10 +18,8 @@ const CLI = path.resolve(__dirname, "../../../brain/scripts/team.js");
 function world() {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "aos-teams-hud-"));
   const vault = path.join(base, "vault");
+  // The fixture's board ends in a torn tail (a crash mid-append): the CLI's rows must land on lines of their own.
   fs.cpSync(FIXTURE, vault, { recursive: true });
-  // The fixture's torn tail is an append still in flight; here it has finished, or the CLI's next row would join it.
-  const board = path.join(vault, "persona/teams/lab/board.jsonl");
-  fs.writeFileSync(board, fs.readFileSync(board, "utf8").replace(/[^\n]+$/, ""));
   const configDir = path.join(base, "claude");
   fs.mkdirSync(path.join(configDir, "agents"), { recursive: true });
   fs.writeFileSync(path.join(configDir, "agents", "team-scout.md"), "---\nname: team-scout\ndescription: Looks ahead.\n---\nScout.\n");
@@ -91,11 +89,13 @@ test("a seat's model picker offers what its provider runs, and says when a set m
 
 test("approve a budget gate from the card: the item moves on with the budget picked, and the old card is refused", async () => {
   const w = world();
+  assert.equal((await w.team("lab")).torn, true, "the board starts with a torn tail");
   const seen = await w.item("lab", "site-01");
   ok(await w.runner.run(approveArgs("lab", seen, 25)));
   const now = await w.item("lab", "site-01");
   assert.deepEqual([now.stage, now.status, now.owners, now.gate?.state, now.gate?.by, now.budget.usd], ["plan", "working", ["lead"], "approved", "user", 25]);
   assert.match((await w.team("lab")).channel.pop()?.text ?? "", /^Discuss gate approved by the user at \$25; @lead takes the next step/);
+  assert.equal((await w.team("lab")).skipped, 3, "the torn fragment is now a skipped line, and the approval is not lost with it");
   const again = await w.runner.run(approveArgs("lab", seen, 25));
   assert.equal(again.code, 1);
   assert.equal(teamFailure(again).stale, true);

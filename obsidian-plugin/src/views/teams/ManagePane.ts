@@ -100,7 +100,9 @@ function addMember(host: HTMLElement, ctx: TeamsCtx): void {
   const left = mine.length - free.length;
   const row = host.createDiv({ cls: "aos-at-add" });
   row.createSpan({ cls: "aos-at-label", text: "Add a member" });
-  const leftOut = () => { if (left) host.createDiv({ cls: "aos-dim aos-at-hint", text: `${left} of your agents ${left === 1 ? "is" : "are"} left out: ${left === 1 ? "its file is" : "their files are"} named differently from the agent, and aos team member add finds an agent by its file name` }); };
+  // Such an agent could join by its file name, but a Claude seat runs `claude --agent <that name>`, which Claude Code
+  // resolves by the agent's declared name, so the seat would not start: renaming the file is the fix.
+  const leftOut = () => { if (left) host.createDiv({ cls: "aos-dim aos-at-hint", text: `${left} of your agents ${left === 1 ? "is" : "are"} left out: ${left === 1 ? "its file is" : "their files are"} named differently from the agent's name, and a seat runs an agent by both. Rename the file to <name>.md (or .toml) to add it.` }); };
   if (!free.length) {
     row.createSpan({ cls: "aos-dim", text: !ctx.agents.agents.length ? "no agents listed yet: create one, then sync in the Agents tab" : mine.length ? "none of your agents can be added here" : "every one of your agents is on this team" });
     leftOut();
