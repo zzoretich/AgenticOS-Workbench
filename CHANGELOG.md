@@ -4,6 +4,8 @@ All notable changes to AgenticOS Workbench. Versions follow the tags. From the n
 
 ## [Unreleased]
 
+## [0.20.2] — 2026-09-28
+
 ### Changed
 - Update notices count the Workbench. The installed version was the lower of the Claude Code or Codex plugin and the vault's runtime, so a Workbench an upgrade could not replace looked current. It now also counts the Obsidian plugin's own `manifest.json` in the vault, read at every check and session start: the notice names it ("plugin 0.20.1, vault 0.20.1, Workbench 0.20.0"), and the statusline and the Workbench's update badge stay on until it is replaced. A Workbench whose `manifest.json` is missing or invalid counts as an incomplete install ("Workbench incomplete"), and `aos upgrade` refreshes the update check before rescanning, so the badge is right as soon as it finishes. A vault without the Workbench (`aos init --no-obsidian`) is judged as before.
 
@@ -264,7 +266,8 @@ The first public release: an `aos` CLI, the AgenticOS runtime, a Claude Code plu
 - Update notifications: a GitHub release check surfaced as a session-start notice.
 - Docs: README, install guide, and a release acceptance runbook.
 
-[Unreleased]: https://github.com/zzoretich/AgenticOS-Workbench/compare/v0.20.1...HEAD
+[Unreleased]: https://github.com/zzoretich/AgenticOS-Workbench/compare/v0.20.2...HEAD
+[0.20.2]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.20.2
 [0.20.1]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.20.1
 [0.20.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.20.0
 [0.19.2]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.19.2
