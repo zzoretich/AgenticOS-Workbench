@@ -169,6 +169,11 @@ test('refusals: owner, lead, gates, budget, kill switch, pause, the project path
   assert.match(await err(['planner', 'demo-01'], { AOS_NO_CLAUDE: '1' }), /no claude CLI was found/, 'never a real binary on this machine');
   T.setPaused(w.t(), { memberId: 'planner', paused: true, env: {} });
   assert.match(await err(['planner', 'demo-01']), /paused/);
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'team-outside-'));
+  sh(outside, 'git', ['init', '-q']);
+  fs.symlinkSync(outside, path.join(w.vault, 'workspaces', 'linked'));
+  put(w, { id: 'demo-03', path: 'workspaces/linked', owner: 'builder', stage: 'execute', gate: APPROVED });
+  assert.match(await err(['builder', 'demo-03']), /leads outside workspaces/, 'AT-R2');
   put(w, { id: 'demo-02', path: 'workspaces/_spikes/x', owner: 'builder', stage: 'execute', gate: APPROVED });
   assert.match(await err(['builder', 'demo-02']), /not a project under workspaces/);
 });
@@ -386,14 +391,18 @@ test('a failed run keeps its commits on its branch, and the lead takes them with
   assert.match(T.tail(w.t()).pop().text, /aos team merge dev demo-01 builder --from lead takes them/);
   const io = { stdout: () => {}, stderr: () => {}, vault: w.vault };
   assert.equal(await main(['merge', 'dev', 'demo-01', 'builder', '--from', 'builder'], io), 1, 'only the lead merges');
+  assert.equal(await main(['merge', 'dev', 'demo-01', 'builder', '--from', 'lead'], { ...io, env: { AOS_HEADLESS: '1' } }), 1, 'never from a headless run (AT-R4)');
   assert.equal(await main(['merge', 'dev', 'demo-01', 'builder', '--from', 'lead'], io), 0);
   assert.equal(sh(w.repo, 'git', ['log', '-1', '--format=%s', 'team/dev/demo-01/trunk']), 'builder: work');
+  assert.deepEqual(item(w, 'demo-01').builders.claude, ['builder'], 'merged execute work counts as built (AT-R3)');
+  assert.equal(await main(['merge', 'dev', 'demo-01', 'builder', '--from', 'lead'], io), 1, 'nothing held any more');
 });
 
 test('parallel Claude seats share one budget: a live run holds its reservation, and --max-usd splits it (AT-02)', async () => {
   const w = world();
   put(w, base({ stage: 'verify', owner: ['reviewer', 'planner'], gate: APPROVED, builders: { claude: [], codex: ['platform'] } }));
   const hold = (usd) => { fs.mkdirSync(T.runningDir(w.t()), { recursive: true }); fs.writeFileSync(path.join(T.runningDir(w.t()), 'held.json'), JSON.stringify({ run: 'held', member: 'planner', item: 'demo-01', provider: 'claude', pid: process.pid, pidStart: T.processStart(process.pid), host: os.hostname(), reservedUsd: usd })); };
+  assert.match((await dispatch(w, ['reviewer', 'demo-01', '--max-usd', '0.001'])).err, /at least 0\.01/, 'AT-R7');
   hold(20);
   const first = await dispatch(w, ['reviewer', 'demo-01']);
   assert.equal(first.code, 0, `${first.out}\n${first.err}`);

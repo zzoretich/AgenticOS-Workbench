@@ -186,7 +186,7 @@ async function main(argv, {
       case 'merge': {
         need(3, '<team> <item> <member>');
         team(rest[0]);
-        const r = require('./lib/team-run.js').mergeSeat({ team: rest[0], item: rest[1], member: rest[2], from: flags.from }, { vault: v });
+        const r = require('./lib/team-run.js').mergeSeat({ team: rest[0], item: rest[1], member: rest[2], from: flags.from }, { vault: v, env });
         say(r.out);
         return r.code;
       }

@@ -110,9 +110,11 @@ function projectRepo(vault, it) {
   if (!it.path) refuse(`${it.id} has no "path" on the board`);
   const workspaces = path.join(vault, 'workspaces');
   const repo = path.resolve(vault, it.path);
-  const rel = path.relative(workspaces, repo);
-  if (!rel || rel.startsWith('..') || path.isAbsolute(rel) || rel.split(path.sep)[0].startsWith('_')) refuse(`${it.id}'s path ${it.path} is not a project under workspaces/`);
+  const under = (root, p) => { const rel = path.relative(root, p); return !!rel && !rel.startsWith('..') && !path.isAbsolute(rel) && !rel.split(path.sep)[0].startsWith('_'); };
+  if (!under(workspaces, repo)) refuse(`${it.id}'s path ${it.path} is not a project under workspaces/`);
   if (!fs.existsSync(repo)) refuse(`${it.path} does not exist`);
+  // Real paths too, so a symlink under workspaces/ cannot point a seat at a repository elsewhere (AT-R2).
+  if (!under(fs.realpathSync(workspaces), fs.realpathSync(repo))) refuse(`${it.id}'s path ${it.path} leads outside workspaces/`);
   const top = gitTry(repo, ['rev-parse', '--show-toplevel']);
   if (!top.ok || fs.realpathSync(top.out) !== fs.realpathSync(repo)) refuse(`${it.path} is not its own git repository (the lead runs git init there first)`);
   return repo;
@@ -290,7 +292,7 @@ async function dispatch(opts, ctx) {
   const model = modelFor(provider, m, cfg);
   const effort = str(m.effort);
   const maxUsd = opts.maxUsd === undefined || opts.maxUsd === null ? null : Number(opts.maxUsd);
-  if (maxUsd !== null && !(maxUsd > 0)) refuse('--max-usd must be a dollar amount above 0');
+  if (maxUsd !== null && !(Number.isFinite(maxUsd) && maxUsd >= 0.01 && Math.round(maxUsd * 100) === Math.round(maxUsd * 1e6) / 1e4)) refuse('--max-usd must be a dollar amount of at least 0.01, in cents'); // AT-R7
   const worktrees = path.join(vault, 'workspaces', '_worktrees');
   const names = branchNames(t.id, item.id, m.id, worktrees);
   const prompt = promptFor(item, opts);
@@ -457,11 +459,16 @@ async function dispatch(opts, ctx) {
 }
 
 /** `aos team merge`: the lead takes a seat branch that a failed, killed or dirty run left held into the trunk (AT-03). */
-function mergeSeat(opts, { vault }) {
+function mergeSeat(opts, { vault, env = process.env }) {
   const t = T.readTeam(T.teamsRoot(vault), opts.team);
   if (opts.from !== t.lead) refuse(`only the lead (${t.lead}) merges a held seat branch`);
+  // The lead's own decision, never a seat's (AT-R4): a headless run is refused, and only a held run's branch merges.
+  if (env.AOS_HEADLESS === '1') refuse('merging held work is the lead\'s decision, and a headless run cannot make it');
   const item = T.boardItems(t).get(opts.item);
   if (!item) refuse(`no board item ${opts.item} on ${t.id}`);
+  if (item.status === 'done') refuse(`${item.id} is done`);
+  const last = T.readJsonl(path.join(t.dir, 'runs.jsonl')).filter((r) => r.item === item.id && r.member === opts.member).pop();
+  if (!last || last.merged !== false || !(last.commits > 0)) refuse(`${opts.member}'s last run on ${item.id} holds no unmerged work`);
   const repo = projectRepo(vault, item);
   const names = branchNames(t.id, item.id, opts.member, path.join(vault, 'workspaces', '_worktrees'));
   if (!branchExists(repo, names.seat)) refuse(`there is no branch ${names.seat}`);
@@ -469,6 +476,15 @@ function mergeSeat(opts, { vault }) {
   if (!branchExists(repo, names.trunk)) git(repo, ['branch', names.trunk, 'HEAD']);
   const merged = mergeBack(repo, names.trunk, names.seat);
   if (merged.conflict) refuse(`${names.seat} was not merged: ${merged.conflict}`);
+  // Merged execute work counts as built on the run's provider, so reviewers still land on the other one (AT-R3).
+  T.withBoard(t, () => {
+    const cur = T.boardItems(t).get(item.id);
+    const p = last.provider;
+    if (cur.stage !== 'execute' || !merged.commits || !['claude', 'codex'].includes(p)) return;
+    const list = ((cur.builders && cur.builders[p]) || []).slice();
+    if (!list.includes(opts.member)) { list.push(opts.member); T.writeItem(t, { id: item.id, builders: { [p]: list } }, { by: 'dispatch', existing: cur }); }
+  });
+  T.appendJsonl(path.join(t.dir, 'runs.jsonl'), { ...last, ts: new Date().toISOString(), status: 'merged', merged: true, head: merged.head || null, error: null, usd: 0, ms: 0 });
   const text = `merged ${merged.commits} held commit(s) from ${names.seat} into ${names.trunk}`;
   if (merged.commits) T.post(t, { from: t.lead, item: item.id, kind: 'note', text });
   return { code: 0, out: merged.commits ? text : `${names.seat} has nothing the trunk lacks` };

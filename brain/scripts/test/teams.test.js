@@ -158,6 +158,10 @@ test('budget, pause, set and members are the user\'s: presets only, and never fr
   const w = world();
   T.put(w.t(), { from: 'lead', json: JSON.stringify({ ...AT_GATE, status: 'paused', gate: null }) });
   assert.throws(() => T.setBudget(w.t(), { item: 'x-01', usd: 60, expect: '{}', env: HEADLESS }), T.Refusal);
+  fs.mkdirSync(T.runningDir(w.t()), { recursive: true });
+  fs.writeFileSync(path.join(T.runningDir(w.t()), 'held.json'), JSON.stringify({ run: 'held', member: 'builder', item: 'x-01', provider: 'claude', pid: process.pid, host: 'another-machine.local', reservedUsd: 50 }));
+  assert.throws(() => T.setBudget(w.t(), { item: 'x-01', usd: 30, expect: '{}', env: INTERACTIVE }), /cannot go below \$50/, 'AT-R5');
+  fs.rmSync(T.runningDir(w.t()), { recursive: true });
   const b = T.setBudget(w.t(), { item: 'x-01', usd: 60, expect: '{"status":"paused"}', env: INTERACTIVE });
   assert.deepEqual([b.budget.usd, b.status], [60, 'working']);
   assert.throws(() => T.setBudget(w.t(), { item: 'x-01', usd: -1, expect: '{}', env: INTERACTIVE }), T.UsageError);
@@ -332,17 +336,21 @@ test('put never records the user\'s decisions or dispatch\'s bookkeeping, even a
   refused({ budget: { usd: 500 } }, /phase budget is the user's decision/);
   refused({ budget: { spentUsd: 0.01 } }, /recorded by dispatch/);
   refused({ builders: { claude: ['builder'] } }, /builders are recorded by dispatch/);
-  assert.equal(T.put(w.t(), { from: 'lead', json: '{"id":"x-01","gate":{"name":"ship","state":"pending"},"budget":{"usd":25}}' }).gate.name, 'ship', 'opening a gate and repeating the budget are fine');
+  refused({ gate: null, status: 'working' }, /waits on the user at the discuss gate/);
+  refused({ status: 'working' }, /stay until the user decides/);
+  assert.equal(T.put(w.t(), { from: 'lead', json: '{"id":"x-01","title":"renamed","budget":{"usd":25}}' }).title, 'renamed', 'other fields and a repeated budget are fine');
 });
 
 test('the sweep stops a seat that outlived its killed dispatcher (AT-08)', async () => {
   const w = world();
   T.put(w.t(), { from: 'lead', json: '{"id":"x-01","owner":"builder","status":"working"}' });
-  const seat = spawn('sleep', ['30']);
+  // A real orphan: the shell that starts it exits, so init reaps it (a child of this process would linger as a zombie).
+  const pid = Number(require('child_process').execFileSync('sh', ['-c', `"${process.execPath}" -e "process.on('SIGTERM', () => {}); setInterval(() => {}, 1e5)" >/dev/null 2>&1 & echo $!`], { encoding: 'utf8' }).trim());
+  await new Promise((r) => setTimeout(r, 300)); // it ignores SIGTERM (AT-R6)
+  const seat = { pid };
   const pidStart = T.processStart(seat.pid);
   marker(w.t(), { run: 'orphaned', member: 'builder', item: 'x-01', provider: 'claude', pid: deadPid(), host: os.hostname(), startedAt: new Date().toISOString(), log: 'l', worktree: 'w', seatPid: seat.pid, seatStart: pidStart });
-  T.reapKilledRuns(w.t());
+  T.reapKilledRuns(w.t(), { seatGraceMs: 300 });
   assert.match(T.tail(w.t()).pop().text, new RegExp(`Its seat \\(pid ${seat.pid}\\) was still running and was stopped`));
-  const how = await new Promise((resolve) => { seat.once('exit', (code, sig) => resolve(sig)); setTimeout(() => resolve('still running'), 3000); });
-  assert.equal(how, 'SIGTERM');
+  assert.throws(() => process.kill(pid, 0), 'the seat is gone: SIGKILL after it ignored SIGTERM');
 });

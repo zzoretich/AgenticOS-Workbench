@@ -307,6 +307,11 @@ function guardPut(existing, patch) {
   const cur = existing || {};
   const g = patch.gate;
   if (g && g.state && g.state !== 'pending' && !matches(cur.gate, g)) throw new Refusal(`a ${g.state} gate is the user's decision: aos team gate approve|redirect records it`);
+  // A pending gate is closed only by the user's decision: put can neither clear, replace nor walk past it (AT-R1).
+  if (cur.gate && cur.gate.state === 'pending') {
+    if (patch.gate !== undefined && !matches(cur.gate, patch.gate)) throw new Refusal(`${cur.id} waits on the user at the ${cur.gate.name} gate; aos team gate approve|redirect closes it`);
+    if ((patch.status !== undefined && patch.status !== cur.status) || (patch.stage !== undefined && patch.stage !== cur.stage)) throw new Refusal(`${cur.id} waits on the user at the ${cur.gate.name} gate; its stage and status stay until the user decides`);
+  }
   const b = patch.budget || {};
   for (const k of ['usd', 'spentUsd', 'codexRuns']) {
     if (b[k] !== undefined && Number(b[k]) !== Number((cur.budget || {})[k] || 0)) throw new Refusal(k === 'usd' ? "the phase budget is the user's decision: aos team budget sets it" : `budget.${k} is recorded by dispatch`);
@@ -375,6 +380,10 @@ function setBudget(t, { item, usd, expect, env = process.env, now = new Date() }
     const cur = boardItems(t).get(item) || null;
     if (!cur) throw new Refusal(`no board item ${item} on ${t.id}`);
     checkExpect(item, cur, expect);
+    // A total below what is spent plus what live runs hold would not bind those runs (AT-R5).
+    const spent = Number((cur.budget && cur.budget.spentUsd) || 0);
+    const held = liveMarkers(t).filter((x) => x.item === item && x.provider === 'claude').reduce((s, x) => s + (Number(x.reservedUsd) || 0), 0);
+    if (amount < spent + held) throw new Refusal(`${item} has spent $${spent} and live runs hold $${held}, so its budget cannot go below $${Math.round((spent + held) * 100) / 100} until they end`);
     const patch = { id: item, budget: { usd: amount } };
     if (cur.status === 'paused') patch.status = 'working';
     return writeItem(t, patch, { by: 'user', now, existing: cur });
@@ -505,7 +514,7 @@ function liveMarkers(t) {
 
 /** Close every run whose dispatcher died without finishing it: one `killed` row and one blocker each, exactly once
  *  (under the runs.jsonl lock; the marker goes with its row). Markers from another host, or of a live dispatcher, stay. */
-function reapKilledRuns(t, { alive = dispatchAlive, host = os.hostname(), now = Date.now() } = {}) {
+function reapKilledRuns(t, { alive = dispatchAlive, host = os.hostname(), now = Date.now(), seatGraceMs = 5000 } = {}) {
   const dir = runningDir(t);
   let names;
   try { names = fs.readdirSync(dir).filter((n) => n.endsWith('.json')); } catch { return []; }
@@ -527,6 +536,14 @@ function reapKilledRuns(t, { alive = dispatchAlive, host = os.hostname(), now = 
           const s = processStart(m.seatPid);
           if (s !== null && Math.abs(s - m.seatStart) <= 2000) { process.kill(m.seatPid, 'SIGTERM'); orphan = m.seatPid; }
         } catch { /* gone */ }
+        // Confirm it stopped before the run is recorded: SIGKILL after the grace period (AT-R6).
+        if (orphan) {
+          const gone = () => { try { process.kill(orphan, 0); return false; } catch { return true; } };
+          const until = Date.now() + seatGraceMs;
+          while (!gone() && Date.now() < until) sleepSync(50);
+          if (!gone()) { try { process.kill(orphan, 'SIGKILL'); } catch { /* gone */ } sleepSync(100); }
+          if (!gone()) continue; // still there: keep the marker, and the next sweep tries again
+        }
       }
       if (!closed.has(m.run)) {
         const started = Date.parse(m.startedAt || '');
