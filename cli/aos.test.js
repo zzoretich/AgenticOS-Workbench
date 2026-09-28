@@ -551,6 +551,59 @@ test('obsidianBundle warns and leaves the vault alone when no staging dir can be
   assert.ok(!fs.existsSync(path.join(vault, '.obsidian', 'plugins')), 'nothing was written into the vault');
 });
 
+// A checkout's main.js is gitignored: one left from an earlier build must never be installed beside newer sources.
+async function bundleRun({ stale, nodeModules, buildFails = false }) {
+  const { obsidianBundle, out } = require('./aos.js');
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-fake-repo-'));
+  const src = path.join(repo, 'obsidian-plugin');
+  fs.mkdirSync(path.join(src, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(src, 'manifest.json'), JSON.stringify({ id: 'agentic-os', version: '9.9.9' }));
+  fs.writeFileSync(path.join(src, 'styles.css'), '.a {}');
+  fs.writeFileSync(path.join(src, 'src', 'tab.ts'), 'export {};');
+  fs.writeFileSync(path.join(src, 'main.js'), 'old build');
+  const past = new Date(Date.now() - 86400000);
+  if (stale) fs.utimesSync(path.join(src, 'main.js'), past, past);
+  else for (const f of ['manifest.json', 'styles.css', 'src/tab.ts']) fs.utimesSync(path.join(src, f), past, past);
+  if (nodeModules) fs.mkdirSync(path.join(repo, 'node_modules'));
+  const npm = path.join(repo, 'fake-npm.sh');
+  fs.writeFileSync(npm, `#!/bin/sh\n[ "${buildFails ? 1 : 0}" = 1 ] && exit 1\nprintf 'fresh build' > obsidian-plugin/main.js\n`, { mode: 0o755 });
+  const vault = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-bundle-vault-'));
+  const warns = [];
+  const prev = { warn: out.warn, npm: process.env.AOS_NPM_BIN, tmp: process.env.TMPDIR };
+  out.warn = (m) => warns.push(m);
+  process.env.AOS_NPM_BIN = npm;
+  process.env.TMPDIR = path.join(vault, 'no-such-tmp'); // the release fallback stays offline: it cannot stage
+  const ctx = { repo, vault, written: [], act: async (_what, fn) => fn() };
+  try {
+    await obsidianBundle(ctx);
+  } finally {
+    out.warn = prev.warn;
+    for (const [k, v] of [['AOS_NPM_BIN', prev.npm], ['TMPDIR', prev.tmp]]) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  }
+  const installed = path.join(vault, '.obsidian', 'plugins', 'agentic-os', 'main.js');
+  return { warns, bundle: ctx.bundle, installed: fs.existsSync(installed) ? fs.readFileSync(installed, 'utf8') : null };
+}
+
+test('obsidianBundle rebuilds a checkout that can build, so a stale main.js is never installed', async () => {
+  assert.equal((await bundleRun({ stale: true, nodeModules: true })).installed, 'fresh build');
+  assert.equal((await bundleRun({ stale: false, nodeModules: true })).installed, 'fresh build', 'it builds even when main.js looks current');
+});
+
+test('obsidianBundle refuses a main.js older than its sources when it cannot rebuild, and says why', async () => {
+  const noDeps = await bundleRun({ stale: true, nodeModules: false });
+  assert.equal(noDeps.installed, null);
+  assert.ok(noDeps.warns.some((m) => /older than the plugin's sources, so it is not installed; run npm ci/.test(m)), noDeps.warns.join('\n'));
+  for (const stale of [true, false]) {
+    const failed = await bundleRun({ stale, nodeModules: true, buildFails: true });
+    assert.equal(failed.installed, null, `a failed build installs nothing (main.js ${stale ? 'older' : 'newer'} than the sources)`);
+    assert.ok(failed.warns.some((m) => /the Obsidian build failed, so obsidian-plugin\/main\.js .* is not installed/.test(m)), failed.warns.join('\n'));
+    assert.equal(failed.bundle, 'kept');
+  }
+  const current = await bundleRun({ stale: false, nodeModules: false });
+  assert.equal(current.installed, 'old build', 'a current main.js with no way to build installs as before');
+  assert.equal(current.bundle, 'installed');
+});
+
 function initialized() {
   const sb = sandbox();
   const r = aos(sb, ['init', '--vault', sb.vault, '--no-obsidian', '--provider', 'none', '--yes']);
