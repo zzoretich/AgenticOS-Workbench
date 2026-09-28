@@ -4,7 +4,7 @@ import type { App } from "obsidian";
 import type { AgentsCache } from "../../data/agents";
 import type { SessionHost } from "../../data/aosConfig";
 import type { Presets } from "../../data/teamWriter";
-import { Team, BoardItem, Post, Tone, sessionCommand, redirectPrompt, shq, splitMentions } from "../../data/teams";
+import { Team, BoardItem, Post, Tone, TEAMS_DIR, sessionCommand, redirectPrompt, shq, splitMentions } from "../../data/teams";
 
 export type TeamsView = "board" | "roster" | "interact" | "manage";
 export const VIEWS: { id: TeamsView; label: string }[] = [
@@ -140,4 +140,22 @@ export function redirectCommand(ctx: TeamsCtx, t: Team, it: BoardItem, host: Ses
   const prompt = redirectPrompt(t, it, ctx.teamCmd);
   const lead = t.members.find((m) => m.id === t.lead);
   return sessionCommand(ctx.agents, lead?.agent ?? null, host, prompt, ctx.hostEnv[host]) ?? `${ctx.hostEnv[host]}${host} ${shq(prompt)}`;
+}
+
+/** After an Approve or a paused item's budget raise: the one session that hands the lead its next step. The lead's own
+ *  provider when that host is enabled and has its agent, else the first enabled host that has it, else a `plain` session
+ *  on the first of those hosts, told which lead to act as and where the team's rules are; null when no host is enabled. */
+export function nextStepCommand(ctx: TeamsCtx, t: Team, prompt: string): { host: SessionHost; command: string; plain: boolean } | null {
+  const lead = t.members.find((m) => m.id === t.lead);
+  const order = [...ctx.hosts].sort((a, b) => Number(b === lead?.provider) - Number(a === lead?.provider));
+  for (const host of order) {
+    const command = sessionCommand(ctx.agents, lead?.agent ?? null, host, prompt, ctx.hostEnv[host]);
+    if (command) return { host, command, plain: false };
+  }
+  const host = order[0];
+  if (!host) return null;
+  // Names come from TEAM.md as typed; the whole prompt is one shq word, so the shell passes them to the session as text.
+  const role = `Act as ${lead?.name ?? t.lead} (${t.lead}), the lead of the ${t.id} team: `
+    + `${lead?.agent ? `its agent, ${lead.agent}, is not installed for this host, so ` : ""}read the team's rules in ${TEAMS_DIR}/${t.id}/TEAM.md first. `;
+  return { host, command: `${ctx.hostEnv[host]}${host} ${shq(role + prompt)}`, plain: true };
 }
