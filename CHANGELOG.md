@@ -4,6 +4,9 @@ All notable changes to AgenticOS Workbench. Versions follow the tags. From the n
 
 ## [Unreleased]
 
+### Changed
+- Update notices count the Workbench. The installed version was the lower of the Claude Code or Codex plugin and the vault's runtime, so a Workbench an upgrade could not replace looked current. It now also counts the Obsidian plugin's own `manifest.json` in the vault, read at every check and session start: the notice names it ("plugin 0.20.1, vault 0.20.1, Workbench 0.20.0"), and the statusline and the Workbench's update badge stay on until it is replaced. A vault without the Workbench (`aos init --no-obsidian`) is judged as before.
+
 ## [0.20.1] — 2026-09-28
 
 ### Fixed

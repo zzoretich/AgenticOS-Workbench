@@ -90,6 +90,19 @@ function lowerVersion(a, b) {
   return c <= 0 ? a : b;
 }
 
+/** The lowest of the versions given (nulls skipped): what "installed" is when the parts of an install disagree. */
+function lowestVersion(...vs) { return vs.reduce((a, b) => lowerVersion(a, b), null); }
+
+/**
+ * The Workbench's own version: the Obsidian plugin's manifest.json in the vault (the bundle `aos upgrade` installs, as
+ * cli/aos.js OBSIDIAN_PLUGIN_ID names it). An upgrade that could not replace the bundle leaves its old manifest, so the
+ * Workbench still counts as behind. null for a vault without one (`aos init --no-obsidian`), which then does not count.
+ */
+function hudVersionFrom(vault) {
+  const m = vault ? readJsonOrNull(path.join(vault, '.obsidian', 'plugins', 'agentic-os', 'manifest.json')) : null;
+  return m && typeof m.version === 'string' && m.version ? m.version : null;
+}
+
 function storePath(vault) { return path.join(vault, STORE_REL); }
 function linePath(vault) { return path.join(vault, LINE_REL); }
 
@@ -147,9 +160,10 @@ function renderStatusline(state, now = new Date()) {
 
 function renderNotice(state, now = new Date()) {
   if (!isBehind(state) || isSnoozed(state, now)) return '';
-  const { latest, pluginVersion, vaultVersion, installed } = state;
-  const skew = pluginVersion && vaultVersion && cmpSemver(pluginVersion, vaultVersion) !== 0;
-  const have = skew ? `plugin ${pluginVersion}, vault ${vaultVersion}` : `you have ${installed}`;
+  const { latest, pluginVersion, vaultVersion, hudVersion, installed } = state;
+  const parts = [['plugin', pluginVersion], ['vault', vaultVersion], ['Workbench', hudVersion]].filter(([, v]) => v);
+  const skew = new Set(parts.map(([, v]) => v)).size > 1;
+  const have = skew ? parts.map(([k, v]) => `${k} ${v}`).join(', ') : `you have ${installed}`;
   return `AgenticOS Workbench ${latest} available (${have}) — run \`aos upgrade\``;
 }
 
@@ -247,11 +261,13 @@ async function runCheck({
     // Only update-notice runs with CLAUDE_PLUGIN_ROOT set, so the producer must carry this forward
     // rather than clear it — otherwise every daily check would erase the skew signal (design §6.1).
     pluginVersion: pluginVersion || prev.pluginVersion || null,
+    // Read fresh on every check: the file in the vault is the truth, not what an earlier check saw.
+    hudVersion: hudVersionFrom(vault),
     snooze: prev.snooze || null,
     lastError: null,
     consecutiveFailures: 0,
   };
-  base.installed = lowerVersion(base.pluginVersion, base.vaultVersion);
+  base.installed = lowestVersion(base.pluginVersion, base.vaultVersion, base.hudVersion);
 
   let next;
   try {
@@ -396,11 +412,13 @@ async function cmdUpdateNotice({
     const at = now();
     let state = readState(vault);
 
-    // Only this process can see the plugin's own version; persist it so the other consumers can too.
+    // Only this process can see the plugin's own version; persist it so the other consumers can too. The Workbench's
+    // manifest is read again at every session start, so a bundle replaced (or not) since the last check counts now.
     const pv = pluginVersionFrom(pluginRoot);
-    if (state && pv && pv !== state.pluginVersion) {
-      state = { ...state, pluginVersion: pv };
-      state.installed = lowerVersion(pv, state.vaultVersion);
+    const hv = hudVersionFrom(vault);
+    if (state && ((pv && pv !== state.pluginVersion) || hv !== (state.hudVersion || null))) {
+      state = { ...state, pluginVersion: pv || state.pluginVersion || null, hudVersion: hv };
+      state.installed = lowestVersion(state.pluginVersion, state.vaultVersion, hv);
       state.behind = isBehind(state);
       writeState(vault, state);
     }
@@ -428,7 +446,7 @@ async function cmdUpdateNotice({
 module.exports = {
   REPO_SLUG, LATEST_URL, STORE_REL, LINE_REL, SCHEMA,
   DEFAULT_INTERVAL_HOURS, MAX_BACKOFF_DOUBLINGS, MAX_BODY_BYTES, TAG_RE,
-  parseTag, cmpSemver, lowerVersion,
+  parseTag, cmpSemver, lowerVersion, lowestVersion, hudVersionFrom,
   storePath, linePath, writeAtomic, readState, writeState,
   isBehind, isSnoozed, isStale, renderStatusline, renderNotice, writeFragment,
   claudeConfigDir, agenticosPath, updatesConfig, httpGetJson, runCheck,
