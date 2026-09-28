@@ -4,6 +4,8 @@ All notable changes to AgenticOS Workbench. Versions follow the tags. From the n
 
 ## [Unreleased]
 
+## [0.20.0] — 2026-09-28
+
 ### Upgrading
 - Add `persona/teams/*/running/` to your vault's `.gitignore` (new vaults get it): a live agent-team run's marker exists only while the run is going.
 - Add `*.lock` and `*.tmp` to your vault's `.gitignore` (new vaults get them): a writer's lock and temp files exist only for the moment of a write, but an auto-backup at that moment would commit them.
@@ -254,7 +256,8 @@ The first public release: an `aos` CLI, the AgenticOS runtime, a Claude Code plu
 - Update notifications: a GitHub release check surfaced as a session-start notice.
 - Docs: README, install guide, and a release acceptance runbook.
 
-[Unreleased]: https://github.com/zzoretich/AgenticOS-Workbench/compare/v0.19.2...HEAD
+[Unreleased]: https://github.com/zzoretich/AgenticOS-Workbench/compare/v0.20.0...HEAD
+[0.20.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.20.0
 [0.19.2]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.19.2
 [0.19.1]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.19.1
 [0.19.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.19.0
