@@ -471,19 +471,22 @@ async function doctor() {
 // (Plan 5's record-spend.js; gated by persona.perDayUsd), rows starting with `reason:` belong to the
 // reasoner role (gated by reasoner.perDayUsd), rows starting with `routine:` belong to prompt routines
 // (gated by routines.perDayUsd), `graph:` to the vault graph's semantic pass (graph.semantic.perDayUsd) and
-// `cross-review:` to cross-review and handoff calls (crossReview.perDayUsd); every other row is a background hook
+// `cross-review:` to cross-review and handoff calls (crossReview.perDayUsd), `team:` to agent-team seats (no daily cap:
+// each board item's phase budget caps them, spec 2026-09-28-agent-teams D8); every other row is a background hook
 // call (gated by claude.perDayUsd — spendToday in spend-ledger.js excludes the same families). One line per cap.
 const DUTY_FEATURE = /^duty:/;
 const REASON_FEATURE = /^reason:/;
 const ROUTINE_FEATURE = /^routine:/;
 const GRAPH_FEATURE = /^graph:/;
 const CROSS_REVIEW_FEATURE = /^cross-review:/;
+const TEAM_FEATURE = /^team:/;
 const isDutyFeature = (feature) => DUTY_FEATURE.test(feature);
 const isReasonFeature = (feature) => REASON_FEATURE.test(feature);
 const isRoutineFeature = (feature) => ROUTINE_FEATURE.test(feature);
 const isGraphFeature = (feature) => GRAPH_FEATURE.test(feature);
 const isCrossReviewFeature = (feature) => CROSS_REVIEW_FEATURE.test(feature);
-const isHookFeature = (feature) => ![DUTY_FEATURE, REASON_FEATURE, ROUTINE_FEATURE, GRAPH_FEATURE, CROSS_REVIEW_FEATURE].some((re) => re.test(feature));
+const isTeamFeature = (feature) => TEAM_FEATURE.test(feature);
+const isHookFeature = (feature) => ![DUTY_FEATURE, REASON_FEATURE, ROUTINE_FEATURE, GRAPH_FEATURE, CROSS_REVIEW_FEATURE, TEAM_FEATURE].some((re) => re.test(feature));
 /** Today's provider-spend.jsonl rows (local calendar day) that carry a numeric usd; [] when the ledger is absent. */
 function spendRowsToday(file) {
   let raw = '';
@@ -500,14 +503,15 @@ function spendRowsToday(file) {
 function sumUsd(rows, filter) { return rows.filter((r) => filter(String(r.feature || ''))).reduce((s, r) => s + r.usd, 0); }
 /** Today's spend in USD; `filter(feature)` picks the rows (default: every row). */
 function spendToday(file, filter = () => true) { return sumUsd(spendRowsToday(file), filter); }
-/** Today's USD per ledger family, keyed as settings-schema.js SPEND_FAMILIES (spec 2026-09-24-settings-tab D7). Both hook
- *  caps (claude.perDayUsd, codex.perDayUsd) govern the same hook total. */
+/** Today's USD per ledger family, keyed as settings-schema.js SPEND_FAMILIES (spec 2026-09-24-settings-tab D7), plus `teams`,
+ *  which has no daily cap. Both hook caps (claude.perDayUsd, codex.perDayUsd) govern the same hook total. */
 function spendByFamily(vault) {
   const rows = spendRowsToday(path.join(vault, 'brain', '_index', 'provider-spend.jsonl'));
   const r6 = (n) => Math.round(n * 1e6) / 1e6;
   return {
     hooks: r6(sumUsd(rows, isHookFeature)), duties: r6(sumUsd(rows, isDutyFeature)), reasoner: r6(sumUsd(rows, isReasonFeature)),
     routines: r6(sumUsd(rows, isRoutineFeature)), graph: r6(sumUsd(rows, isGraphFeature)), crossReview: r6(sumUsd(rows, isCrossReviewFeature)),
+    teams: r6(sumUsd(rows, isTeamFeature)),
   };
 }
 function status() {
@@ -554,6 +558,7 @@ function status() {
   out.log(`spend      today (routines) $${sumUsd(spend, isRoutineFeature).toFixed(4)} / cap $${routineCap}`);
   out.log(`spend      today (graph) $${sumUsd(spend, isGraphFeature).toFixed(4)} / cap $${graphCap}`);
   out.log(`spend      today (cross-review) $${sumUsd(spend, isCrossReviewFeature).toFixed(4)} / cap $${crossReviewCap}`);
+  out.log(`spend      today (teams) $${sumUsd(spend, isTeamFeature).toFixed(4)} (no daily cap: each board item has a phase budget)`);
   // Ledger shape (lib/pipeline-report.js): { version: 1, pipelines: { <name>: { lastRun: {…} | null, history: [] } } }.
   const ledger = readJson(path.join(idx, 'pipelines.json'), {}) || {};
   const rows = Object.entries(ledger.pipelines || {}).map(([name, st]) => [name, (st && st.lastRun) || null]);
@@ -738,7 +743,7 @@ function installPlugin(ctx, bin) {
   else if (inst.stdout.trim()) out.log(inst.stdout.trim());
 }
 
-/** "5 hook entries, the MCP registration, 27 skills" — what removeDirectWiring took out, or '' when nothing. */
+/** "5 hook entries, the MCP registration, 28 skills" — what removeDirectWiring took out, or '' when nothing. */
 function directWiringSummary(d) {
   return [d.hooks && `${d.hooks} hook entries`, d.mcp && 'the MCP registration', d.skills && `${d.skills} skills`].filter(Boolean).join(', ');
 }

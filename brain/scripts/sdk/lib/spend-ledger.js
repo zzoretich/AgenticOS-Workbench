@@ -55,12 +55,14 @@ function recordSpend({ feature, provider, model, usd, inputTokens, outputTokens,
   return row;
 }
 
-/** The five metered families that carry their own daily cap and so never count against the hook cap. */
-const HOOK_EXCLUDE = /^(duty|reason|routine|graph|cross-review):/;
+/** The metered families that never count against the hook cap: five carry their own daily cap, and agent teams
+ *  (`team:`) are capped per board item instead (spec 2026-09-28-agent-teams D8). */
+const HOOK_EXCLUDE = /^(duty|reason|routine|graph|cross-review|team):/;
 const REASON_ROWS = /^reason:/;
 const ROUTINE_ROWS = /^routine:/;
 const GRAPH_ROWS = /^graph:/;
 const CROSS_REVIEW_ROWS = /^cross-review:/;
+const TEAM_ROWS = /^team:/;
 
 /**
  * USD spent on the local calendar day of `now` (default: now) by the rows the hook cap
@@ -108,4 +110,4 @@ function crossReviewSpendToday(now = new Date()) {
   return spendToday(now, { include: CROSS_REVIEW_ROWS, exclude: null });
 }
 
-module.exports = { ProviderUnavailable, recordSpend, spendToday, reasonSpendToday, routineSpendToday, graphSpendToday, crossReviewSpendToday, SPEND_PATH, HOOK_EXCLUDE, REASON_ROWS, ROUTINE_ROWS, GRAPH_ROWS, CROSS_REVIEW_ROWS };
+module.exports = { ProviderUnavailable, recordSpend, spendToday, reasonSpendToday, routineSpendToday, graphSpendToday, crossReviewSpendToday, SPEND_PATH, HOOK_EXCLUDE, REASON_ROWS, ROUTINE_ROWS, GRAPH_ROWS, CROSS_REVIEW_ROWS, TEAM_ROWS };

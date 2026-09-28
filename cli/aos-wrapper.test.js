@@ -122,7 +122,7 @@ test('every contract name maps to a script path under brain/scripts', () => {
     'regen-insight': 'regen-workspace-insight.js', 'cost-budget': 'cost-budget.js', recall: 'sdk/recall-cli.js',
     'feedback-apply': 'feedback-apply.js',
     'sitrep-state': 'persona/sitrep-state.js', 'record-spend': 'persona/record-spend.js', interview: 'persona/interview.js',
-    'run-routine': 'routines/run-routine.js', 'skills-sync': 'skills-sync.js',
+    'run-routine': 'routines/run-routine.js', 'skills-sync': 'skills-sync.js', team: 'team.js',
   };
   for (const [name, script] of Object.entries(expected)) {
     assert.ok(src.includes(`${name}) SCRIPT=${script} ;;`), `missing map entry ${name} → ${script}`);

@@ -5,7 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { buildRoster, orchestratorFor, nextFireFor } = require('../heartbeat-writer.js');
+const { buildRoster, orchestratorFor, nextFireFor, teamOrchestrators } = require('../heartbeat-writer.js');
 
 test('an empty orchestrator map yields no roster and never attributes a run', () => {
   const roster = buildRoster({});
@@ -55,4 +55,19 @@ test('nextFireFor: an agent that is also an enabled routine gets its next fire; 
   assert.equal(nextFireFor('bad', rows), null);
   assert.equal(nextFireFor('Planner', rows), null);
   assert.equal(nextFireFor('sitrep', null), null);
+});
+
+test('every agent team\'s lead is an orchestrator, so a seat run recorded as the lead\'s rolls up under it (agent-teams D9)', () => {
+  const vault = fs.mkdtempSync(path.join(os.tmpdir(), 'hb-teams-'));
+  const dir = path.join(vault, 'persona', 'teams', 'dev');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'TEAM.md'), '---\nid: dev\nlead: lead\nmembers:\n  - id: lead\n    name: Lead\n    agent: seat-lead\n  - id: builder\n    agent: seat-builder\n---\n');
+  fs.mkdirSync(path.join(vault, 'persona', 'teams', 'broken'));
+  fs.writeFileSync(path.join(vault, 'persona', 'teams', 'broken', 'TEAM.md'), 'no frontmatter');
+  const teams = teamOrchestrators(vault);
+  assert.deepEqual(teams, { 'seat-lead': { nickname: 'Lead', trigger: 'aos team dev' } }, 'one bad TEAM.md never hides the others');
+  const roster = buildRoster(teams);
+  assert.equal(orchestratorFor(roster, { prompt: 'team dev: builder on x-01', script: 'seat-lead' }).trigger, 'aos team dev');
+  assert.equal(orchestratorFor(roster, { prompt: '', script: 'seat-builder' }), null, 'a seat is not an orchestrator');
+  assert.deepEqual(teamOrchestrators(fs.mkdtempSync(path.join(os.tmpdir(), 'hb-none-'))), {});
 });
