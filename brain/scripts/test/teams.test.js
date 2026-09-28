@@ -327,6 +327,20 @@ test('the CLI: list, status --json, usage is exit 2, a refusal is exit 1, and a 
   assert.match((await cli(w, ['tail', 'dev', '--item', 'x-01'])).out, /costs \$40 so far/);
 });
 
+test('list: an unreadable TEAM.md is a row with its error, and --json carries the presets set accepts', async () => {
+  const w = world();
+  fs.mkdirSync(path.join(w.root, 'broken'));
+  fs.writeFileSync(path.join(w.root, 'broken', 'TEAM.md'), '---\nid: broken\ntags:\n  - one\n---\n');
+  const r = await cli(w, ['list', '--json']);
+  assert.equal(r.code, 0, r.err);
+  const j = JSON.parse(r.out);
+  assert.deepEqual(j.teams.map((t) => [t.team, t.error || null]), [['broken', 'unsupported TEAM.md line: - one'], ['dev', null]]);
+  assert.deepEqual([j.presets.provider, j.presets.effort], [T.PROVIDERS, T.EFFORTS]);
+  assert.deepEqual(j.presets.model, T.presetsFor('model'));
+  assert.ok(j.presets.model.includes('inherit') && j.presets.model.includes('claude-sonnet-5'));
+  assert.match((await cli(w, ['list'])).out, /broken\s+unreadable: unsupported TEAM\.md line: - one/);
+});
+
 test('put never records the user\'s decisions or dispatch\'s bookkeeping, even as the lead (AT-01)', () => {
   const w = world();
   T.put(w.t(), { from: 'lead', json: JSON.stringify(AT_GATE) });
