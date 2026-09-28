@@ -6,7 +6,7 @@ import { createRequire } from "module";
 import {
   TEAMS_DIR, Team, TeamsAdapter, readTeams, teamFrom, parseJsonl, parseFrontmatter, memberStatus, pendingGates, gateBadge,
   orderTeams, boardColumns, gateCards, isBudgetGate, budgetFloor, budgetPresets, budgetPick, stepBudget, splitMentions, sessionCommand,
-  redirectPrompt, expectOf, channelView, touchesTeams, usd, shq, gatePitch, MAX_BUDGET_USD, diskAdapter,
+  redirectPrompt, nextStepPrompt, teamCommand, expectOf, channelView, touchesTeams, usd, shq, gatePitch, MAX_BUDGET_USD, diskAdapter,
 } from "./teams";
 import { parseAgents } from "./agents";
 import { touchesBadges } from "./badges";
@@ -240,6 +240,21 @@ test("session commands: the agent's run command per host, a prompt single-quoted
   const odd = { ...it, stage, raw: { ...it.raw, stage } };
   assert.ok(redirectPrompt(lab, odd).includes(`--expect ${shq(expectOf(odd))} --note`), "an apostrophe in a stage stays inside the quotes");
   assert.ok(!redirectPrompt(lab, odd).includes(`${stage}"`), "never the raw stage text outside shq");
+});
+
+test("next step: the lead hears what the user decided, that it is recorded, and this vault's aos team line", async () => {
+  const lab = await team("lab");
+  const it = lab.board.find((i) => i.id === "site-01")!;
+  assert.equal(nextStepPrompt(lab, it, "approved", 40),
+    "The user approved the Discuss gate on site-01 (Landing page) in the lab team at $40, and it is recorded. Take the next step. "
+    + "Run aos team for this vault as aos team, for example aos team item 'lab' 'site-01'.");
+  const ship = { ...it, gate: { ...it.gate!, name: "ship" } };
+  assert.match(nextStepPrompt(lab, ship, "approved", null), /^The user approved the Ship gate on site-01 \(Landing page\) in the lab team, and it is recorded\./, "a gate without a budget names no amount");
+  assert.match(nextStepPrompt(lab, { ...it, title: "" }, "raised", 62.5), /^The user raised the budget on site-01 in the lab team to \$62\.50, and it is recorded\./);
+  const cmd = teamCommand("/v/two", "/opt/node");
+  assert.ok(nextStepPrompt(lab, it, "raised", 65, cmd).endsWith(`as ${cmd}, for example ${cmd} item 'lab' 'site-01'.`), "never the terminal's own aos config");
+  const odd = { ...it, id: "site-01'; touch x #" };
+  assert.ok(nextStepPrompt(lab, odd, "approved", 40).endsWith(`item 'lab' ${shq(odd.id)}.`), "an id reaches the shell only inside shq");
 });
 
 test("dollar amounts, and the paths a vault event must touch to refresh the tab or its badge", () => {

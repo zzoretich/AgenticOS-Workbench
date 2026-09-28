@@ -4,6 +4,9 @@ All notable changes to AgenticOS Workbench. Versions follow the tags. From the n
 
 ## [Unreleased]
 
+### Changed
+- The Agent Teams tab hands the next step to the team's lead. After you approve a gate, or raise the budget of a paused item, the tab opens the lead in the terminal with a prompt saying what you decided, that it is already recorded, and how to run `aos team` for this vault: its agent on the lead's own provider when that host is enabled and has it, else another enabled host. The Approve dialog says where it opens. The lead still picks the next seat; the tab never dispatches one. Before, the item waited with the lead as its owner until someone started the lead.
+
 ## [0.20.2] — 2026-09-28
 
 ### Changed

@@ -1,12 +1,13 @@
 // BoardPane.ts — the Agent Teams tab's Work board (spec 2026-09-28-agent-teams-design §4.4): one column per stage, an
 // item's detail, and the gate card the "Needs you" strip shares. Approve and budget changes go through `aos team` with
-// the rendered row's ts as --expect (D3); Redirect opens the lead in the terminal to take the user's note (D10).
+// the rendered row's ts as --expect (D3); Redirect opens the lead in the terminal to take the user's note, and a recorded
+// Approve, or a raised budget on a paused item, opens it to take the next step: the lead picks the seat (D10).
 import {
   Team, BoardItem, GateCard, boardColumns, itemTone, isBudgetGate, budgetFloor, budgetPresets, budgetPick, stepBudget, gatePitch,
-  pendingGates, channelView, runTone, usd, titleCase, MAX_BUDGET_USD,
+  pendingGates, channelView, runTone, usd, titleCase, nextStepPrompt, MAX_BUDGET_USD,
 } from "../../data/teams";
 import { approveArgs, budgetArgs } from "../../data/teamWriter";
-import { TeamsCtx, itemKey, statusChip, errorLine, postRow, mentionText, since, hostButtons, redirectCommand, HOST_LABEL } from "./ui";
+import { TeamsCtx, itemKey, statusChip, errorLine, postRow, mentionText, since, hostButtons, redirectCommand, nextStepCommand, HOST_LABEL } from "./ui";
 
 /** The pending gate the user decides: context, the budget for a gate that funds work, Approve and Redirect. */
 export function renderGateCard(parent: HTMLElement, ctx: TeamsCtx, card: GateCard, { showTeam }: { showTeam: boolean }): void {
@@ -60,13 +61,15 @@ export function renderGateCard(parent: HTMLElement, ctx: TeamsCtx, card: GateCar
   const approve = acts.createEl("button", { cls: "mod-cta aos-at-approve", text: busy ? "Recording…" : `Approve${pick != null ? ` · ${usd(pick)}` : ""}` });
   approve.disabled = busy || noBudget !== null;
   approve.addEventListener("click", () => {
-    const lead = t.members.find((m) => m.id === t.lead);
+    const lead = t.members.find((m) => m.id === t.lead)?.name ?? t.lead;
     const budget = pick != null ? ` with a ${usd(pick)} phase budget (${usd(it.budget.spentUsd)} spent so far)` : "";
+    const next = nextStepCommand(ctx, t, nextStepPrompt(t, it, "approved", pick, ctx.teamCmd));
     void ctx.act(key, approveArgs(t.id, it, pick), {
       title: `Approve the ${gate} gate on ${it.id}?`,
-      message: `${it.title ? `${it.title}. ` : ""}${it.id} moves on from ${it.stage}, and ${lead?.name ?? t.lead} takes the next step${budget}.`,
+      message: `${it.title ? `${it.title}. ` : ""}${it.id} moves on from ${it.stage}, and ${lead} takes the next step${budget}. `
+        + (next ? `${lead} opens in ${HOST_LABEL[next.host]} to take it.` : `Enable Claude Code or Codex, or start ${lead} yourself to take it.`),
       cta: "Approve",
-    });
+    }).then((ok) => { if (ok && next) ctx.term(next.command); });
   });
   hostButtons(acts, ctx, "Redirect", (h) => redirectCommand(ctx, t, it, h),
     (h) => `Opens ${t.members.find((m) => m.id === t.lead)?.name ?? "the lead"} in ${HOST_LABEL[h]}: say what should change, and the lead records the redirect`,
@@ -200,8 +203,15 @@ function budgetEditor(parent: HTMLElement, ctx: TeamsCtx, t: Team, it: BoardItem
   stepper(row, chosen, (dir) => stepBudget(chosen, dir, cur > 0 && cur <= MAX_BUDGET_USD ? [cur] : [], floor), set, busy);
   const apply = row.createEl("button", { cls: "aos-ws-action aos-at-btn", text: busy ? "Saving…" : chosen === cur ? "Set budget" : `Set to ${usd(chosen)}` });
   apply.disabled = busy || chosen === cur || chosen < floor || chosen > MAX_BUDGET_USD;
-  apply.addEventListener("click", () => void ctx.act(key, budgetArgs(t.id, it, chosen)).then((ok) => { if (ok) ctx.ui.budgetUsd.delete(itemKey(t, it)); }));
-  if (it.status === "paused") row.createSpan({ cls: "aos-at-hint", text: "paused at its budget: raising it lets work resume" });
+  // A raise on a paused item puts it back to working with the lead as its next step, so the lead opens to take it.
+  const resume = it.status === "paused" && chosen > cur ? nextStepCommand(ctx, t, nextStepPrompt(t, it, "raised", chosen, ctx.teamCmd)) : null;
+  apply.addEventListener("click", () => void ctx.act(key, budgetArgs(t.id, it, chosen)).then((ok) => {
+    if (!ok) return;
+    ctx.ui.budgetUsd.delete(itemKey(t, it));
+    if (resume) ctx.term(resume.command);
+  }));
+  const lead = t.members.find((m) => m.id === t.lead)?.name ?? t.lead;
+  if (it.status === "paused") row.createSpan({ cls: "aos-at-hint", text: `paused at its budget: raising it lets work resume${ctx.hosts.length ? `, and opens ${lead} to take the next step` : ""}` });
   else if (floor > 0) row.createSpan({ cls: "aos-dim aos-at-floor", text: `at least ${usd(floor)}` });
   errorLine(parent, ctx.error(key));
 }

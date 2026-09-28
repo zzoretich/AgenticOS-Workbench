@@ -472,6 +472,20 @@ export function redirectPrompt(t: Team, it: BoardItem, team = "aos team"): strin
     + `${team} gate redirect ${shq(t.id)} ${shq(it.id)} --expect ${shq(expectOf(it))} --note '<what should change>'. Then take the next step.`;
 }
 
+/** What the tab just recorded that hands an item back to its lead: a gate approved, or a paused item's budget raised. */
+export type NextStep = "approved" | "raised";
+
+/** The lead's opening prompt after the tab records a decision (D10): what the user decided on which item, that it is
+ *  already recorded, and how to run `aos team` against this vault. The lead picks the seat; the tab never does. */
+export function nextStepPrompt(t: Team, it: BoardItem, decision: NextStep, amount?: number | null, team = "aos team"): string {
+  const item = `${it.id}${it.title ? ` (${it.title})` : ""} in the ${t.id} team`;
+  const what = decision === "approved"
+    ? `approved the ${titleCase(it.gate?.name ?? "")} gate on ${item}${amount != null ? ` at ${usd(amount)}` : ""}`
+    : `raised the budget on ${item}${amount != null ? ` to ${usd(amount)}` : ""}`;
+  return `The user ${what}, and it is recorded. Take the next step. `
+    + `Run aos team for this vault as ${team}, for example ${team} item ${shq(t.id)} ${shq(it.id)}.`;
+}
+
 // ── storage ──
 
 export interface TeamsAdapter {

@@ -141,3 +141,17 @@ export function redirectCommand(ctx: TeamsCtx, t: Team, it: BoardItem, host: Ses
   const lead = t.members.find((m) => m.id === t.lead);
   return sessionCommand(ctx.agents, lead?.agent ?? null, host, prompt, ctx.hostEnv[host]) ?? `${ctx.hostEnv[host]}${host} ${shq(prompt)}`;
 }
+
+/** After an Approve or a paused item's budget raise: the one session that hands the lead its next step. The lead's own
+ *  provider when that host is enabled and has its agent, else the first enabled host that has it, else a plain session
+ *  with the same prompt on the first of those hosts; null when no host is enabled. */
+export function nextStepCommand(ctx: TeamsCtx, t: Team, prompt: string): { host: SessionHost; command: string } | null {
+  const lead = t.members.find((m) => m.id === t.lead);
+  const order = [...ctx.hosts].sort((a, b) => Number(b === lead?.provider) - Number(a === lead?.provider));
+  for (const host of order) {
+    const command = sessionCommand(ctx.agents, lead?.agent ?? null, host, prompt, ctx.hostEnv[host]);
+    if (command) return { host, command };
+  }
+  const host = order[0];
+  return host ? { host, command: `${ctx.hostEnv[host]}${host} ${shq(prompt)}` } : null;
+}
