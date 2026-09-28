@@ -93,14 +93,22 @@ function lowerVersion(a, b) {
 /** The lowest of the versions given (nulls skipped): what "installed" is when the parts of an install disagree. */
 function lowestVersion(...vs) { return vs.reduce((a, b) => lowerVersion(a, b), null); }
 
+/** The version an incomplete Workbench install counts as: below every release, so it is always behind. */
+const HUD_INCOMPLETE = '0.0.0';
+
 /**
  * The Workbench's own version: the Obsidian plugin's manifest.json in the vault (the bundle `aos upgrade` installs, as
  * cli/aos.js OBSIDIAN_PLUGIN_ID names it). An upgrade that could not replace the bundle leaves its old manifest, so the
- * Workbench still counts as behind. null for a vault without one (`aos init --no-obsidian`), which then does not count.
+ * Workbench still counts as behind. A bundle whose manifest is missing or has no valid version (a copy cut short) is
+ * incomplete and counts as behind too. null only when there is no bundle at all (`aos init --no-obsidian`).
  */
 function hudVersionFrom(vault) {
-  const m = vault ? readJsonOrNull(path.join(vault, '.obsidian', 'plugins', 'agentic-os', 'manifest.json')) : null;
-  return m && typeof m.version === 'string' && m.version ? m.version : null;
+  if (!vault) return null;
+  const dir = path.join(vault, '.obsidian', 'plugins', 'agentic-os');
+  const m = readJsonOrNull(path.join(dir, 'manifest.json'));
+  const v = m && typeof m.version === 'string' ? m.version : null;
+  if (v && parseSemver(v)) return v;
+  return m || fs.existsSync(path.join(dir, 'main.js')) || fs.existsSync(path.join(dir, 'manifest.json')) ? HUD_INCOMPLETE : null;
 }
 
 function storePath(vault) { return path.join(vault, STORE_REL); }
@@ -163,7 +171,8 @@ function renderNotice(state, now = new Date()) {
   const { latest, pluginVersion, vaultVersion, hudVersion, installed } = state;
   const parts = [['plugin', pluginVersion], ['vault', vaultVersion], ['Workbench', hudVersion]].filter(([, v]) => v);
   const skew = new Set(parts.map(([, v]) => v)).size > 1;
-  const have = skew ? parts.map(([k, v]) => `${k} ${v}`).join(', ') : `you have ${installed}`;
+  const label = ([k, v]) => (k === 'Workbench' && v === HUD_INCOMPLETE ? 'Workbench incomplete' : `${k} ${v}`);
+  const have = skew ? parts.map(label).join(', ') : `you have ${installed}`;
   return `AgenticOS Workbench ${latest} available (${have}) — run \`aos upgrade\``;
 }
 
@@ -446,7 +455,7 @@ async function cmdUpdateNotice({
 module.exports = {
   REPO_SLUG, LATEST_URL, STORE_REL, LINE_REL, SCHEMA,
   DEFAULT_INTERVAL_HOURS, MAX_BACKOFF_DOUBLINGS, MAX_BODY_BYTES, TAG_RE,
-  parseTag, cmpSemver, lowerVersion, lowestVersion, hudVersionFrom,
+  parseTag, cmpSemver, lowerVersion, lowestVersion, hudVersionFrom, HUD_INCOMPLETE,
   storePath, linePath, writeAtomic, readState, writeState,
   isBehind, isSnoozed, isStale, renderStatusline, renderNotice, writeFragment,
   claudeConfigDir, agenticosPath, updatesConfig, httpGetJson, runCheck,

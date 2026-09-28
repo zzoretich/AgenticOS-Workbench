@@ -595,3 +595,21 @@ test('update-notice re-reads the Workbench manifest at session start', async () 
   assert.deepEqual([s.hudVersion, s.installed, s.behind], ['0.1.0', '0.1.0', true]);
   assert.match(w.outs[0], /\(plugin 0\.2\.0, vault 0\.2\.0, Workbench 0\.1\.0\)/);
 });
+
+test('a Workbench bundle with a missing or invalid manifest is incomplete and counts as behind', async () => {
+  const dir = (w) => path.join(w.vault, '.obsidian', 'plugins', 'agentic-os');
+  for (const setup of [
+    (w) => { fs.mkdirSync(dir(w), { recursive: true }); fs.writeFileSync(path.join(dir(w), 'main.js'), 'x'); },
+    (w) => { fs.mkdirSync(dir(w), { recursive: true }); fs.writeFileSync(path.join(dir(w), 'manifest.json'), '{ torn'); },
+    (w) => hudManifest(w.vault, 'not-a-version'),
+  ]) {
+    const w = vaultWorld();
+    setup(w);
+    const s = await check(w, { vaultVersion: '0.2.0', pluginVersion: '0.2.0', get: fakeGet({ body: release('v0.2.0') }) });
+    assert.deepEqual([s.hudVersion, s.installed, s.behind], [U.HUD_INCOMPLETE, U.HUD_INCOMPLETE, true]);
+    assert.match(U.renderNotice(s, NOW3()), /\(plugin 0\.2\.0, vault 0\.2\.0, Workbench incomplete\)/);
+  }
+  const empty = vaultWorld();
+  fs.mkdirSync(path.join(empty.vault, '.obsidian', 'plugins', 'agentic-os'), { recursive: true });
+  assert.equal(U.hudVersionFrom(empty.vault), null, 'an empty plugin folder is no bundle');
+});
