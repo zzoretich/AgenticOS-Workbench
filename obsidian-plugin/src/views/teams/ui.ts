@@ -33,6 +33,10 @@ export interface TeamsCtx {
   agents: AgentsCache;
   hosts: SessionHost[];
   presets: Presets | null;
+  /** How a terminal session runs `aos team` against this tab's vault (teamCommand). */
+  teamCmd: string;
+  /** Leads a Claude command so it sees this plugin's Claude config folder (claudeEnvPrefix); usually empty. */
+  claudeEnv: string;
   now: Date;
   ui: TeamsUiState;
   busy(key: string): boolean;
@@ -127,13 +131,13 @@ export function hostButtons(parent: HTMLElement, ctx: TeamsCtx, label: string, c
 
 /** Talk to a member: its agent's own session on `host`, or null when that host does not have the agent. */
 export function talkCommand(ctx: TeamsCtx, agent: string | null, host: SessionHost): string | null {
-  return sessionCommand(ctx.agents, agent, host);
+  return sessionCommand(ctx.agents, agent, host, undefined, ctx.claudeEnv);
 }
 
 /** Redirect: the lead's session with the gate's context; a plain session carries the same prompt when the lead's agent
  *  is missing on that host, so the redirect can still be recorded. */
 export function redirectCommand(ctx: TeamsCtx, t: Team, it: BoardItem, host: SessionHost): string {
-  const prompt = redirectPrompt(t, it);
+  const prompt = redirectPrompt(t, it, ctx.teamCmd);
   const lead = t.members.find((m) => m.id === t.lead);
-  return sessionCommand(ctx.agents, lead?.agent ?? null, host, prompt) ?? `${host} ${shq(prompt)}`;
+  return sessionCommand(ctx.agents, lead?.agent ?? null, host, prompt, ctx.claudeEnv) ?? `${host === "claude" ? ctx.claudeEnv : ""}${host} ${shq(prompt)}`;
 }

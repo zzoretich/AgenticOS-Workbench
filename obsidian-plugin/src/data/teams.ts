@@ -432,15 +432,31 @@ export function shq(s: string): string { return `'${s.replace(/'/g, `'\\''`)}'`;
 /**
  * What a "Talk to" or Redirect button types into a fresh terminal on `host`: the agent's own run command from
  * agents.json, plus an opening prompt when there is one. Codex has no `--agent`, so its prompt asks for the agent by
- * name. Null when that host does not have the agent.
+ * name. Null when that host does not have the agent. `claudeEnv` leads a Claude command (see claudeEnvPrefix).
  */
-export function sessionCommand(agents: AgentsCache, agent: string | null, host: AgentHost, prompt?: string): string | null {
+export function sessionCommand(agents: AgentsCache, agent: string | null, host: AgentHost, prompt?: string, claudeEnv = ""): string | null {
   if (!agent) return null;
   const row = agents.agents.find((a) => a.id === agent) ?? agents.agents.find((a) => a.name === agent);
   const run = row?.on[host]?.run ?? null;
   if (!run) return null;
-  if (!prompt) return run;
-  return host === "claude" ? `${run} ${shq(prompt)}` : `codex ${shq(`Use the ${agent} agent for this. ${prompt}`)}`;
+  if (host === "codex") return prompt ? `codex ${shq(`Use the ${agent} agent for this. ${prompt}`)}` : run;
+  return `${claudeEnv}${run}${prompt ? ` ${shq(prompt)}` : ""}`;
+}
+
+/** `CLAUDE_CONFIG_DIR='<dir>' ` when the plugin is set to a Claude config folder other than the one a new terminal
+ *  would use (`envDefault`), so a session started from the tab sees the same agents the tab lists; else nothing. */
+export function claudeEnvPrefix(configDir: string, envDefault: string): string {
+  return path.resolve(configDir) === path.resolve(envDefault) ? "" : `CLAUDE_CONFIG_DIR=${shq(configDir)} `;
+}
+
+/**
+ * How a lead's session runs `aos team` against the vault this tab shows. The `aos` launcher always uses the vault
+ * agenticos.json names; when the plugin is set to another vault root, the command runs that vault's own team.js with
+ * AOS_VAULT set, so a decision is recorded where the tab read it.
+ */
+export function teamCommand(vaultRoot: string, configVault: string | null | undefined, node: string): string {
+  if (configVault && path.resolve(configVault) === path.resolve(vaultRoot)) return "aos team";
+  return `AOS_VAULT=${shq(vaultRoot)} ${shq(node)} ${shq(path.join(vaultRoot, "brain", "scripts", "team.js"))}`;
 }
 
 /** The --expect a write the tab runs sends (D3): the whole snapshot the user saw, so a change to any field refuses it, as
@@ -452,11 +468,11 @@ export function expectOf(it: BoardItem): string { return JSON.stringify(Object.k
 export function promptExpectOf(it: BoardItem): string { return JSON.stringify({ ts: it.ts, stage: it.stage, status: it.status }); }
 
 /** The lead's opening prompt for a redirect: the user says what should change in the session, and the lead records it. */
-export function redirectPrompt(t: Team, it: BoardItem): string {
+export function redirectPrompt(t: Team, it: BoardItem, team = "aos team"): string {
   const gate = titleCase(it.gate?.name ?? "the");
   return `The user is redirecting the ${gate} gate on ${it.id}${it.title ? ` (${it.title})` : ""} in the ${t.id} team. `
     + "Ask the user what should change. Record their answer with this command, the note in single quotes: "
-    + `aos team gate redirect ${t.id} ${it.id} --expect '${promptExpectOf(it)}' --note '<what should change>'. Then take the next step.`;
+    + `${team} gate redirect ${t.id} ${it.id} --expect '${promptExpectOf(it)}' --note '<what should change>'. Then take the next step.`;
 }
 
 // ── storage ──

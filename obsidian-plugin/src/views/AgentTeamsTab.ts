@@ -4,10 +4,10 @@ import * as path from "path";
 import type AgenticOSPlugin from "../../main";
 import type { WorkbenchView } from "./WorkbenchView";
 import { ConfirmModal } from "../ui/ConfirmModal";
-import { readAgenticosJson, sessionHosts, invocationHint, SessionHost } from "../data/aosConfig";
+import { readAgenticosJson, sessionHosts, invocationHint, SessionHost, claudeConfigDir as envClaudeConfigDir } from "../data/aosConfig";
 import { AgentsCache, AGENTS_PATH, emptyAgents, readAgents, agentsStale } from "../data/agents";
 import { AOS_CLI } from "../data/aosRun";
-import { Team, TEAMS_DIR, readTeams, diskAdapter, touchesTeams, gateBadge, gateCards, orderTeams, pendingGates, boardColumns } from "../data/teams";
+import { Team, TEAMS_DIR, readTeams, diskAdapter, teamCommand, claudeEnvPrefix, touchesTeams, gateBadge, gateCards, orderTeams, pendingGates, boardColumns } from "../data/teams";
 import { TeamRunner, teamRunner, teamFailure, presetsOf, Presets, ListJson, LIST_ARGS, INIT_ARGS, pauseArgs } from "../data/teamWriter";
 import { TeamsCtx, TeamsUiState, TeamsView, Confirm, VIEWS, errorLine } from "./teams/ui";
 import { renderBoard, renderGateCard } from "./teams/BoardPane";
@@ -100,7 +100,7 @@ export class AgentTeamsTab {
     if (agentsStale(this.agents) && Date.now() - this.agentsSyncAt > 60_000) {
       this.agentsSyncAt = Date.now();
       this.plugin.runBrainScript(AOS_CLI, ["agents", "sync"], () => this.schedule(), {
-        env: { AOS_VAULT: this.plugin.vaultRoot(), AOS_CONFIG: path.join(this.plugin.claudeConfigDir(), "agenticos.json") },
+        env: { AOS_VAULT: this.plugin.vaultRoot(), AOS_CONFIG: path.join(this.plugin.claudeConfigDir(), "agenticos.json"), CLAUDE_CONFIG_DIR: this.plugin.claudeConfigDir() },
       });
     }
     this.hosts = sessionHosts(readAgenticosJson(this.plugin.claudeConfigDir()));
@@ -167,6 +167,8 @@ export class AgentTeamsTab {
   private ctx(team: Team): TeamsCtx {
     return {
       app: this.plugin.app, teams: this.teams, team, agents: this.agents, hosts: this.hosts, presets: this.presets, now: new Date(), ui: this.ui,
+      teamCmd: teamCommand(this.plugin.vaultRoot(), readAgenticosJson(this.plugin.claudeConfigDir())?.vault, this.plugin.nodeBin()),
+      claudeEnv: claudeEnvPrefix(this.plugin.claudeConfigDir(), envClaudeConfigDir()),
       busy: (k) => this.busyKeys.has(k), error: (k) => this.errors.get(k) ?? null,
       act: (k, args, confirm) => this.act(k, args, confirm),
       term: (cmd) => this.wb.runInTerm(cmd),
