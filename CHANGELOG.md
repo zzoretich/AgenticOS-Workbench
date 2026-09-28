@@ -4,6 +4,9 @@ All notable changes to AgenticOS Workbench. Versions follow the tags. From the n
 
 ## [Unreleased]
 
+### Fixed
+- `aos upgrade --from-local` no longer installs an old Workbench. The Obsidian bundle's `main.js` is a build output kept out of git, and the upgrade built it only when it was missing, so a checkout holding one from an earlier build installed that old code beside the new `manifest.json` and `styles.css` (0.20.0 showed no Agent Teams tab). A checkout with its dependencies installed now always rebuilds; a `main.js` older than the plugin's sources is never installed, and the upgrade says why and tries the release bundle instead.
+
 ## [0.20.0] — 2026-09-28
 
 ### Upgrading

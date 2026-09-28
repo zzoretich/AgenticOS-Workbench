@@ -844,15 +844,35 @@ function download(url, dest, hops = 0, getFn = (u, o, cb) => https.get(u, o, cb)
   });
 }
 
+/** The newest modification time among the Obsidian plugin's sources (main.ts, src/, styles.css, manifest.json): a
+ *  main.js older than this was built from other code. */
+function bundleSourcesMs(src) {
+  let newest = 0;
+  const visit = (p) => {
+    let st;
+    try { st = fs.statSync(p); } catch { return; }
+    if (st.isDirectory()) { for (const n of fs.readdirSync(p)) visit(path.join(p, n)); return; }
+    if (/\.(ts|css|json)$/.test(p)) newest = Math.max(newest, st.mtimeMs);
+  };
+  for (const f of ['main.ts', 'src', 'styles.css', 'manifest.json']) visit(path.join(src, f));
+  return newest;
+}
+
 async function obsidianBundle(ctx) {
   const src = path.join(ctx.repo, 'obsidian-plugin');
   const dest = path.join(ctx.vault, '.obsidian', 'plugins', OBSIDIAN_PLUGIN_ID);
   await ctx.act(`install the Obsidian plugin bundle into ${dest}`, async () => {
-    if (!exists(path.join(src, 'main.js')) && isDir(path.join(ctx.repo, 'node_modules'))) {
-      run(npmBin(), ['run', 'build', '-w', 'obsidian-plugin'], { cwd: ctx.repo, allowFail: true });
-    }
-    // dest is created only once a source is known, so a run that installs nothing leaves no empty plugin folder.
-    if (exists(path.join(src, 'main.js'))) {
+    // A checkout that can build always does. main.js is gitignored, so one left from an earlier build would otherwise be
+    // installed beside a newer manifest.json and styles.css, and the HUD would run old code under the new version.
+    const main = path.join(src, 'main.js');
+    const built = isDir(path.join(ctx.repo, 'node_modules'))
+      ? run(npmBin(), ['run', 'build', '-w', 'obsidian-plugin'], { cwd: ctx.repo, allowFail: true }).status === 0
+      : null;
+    if (exists(main) && fs.statSync(main).mtimeMs < bundleSourcesMs(src)) {
+      out.warn(`obsidian-plugin/main.js is older than the plugin's sources${built === false ? ' and the build failed' : ''}, so it is not installed; `
+        + `${built === null ? 'run npm ci in the checkout' : 'fix npm run build -w obsidian-plugin'}, then aos upgrade. Trying the release bundle instead.`);
+    } else if (exists(main)) {
+      // dest is created only once a source is known, so a run that installs nothing leaves no empty plugin folder.
       fs.mkdirSync(dest, { recursive: true });
       for (const f of BUNDLE_FILES) {
         if (!exists(path.join(src, f))) continue;
