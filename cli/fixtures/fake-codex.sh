@@ -97,11 +97,13 @@ case "$KEY" in
   "exec -")
     # A headless run (lib/headless.js codex runner): the prompt is on stdin, the final message goes to the -o file,
     # the --json event stream to stdout. FAKE_CODEX_STDIN captures the prompt, FAKE_ARGS the argv (like fake-claude),
-    # FAKE_JOURNAL appends a duty journal entry so run-duty.sh sees its contract met.
+    # FAKE_JOURNAL appends a journal entry for duty FAKE_DUTY (default testduty) so run-duty.sh sees its contract met,
+    # and FAKE_TAMPER appends a line to that file (a write the duty made, as with fake-claude).
     PROMPT_IN=$(cat)
     [ -n "${FAKE_CODEX_STDIN:-}" ] && printf '%s' "$PROMPT_IN" > "$FAKE_CODEX_STDIN"
     [ -n "${FAKE_ARGS:-}" ] && printf '%s\n' "$@" > "$FAKE_ARGS"
-    [ -n "${FAKE_JOURNAL:-}" ] && { mkdir -p "$(dirname "$FAKE_JOURNAL")"; printf '\n## 09:00 — duty: testduty\n- status: OK\n' >> "$FAKE_JOURNAL"; }
+    [ -n "${FAKE_JOURNAL:-}" ] && { mkdir -p "$(dirname "$FAKE_JOURNAL")"; printf '\n## 09:00 — duty: %s\n- status: OK\n' "${FAKE_DUTY:-testduty}" >> "$FAKE_JOURNAL"; }
+    [ -n "${FAKE_TAMPER:-}" ] && { mkdir -p "$(dirname "$FAKE_TAMPER")"; echo tampered >> "$FAKE_TAMPER"; }
     OUTF=""; while [ $# -gt 0 ]; do [ "$1" = "-o" ] && OUTF="$2"; shift; done
     # FAKE_CODEX_REPLY is the final message (default "fake reply"); FAKE_CODEX_EXIT fails the run after the events.
     REPLY="${FAKE_CODEX_REPLY:-fake reply}"

@@ -4,15 +4,17 @@
  * duty-guard.js — what a duty may write, and a check that it wrote nothing else it could reach
  * (docs/superpowers/specs/2026-09-23-duty-write-scope-design.md). run-duty.sh calls it around every duty, on both hosts.
  *
- *   node duty-guard.js scope --host claude [--tools <list>] [--writes <list>]
+ *   node duty-guard.js scope --host claude [--duty <slug>] [--tools <list>] [--writes <list>]
  *        two lines: the --allowedTools value (D1: bare Write/Edit and every Edit(…)/Write(…) rule dropped, one absolute
  *        Edit(//…) rule per write-scope entry added; D2: git log/diff/show and unrestricted Bash dropped) and the
  *        --disallowedTools value (the guarded and executable areas, git's --output). Relative Edit rules are not used:
  *        they did not match through a symlinked vault path in a live probe, so each rule names both the vault path as
  *        configured and its realpath.
- *   node duty-guard.js scope --host codex [--writes <list>] [--dry-run]
+ *   node duty-guard.js scope --host codex [--duty <slug>] [--writes <list>] [--dry-run]
  *        one directory per line for `codex exec --add-dir` (D4): every write-scope directory outside persona/ (the run's
  *        -C root), created when missing (not on --dry-run). A file entry grants its folder: Codex roots are directories.
+ *        A built-in file entry whose folder is refused (MEMORY.md: its folder is the vault) is left out without a
+ *        refusal line; `check` backfills its index lines instead.
  *   node duty-guard.js snapshot <slug>
  *        copies the guarded persona files (D6) to <config home>/agenticos-duty-guard/<slug>/ (D7: outside every duty's
  *        reach — Codex's sandbox can write $TMPDIR, neither host's duty can write the config home). Exit 0, or 1.
@@ -20,10 +22,14 @@
  *        after the duty: every added, changed or removed guarded file is restored and the duty's version kept under
  *        <dir>/guard-<slug>-<stamp>/ (default <vault>/persona/journal/logs); ledger.jsonl keeps the lines it had plus
  *        appended `filed` events only. A restore adds a flag under `## Flags` in STATE.md and one OS notification.
+ *        On a clean check for a duty whose built-in writes hold brain/memory/feedback/, every feedback memory changed
+ *        since the snapshot and not linked from MEMORY.md gets its `## Feedback` line (`indexed`, or `indexError`, in
+ *        the JSON; spec 2026-09-28-reflect-memory-writes-design D3/D4).
  *        Prints one JSON line; exit 0 clean, 4 restored, 5 no snapshot.
  *
- * The write scope (D5) is DEFAULT_WRITES plus a routine's `writes:` entries (PERSONA_WRITES). An entry that is the vault,
- * holds or sits in a guarded or executable area, or has a dot-segment is refused on stderr and left out.
+ * The write scope (D5) is DEFAULT_WRITES, the duty's DUTY_WRITES (--duty) and a routine's `writes:` entries
+ * (PERSONA_WRITES). An entry that is the vault, holds or sits in a guarded or executable area, or has a dot-segment is
+ * refused on stderr and left out.
  */
 const fs = require('fs');
 const path = require('path');
@@ -34,6 +40,11 @@ const EXIT_RESTORED = 4;
 const EXIT_NO_SNAPSHOT = 5;
 /** Vault-relative; a trailing / marks a folder. The built-in duties' writes, so an un-reseeded vault keeps working. */
 const DEFAULT_WRITES = ['persona/journal/', 'persona/STATE.md', 'persona/proposals/', 'persona/PLAYBOOK.md', 'brain/reflections/', 'brain/_index/sitrep.md'];
+/** The feedback-memory folder the reflect duties promote corrections into (their contracts: one file + one index line). */
+const FEEDBACK_DIR = 'brain/memory/feedback/';
+/** Per-duty built-in writes on top of DEFAULT_WRITES (spec 2026-09-28-reflect-memory-writes-design D1/D2): in the
+ *  runtime, not the routine files, because brain/routines/ is seeded once and an upgrade never rewrites it. */
+const DUTY_WRITES = { reflect: [FEEDBACK_DIR, 'MEMORY.md'], 'reflect-daily': [FEEDBACK_DIR, 'MEMORY.md'] };
 /** D6: what decides what runs and what is trusted. The ledger is guarded separately (append-only, `filed` only). */
 const GUARDED = ['persona/IDENTITY.md', 'persona/duties/', 'persona/routines/', 'persona/autoapply.json', 'persona/flag-closer/', 'persona/repos.json'];
 const LEDGER = 'persona/ledger.jsonl';
@@ -91,23 +102,29 @@ function dailyNoteDir(vault, now = new Date()) {
   return rel === '.' ? null : `${rel}/`;
 }
 
-/** D5: DEFAULT_WRITES + today's daily-note folder + `writes`, each checked; returns { entries: [{rel, dir}], refused }. */
-function writeScope({ vault, writes = '', now = new Date() } = {}) {
+/** A duty's built-in writes (DUTY_WRITES), or none; own keys only, so a slug like `constructor` gets none. */
+function dutyWrites(duty) { return Object.prototype.hasOwnProperty.call(DUTY_WRITES, duty) ? DUTY_WRITES[duty] : []; }
+
+/** D5: DEFAULT_WRITES + today's daily-note folder + the duty's DUTY_WRITES + `writes`, each checked; returns
+ *  { entries: [{rel, dir, builtIn}], refused }. `builtIn` marks every entry that is not the routine's own. */
+function writeScope({ vault, writes = '', duty = '', now = new Date() } = {}) {
   const raw = [...DEFAULT_WRITES];
   const daily = dailyNoteDir(vault, now);
   if (daily) raw.push(daily);
+  raw.push(...dutyWrites(duty));
+  const builtIns = raw.length;
   for (const w of String(writes || '').split(',').map((s) => s.trim()).filter(Boolean)) {
     const isDir = w.endsWith('/') || (() => { try { return fs.statSync(path.join(vault, w)).isDirectory(); } catch { return false; } })();
     raw.push(isDir && !w.endsWith('/') ? `${w}/` : w);
   }
   const entries = [], refused = [], seen = new Set();
-  for (const r of raw) {
-    const e = norm(r);
+  raw.forEach((r, i) => {
+    const e = { ...norm(r), builtIn: i < builtIns };
     const why = refusal(e.rel);
-    if (why) { refused.push({ entry: r, why }); continue; }
+    if (why) { refused.push({ entry: r, why }); return; }
     const key = `${e.rel}${e.dir ? '/' : ''}`;
     if (!seen.has(key)) { seen.add(key); entries.push(e); }
-  }
+  });
   return { entries, refused };
 }
 
@@ -122,8 +139,8 @@ function vaultForms(vault) {
 function editRule(abs, rel, dir) { return `Edit(/${abs}/${rel}${dir ? '/**' : ''})`; }
 
 /** D1 + D2: { allowed, denied } for a Claude duty. */
-function claudeTools({ vault, tools = '', writes = '', now = new Date() } = {}) {
-  const { entries, refused } = writeScope({ vault, writes, now });
+function claudeTools({ vault, tools = '', writes = '', duty = '', now = new Date() } = {}) {
+  const { entries, refused } = writeScope({ vault, writes, duty, now });
   const kept = splitTools(tools).filter((r) => !WRITE_TOOLS.has(toolName(r)) && r !== 'Bash' && !DROP_BASH.test(r));
   const forms = vaultForms(vault);
   const allowed = [...kept];
@@ -138,14 +155,16 @@ function claudeTools({ vault, tools = '', writes = '', now = new Date() } = {}) 
   return { allowed: allowed.join(','), denied: denied.join(','), refused };
 }
 
-/** D4: absolute folders for `codex exec --add-dir`, outside persona/ (the -C root); created when missing. */
-function codexDirs({ vault, writes = '', now = new Date(), mkdir = true } = {}) {
-  const { entries, refused } = writeScope({ vault, writes, now });
+/** D4: absolute folders for `codex exec --add-dir`, outside persona/ (the -C root); created when missing. A built-in
+ *  file whose folder is refused (MEMORY.md) is left out quietly: `check` backfills it (reflect-memory-writes D3). */
+function codexDirs({ vault, writes = '', duty = '', now = new Date(), mkdir = true } = {}) {
+  const { entries, refused } = writeScope({ vault, writes, duty, now });
   const dirs = [];
   for (const e of entries) {
     const rel = e.dir ? e.rel : path.posix.dirname(e.rel);
     if (rel === 'persona' || rel.startsWith('persona/')) continue;
     const why = refusal(rel);
+    if (why && e.builtIn && !e.dir) continue;
     if (why) { refused.push({ entry: `${rel}/ (folder of ${e.rel})`, why }); continue; }
     const abs = path.join(path.resolve(vault), ...rel.split('/'));
     if (dirs.includes(abs)) continue;
@@ -256,6 +275,54 @@ function flagState(stateFile, line) {
   return true;
 }
 
+/** A memory's index label: the first `# ` heading (else the slug), and the frontmatter `description:` (else the first
+ *  body line), clipped like memory-writer's. */
+function memoryLabel(text, slug) {
+  const { deriveDescription } = require('../lib/memory-index.js');
+  let body = text, description = '';
+  const fm = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*(\r?\n|$)/.exec(text);
+  if (fm) {
+    body = text.slice(fm[0].length);
+    const d = /^description:[ \t]*(.+)$/m.exec(fm[1]);
+    if (d) description = d[1].trim().replace(/^(['"])(.*)\1$/, '$2');
+  }
+  const lines = body.split(/\r?\n/);
+  const h1 = lines.find((l) => /^#\s+\S/.test(l));
+  const title = h1 ? h1.replace(/^#\s+/, '').replace(/\s+/g, ' ').trim() : slug;
+  if (!description) description = lines.find((l) => l.trim() && !/^#/.test(l)) || title;
+  return { title, description: deriveDescription(description) };
+}
+
+/**
+ * D3 (reflect-memory-writes): one `## Feedback` line in MEMORY.md for each feedback memory changed since `since` and
+ * not linked yet — the index line a Codex duty cannot write (Codex roots are folders; MEMORY.md's is the vault). Regular
+ * top-level *.md files only: no symlink, dot-file, README.md or _drafts/. Returns the vault-relative paths it indexed.
+ */
+function indexFeedback({ vault, since }) {
+  const t0 = Date.parse(since);
+  if (!Number.isFinite(t0)) return [];
+  const dir = path.join(vault, ...FEEDBACK_DIR.split('/'));
+  let names;
+  try { names = fs.readdirSync(dir).filter((n) => n.endsWith('.md') && !n.startsWith('.') && n !== 'README.md').sort(); } catch { return []; }
+  // 2 s of slack: a file system with coarse mtimes can stamp a write made just after the snapshot a little before it.
+  const fresh = names.filter((n) => { try { const st = fs.lstatSync(path.join(dir, n)); return st.isFile() && st.mtimeMs >= t0 - 2000; } catch { return false; } });
+  if (!fresh.length) return [];
+  const { insertIndexLine } = require('../lib/memory-index.js');
+  const indexed = [];
+  require('../lib/fsx.js').updateSync(path.join(vault, 'MEMORY.md'), (idx) => {
+    let text = idx == null ? '# Index\n' : idx;
+    for (const name of fresh) {
+      const rel = `${FEEDBACK_DIR}${name}`;
+      if (text.includes(`](${rel})`)) continue;
+      const { title, description } = memoryLabel(fs.readFileSync(path.join(dir, name), 'utf8'), name.slice(0, -3));
+      text = insertIndexLine(text, '## Feedback', `- [${title}](${rel}) — ${description}`);
+      indexed.push(rel);
+    }
+    return text;
+  }, { timeoutMs: 5000 });
+  return indexed;
+}
+
 function check({ vault, slug, dir = guardDir(slug), keepRoot = path.join(vault, 'persona', 'journal', 'logs'), now = new Date(), notify } = {}) {
   let manifest;
   try { manifest = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8')); } catch { return { schema: SCHEMA, slug, error: 'no snapshot' }; }
@@ -287,7 +354,17 @@ function check({ vault, slug, dir = guardDir(slug), keepRoot = path.join(vault, 
   const ledger = reconcileLedger(vault, dir, keepDir);
   if (ledger) restored.push({ path: LEDGER, change: ledger });
   fs.rmSync(dir, { recursive: true, force: true });
-  if (!restored.length) return { schema: SCHEMA, slug, restored: [] };
+  if (!restored.length) {
+    const clean = { schema: SCHEMA, slug, restored: [] };
+    // D4: the backfill follows a clean check only; manifest.at is the run's start.
+    if (dutyWrites(slug).includes(FEEDBACK_DIR)) {
+      try {
+        const indexed = indexFeedback({ vault, since: manifest.at });
+        if (indexed.length) clean.indexed = indexed;
+      } catch (e) { clean.indexError = e.message; }
+    }
+    return clean;
+  }
   const names = restored.map((r) => r.path).join(', ');
   flagState(path.join(vault, 'persona', 'STATE.md'), `- [ ] ${localDay(now)} duty '${slug}' wrote guarded file(s) ${names} — restored, its version kept in ${path.relative(vault, keepDir)} (guard)`);
   (notify || ((t, m) => require('./watchdog.js').osNotify(t, m)))('AgenticOS', `duty '${slug}' wrote guarded file(s) — restored`);
@@ -309,7 +386,7 @@ function parseArgs(argv) {
 }
 
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,60}$/;
-const USAGE = 'usage: duty-guard.js scope --host claude|codex [--tools <list>] [--writes <list>] [--dry-run] | snapshot <slug> | check <slug> [--keep <dir>]\n';
+const USAGE = 'usage: duty-guard.js scope --host claude|codex [--duty <slug>] [--tools <list>] [--writes <list>] [--dry-run] | snapshot <slug> | check <slug> [--keep <dir>]\n';
 
 function main(argv, { stdout = (s) => process.stdout.write(s), stderr = (s) => process.stderr.write(s), env = process.env, now = new Date() } = {}) {
   const { flags, positional } = parseArgs(argv);
@@ -318,14 +395,16 @@ function main(argv, { stdout = (s) => process.stdout.write(s), stderr = (s) => p
   try { vault = flags.vault || env.AOS_VAULT || require('../lib/paths.js').VAULT; } catch (e) { stderr(`duty-guard: ${e.message}\n`); return 1; }
   try {
     if (verb === 'scope') {
+      if (flags.duty !== undefined && !SLUG_RE.test(flags.duty)) { stderr(USAGE); return 2; }
+      const duty = flags.duty || '';
       if (flags.host === 'claude') {
-        const r = claudeTools({ vault, tools: flags.tools, writes: flags.writes, now });
+        const r = claudeTools({ vault, tools: flags.tools, writes: flags.writes, duty, now });
         for (const x of r.refused) stderr(`duty-guard: writes entry '${x.entry}' refused: ${x.why}\n`);
         stdout(`${r.allowed}\n${r.denied}\n`);
         return 0;
       }
       if (flags.host === 'codex') {
-        const r = codexDirs({ vault, writes: flags.writes, now, mkdir: !flags['dry-run'] });
+        const r = codexDirs({ vault, writes: flags.writes, duty, now, mkdir: !flags['dry-run'] });
         for (const x of r.refused) stderr(`duty-guard: writes entry '${x.entry}' refused: ${x.why}\n`);
         stdout(r.dirs.map((d) => `${d}\n`).join(''));
         return 0;
@@ -348,6 +427,7 @@ function main(argv, { stdout = (s) => process.stdout.write(s), stderr = (s) => p
 
 if (require.main === module) process.exit(main(process.argv.slice(2)));
 module.exports = {
-  SCHEMA, EXIT_RESTORED, EXIT_NO_SNAPSHOT, DEFAULT_WRITES, GUARDED, LEDGER, EXECUTABLE, GIT_WRITE_OUT,
-  splitTools, refusal, dailyNoteDir, writeScope, vaultForms, claudeTools, codexDirs, configHome, guardDir, listGuarded, snapshot, check, flagState, main,
+  SCHEMA, EXIT_RESTORED, EXIT_NO_SNAPSHOT, DEFAULT_WRITES, FEEDBACK_DIR, DUTY_WRITES, GUARDED, LEDGER, EXECUTABLE, GIT_WRITE_OUT,
+  splitTools, refusal, dailyNoteDir, dutyWrites, writeScope, vaultForms, claudeTools, codexDirs, configHome, guardDir, listGuarded, snapshot,
+  memoryLabel, indexFeedback, check, flagState, main,
 };

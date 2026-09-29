@@ -140,13 +140,14 @@ if [ -z "$NODE" ] || [ ! -x "$NODE" ] || [ ! -f "$GUARD" ]; then
   echo "run-duty: node or duty-guard.js missing — '$DUTY' does not run without its write scope" >&2
   exit 1
 fi
-# duty_scope <host>: duty-guard.js scope; refused writes: entries go to the error log (stderr on a dry run).
+# duty_scope <host>: duty-guard.js scope; refused writes: entries go to the error log (stderr on a dry run). --duty adds
+# the duty's built-in writes (the reflect duties' feedback memories, spec 2026-09-28-reflect-memory-writes-design D1).
 duty_scope() {
   if [ "$DRY_RUN" = "--dry-run" ]; then
-    AOS_VAULT="$VAULT" AOS_CONFIG="$CONFIG" "$NODE" "$GUARD" scope --host "$1" --tools "$PERSONA_TOOLS" --writes "${PERSONA_WRITES:-}" --dry-run
+    AOS_VAULT="$VAULT" AOS_CONFIG="$CONFIG" "$NODE" "$GUARD" scope --host "$1" --duty "$DUTY" --tools "$PERSONA_TOOLS" --writes "${PERSONA_WRITES:-}" --dry-run
   else
     mkdir -p "$PERSONA_LOG_DIR"
-    AOS_VAULT="$VAULT" AOS_CONFIG="$CONFIG" "$NODE" "$GUARD" scope --host "$1" --tools "$PERSONA_TOOLS" --writes "${PERSONA_WRITES:-}" 2>> "$ERR"
+    AOS_VAULT="$VAULT" AOS_CONFIG="$CONFIG" "$NODE" "$GUARD" scope --host "$1" --duty "$DUTY" --tools "$PERSONA_TOOLS" --writes "${PERSONA_WRITES:-}" 2>> "$ERR"
   fi
 }
 # Codex: the positional parameters become the `--add-dir <folder>` pairs (POSIX sh has no arrays; $1/$2 are read above).
@@ -283,10 +284,15 @@ wait "$CLAUDE_PID"; STATUS=$?
 kill "$KILLER_PID" 2>/dev/null; wait "$KILLER_PID" 2>/dev/null
 
 # Guard check before anything else runs from the vault: exit 4 = guarded files restored (duty-guard.js flagged STATE.md
-# and kept the duty's version); any other non-zero = the check itself failed.
+# and kept the duty's version); any other non-zero = the check itself failed. A clean check that backfilled MEMORY.md
+# lines for the duty's new feedback memories (reflect-memory-writes D3) is logged too.
 GUARD_RC=0
 GUARD_OUT="$(AOS_VAULT="$VAULT" AOS_CONFIG="$CONFIG" "$NODE" "$GUARD" check "$DUTY" --keep "$PERSONA_LOG_DIR" 2>> "$ERR")" || GUARD_RC=$?
-[ "$GUARD_RC" -eq 0 ] || echo "[$(date)] duty=$DUTY guard exit $GUARD_RC $GUARD_OUT" >> "$LOG"
+if [ "$GUARD_RC" -ne 0 ]; then
+  echo "[$(date)] duty=$DUTY guard exit $GUARD_RC $GUARD_OUT" >> "$LOG"
+else
+  case "$GUARD_OUT" in *'"indexed"'*|*'"indexError"'*) echo "[$(date)] duty=$DUTY guard $GUARD_OUT" >> "$LOG" ;; esac
+fi
 
 cat "$OUT" >> "$LOG"
 if [ -n "$NODE" ] && [ -x "$NODE" ] && [ -f "$RECORD" ] && [ -s "$OUT" ]; then

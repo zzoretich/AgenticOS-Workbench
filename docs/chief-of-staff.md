@@ -115,7 +115,9 @@ A duty is steered by text it did not write (commit subjects, correction quotes, 
 what it can write, on both hosts (`docs/superpowers/specs/2026-09-23-duty-write-scope-design.md`):
 
 - **The write scope**: `persona/journal/`, `persona/STATE.md`, `persona/proposals/`, `persona/PLAYBOOK.md`,
-  `brain/reflections/`, `brain/_index/sitrep.md` and today's daily-note folder, plus the routine's `writes:` entries.
+  `brain/reflections/`, `brain/_index/sitrep.md` and today's daily-note folder; for `reflect` and `reflect-daily` also
+  `brain/memory/feedback/` and `MEMORY.md`, so they can promote a repeated correction
+  (`docs/superpowers/specs/2026-09-28-reflect-memory-writes-design.md`); plus the routine's `writes:` entries.
   An entry that is the vault, sits in or holds a guarded or executable area (`persona/IDENTITY.md`, `duties/`,
   `routines/`, `autoapply.json`, `flag-closer/`, `repos.json`, `ledger.jsonl`, `brain/scripts/`, `brain/routines/`,
   `workspaces/`) or has a dot-segment is refused and logged.
@@ -124,7 +126,8 @@ what it can write, on both hosts (`docs/superpowers/specs/2026-09-23-duty-write-
   scope entry; deny rules for the guarded and executable areas and for `git … --output`.
 - **Codex**: the duty's workspace is `persona/` (`-C`) with one `--add-dir` per other scope folder, so the sandbox
   refuses `brain/scripts/`, `workspaces/`, `.obsidian/` and the vault's `.git`. A file entry grants its folder
-  (Codex roots are folders); a file at the vault root cannot be granted.
+  (Codex roots are folders); a file at the vault root cannot be granted, so after a clean run of a reflect duty the
+  guard writes the `MEMORY.md` line of each feedback memory the run added and did not index (on both hosts).
 - **Both**: the persona scripts a duty may call refuse a `--root`, `--file` or file argument outside the vault under
   `AOS_HEADLESS=1`. Before the run, `persona/duty-guard.js` copies the persona's trust files (`IDENTITY.md`,
   `duties/`, `autoapply.json`, `flag-closer/`, `repos.json`) to `agenticos-duty-guard/` next to `agenticos.json`;
