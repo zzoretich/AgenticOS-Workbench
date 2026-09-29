@@ -1042,6 +1042,10 @@
 .aos-statusbar .aos-text-cyan  { color: #00d4ff; }
 .aos-statusbar .aos-text-amber { color: #ffb454; }
 .aos-statusbar .aos-text-rose  { color: #ff5e7e; }
+.aos-statusbar .aos-text-violet { color: #b98cff; }
+/* The bar sits outside .aos-root, so the --aos-* dim token is undefined here (statusline spec §4.4). */
+.aos-statusbar .aos-dim { opacity: 0.55; }
+.aos-statusbar .aos-sbar-link:hover { text-decoration: underline; }
 
 /* ── TERMINAL PANEL ────────────────────────────────────────────────────── */
 

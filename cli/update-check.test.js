@@ -613,3 +613,49 @@ test('a Workbench bundle with a missing or invalid manifest is incomplete and co
   fs.mkdirSync(path.join(empty.vault, '.obsidian', 'plugins', 'agentic-os'), { recursive: true });
   assert.equal(U.hudVersionFrom(empty.vault), null, 'an empty plugin folder is no bundle');
 });
+
+// ── the status line's session-start lines (spec 2026-09-28-statusline-design D7, D9) ──
+
+function statuslineWorld() {
+  const w = cmdWorld();
+  fs.writeFileSync(path.join(w.configDir, 'agenticos.json'), JSON.stringify({ version: '0.1.0', vault: w.vault, claudeConfigDir: w.configDir }, null, 2));
+  fs.symlinkSync(path.join(__dirname, '..', 'brain', 'scripts'), path.join(w.vault, 'brain', 'scripts'));
+  const team = path.join(w.vault, 'persona', 'teams', 'dev');
+  fs.mkdirSync(team, { recursive: true });
+  fs.writeFileSync(path.join(team, 'TEAM.md'), '---\nid: dev\nmembers:\n  - id: lead\n---\n');
+  fs.writeFileSync(path.join(team, 'board.jsonl'), `${JSON.stringify({ schema: 1, ts: '2026-09-15T10:00:00Z', id: 'site-02', stage: 'ship', status: 'gate', gate: { name: 'ship', state: 'pending' } })}\n`);
+  const state = (s) => fs.writeFileSync(path.join(w.configDir, 'agenticos-statusline.json'), JSON.stringify({ schema: 1, ...s }));
+  return { ...w, state };
+}
+
+test('update-notice on Codex: after install, one line with what needs you (the footer runs no command)', async () => {
+  const w = statuslineWorld();
+  const notice = (env) => U.statuslineNotice({ vault: w.vault, configDir: w.configDir, io: w.io, now: NOW, env });
+  notice({ AOS_HOST: 'codex' });
+  assert.deepEqual(w.outs, [], 'nothing before install');
+  w.state({ codex: { written: 'status_line = []' } });
+  notice({ AOS_HOST: 'codex' });
+  assert.deepEqual(w.outs, ['AgenticOS: 1 gate needs you (site-02 ship)']);
+  assert.ok(fs.existsSync(path.join(w.vault, 'brain', '_index', 'statusline.json')), 'the model is rebuilt for a Codex-only user');
+  notice({});
+  assert.equal(w.outs.length, 1, 'Claude Code shows it in its own status line instead');
+});
+
+test('update-notice on Claude Code: a status line someone else took since install is named once', async () => {
+  const w = statuslineWorld();
+  const settings = path.join(w.configDir, 'settings.json');
+  const ours = `sh '${path.join(w.vault, 'brain', 'scripts', 'bin', 'aos')}' statusline render`;
+  fs.writeFileSync(settings, JSON.stringify({ statusLine: { type: 'command', command: ours } }));
+  w.state({ claude: { command: ours, previous: null } });
+  await U.cmdUpdateNotice({ vault: w.vault, configDir: w.configDir, io: w.io, now: NOW, spawnFn: () => {} });
+  assert.deepEqual(w.outs, [], 'we still hold the slot');
+  fs.writeFileSync(settings, JSON.stringify({ statusLine: { type: 'command', command: 'node gsd-statusline.js' } }));
+  await U.cmdUpdateNotice({ vault: w.vault, configDir: w.configDir, io: w.io, now: NOW, spawnFn: () => {} });
+  assert.deepEqual(w.outs, ['AgenticOS status line: replaced by `node gsd-statusline.js` — run `aos statusline install` to take it back (it chains that command).']);
+});
+
+test('update-notice: a vault whose runtime predates the status line stays silent', () => {
+  const w = cmdWorld();
+  U.statuslineNotice({ vault: w.vault, configDir: w.configDir, io: w.io, now: NOW, env: { AOS_HOST: 'codex' } });
+  assert.deepEqual(w.outs, []);
+});

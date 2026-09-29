@@ -93,6 +93,7 @@ case "$NAME" in
   notify) SCRIPT=notify.js ;;
   cross-review) SCRIPT=cross-review/runner.js ;;
   team) SCRIPT=team.js ;;
+  statusline) SCRIPT=statusline.js ;;
   skills-sync) SCRIPT=skills-sync.js ;;
   doctor|status|upgrade|uninstall|persona|cost|graph|routines|skills|agents|config|workspace|terminal|provider|update-check|update-status|update-notice) SCRIPT=cli/aos.js; set -- "$NAME" "$@" ;;
   "") echo "usage: aos <name> [args...]" >&2; exit 64 ;;

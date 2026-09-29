@@ -320,6 +320,7 @@ the cron caveats — is [docs/chief-of-staff.md](docs/chief-of-staff.md).
 | `aos doctor` | Checks Node, Obsidian, Ollama, python3 and uv (the install prerequisites), the pinned graphify and how old the vault graph is, `agenticos.json`, the vault layout, the MCP handshake, the Obsidian bundle, whether Ollama is answering, plus one block per enabled host: the Claude login and plugin; the Codex login and plugin, how many of its hooks Codex trusts (a warning until you review them under `/hooks`) and its MCP server, or with direct wiring the hook entries, MCP registration and generated skills; and which CLI runs persona duties and prompt routines. Exit 1 on any failure. |
 | `aos status` | The resolved provider and why, today's spend against the caps, and the pipeline ledger. |
 | `aos provider auto\|ollama\|claude\|codex\|none` | Force a provider or go back to `auto`. |
+| `aos statusline install\|uninstall\|status\|preview` | The opt-in status line ([below](#the-status-line)): three lines in Claude Code, a footer preset in Codex, what needs you in both. `uninstall` puts back what you had. |
 | `aos upgrade` | Updates the plugin from its marketplace — the GitHub clone, or the checkout you installed from with `--from-local`; on a machine with Codex and no Claude Code, the Codex marketplace — re-vendors the runtime and bundle from that same source, installs or refreshes the Codex plugin when that host is enabled (moving a direct install over to it), adds new config keys (your values win). Never touches memory, notes or persona. |
 | `aos persona` · `aos persona on\|off\|rename <name>` | Re-run the interview, flip the kill switch, or rename your agent. |
 | `aos config` · `aos config get <key>` · `aos config set <key> <value> [--dry-run]` · `aos config unset <key>` | Every setting in one list: its value, the file it comes from (`agenticos.json`, `brain/config.json` or the default) and a `*` where it differs from the default. `set` checks the value, writes it atomically to the file that actually wins, and runs what the change needs (clears the provider probe, pauses or resumes the Chief of Staff's duties, updates Obsidian's Daily Notes folder), printing any step left as `next:`. `unset` goes back to the default. Install paths and hosts are read-only here; a background duty or routine can read settings but never change them. A daily cap of `0` means no spend. `aos doctor` flags unknown keys and bad values in either file. |
@@ -378,8 +379,8 @@ aos update-status --statusline 2>/dev/null
 
 Add either line to your own status line script and it contributes nothing until an update exists.
 Both read a file (the second through one short-lived `aos` process) and never touch the network, so
-they cost nothing per render. AgenticOS never edits your `settings.json` or claims the status line
-itself.
+they cost nothing per render. AgenticOS never edits your `settings.json` or claims the status line on
+its own: only `aos statusline install` does, when you run it ([The status line](#the-status-line)).
 
 You are also told once at the start of every session. The check itself runs at most once a day, in a
 detached process, so nothing ever waits on GitHub.
@@ -390,6 +391,34 @@ aos update-status --snooze 7d     # silence this version for a week
 aos update-status --off           # stop checking entirely
 aos update-check                  # check right now
 ```
+
+### The status line
+
+`aos statusline install` gives Claude Code a three-line status line and Codex a footer preset. It is
+opt-in: `aos init` and `aos upgrade` never change either host's config for it.
+
+```
+Opus 5.5 (1M) ·high ·think │ Writing the spec │ my-project ⎇ feat/x* │ #63 review
+████░░░░░░ 46% │ 5h 24% · 7d 41% │ $3.42 │ cache 91% · 42m │ +156/-23
+◆ 2 gates · 1 alert · 1 flag │ ▶ woz execute site-01 │ duties $4.80/$6 │ ↑ 0.21.0
+```
+
+- The first two lines are the session: model and effort, what you are working on (the task in progress, else a
+  GSD project's phase), the branch and PR, then context, rate limits, cost, prompt cache and lines changed.
+- The third line is AgenticOS and appears only when something needs you: gates waiting on you, unread breaking
+  news and alerts, open Chief of Staff flags, a live agent-team run, the spend nearest its daily cap (from half of
+  it), an update, a background provider that fell to none, an unwrapped session. In a terminal with OSC 8 links,
+  each opens the Workbench tab that handles it. The Obsidian status bar shows the same.
+- The status line you had keeps running: install records it and runs it with the same input on every refresh, so a
+  tool that writes files from its status line still works. `--chain-output` also shows its first line, and
+  `aos statusline uninstall` puts it back (byte for byte when nothing else in the file changed).
+- If another installer takes the slot later, `aos doctor` and the next session start say so, and
+  `aos statusline install` takes it back and chains the newcomer.
+- Claude Code subagents get their own rows: model, effort, context used, age.
+- Codex runs no status line command, so install writes a preset of its built-in items into `config.toml`
+  (never over a `status_line` you set, unless you pass `--force`), and what needs you is printed at session start.
+- Settings (⚙ Settings → Status line, or `aos config set`): `statusline.segments`, `statusline.links`,
+  `statusline.subagents`, `statusline.refreshSeconds`, `statusline.codexItems`.
 
 <p align="center"><img src="docs/assets/divider.svg" width="960" alt="" /></p>
 

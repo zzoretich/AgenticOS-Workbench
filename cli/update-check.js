@@ -407,10 +407,63 @@ async function cmdUpdateCheck({ vault, configDir = claudeConfigDir(), flags = {}
 }
 
 /**
- * The SessionStart consumer. Reads, optionally spawns a detached producer, re-renders the fragment
- * and prints at most one line. Every failure is silence.
+ * The SessionStart consumer: the update notice, then the status line's lines. Every failure is silence.
  */
-async function cmdUpdateNotice({
+async function cmdUpdateNotice(opts = {}) {
+  const code = await updateNoticeOnly(opts);
+  statuslineNotice(opts);
+  return code;
+}
+
+function deepMerge(base, over) {
+  const plain = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+  const out = { ...base };
+  for (const [k, v] of Object.entries(over || {})) out[k] = plain(v) && plain(base[k]) ? deepMerge(base[k], v) : v;
+  return out;
+}
+
+/**
+ * The status line at session start (spec 2026-09-28-statusline-design), through the vault's vendored runtime (cli/ may
+ * require brain/scripts, never the reverse). Only after `aos statusline install`, and at most one line per host:
+ *  - Codex (D7): what needs you, since its footer runs no command. The model is rebuilt here when stale, because a
+ *    Codex-only user has no Claude Code render to refresh it.
+ *  - Claude Code (D9): the status line someone else took since install, and how to take it back.
+ */
+function statuslineNotice({ vault, configDir = claudeConfigDir(), io = console, now = () => new Date(), env = process.env } = {}) {
+  try {
+    if (!vault) return;
+    const lib = (rel) => { const p = path.join(vault, 'brain', 'scripts', rel); return fs.existsSync(p) ? require(p) : null; };
+    const I = lib('lib/statusline-install.js');
+    if (!I) return;
+    const userConfigFile = agenticosPath(configDir);
+    const state = I.readState(userConfigFile);
+    const userCfg = readJsonOrNull(userConfigFile) || {};
+    if (env.AOS_HOST === 'codex') {
+      if (!state.codex) return;
+      const M = lib('lib/statusline-model.js');
+      const R = lib('lib/statusline-render.js');
+      const defaults = readJsonOrNull(path.join(vault, 'brain', 'scripts', 'config.default.json')) || {};
+      const cfg = deepMerge(deepMerge(defaults, readJsonOrNull(path.join(vault, 'brain', 'config.json')) || {}), userCfg);
+      const at = now();
+      let model = M.read(vault);
+      if (M.isStale(model, at)) model = M.refresh(vault, { cfg, now: at }) || model;
+      const line = R.summaryLine(model, cfg.statusline && cfg.statusline.segments);
+      if (line) io.log(line);
+      return;
+    }
+    if (!state.claude) return;
+    const by = I.slotTakenBy({ vault, userConfigFile, userCfg, env });
+    if (by) io.log(`AgenticOS status line: replaced by \`${by}\` — run \`aos statusline install\` to take it back (it chains that command).`);
+  } catch (e) {
+    if (env.AOS_DEBUG === '1') process.stderr.write(`update-notice statusline: ${e.message}\n`);
+  }
+}
+
+/**
+ * The update notice: reads, optionally spawns a detached producer, re-renders the fragment and prints at most one
+ * line. Every failure is silence.
+ */
+async function updateNoticeOnly({
   vault, configDir = claudeConfigDir(), io = console, now = () => new Date(),
   pluginRoot = process.env.CLAUDE_PLUGIN_ROOT || process.env.AOS_PLUGIN_ROOT || null, spawnFn = spawn,
 } = {}) {
@@ -453,6 +506,7 @@ async function cmdUpdateNotice({
 }
 
 module.exports = {
+  statuslineNotice,
   REPO_SLUG, LATEST_URL, STORE_REL, LINE_REL, SCHEMA,
   DEFAULT_INTERVAL_HOURS, MAX_BACKOFF_DOUBLINGS, MAX_BODY_BYTES, TAG_RE,
   parseTag, cmpSemver, lowerVersion, lowestVersion, hudVersionFrom, HUD_INCOMPLETE,

@@ -35,6 +35,7 @@ const SECTIONS = [
   { id: 'sharing', label: 'Skills & agents' },
   { id: 'telemetry', label: 'Telemetry & privacy' },
   { id: 'updates', label: 'Updates' },
+  { id: 'statusline', label: 'Status line' },
   { id: 'hosts', label: 'Hosts & install' },
 ];
 
@@ -43,6 +44,7 @@ const CODEX_EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh'];
 const REASONER_EFFORTS = ['low', 'medium', 'high'];
 const CROSS_EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 const ROUTINES_SYNC = { command: 'aos routines sync', why: 'the schedules carry the duty model' };
+const STATUSLINE_INSTALL = { command: 'aos statusline install', why: 'the host config is written only at install' };
 const SKILLS_SYNC = { command: 'aos skills sync', why: 'share or unshare now instead of at the next session end' };
 const AGENTS_SYNC = { command: 'aos agents sync', why: 'share or unshare now instead of at the next session end' };
 
@@ -220,6 +222,18 @@ const SETTINGS = [
   { key: 'updates.intervalHours', section: 'updates', label: 'Update check interval', type: 'number', gt: 0, applies: 'next-check',
     help: 'Hours between update checks.' },
 
+  // ── Status line (spec 2026-09-28-statusline-design) ─────────────────────────
+  { key: 'statusline.segments', section: 'statusline', label: 'Status line segments', type: 'list', applies: 'next-render',
+    help: 'What the third line shows, in order of priority: needs-you, runs, spend, health.' },
+  { key: 'statusline.links', section: 'statusline', label: 'Clickable links', type: 'bool', applies: 'next-render',
+    help: 'Make status line segments open the Workbench tab they name (terminals with OSC 8 links).' },
+  { key: 'statusline.subagents', section: 'statusline', label: 'Subagent rows', type: 'bool', applies: 'next-install', followUp: STATUSLINE_INSTALL,
+    help: 'Also render Claude Code subagent rows (model, effort, context, age).' },
+  { key: 'statusline.refreshSeconds', section: 'statusline', label: 'Status line refresh', type: 'number', int: true, min: 1, applies: 'next-install', followUp: STATUSLINE_INSTALL,
+    help: 'Seconds between Claude Code status line refreshes while idle.' },
+  { key: 'statusline.codexItems', section: 'statusline', label: 'Codex footer items', type: 'list', host: 'codex', applies: 'next-install', followUp: STATUSLINE_INSTALL,
+    help: 'Built-in Codex status line items written to config.toml (Codex runs no status line command).' },
+
   // ── Hosts & install: read-only, D6 ──────────────────────────────────────────
   ...[
     ['version', 'Installed version', 'aos upgrade'],
@@ -278,6 +292,13 @@ const PICKS = {
   'telemetry.retentionDays': { choices: [7, 14, 30, 60, 90, 180, 365], unit: 'days' }, 'telemetry.staleAfterMinutes': { choices: [10, 15, 30, 60, 120], unit: 'min' },
   'updates.intervalHours': { choices: [6, 12, 24, 48, 168], unit: 'h' },
   'notifications.retentionDays': { choices: [7, 14, 30, 60, 90, 180], unit: 'days' }, 'notifications.maxPerSenderPerHour': { choices: [0, 1, 3, 6, 10, 20] },
+  'statusline.segments': { pick: 'many', strict: true, choices: ['needs-you', 'runs', 'spend', 'health'] },
+  'statusline.refreshSeconds': { choices: [1, 2, 5, 10, 30], unit: 's' },
+  // Codex's built-in status line items (codex-cli 0.156 StatusLineItem; workspace-headline is Enterprise-only).
+  'statusline.codexItems': { pick: 'many', strict: true, choices: ['model', 'model-with-reasoning', 'reasoning', 'current-dir', 'project-name', 'hostname', 'git-branch',
+    'pull-request-number', 'branch-changes', 'run-state', 'permissions', 'approval-mode', 'context-remaining', 'context-used', 'five-hour-limit',
+    'weekly-limit', 'codex-version', 'context-window-size', 'used-tokens', 'total-input-tokens', 'total-output-tokens', 'thread-credits',
+    'estimated-thread-cost', 'thread-id', 'fast-mode', 'raw-output', 'thread-name', 'thread-title', 'task-progress'] },
 };
 for (const e of SETTINGS) if (PICKS[e.key]) Object.assign(e, PICKS[e.key]);
 const UNITS = ['usd', 'min', 'h', 'days', 's', 'files', 'notes', 'tokens'];
@@ -356,7 +377,12 @@ function validate(e, value) {
       if (e.max !== undefined && value > e.max) return `${e.key} must be at most ${e.max}`;
       return null;
     case 'string': case 'model': return typeof value === 'string' && value.trim() !== '' ? null : `${e.key} must be a non-empty string`;
-    case 'list': return Array.isArray(value) && value.every((x) => typeof x === 'string') ? null : `${e.key} must be a JSON list of strings`;
+    case 'list': {
+      if (!Array.isArray(value) || !value.every((x) => typeof x === 'string')) return `${e.key} must be a JSON list of strings`;
+      // `strict` lists accept only their choices (the status line's segments and Codex's built-in footer items).
+      const bad = e.strict && Array.isArray(e.choices) ? value.filter((x) => !e.choices.includes(x)) : [];
+      return bad.length ? `${e.key}: unknown ${bad.length === 1 ? 'item' : 'items'} ${bad.join(', ')} (choose from: ${e.choices.join(', ')})` : null;
+    }
     case 'object': return isPlainObject(value) ? null : `${e.key} must be a JSON object`;
     default: return `${e.key} has an unknown type`;
   }

@@ -1,7 +1,7 @@
 ---
 description: AgenticOS Workbench maintenance — doctor, status, provider, persona, config (runs the aos launcher)
 allowed-tools: Bash
-argument-hint: doctor | status | provider [auto|ollama|claude|codex|none] | persona [on|off|rename <name>] | config [list | get <key> | set <key> <value> | unset <key>]
+argument-hint: doctor | status | provider [auto|ollama|claude|codex|none] | persona [on|off|rename <name>] | config [list | get <key> | set <key> <value> | unset <key>] | statusline [install | uninstall | status | preview]
 ---
 
 Run `aos $ARGUMENTS` via Bash (fallback: `sh "${CLAUDE_PLUGIN_ROOT}/bin/aos" $ARGUMENTS`); with no arguments run `aos doctor`.
@@ -10,4 +10,5 @@ Run `aos $ARGUMENTS` via Bash (fallback: `sh "${CLAUDE_PLUGIN_ROOT}/bin/aos" $AR
 - `status`: relay the provider line, every spend line against its cap — `today (hooks)` (background hook calls; the cap is `claude.perDayUsd`, or `codex.perDayUsd` when the resolved provider is codex), `today (duties)` (the persona's `duty:*` runs, `persona.perDayUsd`; they never count toward the hook cap), `today (reasoner)`, `today (routines)` and `today (graph)` — and any pipeline row whose status is `error`.
 - `provider <mode>` / `persona …`: relay the confirmation line.
 - `config` / `config list`: every setting by section, with its value, the file it comes from, and `*` where it differs from the default. Relay the sections the user asked about (all of them when they asked for none), plus any `note:` line. `config get <key>` prints the value alone.
+- `statusline install` / `statusline uninstall`: run these only when the user asked for them in this conversation — they change the host's own config (Claude Code's `settings.json`, Codex's `config.toml`). Relay each host's line: what was installed or removed, the previous status line it chains or restored, and any `refused:` reason with its fix (Codex already has a `status_line`: `--force` replaces it, and uninstall puts it back). `statusline status` / `preview`: relay the lines as they are.
 - `config set <key> <value>` / `config unset <key>`: run these only for a change the user asked for in this conversation; add `--dry-run` first when they asked what a change would do. Relay the `<key>: <old> → <new>` line, every indented effect line, and every `next:` line as a step still to take. When it refuses (a read-only key names the installer command that changes it; a headless run; a config file that does not parse), relay the reason and stop: never edit `agenticos.json` or `brain/config.json` by hand to get around it. An unknown key or a bad value exits 2 with the fix in its message.

@@ -91,6 +91,24 @@ grep -q '9.9.9' "$VAULT/brain/_index/update-line.txt" || { echo "update-notice d
 # Leave the vault as the later legs expect: an unseeded store renders nothing.
 rm -f "$VAULT/brain/_index/update-check.json" "$VAULT/brain/_index/update-line.txt"
 
+echo "== status line: opt-in install chains the previous line, renders three lines, uninstall restores settings.json"
+printf '{\n  "model": "sonnet",\n  "statusLine": {\n    "type": "command",\n    "command": "echo previous"\n  }\n}\n' > "$CLAUDE_CONFIG_DIR/settings.json"
+cp "$CLAUDE_CONFIG_DIR/settings.json" "$TMP/settings.before"
+sh "$AOS" statusline install | tee "$TMP/statusline.txt"
+grep -q '^claude  status line installed in .*; chains the previous line: echo previous$' "$TMP/statusline.txt"
+[ -f "$VAULT/brain/_index/statusline.json" ] || { echo "install did not build the model"; exit 1; }
+# Run the exact command Claude Code would, from settings.json, with a payload on stdin.
+SLCMD=$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).statusLine.command)' "$CLAUDE_CONFIG_DIR/settings.json")
+echo "{\"session_id\":\"reh\",\"model\":{\"display_name\":\"Claude\"},\"workspace\":{\"current_dir\":\"$VAULT\"},\"context_window\":{\"remaining_percentage\":80}}" \
+  | AOS_NO_SPAWN=1 COLUMNS=160 sh -c "$SLCMD" > "$TMP/render.txt"
+grep -q 'Claude' "$TMP/render.txt" || { echo "render printed: $(cat "$TMP/render.txt")"; exit 1; }
+grep -q '%' "$TMP/render.txt" || { echo "render has no context meter: $(cat "$TMP/render.txt")"; exit 1; }
+[ "$(sh "$AOS" statusline preview --width 160 | wc -l)" -ge 2 ] || { echo "preview printed under two lines"; exit 1; }
+sh "$AOS" statusline status | grep -q '^claude  installed in .* · chains echo previous'
+sh "$AOS" statusline uninstall | grep -q '^claude  removed; restored echo previous$'
+cmp -s "$CLAUDE_CONFIG_DIR/settings.json" "$TMP/settings.before" || { echo "settings.json was not restored byte for byte"; exit 1; }
+echo '{}' > "$CLAUDE_CONFIG_DIR/settings.json"
+
 echo "== doctor"
 # doctor's "plugin installed" check reads fake-claude's `plugin list --json`, which lists the plugin only while
 # FAKE_PLUGIN_PATH is set — so it is exported here, after init has already exercised the install path.

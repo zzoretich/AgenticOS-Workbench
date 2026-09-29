@@ -106,6 +106,16 @@ Run before tagging a release, on a vault created by `aos init` (not the develope
 - [ ] *Codex only* (`hosts.claude.enabled: false`): every Talk and Redirect button, and the session an Approve opens, runs `codex '…'` (the agent's Codex starter, or "Use the <agent> agent for this. …"), and no Claude button shows. *Claude Code only*: only `claude --agent …` buttons.
 - [ ] `kill -9` a detached dispatcher, then open the tab: within a minute the member leaves "working" (the tab's `aos team list` sweep records the killed run), and its blocker shows in Interact.
 
+## Status line (both hosts)
+
+- [ ] *Claude Code:* `aos statusline install` names the status line it chains. On the next refresh the terminal shows the model line and the context line; with a gate pending (the `aos team put` line above) a third line reads `◆ gate demo-01 (discuss)`, and Cmd-clicking it (a terminal with OSC 8 links) opens the Workbench on Agent Teams.
+- [ ] *Claude Code:* the chained status line still works (e.g. its bridge file under the temp dir is refreshed), and a subagent started in the session shows a row with its model, effort, context share and age.
+- [ ] *Claude Code:* replace `statusLine` in `settings.json` by hand: `aos update-notice` (the SessionStart hook) prints `AgenticOS status line: replaced by …`, `aos doctor` shows `warn  status line  taken by …`, and `aos statusline install` takes it back and chains the replacement.
+- [ ] *Codex:* `aos statusline install` writes `[tui] status_line = [...]  # agenticos statusline` into `config.toml`; `codex` shows those footer items, and a new session starts with `AgenticOS: 1 gate needs you (demo-01 discuss)`. An existing `status_line` is refused without `--force`.
+- [ ] `aos statusline uninstall` restores `settings.json` and `config.toml` exactly (`diff` against the `.aos-statusline.bak` copies before running it) and removes the backups.
+- [ ] Obsidian status bar: `⚡ live · ◆ gate demo-01 · …` within a minute of the gate, **with the Workbench closed**; clicking the gate opens Agent Teams, a flag opens `persona/STATE.md`, and a quiet vault reads `all clear`. `idle` is dimmed.
+- [ ] Paste `obsidian://agenticos?vault=<vault name>&tab=notifications` into a browser: Obsidian opens the Workbench on Notifications, also right after a restart (a deferred leaf); `tab=nope` opens the Workbench on its current tab.
+
 ## Spaces / Memory / Runs
 
 - [ ] Spaces lists workspaces from `snapshot.json`; insight footer says `local` when no model tag is present.

@@ -4,6 +4,17 @@ All notable changes to AgenticOS Workbench. Versions follow the tags. From the n
 
 ## [Unreleased]
 
+### Added
+- **The status line** (`aos statusline install`, opt-in). Claude Code gets three lines: model and effort, the task in progress (else the GSD phase), branch and PR; context, rate limits, cost, prompt cache and lines changed; and, only when something needs you, the gates waiting on you, unread breaking news and alerts, open flags, a live agent-team run, the spend nearest its daily cap, an update, a provider that fell to none or an unwrapped session, each a link to the Workbench tab that handles it. The status line you had is recorded and chained (it still runs, with the same input) and `aos statusline uninstall` puts it back, byte for byte when nothing else in the file changed. Subagents get their own rows. Codex runs no status line command, so install writes a preset of its built-in items into `config.toml`, never over one you set without `--force`, and what needs you is printed at session start. `aos doctor` and the next session start say when another installer took the slot; `aos upgrade` keeps an installed line pointed at the current runtime and never takes a lost slot back. Settings: `statusline.segments`, `statusline.links`, `statusline.subagents`, `statusline.refreshSeconds`, `statusline.codexItems`.
+- `obsidian://agenticos?tab=<tab>` opens the Workbench on a tab.
+
+### Changed
+- The Obsidian status bar shows what needs you (gates, alerts, flags, a live run, spend near its cap, health), each opening where it is handled, instead of inventory counts; a vault whose runtime predates the status line keeps the counts.
+
+### Fixed
+- Opening a Workbench tab from a command or link right after Obsidian starts (a deferred leaf) now lands on that tab.
+- `idle` in the Obsidian status bar is dimmed.
+
 ## [0.20.3] — 2026-09-28
 
 ### Changed
