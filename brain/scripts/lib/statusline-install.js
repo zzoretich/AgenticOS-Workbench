@@ -10,7 +10,8 @@
  *
  * Install state is machine-local, in agenticos-statusline.json beside agenticos.json — never under `hosts`, which would
  * change what enabledHosts() reports. Each host file is copied once to <file>.aos-statusline.bak before the first
- * write. Under AOS_HEADLESS=1 nothing is written: a host's config is the user's to change.
+ * write; a clean uninstall deletes that copy again, and one that found the file changed keeps it. Under AOS_HEADLESS=1
+ * nothing is written: a host's config is the user's to change.
  */
 const fs = require('fs');
 const path = require('path');
@@ -79,6 +80,7 @@ function backupOnce(file) {
   if (!fs.existsSync(file) || fs.existsSync(file + BAK)) return;
   fs.copyFileSync(file, file + BAK);
 }
+function dropBackup(file) { try { fs.unlinkSync(file + BAK); } catch { /* never made */ } }
 function guardHeadless(env) {
   if (env && env.AOS_HEADLESS === '1') throw new Refusal("a host's status line is the user's to change, and a headless run cannot change it");
 }
@@ -140,6 +142,7 @@ function uninstallClaude(ctx) {
       } else if (cur && key === 'statusLine') notes.push(`the status line is now ${cur.command}; left as it is`);
     }
     if (changed) writeSettings(file, settings);
+    if (!notes.length) dropBackup(file);
   }
   delete state.claude;
   writeState(ctx.userConfigFile, state);
@@ -280,7 +283,10 @@ function uninstallCodex(ctx) {
   if (text !== null) {
     const r = tomlUninstall(text, was);
     if (!r.found) notes.push('the status_line in config.toml changed since install; left as it is');
-    else if (r.text !== text) fsx.writeAtomic(file, r.text);
+    else {
+      if (r.text !== text) fsx.writeAtomic(file, r.text);
+      dropBackup(file);
+    }
   }
   delete state.codex;
   writeState(ctx.userConfigFile, state);

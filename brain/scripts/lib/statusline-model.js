@@ -165,7 +165,8 @@ function healthOf(vault, providerState) {
   try { drafts = fs.readdirSync(path.join(vault, 'brain', 'memory', 'feedback', '_drafts')).filter((n) => n.endsWith('.md')).length; } catch { /* none */ }
   return {
     update: m ? m[1] : null,
-    provider: providerState && providerState.name === 'none' ? String(providerState.reason || 'none') : null,
+    // `provider: none` set on purpose (reason forced) is a choice, not a problem to flag.
+    provider: providerState && providerState.name === 'none' && providerState.reason !== 'forced' ? String(providerState.reason || 'none') : null,
     unwrapped: /^##\s+Wrap Status\b[\s\S]*?not wrapped/m.test(session),
     drafts,
   };

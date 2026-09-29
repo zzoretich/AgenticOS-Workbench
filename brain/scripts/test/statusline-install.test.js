@@ -90,6 +90,7 @@ test('claude uninstall restores settings.json byte for byte, with or without a p
     assert.equal(r.ok, true);
     assert.equal(fs.readFileSync(m.settingsFile, 'utf8'), before);
     assert.equal(fs.existsSync(I.statePath(m.userConfigFile)), false, 'no state left behind');
+    assert.equal(fs.existsSync(`${m.settingsFile}.aos-statusline.bak`), false, 'nor the backup');
   }
 });
 
@@ -101,6 +102,7 @@ test('claude uninstall leaves a slot someone else took, and says so', () => {
   const [r] = I.uninstall(m.ctx, { host: 'claude' });
   assert.deepEqual(readJson(m.settingsFile).statusLine, other);
   assert.match(r.notes.join(), /now other; left as it is/);
+  assert.ok(fs.existsSync(`${m.settingsFile}.aos-statusline.bak`), 'the backup stays when the file changed hands');
   assert.equal(readJson(m.settingsFile).subagentStatusLine, undefined, 'our subagent rows still come out');
 });
 
@@ -181,11 +183,13 @@ test('codex install/uninstall through the host files; a changed line is left alo
   assert.equal(I.status(m.ctx).codex.present, true);
   I.uninstall(m.ctx, { host: 'codex' });
   assert.equal(fs.readFileSync(m.tomlFile, 'utf8'), before);
+  assert.equal(fs.existsSync(`${m.tomlFile}.aos-statusline.bak`), false);
   const c = machine();
   I.install(c.ctx, { host: 'codex' });
   fs.writeFileSync(c.tomlFile, fs.readFileSync(c.tomlFile, 'utf8').replace('"git-branch"', '"hostname"'));
   const [u] = I.uninstall(c.ctx, { host: 'codex' });
   assert.match(u.notes.join(), /changed since install/);
+  assert.ok(fs.existsSync(`${c.tomlFile}.aos-statusline.bak`));
   assert.match(fs.readFileSync(c.tomlFile, 'utf8'), /hostname/);
 });
 

@@ -89,6 +89,14 @@ test('build: an empty vault is a quiet model, never an error', () => {
   assert.deepEqual(m.health, { update: null, provider: null, unwrapped: false, drafts: 0 });
 });
 
+test('health: a provider forced to none is the user\'s choice, not a warning', () => {
+  const v = fs.mkdtempSync(path.join(os.tmpdir(), 'sl-forced-'));
+  put(v, 'brain/_index/provider-state.json', JSON.stringify({ name: 'none', reason: 'forced' }));
+  assert.equal(M.build(v, { now: NOW }).health.provider, null);
+  put(v, 'brain/_index/provider-state.json', JSON.stringify({ name: 'none', reason: 'daily-cap' }));
+  assert.equal(M.build(v, { now: NOW }).health.provider, 'daily-cap');
+});
+
 test('countFlags: only the Flags section, both bullet forms, never closed or "none"', () => {
   assert.equal(M.countFlags(null), 0);
   assert.equal(M.countFlags('## Flags\n\n## Priorities\n- a\n'), 0);

@@ -155,6 +155,24 @@ UP2=$(node "$VAULT/brain/scripts/cli/aos.js" upgrade --no-obsidian)
 echo "$UP2" | grep -q "from $ROOT (v"
 grep -q '^plugin marketplace list --json$' "$FAKE_CODEX_LOG"
 
+echo "== status line on Codex: a built-in footer preset, what needs you at session start, uninstall restores config.toml"
+cp "$CODEX_HOME/config.toml" "$TMP/config.before"
+sh "$VAULT/brain/scripts/bin/aos" statusline install | tee "$TMP/statusline.txt"
+grep -q '^codex   footer preset written to .*config.toml' "$TMP/statusline.txt"
+! grep -q '^claude' "$TMP/statusline.txt"
+grep -q '^status_line = \["model-with-reasoning", ' "$CODEX_HOME/config.toml"
+mkdir -p "$VAULT/persona/teams/reh"
+printf -- '---\nid: reh\nmembers:\n  - id: lead\n---\n' > "$VAULT/persona/teams/reh/TEAM.md"
+printf '{"schema":1,"ts":"2026-09-28T10:00:00Z","id":"reh-01","stage":"ship","status":"gate","gate":{"name":"ship","state":"pending"}}\n' > "$VAULT/persona/teams/reh/board.jsonl"
+rm -f "$VAULT/brain/_index/statusline.json"
+# The plugin's own SessionStart hook, the way Codex runs it.
+PLUGIN_ROOT="$PLUGIN" AOS_NO_SPAWN=1 sh -c "$(hook_cmd "$PLUGIN/hooks/hooks.json" SessionStart update-notice)" | tee "$TMP/notice.txt"
+grep -q '^AgenticOS: 1 gate needs you (reh-01 ship)' "$TMP/notice.txt" || { echo "no needs-you line at session start"; exit 1; }
+node "$ROOT/cli/aos.js" doctor | grep -q '^ok    codex footer *built-in items'
+sh "$VAULT/brain/scripts/bin/aos" statusline uninstall | grep -q '^codex   removed$'
+cmp -s "$CODEX_HOME/config.toml" "$TMP/config.before" || { echo "config.toml was not restored byte for byte"; exit 1; }
+rm -rf "$VAULT/persona/teams/reh"
+
 echo "== 3. uninstall --keep-vault removes the plugin and its marketplace"
 OUT=$(node "$ROOT/cli/aos.js" uninstall --keep-vault --yes)
 echo "$OUT"
