@@ -153,11 +153,13 @@ test('tomlInstall: the four shapes, an inline table refused, an existing value o
   assert.equal(I.tomlInstall('tui.theme = "dark"\n[x]\n', items).text, `tui.theme = "dark"\ntui.${ours}\n[x]\n`, 'dotted keys stay dotted');
   assert.throws(() => I.tomlInstall('tui = { theme = "dark" }\n', items), /inline table/);
   const theirs = '[tui]\nstatus_line = [\n  "model",\n  "current-dir", # mine\n]\nx = 1\n';
-  assert.throws(() => I.tomlInstall(theirs, items), /already sets tui\.status_line.*--force/);
+  assert.throws(() => I.tomlInstall(theirs, items), /tui\.status_line is already set.*--force/);
   const forced = I.tomlInstall(theirs, items, { force: true });
   assert.equal(forced.text, `[tui]\n${ours}\nx = 1\n`, 'a multi-line value is replaced whole');
   assert.equal(forced.previous, 'status_line = [\n  "model",\n  "current-dir", # mine\n]');
-  assert.equal(I.tomlInstall(forced.text, ['model']).text, `[tui]\nstatus_line = ["model"]  ${I.MARK}\nx = 1\n`, 'our own line is updated in place');
+  assert.equal(I.tomlInstall(forced.text, ['model'], { own: forced.written }).text, `[tui]\nstatus_line = ["model"]  ${I.MARK}\nx = 1\n`, 'our own line is updated in place');
+  const edited = forced.text.replace('"git-branch"', '"hostname"');
+  assert.throws(() => I.tomlInstall(edited, ['model'], { own: forced.written }), /changed since install/, 'SL-03: the marker alone is not ownership');
   assert.equal(I.scanToml('[[tui]]\nstatus_line = 1\n').key, null, 'an array of tables is not the tui table');
 });
 
@@ -200,7 +202,7 @@ test('aos statusline install: every enabled host, a Codex refusal does not stop 
   const r = await run(m, ['install']);
   assert.equal(r.code, 1);
   assert.match(r.out, /^claude {2}status line installed in .*; chains the previous line: node ~\/\.claude\/hooks\/gsd-statusline\.js$/m);
-  assert.match(r.out, /^codex {3}refused: config\.toml already sets tui\.status_line/m);
+  assert.match(r.out, /^codex {3}refused: config\.toml's tui\.status_line is already set/m);
   assert.ok(M.read(m.vault), 'the model is built at install so the first render has it');
   const f = await run(m, ['install', '--host', 'codex', '--force']);
   assert.equal(f.code, 0);
@@ -294,4 +296,57 @@ test('git: porcelain v2 parsed, one subprocess per 5 s per directory', () => {
   assert.equal(calls, 1);
   SL.gitOf(dir, { now: 7000, spawnSyncFn, tmp });
   assert.equal(calls, 2);
+});
+
+test('SL-02: another vault\'s status line is not ours to claim, rewrite or remove', () => {
+  const m = machine();
+  I.install(m.ctx, { host: 'claude' });
+  const other = { type: 'command', command: I.commandFor(path.join(m.root, 'other-vault'), 'render') };
+  fs.writeFileSync(m.settingsFile, pretty({ ...readJson(m.settingsFile), statusLine: other }));
+  assert.equal(I.status(m.ctx).claude.ownsSlot, false);
+  assert.equal(I.slotTakenBy(m.ctx), other.command);
+  assert.deepEqual(I.reapply(m.ctx), []);
+  I.uninstall(m.ctx, { host: 'claude' });
+  assert.deepEqual(readJson(m.settingsFile).statusLine, other);
+});
+
+test('SL-04: a host file that cannot be written leaves no install record behind', { skip: process.getuid && process.getuid() === 0 }, () => {
+  const m = machine();
+  const ctx = { ...m.ctx, userConfigFile: path.join(m.root, 'state', 'agenticos.json') };
+  fs.mkdirSync(path.dirname(ctx.userConfigFile));
+  fs.copyFileSync(m.settingsFile, `${m.settingsFile}.aos-statusline.bak`);
+  fs.chmodSync(m.claudeDir, 0o555);
+  try {
+    assert.throws(() => I.install(ctx, { host: 'claude' }), /EACCES|EPERM/);
+  } finally { fs.chmodSync(m.claudeDir, 0o755); }
+  assert.equal(I.readState(ctx.userConfigFile).claude, undefined, 'the record was rolled back');
+  assert.deepEqual(readJson(m.settingsFile).statusLine, GSD);
+});
+
+test('SL-05: uninstall puts back the original bytes of a minified settings.json, and removes one it created', () => {
+  const m = machine({ settings: null });
+  const minified = JSON.stringify({ model: 'opus', statusLine: GSD });
+  fs.writeFileSync(m.settingsFile, minified);
+  I.install(m.ctx, { host: 'claude' });
+  I.uninstall(m.ctx, { host: 'claude' });
+  assert.equal(fs.readFileSync(m.settingsFile, 'utf8'), minified);
+  const fresh = machine({ settings: null });
+  I.install(fresh.ctx, { host: 'claude' });
+  assert.ok(fs.existsSync(fresh.settingsFile));
+  I.uninstall(fresh.ctx, { host: 'claude' });
+  assert.equal(fs.existsSync(fresh.settingsFile), false);
+});
+
+test('SL-06: a pipe that never closes is released after the timeout', async () => {
+  const { PassThrough } = require('stream');
+  const pipe = new PassThrough();
+  pipe.write('{"partial":');
+  const text = await SL.readStdin(30, pipe);
+  assert.equal(text, '{"partial":');
+  assert.equal(pipe.destroyed, true);
+  assert.equal(pipe.listenerCount('data'), 0);
+  const done = new PassThrough();
+  const p2 = SL.readStdin(1000, done);
+  done.end('{"a":1}');
+  assert.equal(await p2, '{"a":1}');
 });

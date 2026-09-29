@@ -20,7 +20,7 @@ const SCHEMA = 1;
 const STALE_MS = 15e3;
 const SPEND_SHOW_RATIO = 0.5;       // D6: a family appears once it has spent half its daily cap
 const MAX_UNREAD_READS = 200;       // the Workbench badge's bound on unread files read for their level
-const LEDGER_TAIL_BYTES = 512 * 1024;
+const LEDGER_CHUNK = 256 * 1024;
 const FAMILY_OF = [                // cli/aos.js's feature families; every other row is a background hook call
   [/^duty:/, 'duties'], [/^reason:/, 'reasoner'], [/^routine:/, 'routines'], [/^graph:/, 'graph'],
   [/^cross-review:/, 'crossReview'], [/^team:/, 'teams'],
@@ -143,16 +143,34 @@ function spendOf(totals, caps) {
   return best;
 }
 
-function readTail(file, bytes) {
+/**
+ * The ledger's rows from today: chunks are read from the end backwards until the first whole line in them is from
+ * before today (rows are appended in time order), so a long ledger costs one day, and a busy day is never cut short.
+ */
+function ledgerToday(file, now, chunk = LEDGER_CHUNK) {
+  const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   let fd;
   try {
     fd = fs.openSync(file, 'r');
-    const size = fs.fstatSync(fd).size;
-    const len = Math.min(size, bytes);
-    const buf = Buffer.alloc(len);
-    fs.readSync(fd, buf, 0, len, size - len);
-    const text = buf.toString('utf8');
-    return size > len ? text.slice(text.indexOf('\n') + 1) : text;
+    let pos = fs.fstatSync(fd).size;
+    const parts = [];
+    while (pos > 0) {
+      const len = Math.min(chunk, pos);
+      pos -= len;
+      const buf = Buffer.alloc(len);
+      fs.readSync(fd, buf, 0, len, pos);
+      parts.unshift(buf);
+      if (pos === 0) break;
+      const head = Buffer.concat(parts).toString('utf8');
+      const a = head.indexOf('\n');
+      const b = head.indexOf('\n', a + 1);
+      if (a < 0 || b < 0) continue;
+      let ts = NaN;
+      try { ts = Date.parse(JSON.parse(head.slice(a + 1, b)).ts); } catch { /* keep reading */ }
+      if (ts < dayStart) break;
+    }
+    const text = Buffer.concat(parts).toString('utf8');
+    return pos > 0 ? text.slice(text.indexOf('\n') + 1) : text;
   } catch { return ''; } finally { if (fd !== undefined) try { fs.closeSync(fd); } catch { /* closed */ } }
 }
 
@@ -190,15 +208,40 @@ function build(vault, { cfg = {}, now = new Date(), host = os.hostname(), alive 
       flags: part(() => countFlags(readText(path.join(vault, 'persona', 'STATE.md'))), 0),
     },
     runs: part(() => runsOf(teams, { host, alive }), []),
-    spend: part(() => spendOf(spendToday(readTail(path.join(idx, 'provider-spend.jsonl'), LEDGER_TAIL_BYTES), now), capsOf(cfg, providerState && providerState.name)), null),
+    spend: part(() => spendOf(spendToday(ledgerToday(path.join(idx, 'provider-spend.jsonl'), now), now), capsOf(cfg, providerState && providerState.name)), null),
     health: part(() => healthOf(vault, providerState), { update: null, provider: null, unwrapped: false, drafts: 0 }),
   };
 }
 
-/** The stored model, or null when missing, unparseable or another schema. */
+/** A stored model with every field coerced to its type: a hand-edited or torn file never reaches the renderer raw. */
+function normalize(m) {
+  const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
+  const n = (v) => (Number.isFinite(v) && v > 0 ? Math.floor(v) : 0);
+  const s = (v) => (typeof v === 'string' && v ? v : null);
+  const needs = obj(m.needs);
+  const health = obj(m.health);
+  const sp = obj(m.spend);
+  return {
+    schema: SCHEMA,
+    at: m.at,
+    vault: typeof m.vault === 'string' ? m.vault : '',
+    needs: {
+      gates: (Array.isArray(needs.gates) ? needs.gates : []).filter((g) => g && typeof g === 'object' && typeof g.item === 'string')
+        .map((g) => ({ team: String(g.team || ''), item: g.item, stage: s(g.stage), title: s(g.title), since: s(g.since) })),
+      alerts: n(needs.alerts), breaking: n(needs.breaking), flags: n(needs.flags),
+    },
+    runs: (Array.isArray(m.runs) ? m.runs : []).filter((r) => r && typeof r === 'object')
+      .map((r) => ({ team: String(r.team || ''), member: s(r.member), stage: s(r.stage), item: s(r.item), provider: s(r.provider), since: s(r.since) })),
+    spend: typeof sp.family === 'string' && Number.isFinite(sp.usd) && Number.isFinite(sp.cap) && sp.cap > 0
+      ? { family: sp.family, usd: sp.usd, cap: sp.cap, ratio: Number.isFinite(sp.ratio) ? sp.ratio : Math.round((sp.usd / sp.cap) * 100) / 100 } : null,
+    health: { update: s(health.update), provider: s(health.provider), unwrapped: health.unwrapped === true, drafts: n(health.drafts) },
+  };
+}
+
+/** The stored model, coerced, or null when missing, unparseable or another schema. */
 function read(vault) {
   const m = readJson(modelPath(vault));
-  return m && m.schema === SCHEMA && typeof m.at === 'string' ? m : null;
+  return m && typeof m === 'object' && m.schema === SCHEMA && typeof m.at === 'string' ? normalize(m) : null;
 }
 
 function write(vault, model) { fsx.writeAtomic(modelPath(vault), `${JSON.stringify(model, null, 2)}\n`); }
@@ -221,5 +264,5 @@ function refresh(vault, opts = {}) {
 
 module.exports = {
   SCHEMA, STALE_MS, SPEND_SHOW_RATIO, modelPath, pidAlive, countFlags, familyOf, spendToday, capsOf, spendOf,
-  gatesOf, runsOf, alertsOf, healthOf, build, read, write, isStale, refresh,
+  gatesOf, runsOf, alertsOf, healthOf, ledgerToday, normalize, build, read, write, isStale, refresh,
 };

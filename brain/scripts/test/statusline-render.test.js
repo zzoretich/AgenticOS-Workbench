@@ -65,7 +65,7 @@ test('render: a narrow terminal drops the lowest-priority segments instead of wr
     '◆ 2 gates · 1 alert · 1 flag',
   ]);
   for (const l of [...at(72), ...at(50)]) assert.ok(R.width(l) <= 72, `${l} fits`);
-  assert.equal(plainLines(R.render({ payload: PAYLOAD, columns: 5 }))[0], 'Opus 5.5 (1M) ·high ·think', 'the first segment always stays');
+  assert.equal(plainLines(R.render({ payload: PAYLOAD, columns: 5 }))[0], 'Opus…', 'a last segment too wide is clipped, not wrapped (SL-10)');
 });
 
 test('render: OSC 8 links only to allow-listed targets', () => {
@@ -129,4 +129,38 @@ test('width: escapes are free, wide glyphs count two', () => {
   assert.equal(R.shortModel('gpt-5'), 'gpt-5');
   assert.equal(R.until(59 * 60e3), '59m');
   assert.equal(R.until(3 * 86400e3 + 4 * 3600e3), '3d4h');
+});
+
+test('SL-01: no dynamic value can put a control byte on the terminal; a PR link must parse as https', () => {
+  const hostile = '\x1b]8;;https://evil.example\x07click\x1b]8;;\x07\x1b[2J';
+  const lines = R.render({
+    payload: { ...PAYLOAD, model: { display_name: `Opus${hostile}` }, workspace: { current_dir: `/x/${hostile}` }, pr: { number: 7, url: `https://github.com/o/r/pull/7${hostile}` }, vim: { mode: hostile } },
+    model: { ...MODEL, needs: { gates: [{ item: hostile, stage: hostile }], alerts: 0, breaking: 0, flags: 0 }, runs: [{ member: hostile }], health: { update: `1.2.3${hostile}` } },
+    work: { kind: 'task', text: hostile }, git: { branch: hostile }, now: NOW, links: true,
+  });
+  for (const l of lines) {
+    const withoutOurs = l.replace(/\x1b\[[0-9;]*m/g, '').replace(/\x1b\]8;;(?:https:\/\/github\.com\/o\/r\/pull\/7[^\x07\x1b]*|obsidian:\/\/[^\x07\x1b]*|https:\/\/github\.com\/[^\x07\x1b]*releases[^\x07\x1b]*|)\x07/g, '');
+    assert.ok(!/[\x00-\x1f\x7f-\x9f]/.test(withoutOurs), JSON.stringify(l));
+  }
+  assert.ok(!lines.join('').includes('evil.example\x07'), 'no injected link target');
+  assert.equal(R.safeHttps('https://github.com/o/r/pull/7\x07x'), 'https://github.com/o/r/pull/7%07x');
+  assert.equal(R.safeHttps('http://github.com/o'), null);
+  assert.equal(R.clean('a\x1bb\x07c\u009bd'), 'a b c d');
+  const rows = R.subagentRows({ tasks: [{ id: 'x', name: `n${hostile}`, description: hostile, model: hostile }] }, { now: NOW });
+  assert.ok(!/[\x00-\x08\x0b-\x1a\x1c-\x1f]|\x1b(?!\[[0-9;]*m)/.test(JSON.parse(rows[0]).content));
+});
+
+test('SL-07: malformed model data drops its own segment, never the whole line', () => {
+  const bad = { ...MODEL, needs: { gates: [null], alerts: 1 }, runs: [null], spend: { family: 'duties', usd: 'x', cap: 6 }, health: null };
+  const lines = plainLines(R.render({ payload: PAYLOAD, model: bad, now: NOW, links: false }));
+  assert.equal(lines.length, 3);
+  assert.equal(lines[2], '1 alert');
+});
+
+test('SL-10: clipping keeps escapes whole and closes an open link', () => {
+  const s = `\x1b[1;35m\x1b]8;;obsidian://x\x07◆ 2 gates waiting\x1b]8;;\x07\x1b[0m`;
+  const c = R.clipStyled(s, 6);
+  assert.equal(R.plain(c), '◆ 2 g…');
+  assert.ok(c.endsWith('\x1b]8;;\x07\x1b[0m'), 'the link is closed and the style reset');
+  assert.equal(R.clipStyled('short', 10), 'short');
 });

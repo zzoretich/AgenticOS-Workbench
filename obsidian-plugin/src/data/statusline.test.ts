@@ -37,9 +37,9 @@ test("parseStatusline refuses anything but a schema-1 model and coerces bad fiel
   assert.equal(odd?.spend, null, "a zero cap is no spend line");
 });
 
-test("isStale: a minute old, absent, or from the future", () => {
-  assert.equal(isStale(FULL, NOW.getTime() + 30_000), false);
-  assert.equal(isStale(FULL, NOW.getTime() + 61_000), true);
+test("isStale: older than 15 s (D3), absent, or from the future", () => {
+  assert.equal(isStale(FULL, NOW.getTime() + 10_000), false);
+  assert.equal(isStale(FULL, NOW.getTime() + 16_000), true);
   assert.equal(isStale(FULL, NOW.getTime() - 120_000), true);
   assert.equal(isStale(null), true);
 });

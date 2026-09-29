@@ -96,33 +96,51 @@ function readSettings(file) {
 }
 const writeSettings = (file, s) => fsx.writeAtomic(file, `${JSON.stringify(s, null, 2)}\n`);
 
+/** SL-02: an entry is ours only when it runs a command we recorded (or this vault's own, when the record is gone); another
+ *  vault's launcher is someone else's line. */
+const mine = (entry, ...commands) => !!entry && typeof entry.command === 'string' && commands.filter(Boolean).includes(entry.command);
+/** JSON with object keys sorted: two settings objects that differ only in key order compare equal. */
+const canonical = (v) => JSON.stringify(v, (k, x) => (isPlainObject(x) ? Object.fromEntries(Object.keys(x).sort().map((key) => [key, x[key]])) : x));
+
+/** SL-04: the record goes first and is rolled back if the host file cannot be written, so an interrupted install never
+ *  leaves a host running a line that nothing can undo. */
+function commit(ctx, next, before, writeHost) {
+  writeState(ctx.userConfigFile, next);
+  try { writeHost(); } catch (e) { writeState(ctx.userConfigFile, before); throw e; }
+}
+
 function installClaude(ctx, { chainOutput = false } = {}) {
   const file = claudeSettingsFile(ctx);
   if (!fs.existsSync(path.dirname(file))) return { host: 'claude', ok: false, skipped: true, message: `no Claude Code config folder at ${path.dirname(file)}` };
+  const existed = fs.existsSync(file);
   const settings = readSettings(file);
-  const state = readState(ctx.userConfigFile);
-  const was = state.claude || null;
+  const before = readState(ctx.userConfigFile);
+  const was = before.claude || null;
   const opts = settingsOf(ctx.cfg);
+  const command = commandFor(ctx.vault, 'render');
+  const subCommand = commandFor(ctx.vault, 'subagents');
   const cur = settings.statusLine;
   const curSub = settings.subagentStatusLine;
+  const curMine = mine(cur, was && was.command, command);
+  const curSubMine = mine(curSub, was && was.subagentCommand, subCommand);
   // D9: re-installing over our own line keeps what we first chained; a slot someone else took chains the newcomer.
-  const previous = cur && isOurs(cur.command, 'render') ? (was ? was.previous : null) : (cur === undefined ? null : cur);
-  const previousSubagent = curSub && isOurs(curSub.command, 'subagents') ? (was ? was.previousSubagent : null) : (curSub === undefined ? null : curSub);
-  const command = commandFor(ctx.vault, 'render');
-  backupOnce(file);
+  const previous = curMine ? (was ? was.previous : null) : (cur === undefined ? null : cur);
+  const previousSubagent = curSubMine ? (was ? was.previousSubagent : null) : (curSub === undefined ? null : curSub);
   settings.statusLine = { type: 'command', command, padding: 0, refreshInterval: opts.refreshSeconds, hideVimModeIndicator: true };
-  let subagentCommand = null;
-  if (opts.subagents) {
-    subagentCommand = commandFor(ctx.vault, 'subagents');
-    settings.subagentStatusLine = { type: 'command', command: subagentCommand };
-  } else if (curSub && isOurs(curSub.command, 'subagents')) {
-    if (previousSubagent) settings.subagentStatusLine = previousSubagent; else delete settings.subagentStatusLine;
-  }
-  writeSettings(file, settings);
-  state.claude = { installedAt: (ctx.now || new Date()).toISOString(), command, subagentCommand, previous, previousSubagent: opts.subagents ? previousSubagent : null, chainOutput: !!chainOutput };
-  writeState(ctx.userConfigFile, state);
+  if (opts.subagents) settings.subagentStatusLine = { type: 'command', command: subCommand };
+  else if (curSubMine) { if (previousSubagent) settings.subagentStatusLine = previousSubagent; else delete settings.subagentStatusLine; }
+  const next = {
+    ...before,
+    claude: {
+      installedAt: (ctx.now || new Date()).toISOString(), command, subagentCommand: opts.subagents ? subCommand : null,
+      previous, previousSubagent: opts.subagents ? previousSubagent : null, chainOutput: !!chainOutput,
+      createdFile: was ? !!was.createdFile : !existed,
+    },
+  };
+  backupOnce(file);
+  commit(ctx, next, before, () => writeSettings(file, settings));
   const chained = previous && typeof previous.command === 'string' && !isOurs(previous.command, 'render') ? previous.command : null;
-  return { host: 'claude', ok: true, file, chained, retook: !!(was && cur && !isOurs(cur.command, 'render')) };
+  return { host: 'claude', ok: true, file, chained, retook: !!(was && cur && !curMine) };
 }
 
 function uninstallClaude(ctx) {
@@ -134,14 +152,21 @@ function uninstallClaude(ctx) {
   if (fs.existsSync(file)) {
     const settings = readSettings(file);
     let changed = false;
-    for (const [key, verb, prev] of [['statusLine', 'render', was.previous], ['subagentStatusLine', 'subagents', was.previousSubagent]]) {
+    for (const [key, own, prev] of [['statusLine', was.command, was.previous], ['subagentStatusLine', was.subagentCommand, was.previousSubagent]]) {
       const cur = settings[key];
-      if (cur && isOurs(cur.command, verb)) {
+      if (mine(cur, own)) {
         if (prev) settings[key] = prev; else delete settings[key];
         changed = true;
       } else if (cur && key === 'statusLine') notes.push(`the status line is now ${cur.command}; left as it is`);
     }
-    if (changed) writeSettings(file, settings);
+    if (changed) {
+      // SL-05: when the result is what the file held before install, put back its exact bytes, not a re-serialization.
+      let bak = null;
+      try { bak = CW.readStrict(file + BAK); } catch { bak = null; }
+      if (bak !== null && canonical(bak) === canonical(settings)) fsx.writeAtomic(file, fs.readFileSync(file + BAK));
+      else if (was.createdFile && !Object.keys(settings).length) fs.unlinkSync(file);
+      else writeSettings(file, settings);
+    }
     if (!notes.length) dropBackup(file);
   }
   delete state.claude;
@@ -203,19 +228,23 @@ function scanToml(text) {
 
 const ourLine = (items, dotted) => `${dotted ? 'tui.' : ''}status_line = [${items.map((i) => JSON.stringify(i)).join(', ')}]  ${MARK}`;
 
-/** Pure: config.toml text with our status_line in it. Refuses an existing one without `force`. */
-function tomlInstall(text, items, { force = false } = {}) {
+/** Pure: config.toml text with our status_line in it. The existing line is ours only when it is exactly `own`, the line
+ *  recorded at install (SL-03); anything else, the marker comment included, is refused without `force`. */
+function tomlInstall(text, items, { force = false, own = null } = {}) {
   const t = scanToml(text);
   if (t.inlineTui) throw new Refusal('config.toml sets `tui` as an inline table; add status_line there yourself, or run /statusline in Codex');
   const lines = t.lines.slice();
   if (t.key) {
     const found = lines.slice(t.key.start, t.key.end + 1).join('\n');
     const line = ourLine(items, t.key.dotted);
-    if (found.includes(MARK)) {
+    if (own && found.trim() === String(own).trim()) {
       lines.splice(t.key.start, t.key.end - t.key.start + 1, line);
       return { text: lines.join('\n'), written: line, previous: undefined, createdTable: undefined };
     }
-    if (!force) throw new Refusal(`config.toml already sets tui.status_line (${found.replace(/\s+/g, ' ').trim()}); pass --force to replace it (uninstall puts it back)`);
+    if (!force) {
+      const why = found.includes(MARK) ? 'changed since install' : 'is already set';
+      throw new Refusal(`config.toml's tui.status_line ${why} (${found.replace(/\s+/g, ' ').trim()}); pass --force to replace it (uninstall puts it back)`);
+    }
     lines.splice(t.key.start, t.key.end - t.key.start + 1, line);
     return { text: lines.join('\n'), written: line, previous: found, createdTable: false };
   }
@@ -258,17 +287,20 @@ function installCodex(ctx, { force = false } = {}) {
   if (!fs.existsSync(path.dirname(file))) return { host: 'codex', ok: false, skipped: true, message: `no Codex home at ${path.dirname(file)}` };
   let text = '';
   try { text = fs.readFileSync(file, 'utf8'); } catch (e) { if (e.code !== 'ENOENT') throw e; }
-  const state = readState(ctx.userConfigFile);
-  const was = state.codex || null;
-  const r = tomlInstall(text, settingsOf(ctx.cfg).codexItems, { force });
-  if (r.text !== text) { backupOnce(file); fsx.writeAtomic(file, r.text); }
-  state.codex = {
-    installedAt: (ctx.now || new Date()).toISOString(),
-    written: r.written,
-    previous: r.previous === undefined ? (was ? was.previous : null) : r.previous,
-    createdTable: r.createdTable === undefined ? !!(was && was.createdTable) : r.createdTable,
+  const before = readState(ctx.userConfigFile);
+  const was = before.codex || null;
+  const r = tomlInstall(text, settingsOf(ctx.cfg).codexItems, { force, own: was && was.written });
+  const next = {
+    ...before,
+    codex: {
+      installedAt: (ctx.now || new Date()).toISOString(),
+      written: r.written,
+      previous: r.previous === undefined ? (was ? was.previous : null) : r.previous,
+      createdTable: r.createdTable === undefined ? !!(was && was.createdTable) : r.createdTable,
+    },
   };
-  writeState(ctx.userConfigFile, state);
+  if (r.text !== text) backupOnce(file);
+  commit(ctx, next, before, () => { if (r.text !== text) fsx.writeAtomic(file, r.text); });
   return { host: 'codex', ok: true, file, replaced: !!r.previous };
 }
 
@@ -315,7 +347,7 @@ function status(ctx) {
   try { const s = CW.readStrict(cfile); current = s && s.statusLine && typeof s.statusLine.command === 'string' ? s.statusLine.command : null; } catch { current = null; }
   out.claude = {
     installed: !!state.claude,
-    ownsSlot: isOurs(current, 'render'),
+    ownsSlot: !!(state.claude && current && current === state.claude.command),
     current,
     chained: state.claude && state.claude.previous && typeof state.claude.previous.command === 'string' ? state.claude.previous.command : null,
     chainOutput: !!(state.claude && state.claude.chainOutput),
@@ -341,11 +373,12 @@ function reapply(ctx) {
     const file = claudeSettingsFile(ctx);
     let settings = null;
     try { settings = readSettings(file); } catch { settings = null; }
-    if (settings && settings.statusLine && isOurs(settings.statusLine.command, 'render')) {
+    if (settings && mine(settings.statusLine, state.claude.command)) {
       const next = { ...settings, statusLine: { ...settings.statusLine, command: commandFor(ctx.vault, 'render') } };
-      if (settings.subagentStatusLine && isOurs(settings.subagentStatusLine.command, 'subagents')) next.subagentStatusLine = { ...settings.subagentStatusLine, command: commandFor(ctx.vault, 'subagents') };
-      if (JSON.stringify(next) !== JSON.stringify(settings)) { writeSettings(file, next); done.push('claude'); }
-      state.claude = { ...state.claude, command: next.statusLine.command, subagentCommand: next.subagentStatusLine && isOurs(next.subagentStatusLine.command, 'subagents') ? next.subagentStatusLine.command : null };
+      const subOurs = mine(settings.subagentStatusLine, state.claude.subagentCommand);
+      if (subOurs) next.subagentStatusLine = { ...settings.subagentStatusLine, command: commandFor(ctx.vault, 'subagents') };
+      state.claude = { ...state.claude, command: next.statusLine.command, subagentCommand: subOurs ? next.subagentStatusLine.command : state.claude.subagentCommand };
+      if (JSON.stringify(next) !== JSON.stringify(settings)) { writeState(ctx.userConfigFile, state); writeSettings(file, next); done.push('claude'); }
     }
   }
   if (state.codex) {
@@ -353,9 +386,9 @@ function reapply(ctx) {
     let text = null;
     try { text = fs.readFileSync(file, 'utf8'); } catch { text = null; }
     if (text !== null && text.split('\n').some((l) => l.trim() === String(state.codex.written).trim())) {
-      const r = tomlInstall(text, settingsOf(ctx.cfg).codexItems);
-      if (r.text !== text) { fsx.writeAtomic(file, r.text); done.push('codex'); }
+      const r = tomlInstall(text, settingsOf(ctx.cfg).codexItems, { own: state.codex.written });
       state.codex = { ...state.codex, written: r.written };
+      if (r.text !== text) { writeState(ctx.userConfigFile, state); fsx.writeAtomic(file, r.text); done.push('codex'); }
     }
   }
   if (state.claude || state.codex) writeState(ctx.userConfigFile, state);

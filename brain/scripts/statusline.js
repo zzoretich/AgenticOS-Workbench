@@ -52,16 +52,29 @@ function parseArgs(argv) {
 
 const readText = (file) => { try { return fs.readFileSync(file, 'utf8'); } catch { return null; } };
 
-/** stdin as text; '' on a TTY, and whatever arrived after 3 s if the pipe never closes. */
-function readStdin(timeoutMs = 3000) {
-  if (process.stdin.isTTY) return Promise.resolve('');
+/** stdin as text; '' on a TTY, and whatever arrived after 3 s if the pipe never closes. One settle path detaches the
+ *  listeners and destroys the stream, so an open pipe can never keep the process alive (SL-06). */
+function readStdin(timeoutMs = 3000, stream = process.stdin) {
+  if (stream.isTTY) return Promise.resolve('');
   return new Promise((resolve) => {
     let data = '';
-    const t = setTimeout(() => resolve(data), timeoutMs);
-    process.stdin.setEncoding('utf8');
-    process.stdin.on('data', (c) => { data += c; });
-    process.stdin.on('end', () => { clearTimeout(t); resolve(data); });
-    process.stdin.on('error', () => { clearTimeout(t); resolve(data); });
+    let settled = false;
+    const onData = (c) => { data += c; };
+    const settle = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      stream.removeListener('data', onData);
+      stream.removeListener('end', settle);
+      stream.removeListener('error', settle);
+      try { stream.destroy(); } catch { /* already closed */ }
+      resolve(data);
+    };
+    const timer = setTimeout(settle, timeoutMs);
+    stream.setEncoding('utf8');
+    stream.on('data', onData);
+    stream.once('end', settle);
+    stream.once('error', settle);
   });
 }
 
@@ -308,4 +321,4 @@ if (require.main === module) {
   main(process.argv.slice(2)).then((code) => { process.exitCode = code; }, () => { process.exitCode = 0; });
 }
 
-module.exports = { main, parseArgs, gsdPhase, workOf, parseGitStatus, gitOf, fireChain, chainFirstLine, samplePayload, USAGE };
+module.exports = { main, parseArgs, readStdin, gsdPhase, workOf, parseGitStatus, gitOf, fireChain, chainFirstLine, samplePayload, USAGE };

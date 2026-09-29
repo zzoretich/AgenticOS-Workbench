@@ -142,3 +142,26 @@ test('refresh: a held lock skips the rebuild instead of piling up (D3)', () => {
   fs.unlinkSync(lock);
   assert.equal(M.refresh(v, { now: NOW }).at, NOW.toISOString());
 });
+
+test('SL-09: a busy day spans many chunks and is summed whole; reading stops at yesterday', () => {
+  const v = fs.mkdtempSync(path.join(os.tmpdir(), 'sl-ledger-'));
+  const rows = [];
+  for (let i = 0; i < 300; i++) rows.push({ ts: new Date(2026, 8, 20 + (i % 7), 12).toISOString(), feature: 'duty:x', usd: 99, pad: 'y'.repeat(40) });
+  for (let i = 0; i < 400; i++) rows.push({ ts: new Date(2026, 8, 28, 0, 1 + (i % 50)).toISOString(), feature: 'duty:sitrep', usd: 0.01, pad: 'x'.repeat(40) });
+  put(v, 'brain/_index/provider-spend.jsonl', jsonl(rows));
+  const text = M.ledgerToday(path.join(v, 'brain/_index/provider-spend.jsonl'), NOW, 256);
+  assert.equal(Math.round(M.spendToday(text, NOW).duties * 100) / 100, 4);
+  const size = fs.statSync(path.join(v, 'brain/_index/provider-spend.jsonl')).size;
+  assert.ok(text.length < size * 0.7, `stops at the first earlier row (${text.length} of ${size} bytes)`);
+  assert.equal(M.ledgerToday(path.join(v, 'none.jsonl'), NOW), '');
+});
+
+test('SL-07: read coerces a hand-edited model instead of passing it through', () => {
+  const v = fs.mkdtempSync(path.join(os.tmpdir(), 'sl-coerce-'));
+  put(v, 'brain/_index/statusline.json', JSON.stringify({ schema: 1, at: NOW.toISOString(), needs: { gates: [null, { item: 'a' }], alerts: '3', flags: -1 }, runs: 'no', spend: { family: 'duties', usd: 1 }, health: { drafts: 2.7 } }));
+  const m = M.read(v);
+  assert.deepEqual(m.needs, { gates: [{ team: '', item: 'a', stage: null, title: null, since: null }], alerts: 0, breaking: 0, flags: 0 });
+  assert.deepEqual(m.runs, []);
+  assert.equal(m.spend, null);
+  assert.deepEqual(m.health, { update: null, provider: null, unwrapped: false, drafts: 2 });
+});

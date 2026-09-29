@@ -411,7 +411,7 @@ Opus 5.5 (1M) ·high ·think │ Writing the spec │ my-project ⎇ feat/x* │
   each opens the Workbench tab that handles it. The Obsidian status bar shows the same.
 - The status line you had keeps running: install records it and runs it with the same input on every refresh, so a
   tool that writes files from its status line still works. `--chain-output` also shows its first line, and
-  `aos statusline uninstall` puts it back byte for byte.
+  `aos statusline uninstall` puts it back (byte for byte when nothing else in the file changed).
 - If another installer takes the slot later, `aos doctor` and the next session start say so, and
   `aos statusline install` takes it back and chains the newcomer.
 - Claude Code subagents get their own rows: model, effort, context used, age.

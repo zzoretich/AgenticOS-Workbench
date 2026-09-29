@@ -5,8 +5,8 @@
 import type { App } from "obsidian";
 
 export const STATUSLINE_PATH = "brain/_index/statusline.json";
-/** The HUD rebuilds a model older than this; the terminal's own bar is 15 s. */
-export const STALE_MS = 60_000;
+/** D3: a model older than 15 s is rebuilt, the same threshold the terminal uses (the bar ticks every 30 s). */
+export const STALE_MS = 15_000;
 
 export interface Gate { team: string; item: string; stage: string | null }
 export interface LiveRun { team: string; member: string | null; stage: string | null; item: string | null }
