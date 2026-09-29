@@ -114,7 +114,7 @@ async function appendToMemoryIndex(
     return false;
   }
   const raw = await app.vault.adapter.read(indexPath);
-  // Prefix match, first heading wins; IDENTICAL rule in memory-writer.js — behavioral parity between the two writers
+  // Prefix match, first heading wins; IDENTICAL rule in memory-index.js — behavioral parity between the two writers
   // is a standing P4 contract (the rule and its tests live in mdSections.ts).
   const entry = `- [${title}](${memoryPath}) — ${description}`;
   await app.vault.adapter.write(indexPath, appendUnderHeading(raw, `## ${TYPE_HEADING[type]}`, entry));
