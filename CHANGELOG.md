@@ -4,6 +4,8 @@ All notable changes to AgenticOS Workbench. Versions follow the tags. From the n
 
 ## [Unreleased]
 
+## [0.20.3] — 2026-09-28
+
 ### Changed
 - The Agent Teams tab hands the next step to the team's lead. After you approve a gate, or raise the budget of a paused item, the tab opens the lead in the terminal with a prompt saying what you decided, that it is already recorded, and how to run `aos team` for this vault: its agent on the lead's own provider when that host is enabled and has it, else another enabled host. The Approve dialog says where it opens; where no enabled host has the lead's agent, a plain session opens, told which lead to act as and where the team's rules are. If no terminal can start, the command is copied to the clipboard and shown in a notice that stays until you dismiss it. The lead still picks the next seat; the tab never dispatches one. Before, the item waited with the lead as its owner until someone started the lead.
 
@@ -269,7 +271,8 @@ The first public release: an `aos` CLI, the AgenticOS runtime, a Claude Code plu
 - Update notifications: a GitHub release check surfaced as a session-start notice.
 - Docs: README, install guide, and a release acceptance runbook.
 
-[Unreleased]: https://github.com/zzoretich/AgenticOS-Workbench/compare/v0.20.2...HEAD
+[Unreleased]: https://github.com/zzoretich/AgenticOS-Workbench/compare/v0.20.3...HEAD
+[0.20.3]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.20.3
 [0.20.2]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.20.2
 [0.20.1]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.20.1
 [0.20.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.20.0
