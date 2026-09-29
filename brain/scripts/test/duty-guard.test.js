@@ -166,3 +166,113 @@ test('main: scope prints two lines for claude and folders for codex; check witho
   assert.equal(G.main(['snapshot', '../x'], io), 2);
   assert.equal(G.main(['scope', '--host', 'nope'], io), 2);
 });
+
+// ── the reflect duties' feedback memories (spec 2026-09-28-reflect-memory-writes-design) ───────────────────────────
+
+const LATER = new Date(NOW.getTime() + 60e3);   // written during the run: after the snapshot's `at`
+function memory(v, name, text, mtime = LATER) {
+  const f = path.join(v, 'brain', 'memory', 'feedback', name);
+  fs.mkdirSync(path.dirname(f), { recursive: true });
+  fs.writeFileSync(f, text);
+  fs.utimesSync(f, mtime, mtime);
+  return f;
+}
+
+test('DUTY_WRITES (D1/D2): the reflect duties may write feedback memories and MEMORY.md, nothing else in brain/memory; tick may not', () => {
+  const v = vault();
+  const abs = fs.realpathSync(v);
+  for (const duty of ['reflect', 'reflect-daily']) {
+    const allowed = G.splitTools(G.claudeTools({ vault: v, tools: 'Read', duty, now: NOW }).allowed);
+    assert.ok(allowed.includes(`Edit(/${abs}/brain/memory/feedback/**)`), duty);
+    assert.ok(allowed.includes(`Edit(/${abs}/MEMORY.md)`), duty);
+    assert.ok(!allowed.some((a) => /brain\/memory\/(\*\*|user|projects|reference)/.test(a)), 'only the feedback folder');
+  }
+  const tick = G.claudeTools({ vault: v, tools: 'Read', duty: 'tick', now: NOW }).allowed;
+  assert.ok(!tick.includes('brain/memory') && !tick.includes('MEMORY.md'));
+  assert.deepEqual(G.dutyWrites('constructor'), [], 'own keys only');
+  assert.ok(G.writeScope({ vault: v, duty: 'reflect', writes: 'notes/', now: NOW }).entries.every((e) => e.builtIn === (e.rel !== 'notes')));
+});
+
+test('codexDirs: a reflect duty gets the feedback folder; its MEMORY.md is left out quietly, a routine\'s own root file is still refused', () => {
+  const v = vault();
+  const r = G.codexDirs({ vault: v, duty: 'reflect-daily', writes: 'MEMORY.md,TODO.md', now: NOW, mkdir: false });
+  assert.ok(r.dirs.map((d) => path.relative(v, d)).includes(path.join('brain', 'memory', 'feedback')));
+  assert.ok(!r.dirs.includes(path.resolve(v)), 'never the vault');
+  assert.deepEqual(r.refused.map((x) => x.entry), ['./ (folder of TODO.md)'], 'the duplicate MEMORY.md folds into the built-in one');
+  const tick = G.codexDirs({ vault: v, duty: 'tick', writes: 'MEMORY.md', now: NOW, mkdir: false });
+  assert.deepEqual(tick.refused.map((x) => x.entry), ['./ (folder of MEMORY.md)'], 'a routine\'s own MEMORY.md is refused as before');
+});
+
+test('check backfills MEMORY.md for the reflect duty\'s new feedback memories, section-aware, once (D3/D4)', () => {
+  const v = vault();
+  const index = path.join(v, 'MEMORY.md');
+  fs.writeFileSync(index, '# Index\n\n## Feedback (how to work)\n- [Old](brain/memory/feedback/old.md) — old rule\n\n## Reference\n- [R](brain/memory/reference/r.md) — r\n');
+  const before = new Date(NOW.getTime() - 3600e3);
+  memory(v, 'old.md', '# Old\n\nold rule\n', before);
+  memory(v, 'stale.md', '# Stale\n\nnot written this run\n', before);
+  const dir = guard();
+  G.snapshot({ vault: v, slug: 'reflect-daily', dir, now: NOW });
+  memory(v, 'use-expect.md', '---\ntype: memory\ntags: [memory/feedback, status/active]\n---\n\n# Always pass --expect\n\nBoard writes take --expect so a stale write fails.\n\n**Why:** x\n');
+  memory(v, 'described.md', '---\ndescription: "From the frontmatter"\n---\n# Described\n\nbody\n');
+  memory(v, 'linked.md', '# Linked\n\nthe duty indexed this one itself\n');
+  fs.writeFileSync(index, fs.readFileSync(index, 'utf8').replace('old rule\n', 'old rule\n- [Linked](brain/memory/feedback/linked.md) — by the duty\n'));
+  memory(v, path.join('_drafts', 'draft.md'), '# Draft\n\nx\n');
+  memory(v, '.hidden.md', '# Hidden\n\nx\n');
+  memory(v, 'README.md', '# Feedback\n\nx\n');
+  fs.symlinkSync(path.join(v, 'persona', 'IDENTITY.md'), path.join(v, 'brain', 'memory', 'feedback', 'link.md'));
+  const r = G.check({ vault: v, slug: 'reflect-daily', dir, now: NOW, notify: () => assert.fail('no notification on a clean run') });
+  assert.deepEqual(r.restored, []);
+  assert.deepEqual(r.indexed, ['brain/memory/feedback/described.md', 'brain/memory/feedback/use-expect.md']);
+  const idx = fs.readFileSync(index, 'utf8');
+  assert.match(idx, /\n- \[Always pass --expect\]\(brain\/memory\/feedback\/use-expect\.md\) — Board writes take --expect so a stale write fails\.\n/);
+  assert.match(idx, /\n- \[Described\]\(brain\/memory\/feedback\/described\.md\) — From the frontmatter\n/);
+  assert.ok(idx.indexOf('use-expect.md') < idx.indexOf('## Reference'), 'the lines land in the Feedback section');
+  assert.equal(idx.match(/feedback\/linked\.md/g).length, 1, 'a line the duty wrote is not doubled');
+  for (const skipped of ['stale.md', 'draft.md', 'hidden.md', 'README.md', 'feedback/link.md)']) assert.ok(!idx.includes(skipped), skipped);
+  G.snapshot({ vault: v, slug: 'reflect-daily', dir, now: NOW });
+  assert.equal(G.check({ vault: v, slug: 'reflect-daily', dir, now: NOW }).indexed, undefined, 'a second run adds nothing');
+  assert.equal(fs.readFileSync(index, 'utf8'), idx);
+});
+
+test('check: no backfill for a duty without feedback writes, nor after a restore; a missing MEMORY.md is started; a failure is indexError', () => {
+  const v = vault();
+  const index = path.join(v, 'MEMORY.md');
+  let dir = guard();
+  G.snapshot({ vault: v, slug: 'tick', dir, now: NOW });
+  memory(v, 'new.md', '# New\n\nx\n');
+  assert.equal(G.check({ vault: v, slug: 'tick', dir, now: NOW, notify: () => {} }).indexed, undefined);
+  assert.ok(!fs.existsSync(index));
+  dir = guard();
+  G.snapshot({ vault: v, slug: 'reflect', dir, now: NOW });
+  fs.writeFileSync(path.join(v, 'persona', 'autoapply.json'), '{"classes":["everything"]}\n');
+  const restored = G.check({ vault: v, slug: 'reflect', dir, now: NOW, notify: () => {} });
+  assert.ok(restored.restored.length);
+  assert.equal(restored.indexed, undefined);
+  assert.ok(!fs.existsSync(index), 'a restored run indexes nothing');
+  dir = guard();
+  G.snapshot({ vault: v, slug: 'reflect', dir, now: NOW });
+  assert.deepEqual(G.check({ vault: v, slug: 'reflect', dir, now: NOW }).indexed, ['brain/memory/feedback/new.md']);
+  assert.equal(fs.readFileSync(index, 'utf8'), '# Index\n\n## Feedback\n- [New](brain/memory/feedback/new.md) — x');
+  const v2 = vault();
+  fs.mkdirSync(path.join(v2, 'MEMORY.md'));
+  dir = guard();
+  G.snapshot({ vault: v2, slug: 'reflect', dir, now: NOW });
+  memory(v2, 'n.md', '# N\n\nx\n');
+  const failed = G.check({ vault: v2, slug: 'reflect', dir, now: NOW });
+  assert.deepEqual(failed.restored, []);
+  assert.ok(failed.indexError, 'reported, never thrown');
+});
+
+test('main: scope --duty adds the duty\'s built-in writes on both hosts; a bad --duty exits 2', () => {
+  const v = vault();
+  const env = { AOS_VAULT: v, AOS_CONFIG: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'guard-cfg-')), 'agenticos.json') };
+  const out = [], err = [];
+  const io = { stdout: (s) => out.push(s), stderr: (s) => err.push(s), env, now: NOW };
+  assert.equal(G.main(['scope', '--host', 'claude', '--duty', 'reflect', '--tools', 'Read'], io), 0);
+  assert.match(out.join(''), /\/brain\/memory\/feedback\/\*\*\)/);
+  out.length = 0;
+  assert.equal(G.main(['scope', '--host', 'codex', '--duty', 'reflect', '--dry-run'], io), 0);
+  assert.ok(out.join('').split('\n').includes(path.join(v, 'brain', 'memory', 'feedback')));
+  assert.deepEqual(err, [], 'MEMORY.md is left out on Codex without a refusal line');
+  assert.equal(G.main(['scope', '--host', 'claude', '--duty', '../x'], io), 2);
+});

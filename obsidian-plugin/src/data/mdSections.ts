@@ -4,7 +4,7 @@
 /**
  * Appends `entry` as the last line of the section under the first line that starts with `heading` (prefix match, case
  * sensitive, no word boundary: "## Project" matches a real "## Projects", "## Feedback" matches "## Feedback (how to
- * work)"; the IDENTICAL rule is in memory-writer.js), before the section's trailing blank lines. A missing section is
+ * work)"; the IDENTICAL rule is in memory-index.js), before the section's trailing blank lines. A missing section is
  * added at the end of the text.
  */
 export function appendUnderHeading(text: string, heading: string, entry: string): string {

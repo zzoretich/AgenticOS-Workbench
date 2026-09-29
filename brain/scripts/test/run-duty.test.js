@@ -496,3 +496,52 @@ test('codex: the workspace is persona/, the user config cannot add roots, and th
   assert.ok(args.includes(`-C\n${persona}\n`) && args.includes(`--add-dir\n${path.join(s.vault, 'brain', 'reflections')}\n`));
   assert.ok(fs.statSync(path.join(s.vault, 'brain', 'sessions')).isDirectory(), 'a real run creates the folders it grants');
 });
+
+// ── the reflect duties' feedback memories (spec 2026-09-28-reflect-memory-writes-design) ───────────────────────────
+
+test('reflect on claude: the scope names the feedback folder and MEMORY.md, and a memory the duty did not index is indexed after the run', () => {
+  const s = sandbox();
+  fs.writeFileSync(path.join(s.vault, 'persona', 'duties', 'reflect.md'), 'ascii fixture weekly reflect\n');
+  fs.writeFileSync(path.join(s.vault, 'MEMORY.md'), '# Index\n\n## Feedback (how to work)\n');
+  const fake = path.join(s.vault, 'fake-reflect-claude');
+  fs.writeFileSync(fake, [
+    '#!/bin/sh',
+    '[ -n "${FAKE_JOURNAL:-}" ] && { mkdir -p "$(dirname "$FAKE_JOURNAL")"; printf "\\n## 18:00 — duty: reflect\\n- status: OK\\n" >> "$FAKE_JOURNAL"; }',
+    '[ -n "${FAKE_MEMORY:-}" ] && { mkdir -p "$(dirname "$FAKE_MEMORY")"; printf "# Promote on repeat\\n\\nA correction seen twice becomes a feedback memory.\\n" > "$FAKE_MEMORY"; }',
+    'echo "{\\"type\\":\\"result\\",\\"result\\":\\"done\\",\\"total_cost_usd\\":0.02,\\"usage\\":{\\"input_tokens\\":1,\\"output_tokens\\":1},\\"duration_ms\\":10}"',
+    '',
+  ].join('\n'), { mode: 0o755 });
+  const env = { ...s.env, PERSONA_CLAUDE_BIN: fake };
+  const dry = run(['reflect', '--dry-run'], env);
+  assert.equal(dry.status, 0, dry.stderr);
+  const real = fs.realpathSync(s.vault);
+  const allowed = dryValue(dry.stdout, '--allowedTools');
+  assert.ok(allowed.includes(`Edit(/${real}/brain/memory/feedback/**)`) && allowed.includes(`Edit(/${real}/MEMORY.md)`));
+  assert.ok(!dryValue(run(['testduty', '--dry-run'], env).stdout, '--allowedTools').some((a) => a.includes('brain/memory')), 'other duties get none of it');
+  const memory = path.join(s.vault, 'brain', 'memory', 'feedback', 'promote-on-repeat.md');
+  const r = run(['reflect'], { ...env, FAKE_JOURNAL: s.journal, FAKE_MEMORY: memory });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(fs.readFileSync(path.join(s.vault, 'MEMORY.md'), 'utf8'),
+    '# Index\n\n## Feedback (how to work)\n- [Promote on repeat](brain/memory/feedback/promote-on-repeat.md) — A correction seen twice becomes a feedback memory.\n');
+  assert.match(fs.readFileSync(path.join(s.logDir, 'duty-reflect.log'), 'utf8'), /duty=reflect guard .*"indexed":\["brain\/memory\/feedback\/promote-on-repeat\.md"\]/);
+});
+
+test('reflect on codex: the feedback folder arrives as --add-dir, MEMORY.md is left out without a refusal, and the runner writes its index line', () => {
+  const s = sandbox();
+  fs.writeFileSync(path.join(s.vault, 'persona', 'duties', 'reflect.md'), 'ascii fixture weekly reflect\n');
+  const fakeCodex = path.join(__dirname, '..', '..', '..', 'cli', 'fixtures', 'fake-codex.sh');
+  const cfg = path.join(s.vault, 'agenticos.json');
+  fs.writeFileSync(cfg, JSON.stringify({ vault: s.vault, claude: { model: 'haiku' }, hosts: { claude: { enabled: false }, codex: { enabled: true, bin: fakeCodex } } }, null, 2));
+  fs.writeFileSync(path.join(s.vault, 'brain', 'config.json'), JSON.stringify({ provider: 'none' }));
+  const env = { ...s.env, AOS_CONFIG: cfg, AOS_NO_CLAUDE: '1', PATH: '/usr/bin:/bin', HOME: s.vault };
+  delete env.PERSONA_CLAUDE_BIN;
+  const dry = run(['reflect', '--dry-run'], env);
+  assert.equal(dry.status, 0, dry.stderr);
+  assert.ok(dry.stdout.includes(`--add-dir\n${path.join(s.vault, 'brain', 'memory', 'feedback')}\n`));
+  assert.ok(!dry.stdout.includes(`--add-dir\n${s.vault}\n`), 'never the vault itself');
+  assert.doesNotMatch(dry.stderr, /refused/);
+  const memory = path.join(s.vault, 'brain', 'memory', 'feedback', 'codex-rule.md');
+  const r = run(['reflect'], { ...env, FAKE_JOURNAL: s.journal, FAKE_DUTY: 'reflect', FAKE_TAMPER: memory });
+  assert.equal(r.status, 0, r.stderr + fs.readFileSync(path.join(s.logDir, 'duty-reflect.log'), 'utf8'));
+  assert.equal(fs.readFileSync(path.join(s.vault, 'MEMORY.md'), 'utf8'), '# Index\n\n## Feedback\n- [codex-rule](brain/memory/feedback/codex-rule.md) — tampered');
+});
