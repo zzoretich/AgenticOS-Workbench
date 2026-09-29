@@ -26,7 +26,13 @@ const USAGE = `usage: aos statusline install [--host claude|codex] [--force] [--
        aos statusline status [--json] · refresh [--json] · preview [--width N]
        aos statusline render · subagents        (the commands Claude Code runs)
 `;
-const VERBS = ['install', 'uninstall', 'status', 'render', 'subagents', 'refresh', 'preview'];
+const VERBS = ['install', 'uninstall', 'status', 'render', 'subagents', 'refresh', 'preview', 'git'];
+/** SL-R05: the flags each verb takes, and how many arguments after it (`git <dir>` is the render path's own refresher). */
+const TAKES = {
+  install: ['host', 'force', 'chain-output'], uninstall: ['host'], status: ['json'], refresh: ['json'], preview: ['width'],
+  render: [], subagents: [], git: [],
+};
+const ARGS = { git: 1 };
 const BOOL = new Set(['force', 'chain-output', 'json']);
 const VALUE = new Set(['host', 'width']);
 const GIT_TTL_MS = 5000;
@@ -128,18 +134,46 @@ function parseGitStatus(out) {
   return branch ? { branch, dirty, ahead, behind } : null;
 }
 
-/** Branch, dirty, ahead/behind — the one subprocess, cached per directory for 5 s in the temp dir. */
+const gitCacheFile = (dir, tmp) => path.join(tmp, `aos-sl-git-${crypto.createHash('sha1').update(dir).digest('hex').slice(0, 16)}.json`);
+
+/** The cached git facts for a directory: { git, fresh } (fresh within 5 s). Never runs git. */
+function readGitCache(dir, { now = Date.now(), tmp = os.tmpdir() } = {}) {
+  if (!dir) return { git: null, fresh: true };
+  try {
+    const c = JSON.parse(fs.readFileSync(gitCacheFile(dir, tmp), 'utf8'));
+    if (c.dir === dir) return { git: c.git || null, fresh: now - c.at >= 0 && now - c.at < GIT_TTL_MS };
+  } catch { /* cold */ }
+  return { git: null, fresh: false };
+}
+
+/** Branch, dirty, ahead/behind from one `git status`, written to the cache. */
+function refreshGit(dir, { now = Date.now(), spawnSyncFn = spawnSync, tmp = os.tmpdir() } = {}) {
+  const r = spawnSyncFn('git', ['-C', dir, 'status', '--porcelain=v2', '--branch'], { encoding: 'utf8', timeout: 2000 });
+  const git = r && r.status === 0 ? parseGitStatus(r.stdout) : null;
+  try { require('./lib/fsx.js').writeAtomic(gitCacheFile(dir, tmp), JSON.stringify({ dir, at: now, git })); } catch { /* best effort */ }
+  return git;
+}
+
+/** preview and tests: the cache when fresh, else git now. render never calls this (SL-R09). */
 function gitOf(dir, { now = Date.now(), spawnSyncFn = spawnSync, tmp = os.tmpdir() } = {}) {
   if (!dir) return null;
-  const cache = path.join(tmp, `aos-sl-git-${crypto.createHash('sha1').update(dir).digest('hex').slice(0, 16)}.json`);
+  const c = readGitCache(dir, { now, tmp });
+  return c.fresh ? c.git : refreshGit(dir, { now, spawnSyncFn, tmp });
+}
+
+/** SL-R09: render shows the cached facts and leaves a stale cache to a detached `git <dir>` child, at most one per 5 s. */
+function gitForRender(dir, { now = Date.now(), tmp = os.tmpdir(), spawnFn = spawn, env = process.env } = {}) {
+  const c = readGitCache(dir, { now, tmp });
+  if (c.fresh || !dir || env.AOS_NO_SPAWN === '1') return c.git;
+  const pending = `${gitCacheFile(dir, tmp)}.pending`;
+  try { if (now - fs.statSync(pending).mtimeMs < GIT_TTL_MS) return c.git; } catch { /* none running */ }
   try {
-    const c = JSON.parse(fs.readFileSync(cache, 'utf8'));
-    if (c.dir === dir && now - c.at >= 0 && now - c.at < GIT_TTL_MS) return c.git;
-  } catch { /* cold */ }
-  const r = spawnSyncFn('git', ['-C', dir, 'status', '--porcelain=v2', '--branch'], { encoding: 'utf8', timeout: 800 });
-  const git = r && r.status === 0 ? parseGitStatus(r.stdout) : null;
-  try { require('./lib/fsx.js').writeAtomic(cache, JSON.stringify({ dir, at: now, git })); } catch { /* best effort */ }
-  return git;
+    fs.writeFileSync(pending, '');
+    const child = spawnFn(process.execPath, [__filename, 'git', dir], { detached: true, stdio: 'ignore', env });
+    if (child && typeof child.on === 'function') child.on('error', () => {});
+    if (child && typeof child.unref === 'function') child.unref();
+  } catch { /* the branch shows on a later refresh */ }
+  return c.git;
 }
 
 /** D2: run the previous status line with the same stdin, detached, so its side effects (bridge files) keep working. */
@@ -200,9 +234,19 @@ async function main(argv, {
   try { ({ flags, positional } = parseArgs(argv)); } catch (e) { stderr(`${e.message}\n${USAGE}`); return 2; }
   const verb = positional[0];
   if (!VERBS.includes(verb)) { stderr(USAGE); return 2; }
+  const extra = positional.slice(1);
+  const wrongFlag = Object.keys(flags).find((k) => !TAKES[verb].includes(k));
+  if (extra.length !== (ARGS[verb] || 0) || wrongFlag) {
+    stderr(`${wrongFlag ? `--${wrongFlag} does not apply to ${verb}` : extra.length ? `unexpected argument "${extra[ARGS[verb] || 0] || extra[0]}"` : `${verb} needs a directory`}\n${USAGE}`);
+    return 2;
+  }
 
   // The hot path first: render and subagents load nothing they do not need and swallow every failure.
-  const quiet = verb === 'render' || verb === 'subagents';
+  const quiet = verb === 'render' || verb === 'subagents' || verb === 'git';
+  if (verb === 'git') {
+    try { refreshGit(path.resolve(positional[1]), { spawnSyncFn }); fs.rmSync(`${gitCacheFile(path.resolve(positional[1]), os.tmpdir())}.pending`, { force: true }); } catch { /* quiet */ }
+    return 0;
+  }
   try {
     const V = vault || env.AOS_VAULT || require('./lib/paths.js').VAULT;
     const UCF = userConfigFile || env.AOS_CONFIG || require('./lib/paths.js').configFile();
@@ -223,7 +267,8 @@ async function main(argv, {
       const claude = I.readState(UCF).claude || null;
       const prev = claude && claude.previous && typeof claude.previous.command === 'string' ? claude.previous.command : null;
       let chained = '';
-      if (prev && !I.isOurs(prev, 'render')) {
+      // SL-R02: skip only our own line (recorded or this vault's); another vault's status line is a real previous line.
+      if (prev && prev !== claude.command && prev !== I.commandFor(V, 'render')) {
         if (claude.chainOutput) chained = chainFirstLine(prev, raw, { spawnSyncFn, env });
         else fireChain(prev, raw, { spawnFn, env });
       }
@@ -235,7 +280,7 @@ async function main(argv, {
       }
       const ws = payload.workspace || {};
       const lines = R.render({
-        payload, model, work: workOf(payload, claudeDir), git: gitOf(ws.current_dir || ws.project_dir || payload.cwd, { spawnSyncFn }),
+        payload, model, work: workOf(payload, claudeDir), git: gitForRender(ws.current_dir || ws.project_dir || payload.cwd, { now: at.getTime(), spawnFn, env }),
         columns: parseInt(env.COLUMNS || '0', 10) || 0, links: sl.links !== false, segments: sl.segments, env, now: at.getTime(),
       });
       const out = [chained, ...lines].filter(Boolean);
@@ -277,6 +322,7 @@ async function main(argv, {
       if (flags.json) { stdout(`${JSON.stringify({ ...s, model: m ? { at: m.at, stale: M.isStale(m, at) } : null }, null, 2)}\n`); return 0; }
       const c = s.claude;
       stdout(`claude  ${!c.installed ? 'not installed (opt-in: aos statusline install)' : c.ownsSlot ? `installed in ${c.file}${c.chained ? ` · chains ${c.chained}` : ''}${c.subagents ? ' · subagent rows' : ''}` : `installed, but the slot now runs ${c.current || 'nothing'} — aos statusline install takes it back and chains it`}\n`);
+      if (c.projectOverride) stdout(`        but ${c.projectOverride.file} overrides it in this project (runs ${c.projectOverride.command})\n`);
       const x = s.codex;
       stdout(`codex   ${!x.installed ? 'not installed' : x.present ? `footer preset in ${x.file} (built-in items only; what needs you arrives at session start)` : `installed, but the status_line in ${x.file} changed`}\n`);
       stdout(`model   ${m ? `${M.modelPath(V)} · ${Math.max(0, Math.round((at.getTime() - Date.parse(m.at)) / 1000))}s old` : 'not built yet (aos statusline refresh)'}\n`);
@@ -321,4 +367,4 @@ if (require.main === module) {
   main(process.argv.slice(2)).then((code) => { process.exitCode = code; }, () => { process.exitCode = 0; });
 }
 
-module.exports = { main, parseArgs, readStdin, gsdPhase, workOf, parseGitStatus, gitOf, fireChain, chainFirstLine, samplePayload, USAGE };
+module.exports = { main, parseArgs, readStdin, gsdPhase, workOf, parseGitStatus, gitOf, readGitCache, refreshGit, gitForRender, fireChain, chainFirstLine, samplePayload, USAGE };

@@ -195,6 +195,13 @@ export default class AgenticOSPlugin extends Plugin {
   // ── AgenticOS accessors: every read of brain/_index and every spawn goes through these ──
 
   /** Vault the plugin renders and spawns in: settings.vaultRoot, else this Obsidian vault. */
+  /** The open Obsidian vault's own folder: what the status bar reads through the adapter, so it is also what a status
+   *  line refresh must rebuild (statusline spec SL-R03), even when the Vault root setting points elsewhere. */
+  private obsidianVaultPath(): string {
+    const adapter = this.app.vault.adapter as unknown as { getBasePath?: () => string };
+    return adapter.getBasePath ? adapter.getBasePath() : this.vaultRoot();
+  }
+
   vaultRoot(): string {
     if (this.settings.vaultRoot) return this.settings.vaultRoot;
     const adapter = this.app.vault.adapter as unknown as { getBasePath?: () => string };
@@ -415,7 +422,7 @@ export default class AgenticOSPlugin extends Plugin {
       // event repaints the bar. A runtime without statusline.js leaves the flag set, so it is tried once per load.
       this.statuslineRefreshing = true;
       this.runBrainScript("brain/scripts/statusline.js", ["refresh"], () => { this.statuslineRefreshing = false; },
-        { quiet: true, env: { AOS_VAULT: this.vaultRoot(), AOS_CONFIG: path.join(this.claudeConfigDir(), "agenticos.json") } });
+        { quiet: true, env: { AOS_VAULT: this.obsidianVaultPath(), AOS_CONFIG: path.join(this.claudeConfigDir(), "agenticos.json") } });
     }
   }
 

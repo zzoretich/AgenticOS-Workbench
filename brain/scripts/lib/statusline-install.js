@@ -17,6 +17,7 @@ const fs = require('fs');
 const path = require('path');
 const H = require('./host.js');
 const CW = require('./config-write.js');
+const S = require('./settings-schema.js');
 const fsx = require('./fsx.js');
 
 const SCHEMA = 1;
@@ -63,17 +64,27 @@ function targetHosts(userCfg, host = null) {
     return [host];
   }
   const on = H.enabledHosts(userCfg);
-  return on.length ? on : ['claude'];
+  if (on.length) return on;
+  // SL-R08: only a config that predates the hosts block means Claude Code; one that enables no host means none.
+  if (userCfg && isPlainObject(userCfg.hosts)) throw new Refusal('agenticos.json enables no host; enable one first (aos init --host claude|codex|both)');
+  return ['claude'];
 }
 
 function settingsOf(cfg) {
   const s = (cfg && cfg.statusline) || {};
-  const items = Array.isArray(s.codexItems) ? s.codexItems.filter((i) => typeof i === 'string' && ITEM_RE.test(i)) : [];
+  const items = Array.isArray(s.codexItems) ? s.codexItems : [];
   return {
     refreshSeconds: Number.isInteger(s.refreshSeconds) && s.refreshSeconds >= 1 ? s.refreshSeconds : 5,
     subagents: s.subagents !== false,
     codexItems: items.length ? items : DEFAULT_ITEMS,
   };
+}
+/** SL-R06: Codex drops an item it does not know with a warning, so an unknown one is refused before anything is written. */
+function checkCodexItems(items) {
+  const known = (S.entry('statusline.codexItems') || {}).choices || [];
+  const bad = items.filter((i) => typeof i !== 'string' || !ITEM_RE.test(i) || (known.length && !known.includes(i)));
+  if (bad.length) throw new Refusal(`statusline.codexItems names ${bad.join(', ')}, which Codex does not show; choose from: ${known.join(', ')}`);
+  return items;
 }
 
 function backupOnce(file) {
@@ -87,14 +98,35 @@ function guardHeadless(env) {
 
 // ── Claude Code ──
 
-function readSettings(file) {
-  let s;
-  try { s = CW.readStrict(file); } catch (e) { throw new Refusal(`${file} is not valid JSON; fix it first (${e.message})`); }
-  if (s === null) return {};
-  if (!isPlainObject(s)) throw new Refusal(`${file} is not a JSON object`);
-  return s;
+const serialize = (s) => `${JSON.stringify(s, null, 2)}\n`;
+const readRaw = (file) => { try { return fs.readFileSync(file, 'utf8'); } catch (e) { if (e.code === 'ENOENT') return null; throw e; } };
+/** Raised when settings.json changed between our read and our write (SL-R01). */
+class Changed extends Error {}
+const MAX_TRIES = 3;
+/** SL-R01: replace (or remove, for data null) settings.json only while it still holds the bytes we read; Claude Code's
+ *  own writes (/config, /statusline) between the two are re-merged by the caller instead of lost. */
+function replaceIfUnchanged(ctx, file, raw, data) {
+  if (typeof ctx.onBeforeReplace === 'function') ctx.onBeforeReplace(file); // test seam: a write racing ours
+  if (readRaw(file) !== raw) throw new Changed(file);
+  if (data === null) fs.unlinkSync(file); else fsx.writeAtomic(file, data);
 }
-const writeSettings = (file, s) => fsx.writeAtomic(file, `${JSON.stringify(s, null, 2)}\n`);
+/** Run fn(raw, settings) until it lands on an unchanged file, at most MAX_TRIES times. */
+function withSettings(ctx, file, fn) {
+  for (let i = 0; ; i++) {
+    const raw = readRaw(file);
+    let settings = {};
+    if (raw !== null) {
+      try { settings = JSON.parse(raw); } catch (e) { throw new Refusal(`${file} is not valid JSON; fix it first (${e.message})`); }
+      if (!isPlainObject(settings)) throw new Refusal(`${file} is not a JSON object`);
+    }
+    try { return fn(raw, settings); } catch (e) {
+      if (!(e instanceof Changed) || i + 1 >= MAX_TRIES) {
+        if (e instanceof Changed) throw new Refusal(`${file} kept changing while the status line was being written; try again`);
+        throw e;
+      }
+    }
+  }
+}
 
 /** SL-02: an entry is ours only when it runs a command we recorded (or this vault's own, when the record is gone); another
  *  vault's launcher is someone else's line. */
@@ -112,35 +144,35 @@ function commit(ctx, next, before, writeHost) {
 function installClaude(ctx, { chainOutput = false } = {}) {
   const file = claudeSettingsFile(ctx);
   if (!fs.existsSync(path.dirname(file))) return { host: 'claude', ok: false, skipped: true, message: `no Claude Code config folder at ${path.dirname(file)}` };
-  const existed = fs.existsSync(file);
-  const settings = readSettings(file);
-  const before = readState(ctx.userConfigFile);
-  const was = before.claude || null;
   const opts = settingsOf(ctx.cfg);
   const command = commandFor(ctx.vault, 'render');
   const subCommand = commandFor(ctx.vault, 'subagents');
-  const cur = settings.statusLine;
-  const curSub = settings.subagentStatusLine;
-  const curMine = mine(cur, was && was.command, command);
-  const curSubMine = mine(curSub, was && was.subagentCommand, subCommand);
-  // D9: re-installing over our own line keeps what we first chained; a slot someone else took chains the newcomer.
-  const previous = curMine ? (was ? was.previous : null) : (cur === undefined ? null : cur);
-  const previousSubagent = curSubMine ? (was ? was.previousSubagent : null) : (curSub === undefined ? null : curSub);
-  settings.statusLine = { type: 'command', command, padding: 0, refreshInterval: opts.refreshSeconds, hideVimModeIndicator: true };
-  if (opts.subagents) settings.subagentStatusLine = { type: 'command', command: subCommand };
-  else if (curSubMine) { if (previousSubagent) settings.subagentStatusLine = previousSubagent; else delete settings.subagentStatusLine; }
-  const next = {
-    ...before,
-    claude: {
-      installedAt: (ctx.now || new Date()).toISOString(), command, subagentCommand: opts.subagents ? subCommand : null,
-      previous, previousSubagent: opts.subagents ? previousSubagent : null, chainOutput: !!chainOutput,
-      createdFile: was ? !!was.createdFile : !existed,
-    },
-  };
-  backupOnce(file);
-  commit(ctx, next, before, () => writeSettings(file, settings));
-  const chained = previous && typeof previous.command === 'string' && !isOurs(previous.command, 'render') ? previous.command : null;
-  return { host: 'claude', ok: true, file, chained, retook: !!(was && cur && !curMine) };
+  return withSettings(ctx, file, (raw, settings) => {
+    const before = readState(ctx.userConfigFile);
+    const was = before.claude || null;
+    const cur = settings.statusLine;
+    const curSub = settings.subagentStatusLine;
+    const curMine = mine(cur, was && was.command, command);
+    const curSubMine = mine(curSub, was && was.subagentCommand, subCommand);
+    // D9: re-installing over our own line keeps what we first chained; a slot someone else took chains the newcomer.
+    const previous = curMine ? (was ? was.previous : null) : (cur === undefined ? null : cur);
+    const previousSubagent = curSubMine ? (was ? was.previousSubagent : null) : (curSub === undefined ? null : curSub);
+    settings.statusLine = { type: 'command', command, padding: 0, refreshInterval: opts.refreshSeconds, hideVimModeIndicator: true };
+    if (opts.subagents) settings.subagentStatusLine = { type: 'command', command: subCommand };
+    else if (curSubMine) { if (previousSubagent) settings.subagentStatusLine = previousSubagent; else delete settings.subagentStatusLine; }
+    const next = {
+      ...before,
+      claude: {
+        installedAt: (ctx.now || new Date()).toISOString(), command, subagentCommand: opts.subagents ? subCommand : null,
+        previous, previousSubagent: opts.subagents ? previousSubagent : null, chainOutput: !!chainOutput,
+        createdFile: was ? !!was.createdFile : raw === null,
+      },
+    };
+    backupOnce(file);
+    commit(ctx, next, before, () => replaceIfUnchanged(ctx, file, raw, serialize(settings)));
+    const chained = previous && typeof previous.command === 'string' && previous.command !== command ? previous.command : null;
+    return { host: 'claude', ok: true, file, chained, retook: !!(was && cur && !curMine) };
+  });
 }
 
 function uninstallClaude(ctx) {
@@ -150,23 +182,24 @@ function uninstallClaude(ctx) {
   const file = claudeSettingsFile(ctx);
   const notes = [];
   if (fs.existsSync(file)) {
-    const settings = readSettings(file);
-    let changed = false;
-    for (const [key, own, prev] of [['statusLine', was.command, was.previous], ['subagentStatusLine', was.subagentCommand, was.previousSubagent]]) {
-      const cur = settings[key];
-      if (mine(cur, own)) {
-        if (prev) settings[key] = prev; else delete settings[key];
-        changed = true;
-      } else if (cur && key === 'statusLine') notes.push(`the status line is now ${cur.command}; left as it is`);
-    }
-    if (changed) {
+    withSettings(ctx, file, (raw, settings) => {
+      notes.length = 0;
+      let changed = false;
+      for (const [key, own, prev] of [['statusLine', was.command, was.previous], ['subagentStatusLine', was.subagentCommand, was.previousSubagent]]) {
+        const cur = settings[key];
+        if (mine(cur, own)) {
+          if (prev) settings[key] = prev; else delete settings[key];
+          changed = true;
+        } else if (cur && key === 'statusLine') notes.push(`the status line is now ${cur.command}; left as it is`);
+      }
+      if (!changed) return;
       // SL-05: when the result is what the file held before install, put back its exact bytes, not a re-serialization.
       let bak = null;
       try { bak = CW.readStrict(file + BAK); } catch { bak = null; }
-      if (bak !== null && canonical(bak) === canonical(settings)) fsx.writeAtomic(file, fs.readFileSync(file + BAK));
-      else if (was.createdFile && !Object.keys(settings).length) fs.unlinkSync(file);
-      else writeSettings(file, settings);
-    }
+      if (bak !== null && canonical(bak) === canonical(settings)) replaceIfUnchanged(ctx, file, raw, fs.readFileSync(file + BAK));
+      else if (was.createdFile && !Object.keys(settings).length) replaceIfUnchanged(ctx, file, raw, null);
+      else replaceIfUnchanged(ctx, file, raw, serialize(settings));
+    });
     if (!notes.length) dropBackup(file);
   }
   delete state.claude;
@@ -265,11 +298,14 @@ function tomlInstall(text, items, { force = false, own = null } = {}) {
 
 /** Pure: config.toml text without our line (the previous value back in its place). `found` false when it changed. */
 function tomlUninstall(text, rec) {
-  const lines = text.split('\n');
-  const i = lines.findIndex((l) => l.trim() === String(rec.written || '').trim());
-  if (i < 0) return { text, found: false };
-  if (rec.previous) lines.splice(i, 1, ...String(rec.previous).split('\n'));
-  else lines.splice(i, 1);
+  // SL-R07: only the effective tui.status_line, and only when it is still exactly the line we wrote.
+  const t = scanToml(text);
+  if (!t.key) return { text, found: false };
+  const lines = t.lines.slice();
+  const span = t.key.end - t.key.start + 1;
+  if (lines.slice(t.key.start, t.key.end + 1).join('\n').trim() !== String(rec.written || '').trim()) return { text, found: false };
+  if (rec.previous) lines.splice(t.key.start, span, ...String(rec.previous).split('\n'));
+  else lines.splice(t.key.start, span);
   if (rec.createdTable) {
     const h = lines.findIndex((l) => { const m = HEADER_RE.exec(l); return m && tableName(m[1]) === 'tui' && !l.trim().startsWith('[['); });
     if (h >= 0) {
@@ -282,6 +318,12 @@ function tomlUninstall(text, rec) {
   return { text: out.trim() ? out : '', found: true };
 }
 
+/** Whether the effective tui.status_line in a config.toml is exactly the recorded line. */
+function holdsLine(text, written) {
+  const t = scanToml(String(text || ''));
+  return !!t.key && t.lines.slice(t.key.start, t.key.end + 1).join('\n').trim() === String(written || '').trim();
+}
+
 function installCodex(ctx, { force = false } = {}) {
   const file = codexConfigFile(ctx);
   if (!fs.existsSync(path.dirname(file))) return { host: 'codex', ok: false, skipped: true, message: `no Codex home at ${path.dirname(file)}` };
@@ -289,7 +331,7 @@ function installCodex(ctx, { force = false } = {}) {
   try { text = fs.readFileSync(file, 'utf8'); } catch (e) { if (e.code !== 'ENOENT') throw e; }
   const before = readState(ctx.userConfigFile);
   const was = before.codex || null;
-  const r = tomlInstall(text, settingsOf(ctx.cfg).codexItems, { force, own: was && was.written });
+  const r = tomlInstall(text, checkCodexItems(settingsOf(ctx.cfg).codexItems), { force, own: was && was.written });
   const next = {
     ...before,
     codex: {
@@ -345,7 +387,18 @@ function status(ctx) {
   const cfile = claudeSettingsFile(ctx);
   let current = null;
   try { const s = CW.readStrict(cfile); current = s && s.statusLine && typeof s.statusLine.command === 'string' ? s.statusLine.command : null; } catch { current = null; }
+  // SL-R04: a project's .claude/settings.local.json or settings.json overrides the user's statusLine in that project.
+  // The project folder is always `.claude` (CLAUDE_CONFIG_DIR moves only the user's config dir, which host.js resolves).
+  let projectOverride = null;
+  const cwd = ctx.cwd || process.cwd();
+  for (const f of [path.join(cwd, '.claude', 'settings.local.json'), path.join(cwd, '.claude', 'settings.json')]) {
+    if (path.resolve(f) === path.resolve(cfile)) continue;
+    let p = null;
+    try { p = CW.readStrict(f); } catch { p = null; }
+    if (p && isPlainObject(p.statusLine) && typeof p.statusLine.command === 'string') { projectOverride = { file: f, command: p.statusLine.command }; break; }
+  }
   out.claude = {
+    projectOverride,
     installed: !!state.claude,
     ownsSlot: !!(state.claude && current && current === state.claude.command),
     current,
@@ -359,7 +412,7 @@ function status(ctx) {
   try { text = fs.readFileSync(xfile, 'utf8'); } catch { /* none */ }
   out.codex = {
     installed: !!state.codex,
-    present: !!(state.codex && text.split('\n').some((l) => l.trim() === String(state.codex.written).trim())),
+    present: !!(state.codex && holdsLine(text, state.codex.written)),
     file: xfile,
   };
   return out;
@@ -371,22 +424,27 @@ function reapply(ctx) {
   const done = [];
   if (state.claude) {
     const file = claudeSettingsFile(ctx);
+    const raw = readRaw(file);
     let settings = null;
-    try { settings = readSettings(file); } catch { settings = null; }
-    if (settings && mine(settings.statusLine, state.claude.command)) {
+    try { settings = raw === null ? null : JSON.parse(raw); } catch { settings = null; }
+    if (isPlainObject(settings) && mine(settings.statusLine, state.claude.command)) {
       const next = { ...settings, statusLine: { ...settings.statusLine, command: commandFor(ctx.vault, 'render') } };
       const subOurs = mine(settings.subagentStatusLine, state.claude.subagentCommand);
       if (subOurs) next.subagentStatusLine = { ...settings.subagentStatusLine, command: commandFor(ctx.vault, 'subagents') };
       state.claude = { ...state.claude, command: next.statusLine.command, subagentCommand: subOurs ? next.subagentStatusLine.command : state.claude.subagentCommand };
-      if (JSON.stringify(next) !== JSON.stringify(settings)) { writeState(ctx.userConfigFile, state); writeSettings(file, next); done.push('claude'); }
+      if (JSON.stringify(next) !== JSON.stringify(settings)) {
+        try { replaceIfUnchanged(ctx, file, raw, serialize(next)); writeState(ctx.userConfigFile, state); done.push('claude'); } catch (e) { if (!(e instanceof Changed)) throw e; }
+      }
     }
   }
   if (state.codex) {
     const file = codexConfigFile(ctx);
     let text = null;
     try { text = fs.readFileSync(file, 'utf8'); } catch { text = null; }
-    if (text !== null && text.split('\n').some((l) => l.trim() === String(state.codex.written).trim())) {
-      const r = tomlInstall(text, settingsOf(ctx.cfg).codexItems, { own: state.codex.written });
+    let items = null;
+    try { items = checkCodexItems(settingsOf(ctx.cfg).codexItems); } catch { items = null; }
+    if (text !== null && items && holdsLine(text, state.codex.written)) {
+      const r = tomlInstall(text, items, { own: state.codex.written });
       state.codex = { ...state.codex, written: r.written };
       if (r.text !== text) { writeState(ctx.userConfigFile, state); fsx.writeAtomic(file, r.text); done.push('codex'); }
     }
@@ -403,5 +461,5 @@ function slotTakenBy(ctx) {
 
 module.exports = {
   SCHEMA, MARK, DEFAULT_ITEMS, Refusal, isOurs, commandFor, statePath, readState, claudeSettingsFile, codexConfigFile,
-  targetHosts, settingsOf, scanToml, tomlInstall, tomlUninstall, install, uninstall, status, reapply, slotTakenBy,
+  targetHosts, settingsOf, checkCodexItems, scanToml, holdsLine, tomlInstall, tomlUninstall, install, uninstall, status, reapply, slotTakenBy,
 };

@@ -239,7 +239,7 @@ test('render: chains the previous line with the same stdin, refreshes a stale mo
   M.write(m.vault, M.build(m.vault, { now: NOW }));
   spawned.length = 0;
   await run(m, ['render'], { stdin: async () => payload, spawnFn, env: { ...m.env } });
-  assert.ok(!spawned.some((s) => s.cmd === process.execPath), 'a fresh model is not rebuilt');
+  assert.ok(!spawned.some((s) => s.cmd === process.execPath && s.args[1] === 'refresh'), 'a fresh model is not rebuilt');
 });
 
 test('render: --chain-output shows the previous first line; our own command is never chained; failures print nothing', async () => {
@@ -247,11 +247,20 @@ test('render: --chain-output shows the previous first line; our own command is n
   I.install(m.ctx, { host: 'claude', chainOutput: true });
   const r = await run(m, ['render'], { stdin: async () => '{}', spawnSyncFn: (cmd) => (cmd === GSD.command ? { status: 0, stdout: '\nGSD │ Phase 3\n' } : { status: 1, stdout: '' }) });
   assert.equal(r.out.split('\n')[0], 'GSD │ Phase 3');
-  const self = machine({ settings: { statusLine: { type: 'command', command: `sh '/v/brain/scripts/bin/aos' statusline render` } } });
+  // Our own command recorded as the previous line (a hand-edited state) is never chained: no loop.
+  const self = machine();
   I.install(self.ctx, { host: 'claude' });
-  let chained = false;
-  await run(self, ['render'], { stdin: async () => '{}', spawnFn: () => { chained = true; return {}; } });
-  assert.equal(chained, false);
+  const st = I.readState(self.userConfigFile);
+  fs.writeFileSync(I.statePath(self.userConfigFile), JSON.stringify({ ...st, claude: { ...st.claude, previous: { type: 'command', command: st.claude.command } } }));
+  const cmds = [];
+  await run(self, ['render'], { stdin: async () => '{}', spawnFn: (cmd) => { cmds.push(cmd); return {}; } });
+  assert.deepEqual(cmds, []);
+  // SL-R02: another vault's AgenticOS line is a real previous line, and it keeps running.
+  const other = `sh '/v/brain/scripts/bin/aos' statusline render`;
+  const two = machine({ settings: { statusLine: { type: 'command', command: other } } });
+  I.install(two.ctx, { host: 'claude' });
+  await run(two, ['render'], { stdin: async () => '{}', spawnFn: (cmd) => { cmds.push(cmd); return {}; } });
+  assert.deepEqual(cmds, [other]);
   const bad = await run(m, ['render'], { stdin: async () => { throw new Error('boom'); } });
   assert.deepEqual([bad.code, bad.out], [0, '']);
   const junk = await run(m, ['render'], { stdin: async () => 'not json', userConfigFile: path.join(m.root, 'none.json') });
@@ -349,4 +358,76 @@ test('SL-06: a pipe that never closes is released after the timeout', async () =
   const p2 = SL.readStdin(1000, done);
   done.end('{"a":1}');
   assert.equal(await p2, '{"a":1}');
+});
+
+test('SL-R01: a settings.json write racing the install is merged, not lost; one that never settles is refused', () => {
+  const m = machine();
+  let raced = false;
+  const ctx = { ...m.ctx, onBeforeReplace: (file) => { if (!raced) { raced = true; fs.writeFileSync(file, pretty({ ...readJson(file), theme: 'dark' })); } } };
+  const [r] = I.install(ctx, { host: 'claude' });
+  assert.equal(r.ok, true);
+  const s = readJson(m.settingsFile);
+  assert.equal(s.theme, 'dark', 'the racing write survived');
+  assert.ok(I.isOurs(s.statusLine.command, 'render'));
+  const busy = machine();
+  let n = 0;
+  const always = { ...busy.ctx, onBeforeReplace: (file) => fs.writeFileSync(file, pretty({ ...readJson(file), n: ++n })) };
+  assert.throws(() => I.install(always, { host: 'claude' }), /kept changing/);
+  assert.equal(I.readState(busy.userConfigFile).claude, undefined, 'no record for an install that did not land');
+});
+
+test('SL-R04: status names a project settings file that overrides the status line here', () => {
+  const m = machine();
+  I.install(m.ctx, { host: 'claude' });
+  const proj = path.join(m.root, 'proj');
+  fs.mkdirSync(path.join(proj, '.claude'), { recursive: true });
+  assert.equal(I.status({ ...m.ctx, cwd: proj }).claude.projectOverride, null);
+  fs.writeFileSync(path.join(proj, '.claude', 'settings.json'), JSON.stringify({ statusLine: { type: 'command', command: 'proj-line' } }));
+  assert.deepEqual(I.status({ ...m.ctx, cwd: proj }).claude.projectOverride, { file: path.join(proj, '.claude', 'settings.json'), command: 'proj-line' });
+});
+
+test('SL-R05: a stray argument or a flag the verb does not take is a usage error before anything is written', async () => {
+  const m = machine();
+  const before = fs.readFileSync(m.settingsFile, 'utf8');
+  for (const argv of [['uninstall', 'codex'], ['install', 'claude'], ['install', '--width', '3'], ['status', '--force'], ['git']]) {
+    const r = await run(m, argv);
+    assert.equal(r.code, 2, argv.join(' '));
+  }
+  assert.equal(fs.readFileSync(m.settingsFile, 'utf8'), before);
+});
+
+test('SL-R06: an item Codex does not show is refused at config set and at install', () => {
+  const S = require('../lib/settings-schema.js');
+  assert.match(S.validate(S.entry('statusline.codexItems'), ['model', 'nope']), /unknown item nope/);
+  assert.equal(S.validate(S.entry('statusline.codexItems'), ['model', 'git-branch']), null);
+  assert.match(S.validate(S.entry('statusline.segments'), ['runs', 'weather']), /unknown item weather/);
+  assert.equal(S.validate(S.entry('recallRoots'), ['my/own/root']), null, 'other lists stay open');
+  const m = machine();
+  assert.throws(() => I.install({ ...m.ctx, cfg: { statusline: { codexItems: ['nope'] } } }, { host: 'codex' }), /does not show/);
+  assert.equal(fs.readFileSync(m.tomlFile, 'utf8'), 'model = "gpt-5"\n');
+});
+
+test('SL-R07: uninstall touches only the effective tui.status_line', () => {
+  const r = I.tomlInstall('', ['model']);
+  const copied = `[other]\n${r.written}\n\n[tui]\nstatus_line = ["x"]\n`;
+  assert.deepEqual(I.tomlUninstall(copied, r), { text: copied, found: false });
+  assert.equal(I.holdsLine(copied, r.written), false);
+});
+
+test('SL-R08: a hosts block that enables no host targets none', () => {
+  assert.throws(() => I.targetHosts({ hosts: { claude: { enabled: false }, codex: { enabled: false } } }), /enables no host/);
+});
+
+test('SL-R09: render never runs git; a stale cache is refreshed by one detached child', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sl-gitr-'));
+  const dir = path.join(tmp, 'repo');
+  const spawned = [];
+  const spawnFn = (cmd, args) => { spawned.push(args); return {}; };
+  assert.equal(SL.gitForRender(dir, { now: 1000, tmp, spawnFn, env: {} }), null);
+  assert.deepEqual(spawned.map((a) => a.slice(1)), [['git', dir]]);
+  SL.gitForRender(dir, { now: 2000, tmp, spawnFn, env: {} });
+  assert.equal(spawned.length, 1, 'one refresher at a time');
+  SL.refreshGit(dir, { now: 3000, tmp, spawnSyncFn: () => ({ status: 0, stdout: '# branch.head main\n' }) });
+  assert.deepEqual(SL.gitForRender(dir, { now: 4000, tmp, spawnFn, env: {} }), { branch: 'main', dirty: false, ahead: 0, behind: 0 });
+  assert.equal(spawned.length, 1);
 });

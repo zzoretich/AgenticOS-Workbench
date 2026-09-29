@@ -292,10 +292,10 @@ const PICKS = {
   'telemetry.retentionDays': { choices: [7, 14, 30, 60, 90, 180, 365], unit: 'days' }, 'telemetry.staleAfterMinutes': { choices: [10, 15, 30, 60, 120], unit: 'min' },
   'updates.intervalHours': { choices: [6, 12, 24, 48, 168], unit: 'h' },
   'notifications.retentionDays': { choices: [7, 14, 30, 60, 90, 180], unit: 'days' }, 'notifications.maxPerSenderPerHour': { choices: [0, 1, 3, 6, 10, 20] },
-  'statusline.segments': { pick: 'many', choices: ['needs-you', 'runs', 'spend', 'health'] },
+  'statusline.segments': { pick: 'many', strict: true, choices: ['needs-you', 'runs', 'spend', 'health'] },
   'statusline.refreshSeconds': { choices: [1, 2, 5, 10, 30], unit: 's' },
   // Codex's built-in status line items (codex-cli 0.156 StatusLineItem; workspace-headline is Enterprise-only).
-  'statusline.codexItems': { pick: 'many', choices: ['model', 'model-with-reasoning', 'reasoning', 'current-dir', 'project-name', 'hostname', 'git-branch',
+  'statusline.codexItems': { pick: 'many', strict: true, choices: ['model', 'model-with-reasoning', 'reasoning', 'current-dir', 'project-name', 'hostname', 'git-branch',
     'pull-request-number', 'branch-changes', 'run-state', 'permissions', 'approval-mode', 'context-remaining', 'context-used', 'five-hour-limit',
     'weekly-limit', 'codex-version', 'context-window-size', 'used-tokens', 'total-input-tokens', 'total-output-tokens', 'thread-credits',
     'estimated-thread-cost', 'thread-id', 'fast-mode', 'raw-output', 'thread-name', 'thread-title', 'task-progress'] },
@@ -377,7 +377,12 @@ function validate(e, value) {
       if (e.max !== undefined && value > e.max) return `${e.key} must be at most ${e.max}`;
       return null;
     case 'string': case 'model': return typeof value === 'string' && value.trim() !== '' ? null : `${e.key} must be a non-empty string`;
-    case 'list': return Array.isArray(value) && value.every((x) => typeof x === 'string') ? null : `${e.key} must be a JSON list of strings`;
+    case 'list': {
+      if (!Array.isArray(value) || !value.every((x) => typeof x === 'string')) return `${e.key} must be a JSON list of strings`;
+      // `strict` lists accept only their choices (the status line's segments and Codex's built-in footer items).
+      const bad = e.strict && Array.isArray(e.choices) ? value.filter((x) => !e.choices.includes(x)) : [];
+      return bad.length ? `${e.key}: unknown ${bad.length === 1 ? 'item' : 'items'} ${bad.join(', ')} (choose from: ${e.choices.join(', ')})` : null;
+    }
     case 'object': return isPlainObject(value) ? null : `${e.key} must be a JSON object`;
     default: return `${e.key} has an unknown type`;
   }
