@@ -1,0 +1,15 @@
+node_modules/
+out/
+dist/
+.gsd/
+.home/
+*.log
+.DS_Store
+# screenshots and logs from the spike hold vault content; they never go in git
+spike-output/
+test-results/
+playwright-report/
+out-test/
+# e2e: the generated fixture vault and its caches (synthetic, rebuilt by scripts/make-fixture-vault.mjs)
+tests/.fixture/
+tests/.cache/

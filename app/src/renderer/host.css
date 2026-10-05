@@ -1,0 +1,75 @@
+/* The app's own chrome around the HUD: ribbon, tab bars, panes, the right sidebar, the status bar and the note view. */
+
+#app { height: 100vh; display: flex; flex-direction: column; }
+.aos-host { flex: 1; min-height: 0; display: flex; }
+
+.aos-host-ribbon { width: 40px; flex: none; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 0; background: var(--compat-bg); border-right: 1px solid var(--compat-border); }
+.aos-host-ribbon .clickable-icon { width: 28px; height: 28px; font-size: 15px; }
+.aos-host-ribbon .aos-host-settings { margin-top: auto; }
+.aos-app-path { margin-top: 4px; font: 11px var(--compat-mono); color: var(--compat-dim); word-break: break-all; }
+.aos-app-writes { font: 12px var(--compat-mono); color: var(--compat-dim); }
+.aos-app-writes.is-writing { color: var(--compat-accent); }
+
+.aos-host-workspace { flex: 1; min-width: 0; display: flex; }
+.aos-host-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.aos-host-panes { flex: 1; min-height: 0; display: flex; }
+.aos-host-pane { flex: 1; min-width: 0; position: relative; }
+.aos-host-pane.is-split { border-left: 1px solid var(--compat-border); }
+.aos-host-pane.is-empty { display: none; }
+.aos-host-right { width: 360px; flex: none; display: flex; flex-direction: column; border-left: 1px solid var(--compat-border); }
+.aos-host-right.is-empty { display: none; }
+.aos-host-right .aos-host-pane { flex: 1; min-height: 0; }
+
+.aos-host-tabbar { display: flex; gap: 2px; height: 30px; align-items: flex-end; padding: 0 6px; background: var(--compat-bg); border-bottom: 1px solid var(--compat-border); overflow-x: auto; flex: none; }
+.aos-host-tab { display: flex; align-items: center; gap: 8px; max-width: 220px; height: 26px; padding: 0 8px 0 12px; border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; color: var(--compat-dim); font: 12px var(--compat-mono); cursor: pointer; white-space: nowrap; }
+.aos-host-tab.is-active { background: var(--compat-panel); border-color: var(--compat-border); color: var(--compat-text); }
+.aos-host-tab.is-split .aos-host-tab-title::before { content: "⧉ "; color: var(--compat-accent); }
+.aos-host-tab-title { overflow: hidden; text-overflow: ellipsis; }
+.aos-host-tab-close { opacity: .5; font-size: 10px; }
+.aos-host-tab-close:hover { opacity: 1; color: var(--compat-warn); }
+
+.workspace-leaf { position: absolute; inset: 0; display: none; }
+.workspace-leaf.is-active { display: block; }
+.workspace-leaf-content { height: 100%; display: flex; flex-direction: column; }
+.view-header { display: none; }
+.view-content { flex: 1; min-height: 0; overflow: auto; position: relative; }
+/* Obsidian's geometry for plugin views: a 12px inset that outranks the HUD's own .aos-root padding; notes get none. */
+.workspace-leaf-content .view-content { padding: 12px 12px 32px; }
+.workspace-leaf-content[data-type="markdown"] .view-content { padding: 0; }
+
+.aos-host-status { height: 24px; flex: none; display: flex; justify-content: flex-end; align-items: center; gap: 14px; padding: 0 12px; border-top: 1px solid var(--compat-border); background: var(--compat-panel); font: 11px var(--compat-mono); color: var(--compat-dim); }
+.aos-host-status .status-bar-item { display: flex; align-items: center; gap: 6px; }
+.aos-host-mode { color: #ffb454; letter-spacing: .08em; margin-right: auto; }
+
+.aos-note { padding: 0; }
+.aos-note-bar { position: sticky; top: 0; display: flex; align-items: center; gap: 8px; padding: 8px 18px; background: var(--compat-panel); border-bottom: 1px solid var(--compat-border); font: 12px var(--compat-mono); color: var(--compat-dim); }
+.aos-note-path { margin-right: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aos-note-btn { font-size: 11px; padding: 2px 8px; }
+.aos-note-body { padding: 18px 28px 48px; max-width: 820px; }
+.aos-note-raw { font: 12px/1.5 var(--compat-mono); white-space: pre-wrap; }
+.aos-note-error { color: var(--compat-warn); }
+.aos-note-state { font-size: 11px; color: var(--compat-dim); }
+.aos-note-state.is-unsaved, .aos-note-state.is-saving { color: var(--compat-text); }
+.aos-note-state.is-conflict, .aos-note-state.is-deleted, .aos-note-state.is-refused { color: var(--compat-warn); }
+.aos-note-edit:disabled { opacity: 0.45; cursor: not-allowed; }
+.aos-note-conflict { display: none; align-items: center; gap: 8px; padding: 8px 18px; background: var(--compat-raised); border-bottom: 1px solid var(--compat-warn); font-size: 12px; color: var(--compat-text); }
+.aos-note-conflict.is-shown { display: flex; }
+.aos-note-conflict > span { margin-right: auto; }
+/* Editing: the bar and the conflict strip stay put, and the editor fills the rest and scrolls itself. */
+.aos-note.is-editing { display: flex; flex-direction: column; height: 100%; }
+.aos-note.is-editing .aos-note-body { flex: 1; min-height: 0; padding: 0; max-width: none; }
+
+.aos-host-empty { margin: 18vh auto; max-width: 520px; padding: 0 16px; }
+.aos-host-fatal { position: fixed; inset: 0; margin: 0; padding: 24px; overflow: auto; background: var(--compat-bg); color: var(--compat-warn); font: 12px/1.5 var(--compat-mono); white-space: pre-wrap; z-index: 100; }
+
+/* ⌘P command palette */
+.aos-palette-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.aos-palette-hotkey { font: 11px var(--compat-mono); color: var(--compat-dim); border: 1px solid var(--compat-border); border-radius: 4px; padding: 1px 6px; }
+.aos-host-mode.is-writing { color: var(--compat-accent); }
+
+/* The tray popover (renderer/popover.ts): the SidebarHUD fills the window and scrolls. */
+body.aos-popover { background: var(--compat-bg); }
+.aos-popover-leaf .view-header { display: none; }
+
+/* The write-mode item exists only while $AOS_APP_WRITE narrows the writes; by default every surface writes. */
+.aos-host-mode.is-hidden { display: none; }

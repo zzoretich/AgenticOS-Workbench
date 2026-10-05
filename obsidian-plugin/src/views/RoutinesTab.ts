@@ -4,7 +4,7 @@ import * as path from "path";
 import type AgenticOSPlugin from "../../main";
 import type { WorkbenchView } from "./WorkbenchView";
 import { ConfirmModal } from "../ui/ConfirmModal";
-import { readVaultConfig } from "../data/aosConfig";
+import { readAgenticosJson, readVaultConfig, sessionHosts } from "../data/aosConfig";
 import { describe, next as nextFire, validateCron } from "../data/cron";
 import {
   Routine, RoutineRow, RoutinesState, RoutineKind, KINDS, EFFORTS, ROUTINES_DIR, ROUTINES_STATE_PATH, SLUG_RE, DUTY_LOG_DIR, DutyLogRun,
@@ -12,7 +12,7 @@ import {
 } from "../data/routines";
 import { adapterOf, writeRoutine, setRoutineEnabled, deleteRoutine, isGuardedChange, GuardedRoutineError, RoutineDraft } from "../data/routineWriter";
 import { readExternalSchedules, ExternalSchedule } from "../data/externalSchedules";
-import { readHostRoutines, hostRows, hostChip, sectionStale, emptyHostRoutines, HostRoutinesCache, HOST_ROUTINES_PATH, HOST_NAMES } from "../data/hostRoutines";
+import { readHostRoutines, hostRows, hostChip, codexRefreshDue, emptyHostRoutines, HostRoutinesCache, HOST_ROUTINES_PATH, HOST_NAMES } from "../data/hostRoutines";
 
 const RUNNER = "brain/scripts/routines/run-routine.js";
 const AOS_CLI = "brain/scripts/cli/aos.js";
@@ -87,8 +87,10 @@ export class RoutinesTab {
     this.hosts = readHostRoutines(root);
     this.dutyLogs = {};
     for (const r of this.routines) if (r.kind === "duty") this.dutyLogs[r.slug] = readDutyLogLast(root, r.slug);
-    // The Codex section is live data the runtime reads through sqlite3: ask for it when it is old (at most once a minute).
-    if (sectionStale(this.hosts.hosts.codex) && Date.now() - this.hostRefreshAt > 60_000) this.refreshHosts();
+    // The Codex section is live data the runtime reads through sqlite3: ask for it when it is old (at most once a minute),
+    // and only where Codex is a host. Without Codex the section never appears, so it would be asked for every minute.
+    const hosts = sessionHosts(readAgenticosJson(this.plugin.claudeConfigDir()));
+    if (codexRefreshDue(hosts, this.hosts.hosts.codex, this.hostRefreshAt)) this.refreshHosts();
     this.render();
   }
 

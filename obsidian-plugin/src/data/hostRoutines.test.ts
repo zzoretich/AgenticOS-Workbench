@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { parseHostRoutines, readHostRoutines, hostRows, hostChip, sectionStale, HOST_ROUTINES_PATH } from "./hostRoutines";
+import { parseHostRoutines, readHostRoutines, hostRows, hostChip, sectionStale, codexRefreshDue, CODEX_REFRESH_GAP_MS, HOST_ROUTINES_PATH } from "./hostRoutines";
 
 const CACHE = {
   schema: 1,
@@ -69,4 +69,16 @@ test("sectionStale: absent, no fetchedAt, unparsable, or older than the window",
   assert.equal(sectionStale({ fetchedAt: "nope", ok: true, warning: null, routines: [] }, now), true);
   assert.equal(sectionStale({ fetchedAt: "2026-09-21T22:49:00Z", ok: true, warning: null, routines: [] }, now), true);
   assert.equal(sectionStale({ fetchedAt: "2026-09-21T22:51:00Z", ok: true, warning: null, routines: [] }, now), false);
+});
+
+test("codexRefreshDue: only where Codex is a host, when its section is stale, at most once a minute", () => {
+  const now = Date.parse("2026-10-05T12:00:00Z");
+  const fresh = { fetchedAt: new Date(now - 30_000).toISOString(), ok: true, warning: null, routines: [] };
+  // A Claude-only machine never gets a Codex section: no refresh, however long it has been.
+  assert.equal(codexRefreshDue(["claude"], undefined, 0, now), false);
+  assert.equal(codexRefreshDue([], undefined, 0, now), false);
+  assert.equal(codexRefreshDue(["claude", "codex"], undefined, 0, now), true);
+  assert.equal(codexRefreshDue(["codex"], undefined, now - CODEX_REFRESH_GAP_MS - 1, now), true);
+  assert.equal(codexRefreshDue(["codex"], undefined, now - 10_000, now), false, "asked less than a minute ago");
+  assert.equal(codexRefreshDue(["codex"], fresh, 0, now), false, "a fresh section");
 });

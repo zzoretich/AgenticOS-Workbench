@@ -1,0 +1,67 @@
+# Phase 3 (PLAN.md §7): a signed, notarized private build, installed by hand. D9 names it; D6 keeps it off any update
+# feed while it is private. `npm run dist` builds it into dist/, `npm run dist:verify` checks it, and
+# `npm run smoke:packaged` runs it (docs/phase-3.md).
+appId: com.zzoretich.agenticos-workbench
+productName: AgenticOS Workbench
+artifactName: AgenticOS-Workbench-${version}-${arch}.${ext}
+copyright: Copyright © 2026 AgenticOS Workbench contributors
+directories:
+  output: dist
+  buildResources: build
+
+# esbuild bundles the app and the HUD into out/. The one runtime dependency is node-pty, which the HUD loads with
+# require() at run time: only its JavaScript and this Mac's prebuild ship.
+files:
+  - out/**/*
+  - "!out/**/*.map"
+  - package.json
+  - "!node_modules/node-pty/{binding.gyp,deps,scripts,src,third_party,typings}{,/**/*}"
+  - "!node_modules/node-pty/prebuilds/{darwin-x64,win32-arm64,win32-x64}{,/**/*}"
+  - "!node_modules/node-pty/lib/**/*.{map,test.js}"
+  - "!node_modules/node-pty/lib/{conpty_console_list_agent,windowsConoutConnection,windowsPtyAgent,windowsTerminal}.js"
+  - "!node_modules/node-addon-api{,/**/*}"
+# node-pty runs spawn-helper as a program, so it and pty.node live outside the archive (unixTerminal.js looks in
+# app.asar.unpacked). Both are signed with the app.
+asarUnpack:
+  - node_modules/node-pty/prebuilds/darwin-arm64/*
+# The N-API prebuild loads in this Electron as it is (docs/phase-0.md); a rebuild would compile it from source.
+npmRebuild: false
+
+mac:
+  target:
+    - target: dmg
+      arch: [arm64]
+  category: public.app-category.developer-tools
+  icon: build/icon.png
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  # Notarizes the app when the keychain profile is set: APPLE_KEYCHAIN_PROFILE=aos-notary (docs/phase-3.md).
+  notarize: true
+  # The HUD is dark; let the window's frame and native dialogs follow the system as the dev build does.
+  darkModeSupport: true
+  extendInfo:
+    NSAppleEventsUsageDescription: A command run in the terminal wants to control another app.
+
+# The packaged app claims agenticos:// (src/main/protocol.ts); a dev run never does.
+protocols:
+  - name: AgenticOS link
+    schemes: [agenticos]
+
+dmg:
+  # Signed here, then notarized and stapled by scripts/verify-dist.mjs --notarize-dmg.
+  sign: true
+  # A blockmap only serves update feeds (D6: none).
+  writeUpdateInfo: false
+
+# D6: no update feed while the app is private.
+publish: null
+
+electronFuses:
+  runAsNode: false
+  enableCookieEncryption: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+  grantFileProtocolExtraPrivileges: false

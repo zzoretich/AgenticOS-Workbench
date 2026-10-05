@@ -34,6 +34,7 @@ const FILES = [
   'plugin/.claude-plugin/plugin.json',
   '.claude-plugin/marketplace.json',
   'codex-plugin/.codex-plugin/plugin.json',
+  'app/package.json',
 ];
 
 function readJson(p) { return JSON.parse(fs.readFileSync(p, 'utf8')); }
@@ -98,6 +99,15 @@ function checkFiles(root, version) {
       if (have !== version) bad.push(`package-lock.json (${name}): ${have ?? '(none)'} != ${version}`);
     }
   }
+  // The app has its own lockfile (app/ is not a workspace, so runtime installs never pull Electron). Same rule: npm
+  // writes it (`npm install --package-lock-only --ignore-scripts` in app/), --check reads it.
+  const appLockPath = path.join(root, 'app/package-lock.json');
+  if (fs.existsSync(appLockPath)) {
+    const lock = readJson(appLockPath);
+    for (const [name, have] of [['version', lock.version], ['packages[""].version', lock.packages && lock.packages[''] && lock.packages[''].version]]) {
+      if (have !== version) bad.push(`app/package-lock.json (${name}): ${have ?? '(none)'} != ${version}`);
+    }
+  }
   return bad;
 }
 
@@ -115,6 +125,7 @@ function main(argv) {
   const out = bumpFiles(root, version);
   for (const f of out.updated) console.log(`bumped ${f}`);
   for (const f of out.skipped) console.log(`skipped ${f} (missing)`);
+  console.log('next: npm install --package-lock-only --ignore-scripts, and the same in app/');
   if (require('./changelog.js').main(['roll', version], { root }) !== 0) process.exitCode = 1;
 }
 

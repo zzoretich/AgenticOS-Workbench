@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- The hardened runtime's exceptions for AgenticOS Workbench, the app and its helpers alike. Add one only with a reason. -->
+<plist version="1.0">
+<dict>
+  <!-- V8 compiles JavaScript at run time; Electron needs this under the hardened runtime. -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <!-- The Term tab is a real shell, and macOS holds the app responsible for what runs in it: an `osascript` typed there,
+       or run by a `claude` session (Reminders, Calendar), sends Apple Events as the app. Without this, the hardened
+       runtime refuses them without asking. Each target app still asks the user first (NSAppleEventsUsageDescription). -->
+  <key>com.apple.security.automation.apple-events</key>
+  <true/>
+</dict>
+</plist>

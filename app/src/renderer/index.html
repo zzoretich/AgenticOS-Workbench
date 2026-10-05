@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <!-- Only the app's own scripts run. Inline styles stay allowed because the HUD sizes elements through style attributes. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'" />
+    <title>AgenticOS</title>
+    <link rel="stylesheet" href="base.css" />
+    <link rel="stylesheet" href="hud.css" />
+    <link rel="stylesheet" href="host.css" />
+  </head>
+  <body class="theme-dark">
+    <div id="app"></div>
+    <script src="hud.js"></script>
+  </body>
+</html>

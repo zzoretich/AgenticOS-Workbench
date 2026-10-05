@@ -4,7 +4,12 @@ All notable changes to AgenticOS Workbench. Versions follow the tags. From the n
 
 ## [Unreleased]
 
+### Added
+- **The Workbench as a macOS app** (`app/`, in development for 1.0). The same HUD runs in its own Electron window instead of inside Obsidian, with a note editor, a menubar popover and the full test suite in CI. It is not released yet; Obsidian stays the way to run the HUD until 1.0 ships the app.
+
 ### Fixed
+- A Workbench drawer's ✕ no longer sits under the scrollbar macOS shows after the drawer scrolls, where a click hit the scrollbar instead.
+- On a machine without Codex, the Routines tab no longer asks the runtime for Codex's automations every minute while it is open (each ask raised a notice). It asks only where Codex is a session host.
 - The nightly and weekly reflect duties can promote a repeated correction into a feedback memory again. Since the duty write scope (0.14.0) they were refused `brain/memory/feedback/` and `MEMORY.md`, journaled the block and raised a flag in `persona/STATE.md` on every run that tried. Both duties now get those two paths, and nothing else in `brain/memory/`. Codex cannot grant a single file at the vault root, so after a clean reflect run the runner adds the `MEMORY.md` line of each new feedback memory the duty did not index, on both hosts.
 
 ## [0.21.0] — 2026-09-28
