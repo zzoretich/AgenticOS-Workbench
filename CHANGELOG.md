@@ -5,6 +5,7 @@ All notable changes to AgenticOS Workbench. Versions follow the tags. From the n
 ## [Unreleased]
 
 ### Fixed
+- On a machine without Codex, the Routines tab no longer asks the runtime for Codex's automations every minute while it is open (each ask raised a notice). It asks only where Codex is a session host.
 - The nightly and weekly reflect duties can promote a repeated correction into a feedback memory again. Since the duty write scope (0.14.0) they were refused `brain/memory/feedback/` and `MEMORY.md`, journaled the block and raised a flag in `persona/STATE.md` on every run that tried. Both duties now get those two paths, and nothing else in `brain/memory/`. Codex cannot grant a single file at the vault root, so after a clean reflect run the runner adds the `MEMORY.md` line of each new feedback memory the duty did not index, on both hosts.
 
 ## [0.21.0] — 2026-09-28

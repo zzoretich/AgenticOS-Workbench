@@ -90,3 +90,15 @@ export function sectionStale(section: HostSection | undefined, now = Date.now(),
   const t = Date.parse(section.fetchedAt);
   return !Number.isFinite(t) || now - t > maxAgeMs;
 }
+
+/** At most one Codex refresh a minute. */
+export const CODEX_REFRESH_GAP_MS = 60_000;
+
+/**
+ * Whether the tab should ask the runtime to re-read Codex's automations: only on a machine where Codex is a session host
+ * (elsewhere the runtime never writes that section, so it would look stale forever), when the section is stale, and at
+ * most once a minute since the last ask.
+ */
+export function codexRefreshDue(hosts: readonly string[], section: HostSection | undefined, lastAskedAt: number, now = Date.now()): boolean {
+  return hosts.includes("codex") && sectionStale(section, now) && now - lastAskedAt > CODEX_REFRESH_GAP_MS;
+}
