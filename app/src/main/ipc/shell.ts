@@ -13,13 +13,13 @@ export function openExternalSafe(url: string): void {
   else console.warn(`[main] refused to open ${url.slice(0, 200)}`);
 }
 
-export function registerShellIpc(trust: Trust, scope: () => ReadScope | null): void {
+export function registerShellIpc(trust: Trust, scope: () => ReadScope | null, vaultRoot: string | null): void {
   onSend(CH.shellOpenExternal, trust, UrlArgs, ({ url }) => openExternalSafe(url));
   // Electron's contract: "" when it opened, else why not.
   onInvoke(CH.shellOpenPath, trust, PathArgs, async ({ p }) => {
     const s = scope();
     if (!s) return { ok: true, data: "no vault" };
-    const what = openPathAction(p, s);
+    const what = openPathAction(p, s, vaultRoot);
     if ("refusal" in what) { console.warn(`[main] refused to open ${p} (${what.refusal})`); return { ok: true, data: what.refusal }; }
     if (what.action === "reveal") { shell.showItemInFolder(p); return { ok: true, data: "" }; }
     return { ok: true, data: await shell.openPath(p) };

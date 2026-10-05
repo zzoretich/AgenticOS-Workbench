@@ -2,7 +2,7 @@
 // address), Node's inspector, and V8 flags. The fuses already turn off --inspect and NODE_OPTIONS; remote debugging has
 // no fuse, so main refuses to start with any of these (index.ts). Chromium reads a switch with one dash or two.
 
-const SWITCH = /^--?(remote-debugging-(port|pipe|address|targets)|remote-allow-origins|inspect(-brk|-port|-publish-uid)?|js-flags)(=.*)?$/i;
+const SWITCH = /^--?(remote-debugging-(port|pipe|address|targets)|remote-allow-origins|inspect(-brk|-wait|-port|-publish-uid)?|js-flags)(=.*)?$/i;
 
 /** The debugging switches in `argv`, as given. */
 export function debugSwitches(argv: readonly string[]): string[] {

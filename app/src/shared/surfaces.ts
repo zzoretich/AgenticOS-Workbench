@@ -93,6 +93,9 @@ const claudeAsk = (effort: boolean): SpawnRule => ({
 // from planting a host's project config in the vault (.claude/settings.json hooks, .mcp.json, .codex/, .git/hooks).
 const PROTECTED = ["brain/_index/**", "brain/scripts/**", "**/node_modules/**", "**/.*", "**/.*/**"];
 
+/** The runtime's own folders (its caches and vendored scripts): never moved, trashed or removed, nor any folder above them. */
+export const RUNTIME_FOLDERS: readonly string[] = ["brain/_index", "brain/scripts"];
+
 export const SURFACES: readonly Surface[] = [
   {
     id: "todo",
@@ -315,6 +318,14 @@ export class SurfaceRules {
 
   /** Whether the app's note editor may save this vault path (an enabled editor surface, Notes). */
   canSave(rel: string): boolean { return writesFile(this.editor, rel); }
+
+  /**
+   * Whether this path may be moved or sent to the Trash with everything under it: a HUD surface may write it, and it
+   * is not, and holds no, runtime folder (moving `brain` would take brain/scripts with it).
+   */
+  canMoveTree(rel: string): boolean {
+    return this.canWrite(rel) && !RUNTIME_FOLDERS.some((r) => r === rel || r.startsWith(`${rel}/`));
+  }
 
   /** Whether `node <vault>/brain/scripts/<script> args…` is a background refresh or an enabled surface's command. */
   canRunScript(script: string, args: readonly string[]): boolean {

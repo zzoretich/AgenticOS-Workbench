@@ -32,19 +32,35 @@ function exe(p: string, mode = 0o755): string {
 
 // ── read scope ───────────────────────────────────────────────────────
 
-test("the page reads the vault, the hosts' folders, LaunchAgents, /etc/shells and the app's data, and nothing else", () => {
+test("the page reads the vault, what it shows of the hosts' folders, LaunchAgents, /etc/shells and the app's data, and nothing else", () => {
   const s = new ReadScope(ctx());
-  for (const p of [`${VAULT}/TODO.md`, VAULT, `${HOME}/.claude/skills/x/SKILL.md`, `${HOME}/.codex/sessions/a.jsonl`, `${HOME}/.agents/skills`,
-    `${HOME}/Library/LaunchAgents/com.agenticos.tick.plist`, "/etc/shells", `${USER_DATA}/plugins/agentic-os.json`]) assert.equal(s.canRead(p), true, p);
-  for (const p of ["/etc/passwd", `${HOME}/.ssh/config`, `${HOME}/Documents/x.md`, `${VAULT}-other/x.md`, `${VAULT}/../x`, "relative/x", "", `${VAULT}/a\0b`])
+  for (const p of [`${VAULT}/TODO.md`, VAULT, `${HOME}/.claude/skills/x/SKILL.md`, `${HOME}/.claude/agents/a.md`, `${HOME}/.claude/agenticos.json`,
+    `${HOME}/.codex/agents/a.toml`, `${HOME}/.agents/skills`, `${HOME}/Library/LaunchAgents/com.agenticos.tick.plist`, "/etc/shells",
+    `${USER_DATA}/plugins/agentic-os.json`]) assert.equal(s.canRead(p), true, p);
+  for (const p of ["/etc/passwd", `${HOME}/.ssh/config`, `${HOME}/Documents/x.md`, `${VAULT}-other/x.md`, `${VAULT}/../x`, "relative/x", "", `${VAULT}/a\0b`,
+    // The rest of the hosts' folders: tokens (an IDE lock file carries one), settings, history, logs, and transcripts.
+    `${HOME}/.claude/ide/1234.lock`, `${HOME}/.claude/settings.json`, `${HOME}/.claude/history.jsonl`, `${HOME}/.claude/projects/-v/s1.jsonl`,
+    `${HOME}/.codex/config.toml`, `${HOME}/.codex/history.jsonl`, `${HOME}/.codex/sessions/2026/10/05/rollout-x.jsonl`, `${HOME}/.claude`])
     assert.equal(s.canRead(p), false, p);
+});
+
+test("the hosts' session folders may be listed and probed for a transcript, never read", () => {
+  const s = new ReadScope(ctx());
+  for (const p of [`${HOME}/.claude/projects`, `${HOME}/.claude/projects/-v`, `${HOME}/.codex/sessions/2026/10/05`, `${HOME}/.codex/archived_sessions`]) {
+    assert.equal(s.canList(p), true, p);
+    assert.equal(s.canRead(p), false, p);
+  }
+  assert.equal(s.canProbe(`${HOME}/.claude/projects/-v/s1.jsonl`), true);
+  assert.equal(s.canRead(`${HOME}/.claude/projects/-v/s1.jsonl`), false);
+  assert.equal(s.canList(`${HOME}/.claude`), false);
+  assert.equal(s.canList(`${HOME}/.claude/ide`), false);
 });
 
 test("credential files are never read, even inside a root", () => {
   const s = new ReadScope(ctx());
   for (const p of [`${HOME}/.codex/auth.json`, `${HOME}/.claude/.credentials.json`, `${VAULT}/workspaces/app/.env`, `${VAULT}/.env.local`, `${VAULT}/certs/server.pem`, `${VAULT}/id_ed25519`])
     assert.equal(s.canRead(p), false, p);
-  assert.equal(s.canRead(`${HOME}/.codex/config.toml`), true);
+  assert.equal(s.canRead(`${HOME}/.codex/skills/x/SKILL.md`), true);
 });
 
 test("the Claude and Codex folders come from main's environment and agenticos.json, never from the page", () => {
@@ -52,7 +68,8 @@ test("the Claude and Codex folders come from main's environment and agenticos.js
   assert.deepEqual(claudeDirs(o), ["/cfg/claude", `${HOME}/.claude`, "/cfg/other"]);
   assert.deepEqual(codexHomes(o), [`${HOME}/.codex`, "/cfg/codex"]);
   const s = new ReadScope(ctx(o));
-  assert.equal(s.canRead("/cfg/codex/sessions/x.jsonl"), true);
+  assert.equal(s.canRead("/cfg/codex/agents/x.toml"), true);
+  assert.equal(s.canRead("/cfg/other/skills/x/SKILL.md"), true);
 });
 
 test("a program may be probed by its well-known name anywhere; nvm's version folder may be listed", () => {
@@ -136,25 +153,27 @@ test("links open only over https", () => {
     assert.equal(externalAllowed(u), false, String(u));
 });
 
-test("openPath opens documents and folders, shows programs, scripts and packages in Finder, and refuses the rest", () => {
+test("openPath opens documents and folders, shows programs, scripts, packages and pages the page could write in Finder, and refuses the rest", () => {
   const s = new ReadScope(ctx());
+  const open = (p: string) => openPathAction(p, s, VAULT);
   const put = (rel: string): string => { const p = path.join(VAULT, rel); fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, "x"); return p; };
-  for (const rel of ["persona/proposals/p.html", "notes/a.md", "data/x.json", "img/a.png"]) assert.deepEqual(openPathAction(put(rel), s), { action: "open" }, rel);
-  for (const rel of ["evil.terminal", "run.command", "tool.py", "build.sh", "Makefile", "x.webloc", "x.fileloc"]) assert.deepEqual(openPathAction(put(rel), s), { action: "reveal" }, rel);
+  for (const rel of ["brain/_index/proposals/p.html", "notes/a.md", "data/x.json", "img/a.png"]) assert.deepEqual(open(put(rel)), { action: "open" }, rel);
+  for (const rel of ["evil.terminal", "run.command", "tool.py", "build.sh", "Makefile", "x.webloc", "x.fileloc",
+    "persona/proposals/p.html", "notes/page.htm", "img/a.svg"]) assert.deepEqual(open(put(rel)), { action: "reveal" }, rel);
   fs.mkdirSync(path.join(VAULT, "workspaces", "app"), { recursive: true });
-  assert.deepEqual(openPathAction(path.join(VAULT, "workspaces", "app"), s), { action: "open" });
+  assert.deepEqual(open(path.join(VAULT, "workspaces", "app")), { action: "open" });
   fs.mkdirSync(path.join(VAULT, "Evil.app", "Contents"), { recursive: true });
-  assert.deepEqual(openPathAction(path.join(VAULT, "Evil.app"), s), { action: "reveal" });
+  assert.deepEqual(open(path.join(VAULT, "Evil.app")), { action: "reveal" });
   fs.mkdirSync(path.join(VAULT, "Sneaky", "Contents"), { recursive: true });
   fs.writeFileSync(path.join(VAULT, "Sneaky", "Contents", "Info.plist"), "");
-  assert.deepEqual(openPathAction(path.join(VAULT, "Sneaky"), s), { action: "reveal" }, "a bundle by its Info.plist");
-  assert.ok("refusal" in openPathAction("/etc/hosts", s));
-  assert.ok("refusal" in openPathAction(path.join(VAULT, "missing.md"), s));
+  assert.deepEqual(open(path.join(VAULT, "Sneaky")), { action: "reveal" }, "a bundle by its Info.plist");
+  assert.ok("refusal" in open("/etc/hosts"));
+  assert.ok("refusal" in open(path.join(VAULT, "missing.md")));
 });
 
 test("a packaged build refuses the switches that open it to a debugger", () => {
-  assert.deepEqual(debugSwitches(["/App", "--remote-debugging-port=9222", "-remote-debugging-pipe", "--inspect", "--inspect-brk=0", "--js-flags=--allow-natives-syntax", "--remote-allow-origins=*"]),
-    ["--remote-debugging-port=9222", "-remote-debugging-pipe", "--inspect", "--inspect-brk=0", "--js-flags=--allow-natives-syntax", "--remote-allow-origins=*"]);
+  assert.deepEqual(debugSwitches(["/App", "--remote-debugging-port=9222", "-remote-debugging-pipe", "--inspect", "--inspect-brk=0", "--inspect-wait", "--js-flags=--allow-natives-syntax", "--remote-allow-origins=*"]),
+    ["--remote-debugging-port=9222", "-remote-debugging-pipe", "--inspect", "--inspect-brk=0", "--inspect-wait", "--js-flags=--allow-natives-syntax", "--remote-allow-origins=*"]);
   assert.deepEqual(debugSwitches(["/App", "agenticos://workbench?tab=todo", "--enable-logging", "--remote-debugging", "--inspector"]), []);
 });
 

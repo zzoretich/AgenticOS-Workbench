@@ -1,7 +1,9 @@
-// What the sandboxed page may read through the bridge (phase 4, S3). The HUD reads the vault, the hosts' own folders
-// (sessions, skills, agents, plugins), the macOS LaunchAgents its schedules live in, /etc/shells for the terminal picker,
-// and the app's own data. Each folder comes from main's own environment and agenticos.json, whose paths only
-// `aos init` and `aos upgrade` write (`aos config set` lists them read-only), never from the page.
+// What the sandboxed page may read through the bridge (phase 4, S3). The HUD reads the vault, the macOS LaunchAgents
+// its schedules live in, /etc/shells for the terminal picker, the app's own data, and in the hosts' own folders only
+// what it shows: agenticos.json, the skills, agents and commands it opens. Whether a host has a session transcript it
+// asks by listing the hosts' session folders, whose files it never reads. Each folder comes from main's own environment
+// and agenticos.json, whose paths only `aos init` and `aos upgrade` write (`aos config set` lists them read-only),
+// never from the page.
 //
 // Two narrower allowances: whether a program exists, by its well-known name anywhere (the node, claude and shell
 // pickers probe candidates such as /opt/homebrew/bin/node), and the names in nvm's version folder. Credential files
@@ -60,23 +62,35 @@ export function agenticosFiles(o: Pick<ScopeOptions, "home" | "env" | "agenticos
   return [...new Set([abs(o.env.AOS_CONFIG), ...claudeDirs(o).map((d) => path.join(d, "agenticos.json"))].filter((p): p is string => !!p))];
 }
 
+/** In a Claude Code config folder: what the HUD opens, and where it looks for a session's transcript (names only). */
+const CLAUDE_READ = ["skills", "agents", "commands"];
+const CLAUDE_LIST = ["projects"];
+/** In a Codex home: the same. Everything else there (auth.json, config, history, logs) the page never sees. */
+const CODEX_READ = ["agents", "skills", "prompts"];
+const CODEX_LIST = ["sessions", "archived_sessions"];
+
 export class ReadScope {
   private readonly roots: string[];
   private readonly files: Set<string>;
   private readonly listOnly: string[];
 
   constructor(o: ScopeOptions) {
+    const under = (dirs: string[], names: string[]) => dirs.flatMap((d) => names.map((n) => path.join(d, n)));
     const roots = [
       ...(o.vaultRoot ? [o.vaultRoot] : []),
-      ...claudeDirs(o),
-      ...codexHomes(o),
+      ...under(claudeDirs(o), CLAUDE_READ),
+      ...under(codexHomes(o), CODEX_READ),
       path.join(o.home, ".agents"),
       path.join(o.home, "Library", "LaunchAgents"),
       o.userData,
     ];
     this.roots = [...new Set(roots.flatMap(spellings))];
     this.files = new Set(["/etc/shells", ...agenticosFiles(o)].flatMap(spellings));
-    this.listOnly = spellings(path.join(o.home, ".nvm", "versions", "node"));
+    this.listOnly = [
+      path.join(o.home, ".nvm", "versions", "node"),
+      ...under(claudeDirs(o), CLAUDE_LIST),
+      ...under(codexHomes(o), CODEX_LIST),
+    ].flatMap(spellings);
   }
 
   private static clean(p: unknown): string | null {
@@ -91,10 +105,10 @@ export class ReadScope {
     return this.files.has(p) || this.roots.some((r) => inside(r, p));
   }
 
-  /** Whether the page may list this folder's names (canRead, or nvm's version folder). */
+  /** Whether the page may list this folder's names (canRead, nvm's version folder, or the hosts' session folders). */
   canList(target: unknown): boolean {
     const p = ReadScope.clean(target);
-    return !!p && (this.canRead(p) || this.listOnly.includes(p));
+    return !!p && (this.canRead(p) || this.listOnly.some((r) => inside(r, p)));
   }
 
   /** Whether the page may ask if this path exists, or stat it (canRead, or a program by its well-known name). */

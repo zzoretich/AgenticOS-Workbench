@@ -42,16 +42,16 @@ if (debugging.length && app.isPackaged && !__AOS_TEST_BUILD__) {
   process.exit(1);
 }
 
-/** The vault an existing install points at: $AOS_APP_VAULT, else agenticos.json's `vault` (the launcher's lookup). */
+/** The install's agenticos.json (the launcher's lookup): its path, and what `aos init` / `aos upgrade` wrote there. */
+const agenticosFile = process.env.AOS_CONFIG || path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude"), "agenticos.json");
+let agenticos: (AgenticosPaths & { vault?: string }) | null = null;
+try { agenticos = JSON.parse(fs.readFileSync(agenticosFile, "utf8")) as AgenticosPaths & { vault?: string }; } catch { /* no install */ }
+
+/** The vault an existing install points at: $AOS_APP_VAULT, else agenticos.json's `vault`. */
 function resolveVault(): { root: string | null; source: string } {
   if (process.env.AOS_APP_VAULT) return { root: process.env.AOS_APP_VAULT, source: "AOS_APP_VAULT" };
-  const configDir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
-  const cfg = process.env.AOS_CONFIG || path.join(configDir, "agenticos.json");
-  try {
-    const vault = (JSON.parse(fs.readFileSync(cfg, "utf8")) as { vault?: string }).vault;
-    if (vault && fs.existsSync(vault)) return { root: vault, source: cfg };
-  } catch { /* no install */ }
-  return { root: null, source: cfg };
+  const v = agenticos?.vault;
+  return v && fs.existsSync(v) ? { root: v, source: agenticosFile } : { root: null, source: agenticosFile };
 }
 
 const dev = !app.isPackaged;
@@ -64,24 +64,17 @@ registerAppScheme();
 const vault = resolveVault();
 const writes = loadWriteSettings();
 
-/** agenticos.json's install paths (only `aos init` and `aos upgrade` write them): the Claude and Codex folders main trusts. */
-function readAgenticos(): AgenticosPaths | null {
-  const configDir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
-  try { return JSON.parse(fs.readFileSync(process.env.AOS_CONFIG || path.join(configDir, "agenticos.json"), "utf8")) as AgenticosPaths; }
-  catch { return null; }
-}
-
 let shells: string[] = [];
 try { shells = parseShells(fs.readFileSync("/etc/shells", "utf8")); } catch { /* no /etc/shells: only $SHELL */ }
 const context: ProgramContext = {
-  vaultRoot: vault.root, home: os.homedir(), userData: app.getPath("userData"), env: process.env, agenticos: readAgenticos(), shells,
+  // agenticos.json's install paths (`aos config set` cannot change them): the Claude and Codex folders main trusts.
+  vaultRoot: vault.root, home: os.homedir(), userData: app.getPath("userData"), env: process.env, agenticos, shells,
 };
 const policy = new WritePolicy(vault.root, writes.surfaces);
 const scope = new ReadScope(context);
 const fsService = vault.root ? new FsService({ vaultRoot: vault.root, userData: context.userData, scope: () => scope, policy: () => policy }) : null;
 const procService = new ProcService({ policy: () => policy, context: () => context, env: process.env, emit: (ev) => send(CH.procEvent, ev) });
 // The app's own node-pty: in a packaged build its JavaScript is in the archive and its native parts are unpacked beside it.
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 const ptyService = new PtyService({ context: () => context, env: process.env, emit: (ev) => send(CH.ptyEvent, ev), load: () => require("node-pty") as PtyLib });
 
 /** The variables the HUD reads (HudHost.env), from main's environment; nothing else of it reaches the page. */
@@ -175,7 +168,7 @@ registerHostIpc(trust, {
 });
 registerFsIpc(trust, () => fsService);
 registerProcIpc(trust, procService, ptyService);
-registerShellIpc(trust, () => (vault.root ? scope : null));
+registerShellIpc(trust, () => (vault.root ? scope : null), vault.root);
 
 /** The page went (closed, crashed, or quitting): its terminals go with it, and the children it was waiting on. */
 function endPageWork(): void {

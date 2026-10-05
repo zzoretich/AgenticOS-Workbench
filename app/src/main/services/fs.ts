@@ -140,14 +140,16 @@ export class FsService {
     try { fs.mkdirSync(p); return ok(null); } catch (err) { return failure(err); }
   }
 
+  /** One file. A folder and what is in it never goes for good: the Files tab sends it to the Trash, where it can be restored. */
   remove(p: string, recursive: boolean): Result<null> {
+    if (recursive) return refused("a folder goes to the Trash, not away for good");
     if (!this.o.policy().canWrite(p)) return refused("no write surface allows it");
-    try { fs.rmSync(p, { recursive, force: true }); return ok(null); } catch (err) { return failure(err); }
+    try { fs.rmSync(p, { force: true }); return ok(null); } catch (err) { return failure(err); }
   }
 
   rename(from: string, to: string): Result<null> {
     const policy = this.o.policy();
-    if (!policy.canWrite(from) || !policy.canWrite(to)) return refused("no write surface allows both ends");
+    if (!policy.canMoveTree(from) || !policy.canWrite(to)) return refused("no write surface allows both ends");
     try { fs.renameSync(from, to); return ok(null); } catch (err) { return failure(err); }
   }
 
@@ -157,8 +159,8 @@ export class FsService {
     try { fs.copyFileSync(from, to); return ok(null); } catch (err) { return failure(err); }
   }
 
-  /** Whether `p` may go to the Trash (the IPC layer hands it to Electron's shell.trashItem). */
-  canTrash(p: string): boolean { return this.o.policy().canWrite(p); }
+  /** Whether `p` may go to the Trash with everything in it (the IPC layer hands it to Electron's shell.trashItem). */
+  canTrash(p: string): boolean { return this.o.policy().canMoveTree(p); }
 
   /** A plugin's settings: the app's own copy, else what Obsidian kept in the vault (read, never written). */
   loadPluginData(id: string): Result<unknown> {

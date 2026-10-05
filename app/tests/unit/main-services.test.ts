@@ -78,6 +78,23 @@ test("with nothing on, even TODO.md is refused; the note editor's saves need Not
   refusedResult(svc.writeText(v(".claude/agents/x.md"), "x", "editor"));
 });
 
+test("a folder never goes for good, and the runtime's folders never move: not removed, renamed or trashed, nor any folder above them", () => {
+  reset(["files"]);
+  fs.mkdirSync(v("brain/_index"), { recursive: true });
+  fs.mkdirSync(v("workspaces/old/.git"), { recursive: true });
+  refusedResult(svc.remove(v("brain"), true));
+  refusedResult(svc.remove(v("workspaces/old"), true));
+  refusedResult(svc.rename(v("brain"), v("brain-moved")));
+  refusedResult(svc.rename(v("brain/scripts"), v("scripts")));
+  assert.equal(svc.canTrash(v("brain")), false);
+  assert.equal(svc.canTrash(v("brain/scripts")), false);
+  assert.equal(fs.existsSync(path.join(S, "scan-vault.js")), true);
+  // A folder of one's own goes to the Trash with what is in it, its .git included; renaming it moves it whole.
+  assert.equal(svc.canTrash(v("workspaces/old")), true);
+  assert.equal(svc.rename(v("workspaces/old"), v("workspaces/older")).ok, true);
+  assert.equal(svc.remove(v("TODO.md"), false).ok, true);
+});
+
 test("a rename needs both ends; a copy needs to read its source and write its destination", () => {
   reset(["todo"]);
   refusedResult(svc.rename(v("TODO.md"), v("brain/TODO.md")));

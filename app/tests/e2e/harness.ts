@@ -257,6 +257,8 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<AppHandle> {
     const t = m.text();
     if (t.startsWith("[notice]")) notices.push(t.slice("[notice]".length).trim());
     if (m.type() === "error" && !known(t)) errors.push(`[renderer] ${t}`);
+    // A read main refused is a gap in the read scope (src/main/policy/read-scope.ts): the HUD reads only what it shows.
+    if (t.startsWith("[guard] refused read") && !known(t)) errors.push(`[renderer] ${t}`);
   });
   const size = opts.size ?? { width: 1480, height: 920 };
   // The main window (the app page), not the tray popover, which is about:blank.

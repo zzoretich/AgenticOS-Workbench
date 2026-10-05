@@ -76,6 +76,12 @@ export class WritePolicy {
     return rel !== null && this.rules.canSave(rel);
   }
 
+  /** Whether this absolute path may be moved or trashed with everything under it (SurfaceRules.canMoveTree). */
+  canMoveTree(target: unknown): boolean {
+    const rel = this.vaultPath(target);
+    return rel !== null && this.rules.canMoveTree(rel);
+  }
+
   /**
    * Whether `cmd args…`, run without a shell from `cwd`, is a background refresh or a command an enabled surface runs.
    * A relative script path counts only with a cwd to resolve it against, as node would. Which program `cmd` names is

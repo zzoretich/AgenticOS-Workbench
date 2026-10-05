@@ -21,7 +21,7 @@ module.exports = [
   // TypeScript is checked by its own tsc (`npm run typecheck` in app/); its .js/.cjs/.mjs scripts are linted here.
   { ignores: ['**/node_modules/**', 'codex-plugin/**', 'obsidian-plugin/main.js', 'obsidian-plugin/src/**', '**/*.local.*',
     // The app's build output, packages, test runs and generated fixture vault (app/.gitignore).
-    'app/out/**', 'app/out-test/**', 'app/dist/**', 'app/test-results/**', 'app/playwright-report/**', 'app/spike-output/**', 'app/tests/.fixture/**', 'app/tests/.cache/**'] },
+    'app/out/**', 'app/out-test/**', 'app/dist/**', 'app/dist-test/**', 'app/test-results/**', 'app/playwright-report/**', 'app/spike-output/**', 'app/tests/.fixture/**', 'app/tests/.cache/**'] },
   { files: ['**/*.js', '**/*.cjs'], languageOptions: languageOptions('commonjs'), rules },
   { files: ['**/*.mjs'], languageOptions: languageOptions('module'), rules },
   // The app's Playwright drivers: the functions they hand to evaluate() run in the app's window.
