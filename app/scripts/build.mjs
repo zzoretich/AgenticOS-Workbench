@@ -41,6 +41,10 @@ const hostRedirects = {
 };
 
 // Everything else from Node stays a runtime require(), which the renderer provides in stage 1.
+// The HUD lives beside the app (../obsidian-plugin), so its imports (xterm and its addons) would resolve from the repo
+// root's node_modules, which only a root install has. They resolve from the app's own, as they did when the HUD was
+// vendored inside the app.
+const nodePaths = [r("node_modules")];
 const nodeExternals = [...builtinModules.filter((m) => !(m in redirects)), ...builtinModules.map((m) => `node:${m}`)];
 
 rmSync(out, { recursive: true, force: true });
@@ -53,6 +57,7 @@ await esbuild.build({
   format: "cjs",
   target: "node22",
   external: ["electron"],
+  nodePaths,
   sourcemap: "linked",
   logLevel: "warning",
 });
@@ -66,6 +71,7 @@ await esbuild.build({
   target: "chrome130",
   external: ["electron", "node-pty", ...nodeExternals],
   plugins: [hostRedirects],
+  nodePaths,
   sourcemap: "linked",
   logLevel: "warning",
   // terminalSession.ts loads node-pty with require(<computed path>); that is intended and stays a runtime require.
