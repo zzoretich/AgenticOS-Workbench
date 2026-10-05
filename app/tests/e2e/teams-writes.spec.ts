@@ -43,11 +43,24 @@ async function example(win: Page, pane: "Board" | "Roster" | "Interact" | "Manag
 }
 const memberRow = (win: Page, name: string) => C(win).locator(".aos-at-pane-manage .aos-at-mrow", { has: win.locator(".aos-at-name", { hasText: new RegExp(`^${name}`) }) });
 
-/** Holds back the vault's events, so the tab keeps drawing what it last read (another writer's change has not arrived). */
+/**
+ * Holds back what would redraw the tab from disk, so it keeps drawing what it last read (another writer's change has not
+ * arrived): the vault's events, and the tab's own 30-second clock, which once redrew the card between the lead's write
+ * and the click and let the approve through. Released, the tab is mounted again (its clock restarts and it re-reads).
+ */
 async function holdEvents(win: Page, hold: boolean): Promise<void> {
   await win.evaluate((on) => {
-    const v = (window as unknown as { aosHost: { app: { vault: Record<string, unknown> } } }).aosHost.app.vault;
-    if (on) { v.__trigger = v.trigger; v.trigger = () => undefined; } else { v.trigger = v.__trigger; delete v.__trigger; }
+    type Tab = { tick: number | null; host: HTMLElement; mount(h: HTMLElement): void; unmount(): void };
+    const host = (window as unknown as { aosHost: { app: { vault: Record<string, unknown>; workspace: { getLeavesOfType(t: string): Array<{ view: { getTab(id: string): Tab | null } }> } } } }).aosHost;
+    const v = host.app.vault;
+    const tab = host.app.workspace.getLeavesOfType("agentic-os-workbench")[0]?.view.getTab("agent-teams");
+    if (on) {
+      v.__trigger = v.trigger; v.trigger = () => undefined;
+      if (tab?.tick != null) { window.clearInterval(tab.tick); tab.tick = null; }
+    } else {
+      v.trigger = v.__trigger; delete v.__trigger;
+      if (tab) { tab.unmount(); tab.mount(tab.host); }
+    }
   }, hold);
 }
 
