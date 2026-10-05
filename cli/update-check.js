@@ -174,7 +174,13 @@ function renderNotice(state, now = new Date()) {
   const parts = [['plugin', pluginVersion], ['vault', vaultVersion], ['Workbench', hudVersion]].filter(([, v]) => v);
   const skew = new Set(parts.map(([, v]) => v)).size > 1;
   const have = skew ? parts.map(([k, v]) => `${k} ${v}`).join(', ') : `you have ${installed}`;
-  return `AgenticOS Workbench ${latest} available (${have}) — run \`aos upgrade\``;
+  // `aos upgrade` moves the plugin and the vault; the app updates itself (install-and-update I6). Name what is behind.
+  const behind = (v) => !!v && cmpSemver(v, latest) === -1;
+  const app = behind(hudVersion);
+  const runtime = behind(pluginVersion) || behind(vaultVersion);
+  const todo = app && !runtime ? 'update the AgenticOS Workbench app (AgenticOS ▸ Check for Updates…)'
+    : app ? 'run `aos upgrade` and update the app' : 'run `aos upgrade`';
+  return `AgenticOS Workbench ${latest} available (${have}) — ${todo}`;
 }
 
 /** Re-rendered by the producer on every check AND by update-notice at every session start, so

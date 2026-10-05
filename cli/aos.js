@@ -13,8 +13,10 @@
  *   aos persona [rename <name> | on | off] [--persona-json <file>] [--yes] · aos cost [enable [--budget <usd>] [--yes] | disable]
  *
  * Exit codes: 0 ok · 1 a check failed · 2 usage.
- * Runs from the repo checkout (`node cli/aos.js …`, `npm run setup`) and from its vendored copy at
- * <vault>/brain/scripts/cli/aos.js, which the `aos` launcher reaches for every subcommand except init.
+ * Runs from the repo checkout (`node cli/aos.js …`, `npm run setup`), from a release tree (the AgenticOS Workbench app's
+ * Contents/Resources/payload, whose payload.json says it carries the runtime's dependencies, so init and upgrade copy them
+ * rather than run npm), and from its vendored copy at <vault>/brain/scripts/cli/aos.js, which the `aos` launcher reaches
+ * for every subcommand except init.
  * Platforms: macOS and Linux. Windows is unsupported in v1.
  * Config file: $AOS_CONFIG when set (the launcher exports it), else <configDir>/agenticos.json — the same
  * rule as lib/paths.js configFile(), so every aos subcommand reads the file the hooks read.
@@ -617,7 +619,8 @@ function provider(mode) {
 
 // ── init ──────────────────────────────────────────────────────────────────────
 // Never vendored: installed deps, the test suite, and any lockfile (contract §4.3: the vendored runtime is
-// installed with a plain `npm install --omit=dev`; its two deps are pinned by `^` ranges in package.json).
+// installed with a plain `npm install --omit=dev`; its two deps are pinned by `^` ranges in package.json). A release
+// tree that carries them (the app's payload) has them copied instead: releaseTreeDeps / swapNodeModules.
 const VENDOR_EXCLUDE = /(^|\/)(node_modules|test|package-lock\.json)(\/|$)/;
 
 function isRepoRoot(d) {
@@ -731,6 +734,29 @@ function linkLauncher(vault) {
   } catch (e) { out.warn(`could not link ${link}: ${e.message}`); return null; }
 }
 
+/** A release tree (the app's payload, install-and-update I1) that carries its runtime's dependencies: the path of its
+ *  brain/scripts/node_modules when payload.json says so and the folder is there, else null (a checkout: npm installs). */
+function releaseTreeDeps(repo) {
+  const manifest = readJson(path.join(repo, 'payload.json'));
+  const deps = path.join(repo, 'brain', 'scripts', 'node_modules');
+  return manifest && manifest.schema === 1 && manifest.runtimeDeps === true && isDir(deps) ? deps : null;
+}
+
+/** <dest>/node_modules becomes a copy of `src`: staged under a name of this process's own, then renamed into place. */
+function swapNodeModules(src, dest) {
+  const live = path.join(dest, 'node_modules');
+  const incoming = path.join(dest, `node_modules.incoming-${process.pid}`);
+  const old = path.join(dest, `node_modules.old-${process.pid}`);
+  fs.rmSync(incoming, { recursive: true, force: true });
+  fs.cpSync(src, incoming, { recursive: true, verbatimSymlinks: true });
+  // lstat, not exists: an install from a checkout may have left node_modules as a symlink (the CI rehearsal's fake npm).
+  let had = false;
+  try { fs.lstatSync(live); had = true; } catch { /* first install */ }
+  if (had) fs.renameSync(live, old);
+  fs.renameSync(incoming, live);
+  if (had) fs.rmSync(old, { recursive: true, force: true });
+}
+
 function vendorRuntime(ctx, { force = true } = {}) {
   const { repo, vault, written } = ctx;
   const dest = scriptPath(vault, '');
@@ -748,7 +774,14 @@ function vendorRuntime(ctx, { force = true } = {}) {
   // Design D4: the commands and skills the Codex host generates its skills from, so `aos upgrade` never needs the marketplace clone.
   for (const x of ['commands', 'skills']) copyTree(path.join(repo, 'plugin', x), path.join(dest, 'plugin', x), { force, written: [] });
   written.push('brain/scripts/ (runtime)', 'brain/scripts/cli/', 'brain/scripts/persona/templates/', 'brain/scripts/extras/', 'brain/scripts/bin/aos', 'brain/scripts/plugin/');
-  if (process.env.AOS_SKIP_NPM !== '1') {
+  const prebuilt = releaseTreeDeps(repo);
+  if (process.env.AOS_SKIP_NPM === '1') { /* test seam: no dependencies at all */ }
+  else if (prebuilt) {
+    // install-and-update I2: the app's payload carries its runtime's dependencies (plain JavaScript, so a copy built on
+    // one Mac runs on any Node >= 20), and an app-driven install has no npm to count on. Copied beside the old tree,
+    // then swapped in with two renames, so a re-run prunes and a hook starting mid-upgrade never meets half a tree.
+    swapNodeModules(prebuilt, dest);
+  } else {
     // Spec §9.2 step 4 / contract §4.3: a plain `npm install --omit=dev` in the vendored dir. No lockfile is
     // vendored (VENDOR_EXCLUDE drops one even when the checkout has it; the root workspace lockfile describes
     // the workspaces, not this package alone), so `npm ci` is not an option here and is deliberately not used.
@@ -857,7 +890,10 @@ function checklist(ctx) {
       ? `Open \`codex\`, run /hooks, and trust the ${CH.PLUGIN_ID} entries once; they stay trusted across aos upgrade.`
       : `Open \`codex\`, run /hooks, and trust the AgenticOS entries once (${CH.hooksFile(readJson(configPath()))}); they only need re-trusting if the vault moves.`);
   }
-  steps.push('Open the AgenticOS Workbench app (macOS); it finds this vault through agenticos.json. Until its download arrives with 1.0, build it from app/ in the checkout (app/README.md).');
+  // From the app's payload the app is already there (its wizard runs this); from a checkout it may not be.
+  steps.push(ctx.repo && exists(path.join(ctx.repo, 'payload.json'))
+    ? 'Open the AgenticOS Workbench app; it finds this vault through agenticos.json.'
+    : 'Open the AgenticOS Workbench app (macOS); it finds this vault through agenticos.json. Until its download arrives with 1.0, build it from app/ in the checkout (app/README.md).');
   steps.push(`Put ${path.join(os.homedir(), '.local', 'bin')} on your PATH, then run: aos doctor`);
   if (hosts.claude) steps.push('Start a new `claude` session; the first prompt receives <brain-context>. Use /wrap at the end.');
   if (hosts.codex) steps.push(codexPlugin
@@ -1406,7 +1442,7 @@ module.exports = {
   run, which, claudeBin, codexBin, hostsOf, resolveHosts, pluginSourceDir, npmBin, claudeLoggedIn, installedPlugin, python3Version, python3Ok, pythonBin, ollamaBin, httpProbe, ollamaEndpoint, ollamaProbeSkipped, ask,
   runScript, scriptPath, mcpProbe, spendRowsToday, spendToday, spendByFamily, isDutyFeature, isHookFeature, loadConfigOrThrow,
   doctor, status, provider, main,
-  init, repoRoot, productVersion, upgradeReexecTarget, copyTree, assertVaultOk, buildUserConfig, linkLauncher, vendorRuntime,
+  init, repoRoot, productVersion, upgradeReexecTarget, copyTree, assertVaultOk, buildUserConfig, linkLauncher, vendorRuntime, releaseTreeDeps, swapNodeModules,
   installPlugin, personaInterview, checklist, hudHost,
   upgrade, uninstall, removeSchedules, terminal, persona, cost, graph, routines, workspace, config, updateCheck, updateStatus, updateNotice,
   PROVIDERS, HOST_CHOICES, PLUGIN_ID, MARKETPLACE, REPO_SLUG, OBSIDIAN_PLUGIN_ID, DEFAULT_VAULT, RUNTIME_SCRIPTS, USAGE,
