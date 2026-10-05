@@ -15,4 +15,4 @@ How sharing works: each host keeps its own skills (Claude Code under `~/.claude/
 
 Statuses worth one line each: `universal` = on both hosts; `pending` = sharing is off or only one host is enabled (the summary says which); `differs` = a different skill of the same name exists on each host and both are left alone; `edited` = a copy was edited by hand (edit the source instead, or `reset`); `excluded` = not shared on purpose; `invalid` = cannot be shared as written (the reason follows the table; usually a SKILL.md without `name`/`description` frontmatter); `listed` = a plugin skill or built-in.
 
-The Skills tab in the Obsidian Workbench shows the same list, with buttons that start a Claude Code or Codex session running the skill.
+The Skills tab in the Workbench shows the same list, with buttons that start a Claude Code or Codex session running the skill.

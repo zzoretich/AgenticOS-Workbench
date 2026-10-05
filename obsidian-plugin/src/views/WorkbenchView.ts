@@ -43,7 +43,7 @@ const RAIL: RailTab[] = [
 ];
 /** Pinned to the rail's foot, below the scrolling tab list (spec 2026-09-24-settings-tab D1). */
 const SETTINGS_TAB: RailTab = { id: "settings", icon: "⚙", label: "Settings" };
-/** Every tab id setTab() can build: what an obsidian://agenticos?tab=<id> link may name (statusline spec D10). */
+/** Every tab id setTab() can build: what an agenticos://workbench?tab=<id> link may name (statusline spec D10). */
 export const WORKBENCH_TAB_IDS: readonly string[] = [...RAIL.map((t) => t.id), SETTINGS_TAB.id];
 
 export class WorkbenchView extends ItemView {

@@ -43,8 +43,8 @@ test('escaping: raw HTML and attribute quotes never survive; an ampersand in an 
   assert.equal(inline('`<b>` \u0000 [`<i>`](#top)'), '<code>&lt;b&gt;</code>  <a href="#top"><code>&lt;i&gt;</code></a>');
 });
 
-test('links: only http, https, file, obsidian and relative targets become anchors', () => {
-  for (const u of ['https://a.example', 'http://a.example', 'file:///tmp/x.html', 'obsidian://open?path=%2Fv%2Fa.md', 'docs/a.md', '#frag']) assert.equal(safeHref(u), u);
+test('links: only http, https, file, agenticos, obsidian and relative targets become anchors', () => {
+  for (const u of ['https://a.example', 'http://a.example', 'file:///tmp/x.html', 'agenticos://note?file=persona%2FSTATE.md', 'agenticos://workbench?tab=proposals', 'obsidian://open?path=%2Fv%2Fa.md', 'docs/a.md', '#frag']) assert.equal(safeHref(u), u);
   for (const u of ['javascript:alert(1)', 'JaVaScRiPt:x', 'data:text/html,x', 'vbscript:x', '//evil.example/x']) assert.equal(safeHref(u), null);
   assert.equal(inline('[click](javascript:alert(1))'), 'click');
   assert.equal(inline('[wiki](https://en.example/wiki/A_(b))'), '<a href="https://en.example/wiki/A_(b)">wiki</a>');

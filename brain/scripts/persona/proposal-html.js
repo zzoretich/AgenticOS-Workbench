@@ -28,9 +28,11 @@ const { pathToFileURL } = require('url');
 const { IDEA_KINDS, parseFrontmatter } = require('./backlog.js');
 const { toHtml, inline, esc } = require('../lib/markdown-html.js');
 const { assertPinned } = require('../lib/pin-root.js');
+const { links } = require('../lib/hud-host.js');
 
 const SCHEMA = 1;
-const RENDERER = '1';
+// Bumped when the page changes shape, so a page cached by an older renderer is rebuilt (2: the AgenticOS link).
+const RENDERER = '2';
 const PAGES_DIR = path.join('brain', '_index', 'proposals');
 const LINK_LABEL = 'Open the proposal in browser';
 const LINK_RE = /^\*\*\[Open the proposal in browser\]\(([^)\s]*)\)\*\*/m;
@@ -168,7 +170,7 @@ ${RENDERER_META}
 <p class="eyebrow">${eyebrow}</p>
 <h1>${inline(title)}</h1>
 ${intro ? `<div class="intro">${toHtml(intro)}</div>\n` : ''}<dl class="meta">${meta}</dl>
-<p class="links"><a href="${esc(`obsidian://open?path=${encodeURIComponent(file)}`)}">Open in Obsidian</a> · <a href="${esc(pathToFileURL(file).href)}">Markdown source</a></p>
+<p class="links"><a href="${esc(links().file(`persona/proposals/${name}`))}">Open in AgenticOS</a> · <a href="${esc(pathToFileURL(file).href)}">Markdown source</a></p>
 </header>
 <main>
 ${sections || '<p class="sub">This proposal has no sections yet.</p>'}

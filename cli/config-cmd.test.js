@@ -35,7 +35,7 @@ function world({ machine = {}, vaultCfg = DEFAULTS, persona = true, obsidian = t
     enable: async (o) => { calls.push(['enable', o.yes]); const c = JSON.parse(fs.readFileSync(machineFile, 'utf8')); c.cost.enabled = true; fs.writeFileSync(machineFile, JSON.stringify(c)); o.io.log('cost: enabled (python3 3.12)'); },
     disable: (o) => { calls.push(['disable']); const c = JSON.parse(fs.readFileSync(machineFile, 'utf8')); c.cost.enabled = false; fs.writeFileSync(machineFile, JSON.stringify(c)); o.io.log('cost: disabled'); },
   };
-  const opts = { configDir, io, now: NOW, env: { CODEX_HOME: path.join(base, 'codex') }, costCmd, dailyNotesJson: (layout) => ({ folder: layout.split('/')[0], format: 'YYYY-MM-DD' }) };
+  const opts = { configDir, io, now: NOW, env: { CODEX_HOME: path.join(base, 'codex') }, costCmd };
   const read = (f) => JSON.parse(fs.readFileSync(f, 'utf8'));
   return {
     base, vault, configDir, machineFile, vaultFile, opts, logs, errs, calls,
@@ -100,17 +100,18 @@ test('set (D4): writes the file that holds the key — agenticos.json for init\'
   assert.deepEqual(fs.readdirSync(w.configDir), ['agenticos.json'], 'no tmp file left');
 });
 
-test('set: a key in neither file goes to the vault file; a vaultOnly key always does, and rewrites Obsidian\'s daily notes (D7)', async () => {
+test('set: a key in neither file goes to the vault file; a vaultOnly key always does, and leaves .obsidian/ alone', async () => {
   const w = world({ vaultCfg: { provider: 'none' }, machine: { dailyNote: { layout: 'ignored/{dd}.md' } } });
-  fs.writeFileSync(path.join(w.vault, '.obsidian', 'daily-notes.json'), JSON.stringify({ template: 'Templates/Day', folder: 'old' }));
+  // The Workbench is the app now (workbench-app D1): an Obsidian folder left in the vault is the user's, never rewritten.
+  const obsidianDaily = path.join(w.vault, '.obsidian', 'daily-notes.json');
+  fs.writeFileSync(obsidianDaily, JSON.stringify({ template: 'Templates/Day', folder: 'old' }));
   await w.run('set', 'graph.semantic.enabled', 'false');
   assert.deepEqual(w.vaultJson().graph, { semantic: { enabled: false } });
   await w.run('set', 'dailyNote.layout', 'Journal/{yyyy}-{MM}-{dd}.md');
   assert.equal(w.vaultJson().dailyNote.layout, 'Journal/{yyyy}-{MM}-{dd}.md');
   assert.equal(w.machine().dailyNote.layout, 'ignored/{dd}.md', 'agenticos.json is not the file its reader uses');
-  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(w.vault, '.obsidian', 'daily-notes.json'), 'utf8')),
-    { template: 'Templates/Day', folder: 'Journal', format: 'YYYY-MM-DD' }, 'merged: the user\'s template stays');
-  assert.match(w.out(), /updated Obsidian's Daily Notes folder/);
+  assert.deepEqual(JSON.parse(fs.readFileSync(obsidianDaily, 'utf8')), { template: 'Templates/Day', folder: 'old' }, 'untouched');
+  assert.doesNotMatch(w.out(), /Obsidian|daily-notes/);
 });
 
 test('set provider clears the cached probe; persona.enabled moves persona/DISABLED with it (D7, D8)', async () => {

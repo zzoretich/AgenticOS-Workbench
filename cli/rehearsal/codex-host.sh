@@ -17,9 +17,8 @@ mkdir -p "$HOME" "$CLAUDE_CONFIG_DIR" "$CODEX_HOME"
 printf 'model = "fake-model"\n' > "$CODEX_HOME/config.toml"
 export AOS_NO_CLAUDE=1 AOS_CODEX_BIN="$ROOT/cli/fixtures/fake-codex.sh" FAKE_CODEX_LOG="$TMP/codex.log" FAKE_CODEX_STATE="$TMP/codex-mcp.state"
 unset AOS_VAULT BRAIN_VAULT AOS_CONFIG CLAUDE_PROJECT_DIR AOS_HOST AOS_NO_CODEX PLUGIN_ROOT || true
-# mandatory-prereqs D6: the install gate needs Obsidian and Ollama present; same seams as first-run.sh.
-mkdir -p "$TMP/Obsidian.app"
-export AOS_OBSIDIAN_APP="$TMP/Obsidian.app" AOS_OLLAMA_BIN="$ROOT/cli/fixtures/fake-ollama.sh"
+# mandatory-prereqs D6: the install gate needs Ollama present; same seam as first-run.sh. No Obsidian (workbench-app D1).
+export AOS_OLLAMA_BIN="$ROOT/cli/fixtures/fake-ollama.sh"
 # graphify spec D1: uv is a prerequisite too; the fake installs a fake graphify under the temp HOME.
 export AOS_UV_BIN="$ROOT/cli/fixtures/fake-uv.sh"
 unset XDG_DATA_HOME || true
@@ -41,7 +40,7 @@ run_hooks() {
 }
 
 echo "== 1. init --host codex, a Codex CLI without plugins (no claude on this machine)"
-FAKE_CODEX_NO_PLUGINS=1 node "$ROOT/cli/aos.js" init --host codex --vault "$VAULT" --no-obsidian --provider none --persona-json "$ROOT/cli/fixtures/persona.json" --yes
+FAKE_CODEX_NO_PLUGINS=1 node "$ROOT/cli/aos.js" init --host codex --vault "$VAULT" --provider none --persona-json "$ROOT/cli/fixtures/persona.json" --yes
 
 echo "== what init wrote: the direct wiring"
 [ -f "$CODEX_HOME/hooks.json" ]
@@ -82,7 +81,7 @@ echo "$DOC" | grep -q 'all checks passed'
 ! echo "$DOC" | grep -q 'plugin installed'
 
 echo "== 2. the Codex CLI now installs plugins: aos upgrade moves the host to the agenticos plugin"
-UP=$(node "$ROOT/cli/aos.js" upgrade --no-obsidian --from-local "$ROOT")
+UP=$(node "$ROOT/cli/aos.js" upgrade --from-local "$ROOT")
 echo "$UP"
 echo "$UP" | grep -q 'direct wiring removed (5 hook entries, the MCP registration, 28 skills)'
 echo "$UP" | grep -q 'open codex, run /hooks'
@@ -151,7 +150,7 @@ grep -q '"feature":"graph:semantic","provider":"codex"' "$VAULT/brain/_index/pro
 node "$ROOT/cli/aos.js" graph semantic auto > /dev/null
 
 echo "== a plain upgrade from the vault's own launcher (no claude, no --from-local) finds the checkout through the Codex marketplace"
-UP2=$(node "$VAULT/brain/scripts/cli/aos.js" upgrade --no-obsidian)
+UP2=$(node "$VAULT/brain/scripts/cli/aos.js" upgrade)
 echo "$UP2" | grep -q "from $ROOT (v"
 grep -q '^plugin marketplace list --json$' "$FAKE_CODEX_LOG"
 

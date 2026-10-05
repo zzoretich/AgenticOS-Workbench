@@ -6,11 +6,12 @@
  * `+` / `-` / `@@` lines), GFM tables, `>` quotes, `---` rules and `[text](url)` links.
  *
  * The source may carry text a duty copied from somewhere untrusted, so every text node is escaped, raw HTML shows as
- * text, and a link becomes an anchor only for http, https, file and obsidian URLs or a relative path — any other
- * scheme (javascript:, data:, vbscript:) renders as its label.
+ * text, and a link becomes an anchor only for http, https, file, agenticos (the Workbench app's links) and obsidian
+ * (links written before the app) URLs or a relative path — any other scheme (javascript:, data:, vbscript:) renders as
+ * its label.
  */
 
-const LINK_SCHEMES = ['http:', 'https:', 'file:', 'obsidian:'];
+const LINK_SCHEMES = ['http:', 'https:', 'file:', 'agenticos:', 'obsidian:'];
 const LIST_RE = /^(\s*)([-*+]|\d{1,9}[.)])(\s+)(.*)$/;
 const FENCE_RE = /^(\s*)(`{3,}|~{3,})\s*([\w+-]*)\s*$/;
 const HEADING_RE = /^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/;

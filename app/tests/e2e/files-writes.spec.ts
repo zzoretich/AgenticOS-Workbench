@@ -43,8 +43,9 @@ test("Files is the one surface on: the status bar names it", async () => {
 test("+ note makes a Markdown note in a new folder, opens it, and shows it in the tree", async () => {
   const { win } = app();
   await content(win).locator(".aos-rt-actions button", { hasText: "+ note" }).click();
-  await inputs(win).nth(0).fill("workspaces/harbor-map/notes");
+  // The name first, then the folder (its suggestion list could commit an entry when focus leaves it).
   await inputs(win).nth(1).fill("Tide windows");
+  await inputs(win).nth(0).fill("workspaces/harbor-map/notes");
   await expect(note(win)).toHaveText("→ workspaces/harbor-map/notes/Tide windows.md");
   await button(win, "create").click();
   await expect(notePath(win)).toHaveText("workspaces/harbor-map/notes/Tide windows.md");
@@ -58,8 +59,8 @@ test("the new-note form says why it refuses, and create stays off", async () => 
   const { win } = app();
   await content(win).locator(".aos-rt-actions button", { hasText: "+ note" }).click();
   const check = async (folder: string, name: string, why: string) => {
-    await inputs(win).nth(0).fill(folder);
     await inputs(win).nth(1).fill(name);
+    await inputs(win).nth(0).fill(folder);
     await expect(note(win)).toHaveText(why);
     await expect(button(win, "create")).toBeDisabled();
   };

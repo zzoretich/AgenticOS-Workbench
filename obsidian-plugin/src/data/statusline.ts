@@ -1,7 +1,8 @@
 // The Obsidian side of the AgenticOS status line (spec 2026-09-28-statusline-design §4.4). The runtime writes
 // brain/_index/statusline.json (schema 1, brain/scripts/lib/statusline-model.js); the status bar only reads it and asks
 // the runtime to refresh a stale one (D3). The same file feeds Claude Code's status line and the Codex session line, so
-// the three surfaces never disagree. Links into the Workbench arrive as obsidian://agenticos?tab=<rail id> (D10).
+// the three surfaces never disagree. Links into the Workbench arrive as agenticos://workbench?tab=<rail id> from the
+// AgenticOS Workbench app, or as obsidian://agenticos?tab=<rail id> from a status line written before it (D10).
 import type { App } from "obsidian";
 
 export const STATUSLINE_PATH = "brain/_index/statusline.json";
@@ -95,8 +96,23 @@ export function barSegments(m: StatuslineModel): BarSegment[] {
   return out;
 }
 
-/** The Workbench tab an obsidian://agenticos link names, only when it is a rail tab (D10); null otherwise. */
+/**
+ * The Workbench tab a link's query names, only when it is a rail tab (D10); null otherwise. Both link forms reach the
+ * plugin's "agenticos" handler with the same params: the app routes agenticos://workbench?tab=<id> to it, and Obsidian
+ * routes obsidian://agenticos?tab=<id>.
+ */
 export function workbenchTabFrom(params: Record<string, string | undefined>, ids: readonly string[]): string | null {
   const t = params.tab;
   return typeof t === "string" && ids.includes(t) ? t : null;
+}
+
+/** The rail tab a whole link names: agenticos://workbench?tab=<id>, or the older obsidian://agenticos?tab=<id>. Any
+ *  other URL, and a tab that is not a rail id, is null. */
+export function workbenchTabFromUrl(raw: string, ids: readonly string[]): string | null {
+  let url: URL;
+  try { url = new URL(raw); } catch { return null; }
+  // Both schemes are non-special, so the word after // is the URL's host.
+  const target = url.hostname.toLowerCase();
+  const ours = (url.protocol === "agenticos:" && target === "workbench") || (url.protocol === "obsidian:" && target === "agenticos");
+  return ours ? workbenchTabFrom({ tab: url.searchParams.get("tab") ?? undefined }, ids) : null;
 }

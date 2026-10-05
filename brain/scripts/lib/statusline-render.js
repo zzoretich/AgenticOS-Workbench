@@ -13,6 +13,7 @@
  * `summaryLine` the plain one-liner the Codex session-start notice prints (D7).
  */
 const path = require('path');
+const { links } = require('./hud-host.js');
 
 const REPO_SLUG = 'zzoretich/AgenticOS-Workbench'; // mirrors cli/update-check.js (brain/scripts must not require cli/)
 const AUTO_COMPACT_BUFFER_PCT = 16.5;
@@ -84,12 +85,13 @@ function contextUsed(cw, env = {}) {
   return Math.max(0, Math.min(100, Math.round(100 - usable)));
 }
 
-/** Link targets (D10): Workbench tabs by rail id, a vault file, the release page, an https PR. */
-function targets(model) {
-  const v = encodeURIComponent((model && model.vault) || '');
+/** Link targets (D10): Workbench tabs by rail id and a vault file (agenticos://, lib/hud-host.js), the release page, an
+ *  https PR. The app registers agenticos:// for itself, so a link names no vault. */
+function targets() {
+  const l = links();
   return {
-    tab: (id) => `obsidian://agenticos?vault=${v}&tab=${encodeURIComponent(id)}`,
-    file: (rel) => `obsidian://open?vault=${v}&file=${encodeURIComponent(rel)}`,
+    tab: l.tab,
+    file: l.file,
     release: (ver) => (/^\d+\.\d+\.\d+[\w.-]*$/.test(ver) ? `https://github.com/${REPO_SLUG}/releases/tag/v${ver}` : null),
   };
 }
@@ -265,7 +267,7 @@ const safe = (fn) => { try { return fn() || ''; } catch { return ''; } };
  */
 function render({ payload = {}, model = null, work = null, git = null, columns = 0, links = true, segments = DEFAULT_SEGMENTS, env = {}, now = Date.now() } = {}) {
   const p = payload || {};
-  const t = targets(model);
+  const t = targets();
   const on = new Set(segments || DEFAULT_SEGMENTS);
   const lines = [
     fit([{ text: safe(() => modelSeg(p)) || 'Claude', drop: 0 }, { text: safe(() => workSeg(work)), drop: 2 }, { text: safe(() => dirSeg(p, git)), drop: 1 }, { text: safe(() => prSeg(p, links)), drop: 3 }], columns),

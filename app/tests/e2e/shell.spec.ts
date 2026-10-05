@@ -1,11 +1,12 @@
-// The Workbench shell: boot, the rail, badges, keyboard, commands, the status bar, obsidian://agenticos links, and the
-// read-only guard over a full tour (plugin-smoke: Install paths, Settings rail rows, Status line, Review readiness).
+// The Workbench shell: boot, the app's record in the vault, the rail, badges, keyboard, commands, the status bar,
+// agenticos:// links, and the read-only guard over a full tour (plugin-smoke: Install paths, Settings rail rows, Status
+// line, Review readiness).
 
 import { expect, test } from "@playwright/test";
 import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { BACKGROUND_SPAWNS, FX, RAIL_ORDER, badge, command, content, expected, expectNoErrors, noteBody, notePath, openTab, rail, useApp } from "./harness";
+import { BACKGROUND_SPAWNS, FX, RAIL_ORDER, REPO, badge, command, content, expected, expectNoErrors, noteBody, notePath, openTab, rail, readVaultJson, useApp } from "./harness";
 
 const app = useApp();
 
@@ -26,6 +27,18 @@ test("boots the Workbench on Pulse against the fixture vault, read-only", async 
   expect(plugin).toEqual({ id: "agentic-os", version: "0.21.0", loaded: true, settings: true });
   await expect(rail(win, "pulse")).toHaveClass(/is-active/);
   await expect(win.locator(".aos-host-tab.is-active .aos-host-tab-title")).toHaveText("Workbench");
+});
+
+test("the app records itself in the vault for doctor and the update check (brain/_index/hud-host.json, D11)", async () => {
+  const h = app();
+  const running = await h.app.evaluate(({ app: a }) => ({ name: a.getName(), version: a.getVersion() }));
+  const pkg = JSON.parse(fs.readFileSync(path.join(REPO, "package.json"), "utf8")) as { productName: string; version: string };
+  expect(running).toEqual({ name: pkg.productName, version: pkg.version });
+  const marker = readVaultJson<{ schema: number; host: string; name: string; version: string; at: string }>("brain/_index/hud-host.json");
+  expect(marker).toEqual({ schema: 1, host: "app", name: running.name, version: running.version, at: marker.at });
+  expect(Date.now() - Date.parse(marker.at)).toBeLessThan(10 * 60_000);
+  // Written by main, atomically: no temp file is left beside it.
+  expect(fs.readdirSync(FX.v("brain/_index")).filter((n) => n.startsWith("hud-host.json."))).toEqual([]);
 });
 
 test("rail: the tabs in order, no Chat without a provider, ⚙ Settings at the foot", async () => {

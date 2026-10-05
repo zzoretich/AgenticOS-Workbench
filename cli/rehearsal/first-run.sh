@@ -13,10 +13,9 @@ BEFORE=$(ls -A "$CLAUDE_CONFIG_DIR" | sort)
 export AOS_CLAUDE_BIN="$ROOT/cli/fixtures/fake-claude.sh" FAKE_CLAUDE_LOG="$TMP/claude.log"
 # This is the Claude-only rehearsal: a codex CLI on the runner must not turn it into a two-host install.
 export AOS_NO_CODEX=1
-# mandatory-prereqs D6: the install gate needs Obsidian and Ollama present. A temp app dir and the fixture prove
-# the positive path on a bare runner; python3 is real on both CI images.
-mkdir -p "$TMP/Obsidian.app"
-export AOS_OBSIDIAN_APP="$TMP/Obsidian.app" AOS_OLLAMA_BIN="$ROOT/cli/fixtures/fake-ollama.sh"
+# mandatory-prereqs D6: the install gate needs Ollama present. The fixture proves the positive path on a bare runner;
+# python3 is real on both CI images. Obsidian is no prerequisite (workbench-app D1): nothing here provides it.
+export AOS_OLLAMA_BIN="$ROOT/cli/fixtures/fake-ollama.sh"
 # graphify spec D1/§5: uv is a prerequisite as well. The fake installs a fake graphify under the temp HOME, with no network.
 export AOS_UV_BIN="$ROOT/cli/fixtures/fake-uv.sh"
 unset XDG_DATA_HOME || true
@@ -26,17 +25,21 @@ unset AOS_VAULT BRAIN_VAULT AOS_CONFIG CLAUDE_PROJECT_DIR || true
 VAULT="$TMP/aos"
 
 echo "== init"
-node "$ROOT/cli/aos.js" init --vault "$VAULT" --no-obsidian --provider none --persona-json "$ROOT/cli/fixtures/persona.json" --yes
+node "$ROOT/cli/aos.js" init --vault "$VAULT" --provider none --persona-json "$ROOT/cli/fixtures/persona.json" --yes
 
 echo "== seed set"
 for f in MEMORY.md AGENTICOS.md TODO.md .gitignore brain/config.json brain/_index/SESSION.md brain/_index/BRAIN.md \
     brain/_index/MOC-reference.md brain/_index/MOC-projects.md brain/_index/MOC-patterns.md brain/_index/scanner-config.json \
     brain/memory/user/profile.md brain/patterns/README.md templates/daily-note.md templates/meeting-note.md \
-    templates/decision-record.md templates/project-note.md .obsidian/daily-notes.json \
+    templates/decision-record.md templates/project-note.md \
     brain/routines/monitor.md brain/routines/reflect.md brain/routines/sitrep.md \
     brain/scripts/package.json brain/scripts/bin/aos brain/scripts/cli/aos.js brain/scripts/routines/run-routine.js \
     brain/scripts/node_modules/@modelcontextprotocol/sdk/package.json .graphifyignore brain/graphify-out/graph.json; do
   [ -e "$VAULT/$f" ] || { echo "missing $f"; exit 1; }
+done
+# The Workbench is the app: init installs no HUD into the vault and writes no Obsidian setting.
+for f in .obsidian/plugins .obsidian/daily-notes.json; do
+  [ ! -e "$VAULT/$f" ] || { echo "unexpected $f"; exit 1; }
 done
 [ -f "$CLAUDE_CONFIG_DIR/agenticos.json" ]
 grep -q '"provider": "none"' "$CLAUDE_CONFIG_DIR/agenticos.json"

@@ -131,8 +131,9 @@ export default class AgenticOSPlugin extends Plugin {
       if (file.path === SNAPSHOT_PATH || file.path === STATUSLINE_PATH || touchesRuns(file.path)) this.refreshStatusBar();
     }));
 
-    // Terminal status lines link here (statusline spec D10): obsidian://agenticos?vault=<name>&tab=<rail id>. Only a rail
-    // tab id opens a tab; anything else just opens the Workbench.
+    // Terminal status lines link here (statusline spec D10): agenticos://workbench?tab=<rail id>, which the app routes to
+    // this handler, or obsidian://agenticos?vault=<name>&tab=<rail id> from before the app. Only a rail tab id opens a
+    // tab; anything else just opens the Workbench.
     this.registerObsidianProtocolHandler("agenticos", (params) => {
       const tab = workbenchTabFrom(params, WORKBENCH_TAB_IDS);
       void (tab ? this.openWorkbenchTab(tab) : this.activate(VIEW_TYPE_WORKBENCH));

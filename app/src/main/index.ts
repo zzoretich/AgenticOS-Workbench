@@ -1,6 +1,7 @@
 // Main process: the Workbench window, the menubar item, the app menu, agenticos:// links and the vault watcher. The app
 // attaches to the vault an existing AgenticOS install uses (agenticos.json). Main writes nothing outside its own
-// userData; the HUD's writes to the vault are the renderer's, within the write surfaces (write-policy.ts).
+// userData but one file, the app's record in the vault's runtime cache (hud-host.ts); the HUD's writes to the vault are
+// the renderer's, within the write surfaces (write-policy.ts).
 
 import { app, BrowserWindow, ipcMain, Menu, screen, shell, type IpcMainEvent, type Rectangle } from "electron";
 import * as fs from "node:fs";
@@ -8,6 +9,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { APP_ORIGIN, CH, POPOVER, type BootInfo, type CommandInfo, type ProtocolRequest } from "../shared/ipc";
 import { registerAppScheme, serveAppScheme } from "./app-scheme";
+import { writeHudHostMarker } from "./hud-host";
 import { buildAppMenu } from "./menu";
 import { SCHEME, parseAgenticosUrl, urlFromArgv } from "./protocol";
 import { STATUSLINE_PATH, StatusTray } from "./tray";
@@ -217,6 +219,10 @@ if (!app.requestSingleInstanceLock()) {
     createWindow();
     if (vault.root) {
       const root = vault.root;
+      // D11: tell the runtime which app this vault is used with (doctor's `workbench app` row, the update check). A
+      // vault the app cannot write to still opens: the record is informational.
+      try { writeHudHostMarker(root, { name: app.getName(), version: app.getVersion() }); }
+      catch (err) { console.warn(`[main] could not record the app in ${root}: ${err instanceof Error ? err.message : String(err)}`); }
       tray = new StatusTray(root, {
         openTab: (tab) => runCommand(tab === "pulse" ? "agentic-os:open-workbench" : `agentic-os:open-workbench-${tab}`),
         openFile: (rel) => openLink(`${SCHEME}://note?file=${encodeURIComponent(rel)}`),

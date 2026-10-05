@@ -71,15 +71,17 @@ test('render: a narrow terminal drops the lowest-priority segments instead of wr
 test('render: OSC 8 links only to allow-listed targets', () => {
   const lines = R.render({ payload: PAYLOAD, model: MODEL, now: NOW, links: true });
   const all = lines.join('\n');
-  assert.ok(all.includes('\x1b]8;;obsidian://agenticos?vault=AgenticOS&tab=agent-teams\x07◆ 2 gates\x1b]8;;\x07'));
-  assert.ok(all.includes('obsidian://agenticos?vault=AgenticOS&tab=notifications'));
-  assert.ok(all.includes('obsidian://open?vault=AgenticOS&file=persona%2FSTATE.md'));
+  // The app registers agenticos:// (lib/hud-host.js): a link names a tab or a vault file, never a vault.
+  assert.ok(all.includes('\x1b]8;;agenticos://workbench?tab=agent-teams\x07◆ 2 gates\x1b]8;;\x07'));
+  assert.ok(all.includes('agenticos://workbench?tab=notifications'));
+  assert.ok(all.includes('agenticos://note?file=persona%2FSTATE.md'));
+  assert.ok(!all.includes('obsidian://'), 'no Obsidian link is left');
   assert.ok(all.includes(`https://github.com/${R.REPO_SLUG}/releases/tag/v0.21.0`));
   assert.ok(all.includes('\x1b]8;;https://github.com/o/r/pull/63\x07'));
   const unsafe = R.render({ payload: { ...PAYLOAD, pr: { number: 1, url: 'javascript:alert(1)' } }, links: true }).join('');
   assert.ok(!unsafe.includes('javascript:'), 'a non-https PR url is not linked');
   assert.ok(!R.render({ payload: PAYLOAD, model: MODEL, now: NOW, links: false }).join('').includes('\x1b]8;;'));
-  assert.equal(R.targets({ vault: 'A' }).release('0.21.0;rm'), null);
+  assert.equal(R.targets().release('0.21.0;rm'), null);
 });
 
 test('contextUsed: scaled to the usable window, honoring CLAUDE_CODE_AUTO_COMPACT_WINDOW', () => {
@@ -122,7 +124,7 @@ test('subagentRows: one JSON line per task with an id, short model, context shar
 });
 
 test('width: escapes are free, wide glyphs count two', () => {
-  assert.equal(R.width('\x1b[1;35m\x1b]8;;obsidian://x\x07ab\x1b]8;;\x07\x1b[0m'), 2);
+  assert.equal(R.width('\x1b[1;35m\x1b]8;;agenticos://x\x07ab\x1b]8;;\x07\x1b[0m'), 2);
   assert.equal(R.width('日本'), 4);
   assert.equal(R.width('◆ ▶ ⎇ │'), 7);
   assert.equal(R.shortModel('claude-sonnet-5'), 'Sonnet 5');
@@ -139,7 +141,7 @@ test('SL-01: no dynamic value can put a control byte on the terminal; a PR link 
     work: { kind: 'task', text: hostile }, git: { branch: hostile }, now: NOW, links: true,
   });
   for (const l of lines) {
-    const withoutOurs = l.replace(/\x1b\[[0-9;]*m/g, '').replace(/\x1b\]8;;(?:https:\/\/github\.com\/o\/r\/pull\/7[^\x07\x1b]*|obsidian:\/\/[^\x07\x1b]*|https:\/\/github\.com\/[^\x07\x1b]*releases[^\x07\x1b]*|)\x07/g, '');
+    const withoutOurs = l.replace(/\x1b\[[0-9;]*m/g, '').replace(/\x1b\]8;;(?:https:\/\/github\.com\/o\/r\/pull\/7[^\x07\x1b]*|agenticos:\/\/[^\x07\x1b]*|https:\/\/github\.com\/[^\x07\x1b]*releases[^\x07\x1b]*|)\x07/g, '');
     assert.ok(!/[\x00-\x1f\x7f-\x9f]/.test(withoutOurs), JSON.stringify(l));
   }
   assert.ok(!lines.join('').includes('evil.example\x07'), 'no injected link target');
@@ -158,7 +160,7 @@ test('SL-07: malformed model data drops its own segment, never the whole line', 
 });
 
 test('SL-10: clipping keeps escapes whole and closes an open link', () => {
-  const s = `\x1b[1;35m\x1b]8;;obsidian://x\x07◆ 2 gates waiting\x1b]8;;\x07\x1b[0m`;
+  const s = `\x1b[1;35m\x1b]8;;agenticos://x\x07◆ 2 gates waiting\x1b]8;;\x07\x1b[0m`;
   const c = R.clipStyled(s, 6);
   assert.equal(R.plain(c), '◆ 2 g…');
   assert.ok(c.endsWith('\x1b]8;;\x07\x1b[0m'), 'the link is closed and the style reset');

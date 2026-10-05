@@ -4,11 +4,24 @@ All notable changes to AgenticOS Workbench. Versions follow the tags. From the n
 
 ## [Unreleased]
 
+### Upgrading
+- Run `aos upgrade`, then `aos routines sync`: the upgrade records Homebrew's stable Node path in `agenticos.json`, and the sync re-renders your routine schedules with it.
+- Open the AgenticOS Workbench app once, so `aos doctor` and the update check can see it. Once you use the app, you can remove the Obsidian-era plugin folder `.obsidian/plugins/agentic-os/` from your vault; `aos upgrade` says so once while it is there and never deletes it.
+
 ### Added
-- **The Workbench as a macOS app** (`app/`, in development for 1.0). The same HUD runs in its own Electron window instead of inside Obsidian, with a note editor, a menubar popover and the full test suite in CI. It is not released yet; Obsidian stays the way to run the HUD until 1.0 ships the app.
+- **The Workbench as a macOS app** (`app/`, in development for 1.0). The same HUD runs in its own Electron window instead of inside Obsidian, with a note editor, a menubar popover and the full test suite in CI. It is not released yet: until 1.0 ships it as a download, build it from app/ (app/README.md).
 - **A Files tab** in the Workbench: the vault as a tree, search across notes (or every text file), Open file… and Search vault…, and a new note, rename, move and delete to the Trash. In the app it is where you work with notes; in Obsidian it sits beside Obsidian's own file explorer.
 
+### Changed
+- Links into the Workbench are `agenticos://` links, which the AgenticOS Workbench app registers: `agenticos://workbench?tab=<tab>` from the status line, and `agenticos://note?file=<vault path>` for a note (the status line's flags link, and "Open in AgenticOS" on a proposal's page, which replaces "Open in Obsidian"). The Workbench still accepts the old `obsidian://agenticos?tab=<tab>` links.
+- `aos doctor` shows the Workbench app and its version (`workbench app`, from `brain/_index/hud-host.json`, which the app writes each time it starts) in place of the `obsidian app` and `obsidian plugin` rows, and warns until the app has run once.
+- Update notices count the app: the Workbench's version is the app's, read from that same file, no longer the Obsidian plugin's `manifest.json` in the vault.
+
+### Removed
+- Obsidian is no longer required or installed. `aos init` no longer checks for it, no longer installs the HUD into `.obsidian/plugins/agentic-os/` and no longer writes `.obsidian/daily-notes.json`; `aos upgrade` no longer replaces the HUD there; `aos config set dailyNote.layout` no longer rewrites Obsidian's Daily Notes setting. `--no-obsidian`, `--terminal` and `aos terminal install` are still accepted and do nothing (the app brings its own terminal).
+
 ### Fixed
+- A Homebrew Node no longer breaks AgenticOS after `brew upgrade`. `aos init` and `aos upgrade` record Homebrew's stable link (`<prefix>/opt/<formula>/bin/node`) instead of the versioned `Cellar/` path, which `brew upgrade` deletes, and the schedules use it too. `aos doctor` warns about a `Cellar/` path still recorded.
 - A Workbench drawer's ✕ no longer sits under the scrollbar macOS shows after the drawer scrolls, where a click hit the scrollbar instead.
 - On a machine without Codex, the Routines tab no longer asks the runtime for Codex's automations every minute while it is open (each ask raised a notice). It asks only where Codex is a session host.
 - The nightly and weekly reflect duties can promote a repeated correction into a feedback memory again. Since the duty write scope (0.14.0) they were refused `brain/memory/feedback/` and `MEMORY.md`, journaled the block and raised a flag in `persona/STATE.md` on every run that tried. Both duties now get those two paths, and nothing else in `brain/memory/`. Codex cannot grant a single file at the vault root, so after a clean reflect run the runner adds the `MEMORY.md` line of each new feedback memory the duty did not index, on both hosts.

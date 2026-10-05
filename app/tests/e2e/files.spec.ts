@@ -122,8 +122,9 @@ test("with the Files surface off, a new note is refused and a trash refused: not
   const d = drawer(win);
   await expect(d.locator(".aos-wb-drawertitle")).toHaveText("⌜ NEW NOTE ⌝");
   const [folder, name] = [d.locator(".aos-rt-input").nth(0), d.locator(".aos-rt-input").nth(1)];
-  await folder.fill("inbox");
+  // The name first: the folder field has a suggestion list, and leaving it with the list open can commit a suggestion.
   await name.fill("first idea");
+  await folder.fill("inbox");
   await expect(d.locator(".aos-rt-errors")).toHaveText("→ inbox/first idea.md");
   await d.locator(".aos-capture-actions button", { hasText: "create" }).click();
   await expect(d.locator(".aos-rt-errors")).toHaveText(/^Not done: /);

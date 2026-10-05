@@ -80,7 +80,9 @@ test('renderPage: title, header facts, escaped body, premise pills, a no-script 
   assert.doesNotMatch(html, /<script/);
   assert.match(html, /1 verified · 1 assumed/);
   assert.match(html, /<span class="pill ok">VERIFIED<\/span>/);
-  assert.match(html, /<a href="obsidian:\/\/open\?path=%2Fv%2Fpersona%2Fproposals%2F2026-09-18-trim-playbook\.md">Open in Obsidian<\/a>/);
+  // The app's note link, by vault-relative path (lib/hud-host.js), whatever the absolute path of the file.
+  assert.match(html, /<a href="agenticos:\/\/note\?file=persona%2Fproposals%2F2026-09-18-trim-playbook\.md">Open in AgenticOS<\/a>/);
+  assert.doesNotMatch(html, /obsidian:/);
   const plain = P.renderPage({ name: '2026-09-20-fix-monitor.md', text: UNTITLED, file: '/v/p.md', now: NOW });
   assert.match(plain, /<title>Fix monitor<\/title>/);
   assert.match(plain, /Approve \(applied exactly as written\) or reject/);

@@ -3,14 +3,14 @@
 </p>
 
 <p align="center">
-  <strong>A second brain for Claude Code and Codex CLI, and an Obsidian HUD that renders it.</strong><br />
+  <strong>A second brain for Claude Code and Codex CLI, and a macOS app that renders it.</strong><br />
   Persistent memory · recall · session capture · a named Chief of Staff · a live monitor of it all.
 </p>
 
 <p align="center">
   <a href="https://github.com/zzoretich/AgenticOS-Workbench/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/zzoretich/AgenticOS-Workbench/ci.yml?branch=main&amp;style=flat-square&amp;labelColor=0d1117&amp;label=ci" alt="CI status" /></a>
   <img src="https://img.shields.io/badge/node-%E2%89%A5%2020-3fb950?style=flat-square&amp;labelColor=0d1117" alt="Node 20 or newer" />
-  <img src="https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Linux-58a6ff?style=flat-square&amp;labelColor=0d1117" alt="macOS and Linux" />
+  <img src="https://img.shields.io/badge/platform-macOS-58a6ff?style=flat-square&amp;labelColor=0d1117" alt="macOS" />
   <img src="https://img.shields.io/badge/hosts-Claude%20Code%20%C2%B7%20Codex%20CLI%20%C2%B7%20Ollama-bc8cff?style=flat-square&amp;labelColor=0d1117" alt="Works with Claude Code or Codex CLI, with a local Ollama" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-e6edf3?style=flat-square&amp;labelColor=0d1117" alt="MIT" /></a>
 </p>
@@ -29,7 +29,7 @@
 
 <p align="center"><img src="docs/assets/divider.svg" width="960" alt="" /></p>
 
-Claude Code and Codex CLI forget everything between sessions. AgenticOS Workbench gives them a vault they can read from on every prompt and write back to at the end of every session, then puts an Obsidian dashboard on top so you can see what they remember, what ran, and what it cost.
+Claude Code and Codex CLI forget everything between sessions. AgenticOS Workbench gives them a vault they can read from on every prompt and write back to at the end of every session, then puts a dashboard on top, the AgenticOS Workbench app, so you can see what they remember, what ran, and what it cost.
 
 It works with **Claude Code alone**, with **Codex CLI alone**, or with both sharing one vault. While your local **Ollama** is running, background work goes to it automatically. Nothing about you ships in this repository, and background work only ever goes through your local Ollama or your own Claude Code or Codex login, never a third-party service.
 
@@ -46,7 +46,7 @@ It works with **Claude Code alone**, with **Codex CLI alone**, or with both shar
 | <img src="docs/assets/icon-session.svg" width="48" alt="" /> | **Routines.** Recurring actions as files — `brain/routines/<slug>.md` with a cron schedule and a kind (a persona duty, a headless prompt for Claude Code or Codex, or a command). One `aos routines sync` renders the launchd or cron schedules; the HUD tab shows next fire, last run and health, and edits the same files. The same tab lists, read-only, the routines your session hosts own: Codex app Automations and Claude Code cloud routines. |
 | <img src="docs/assets/icon-session.svg" width="48" alt="" /> | **Universal skills.** A skill you write for Claude Code (`~/.claude/skills`) works in Codex, and one you write for Codex (`~/.agents/skills`) works in Claude Code. With both hosts enabled, every session end copies each host's own skills into the other host's folder, translated to its idioms (`$ARGUMENTS`, questions, `/name` ⇄ `$name`) and marked so a hand edit is never overwritten. `aos skills` and the Skills tab list them all, plugin skills and built-ins included. |
 | <img src="docs/assets/icon-staff.svg" width="48" alt="" /> | **Universal agents.** A subagent you write for Claude Code (`~/.claude/agents/<name>.md`) works in Codex, and one you write for Codex (`~/.codex/agents/<name>.toml`) works in Claude Code. With both hosts enabled, every session end copies each host's own agents into the other host's folder, translated between Markdown and TOML: the name, description and prompt carry over, an agent whose tools cannot write runs read-only on the other host, and each host keeps its own model. A copy is marked so a hand edit is never overwritten, and a name that would replace a host's built-in agent is never copied. `aos agents` and the Agents tab list them all, plugin agents and Codex `config.toml` roles included. |
-| <img src="docs/assets/icon-hud.svg" width="48" alt="" /> | **The Agentic OS HUD.** An Obsidian plugin with thirteen tabs — Pulse (pipeline LEDs, live agent runs, the fix queue), To-Do (your `TODO.md` in Obsidian Tasks syntax, grouped by due date and priority), Proposals (the Chief of Staff's pending proposals, backlog and decision history, with a count badge), Notifications (what agents, routines and duties post, with an unread badge), Spaces, Memory (list or force graph), Runs, Routines, Skills (every Claude Code and Codex skill, runnable on either host), Agents (every Claude Code and Codex agent, startable on either host), Agent Teams (the gates waiting on you across your teams, then each team's work board, roster, channel and seat settings, with a badge counting the gates), an optional Chat and an optional embedded terminal — plus ⚙ Settings pinned to the rail's foot, and a sidebar carrying the update and heartbeat pills. |
+| <img src="docs/assets/icon-hud.svg" width="48" alt="" /> | **The AgenticOS Workbench app.** A macOS app with a Files view (the vault tree, quick open, search and a Markdown editor) and thirteen more tabs — Pulse (pipeline LEDs, live agent runs, the fix queue), To-Do (your `TODO.md` in Tasks syntax, grouped by due date and priority), Proposals (the Chief of Staff's pending proposals, backlog and decision history, with a count badge), Notifications (what agents, routines and duties post, with an unread badge), Spaces, Memory (list or force graph), Runs, Routines, Skills (every Claude Code and Codex skill, runnable on either host), Agents (every Claude Code and Codex agent, startable on either host), Agent Teams (the gates waiting on you across your teams, then each team's work board, roster, channel and seat settings, with a badge counting the gates), an optional Chat and an embedded terminal — plus ⚙ Settings pinned to the rail's foot, a sidebar carrying the update and heartbeat pills, and a menubar item. |
 | <img src="docs/assets/icon-commands.svg" width="48" alt="" /> | **One settings panel.** ⚙ Settings, at the bottom-left of the Workbench rail, shows every setting of the whole system in one place: master switches (background AI, the Chief of Staff, routines, the graph, cross-review, costing, telemetry, update checks, sharing), then each section — provider and models, spend limits with today's spend against each cap, memory and scanning, the Chief of Staff, routines, the graph, cross-review, telemetry, updates — and the plugin's own settings. Nothing is typed: every setting is a toggle, a preset picker (numbers also step with − / +), chips or a button, and a value set outside the presets stays shown. Every change goes through `aos config`, so it lands in the file that actually wins, atomically; raising a cap or widening an agent's autonomy asks first, and steps a change leaves (a schedule sync) become one-click buttons. Rows for a host you have not enabled are dimmed with the command that turns it on. |
 | <img src="docs/assets/icon-cost.svg" width="48" alt="" /> | **Cost, opt-in.** A python analyzer that costs every session from its transcript, with a monthly budget in the HUD. Off unless you turn it on. |
 
@@ -60,23 +60,24 @@ npm ci --ignore-scripts
 npm run setup                          # interactive installer (= node cli/aos.js init)
 ```
 
-Then add the one line the installer prints to `~/.claude/CLAUDE.md` (Claude Code) or trust the hook entries once under `/hooks` (Codex), open the new vault in Obsidian, and start a `claude` or `codex` session. The whole path takes under ten minutes; the details are in [Installation](#installation).
+Then add the one line the installer prints to `~/.claude/CLAUDE.md` (Claude Code) or trust the hook entries once under `/hooks` (Codex), open the AgenticOS Workbench app, and start a `claude` or `codex` session. The whole path takes under ten minutes; the details are in [Installation](#installation).
 
 <a name="prerequisites"></a>
 ## <img src="docs/assets/icon-prereq.svg" width="36" align="top" alt="" /> Prerequisites
 
 | | Required? | What the installer checks |
 |---|---|---|
-| **macOS or Linux** | required | Windows is not supported in v1: the launcher is POSIX `sh`, scheduling uses launchd on macOS and cron on Linux. |
+| **macOS** | required | AgenticOS supports macOS only: the Workbench is a macOS app, and schedules run through launchd. The runtime's Linux code paths (cron) are still there, but untested and unsupported; Windows is not supported. |
 | **Node.js 20 or newer** | required | `node -v` prints `v20` or later. CI runs on 20 and 22. |
 | **git** | required | On macOS it arrives with the Command Line Tools; accept the install dialog if one appears. |
 | **Claude Code and/or Codex CLI, logged in** | one required | `claude auth status` reports a login, or `codex login status` does (or both). `aos init` wires every host it finds; `--host claude\|codex\|both` picks. Background work runs through the same CLI, so there is nothing else to configure. |
-| **Obsidian** | required | The app is installed: `/Applications/Obsidian.app` (or `~/Applications`) on macOS, `obsidian` on PATH, the Flatpak, or `/usr/bin/obsidian` on Linux. Renders the HUD. `--no-obsidian` only skips building the HUD bundle. |
 | **Ollama** | required | `ollama` on PATH, or `Ollama.app` on macOS. Background summaries and embeddings run locally through it on `127.0.0.1:11434`; whether it is *answering* is reported, not required. |
 | **python3 3.9 or newer** | required | `python3 --version` prints 3.9 or later. Standard library only; the cost module runs on it. |
 | **uv** | required | `uv` on PATH, or in `~/.local/bin` or `~/.cargo/bin` ([install](https://docs.astral.sh/uv/)). It installs the pinned graphify with a Python of its own, so graphify never needs a newer system python. |
 
 The installer refuses to use `~/.claude` as the vault, and refuses any directory that already holds a `settings.json`. The default vault is `~/AgenticOS`.
+
+Obsidian is not needed: the Workbench is the **AgenticOS Workbench** app, which reads the vault the installer records. The vault stays plain Markdown, so you can still open it in any editor you like. The app's download arrives with 1.0; until then, build it from `app/` in this checkout ([app/README.md](app/README.md)).
 
 <p align="center"><img src="docs/assets/divider.svg" width="960" alt="" /></p>
 
@@ -91,7 +92,7 @@ cd AgenticOS-Workbench
 npm ci --ignore-scripts
 ```
 
-`--ignore-scripts` is enough for the installer, the HUD build and the test suites. The embedded terminal's native module is built only when you ask for it (`--terminal`, or `aos terminal install` later).
+`--ignore-scripts` is enough for the installer and the test suites. The app has its own dependencies under `app/` ([app/README.md](app/README.md)).
 
 ### 2. Run the installer
 
@@ -99,20 +100,19 @@ npm ci --ignore-scripts
 npm run setup
 ```
 
-`aos init` asks for a vault directory (default `~/AgenticOS`), then walks through ten steps and prints a checklist at the end:
+`aos init` asks for a vault directory (default `~/AgenticOS`), then walks through nine steps and prints a checklist at the end:
 
-1. **Preflight** — Node ≥ 20, at least one host CLI (`claude`, `codex`) on PATH and logged in, Obsidian installed, Ollama installed, python3 ≥ 3.9, uv. Any of these missing stops the install before anything is written. Whether Ollama is answering on `127.0.0.1:11434` is printed, not required.
-2. **Seed the vault** — the template files, a `brain/config.json` with the shipped defaults, and Obsidian's daily-notes settings. Existing files are kept.
+1. **Preflight** — Node ≥ 20, at least one host CLI (`claude`, `codex`) on PATH and logged in, Ollama installed, python3 ≥ 3.9, uv. Any of these missing stops the install before anything is written. Whether Ollama is answering on `127.0.0.1:11434` is printed, not required.
+2. **Seed the vault** — the template files and a `brain/config.json` with the shipped defaults. Existing files are kept.
 3. **Vendor the runtime** — the scripts, the `aos` subcommands, the persona templates and the schedule and cost sources into `<vault>/brain/scripts`, plus a symlink at `~/.local/bin/aos`.
-4. **Write `~/.claude/agenticos.json`** — the vault path, the node, `claude` and `codex` binaries it resolved, the enabled hosts, the provider (`auto`), spend caps, telemetry and feature flags. Honours `CLAUDE_CONFIG_DIR`.
+4. **Write `~/.claude/agenticos.json`** — the vault path, the node (for a Homebrew Node, its stable `opt/` link, which survives `brew upgrade`), `claude` and `codex` binaries it resolved, the enabled hosts, the provider (`auto`), spend caps, telemetry and feature flags. Honours `CLAUDE_CONFIG_DIR`.
 5. **Install graphify** — the pinned version through uv into `~/.local/share/agenticos/graphify` (never your own uv tools or PATH), recorded as `graph.bin`, plus a `.graphifyignore` in the vault.
 6. **Wire the hosts** — Claude Code: the plugin (hooks, the MCP server, slash commands and skills) from this repository's marketplace. Codex CLI: the Codex plugin from the same marketplace (the same hooks, the MCP server, and the 21 commands plus 9 skills as Codex skills: `$agenticos:wrap`, `$agenticos:remember`, …). A Codex CLI without plugin support gets the same pieces written into its own config instead: five hook entries in `~/.codex/hooks.json`, `codex mcp add agenticos`, and skills under `~/.agents/skills/` (`$wrap`, `$remember`, …).
-7. **Copy the Obsidian bundle** — into `<vault>/.obsidian/plugins/agentic-os/`, building it from the checkout when needed.
-8. **The Chief of Staff interview** — name your agent (say, *Atlas*), how it addresses you, its voice, what it should watch, the model and effort for background duties, and whether to schedule the daily duties.
-9. **First scan** — compiles `BRAIN.md`, builds the recall index and the vault graph.
-10. **Checklist** — every file written, the line to add to your `CLAUDE.md` or the `/hooks` entries to trust in Codex, and how to open the vault.
+7. **The Chief of Staff interview** — name your agent (say, *Atlas*), how it addresses you, its voice, what it should watch, the model and effort for background duties, and whether to schedule the daily duties.
+8. **First scan** — compiles `BRAIN.md`, builds the recall index and the vault graph.
+9. **Checklist** — every file written, the line to add to your `CLAUDE.md` or the `/hooks` entries to trust in Codex, and how to open the Workbench.
 
-Useful flags: `--vault <dir>` · `--host auto|claude|codex|both` · `--provider auto|ollama|claude|codex|none` · `--no-obsidian` (skip building the HUD bundle; Obsidian itself is still required) · `--terminal` · `--cost [--budget <usd>]` · `--persona-json <file>` (answer the interview from a file; use it wherever stdin is not a terminal) · `--yes` (accept defaults, no prompts) · `--dry-run` (print the numbered plan, write nothing). Working from a checkout? `npm run setup -- --from-local .` installs the plugin from your clone instead of GitHub. A misspelled flag is a usage error, so a typo never starts a real install.
+Useful flags: `--vault <dir>` · `--host auto|claude|codex|both` · `--provider auto|ollama|claude|codex|none` · `--cost [--budget <usd>]` · `--persona-json <file>` (answer the interview from a file; use it wherever stdin is not a terminal) · `--yes` (accept defaults, no prompts) · `--dry-run` (print the numbered plan, write nothing). Working from a checkout? `npm run setup -- --from-local .` installs the plugin from your clone instead of GitHub. A misspelled flag is a usage error, so a typo never starts a real install. `--no-obsidian` and `--terminal`, from releases that installed the Obsidian HUD, are still accepted and do nothing.
 
 ### 3. Put `aos` on your PATH and check the install
 
@@ -142,9 +142,9 @@ Codex quarantines new hooks until you have seen them once: open `codex`, run `/h
 
 A Codex CLI that predates plugins is wired directly instead (hook entries in `~/.codex/hooks.json`, `codex mcp add agenticos`, skills under `~/.agents/skills/` named `$wrap`, `$remember`, …). The first `aos upgrade` on a CLI that installs plugins moves such an install to the plugin and removes the direct wiring, so the two never run side by side; Codex then asks once more to trust the hooks under `/hooks`.
 
-### 5. Open the HUD
+### 5. Open the Workbench
 
-In Obsidian: **File → Open vault → Open folder as vault**, pick your vault, enable community plugins when asked, and turn on **Agentic OS**. The HUD opens with a Pulse row that stays gray or green; amber `stale` LEDs simply mean a stage has not run for a while.
+Open the **AgenticOS Workbench** app. It finds your vault through `~/.claude/agenticos.json` and opens on Pulse, with a row that stays gray or green; amber `stale` LEDs simply mean a stage has not run for a while. Each start records the app in the vault (`brain/_index/hud-host.json`), so `aos doctor` and the update check can see it. The app's download arrives with 1.0; until then, build and start it from `app/` in this checkout as [app/README.md](app/README.md) describes (macOS, Node 22.12 or newer).
 
 <p align="center"><img src="docs/assets/divider.svg" width="960" alt="" /></p>
 
@@ -317,13 +317,13 @@ the cron caveats — is [docs/chief-of-staff.md](docs/chief-of-staff.md).
 
 | Command | Does |
 |---|---|
-| `aos doctor` | Checks Node, Obsidian, Ollama, python3 and uv (the install prerequisites), the pinned graphify and how old the vault graph is, `agenticos.json`, the vault layout, the MCP handshake, the Obsidian bundle, whether Ollama is answering, plus one block per enabled host: the Claude login and plugin; the Codex login and plugin, how many of its hooks Codex trusts (a warning until you review them under `/hooks`) and its MCP server, or with direct wiring the hook entries, MCP registration and generated skills; and which CLI runs persona duties and prompt routines. Exit 1 on any failure. |
+| `aos doctor` | Checks Node, Ollama, python3 and uv (the install prerequisites), the pinned graphify and how old the vault graph is, `agenticos.json`, the vault layout and the recorded Node path (a warning for a versioned Homebrew Cellar path), the MCP handshake, which AgenticOS Workbench app version last opened the vault (a warning until the app has run once), whether Ollama is answering, plus one block per enabled host: the Claude login and plugin; the Codex login and plugin, how many of its hooks Codex trusts (a warning until you review them under `/hooks`) and its MCP server, or with direct wiring the hook entries, MCP registration and generated skills; and which CLI runs persona duties and prompt routines. Exit 1 on any failure. |
 | `aos status` | The resolved provider and why, today's spend against the caps, and the pipeline ledger. |
 | `aos provider auto\|ollama\|claude\|codex\|none` | Force a provider or go back to `auto`. |
 | `aos statusline install\|uninstall\|status\|preview` | The opt-in status line ([below](#the-status-line)): three lines in Claude Code, a footer preset in Codex, what needs you in both. `uninstall` puts back what you had. |
 | `aos upgrade` | Updates the plugin from its marketplace — the GitHub clone, or the checkout you installed from with `--from-local`; on a machine with Codex and no Claude Code, the Codex marketplace — re-vendors the runtime and bundle from that same source, installs or refreshes the Codex plugin when that host is enabled (moving a direct install over to it), adds new config keys (your values win). Never touches memory, notes or persona. |
 | `aos persona` · `aos persona on\|off\|rename <name>` | Re-run the interview, flip the kill switch, or rename your agent. |
-| `aos config` · `aos config get <key>` · `aos config set <key> <value> [--dry-run]` · `aos config unset <key>` | Every setting in one list: its value, the file it comes from (`agenticos.json`, `brain/config.json` or the default) and a `*` where it differs from the default. `set` checks the value, writes it atomically to the file that actually wins, and runs what the change needs (clears the provider probe, pauses or resumes the Chief of Staff's duties, updates Obsidian's Daily Notes folder), printing any step left as `next:`. `unset` goes back to the default. Install paths and hosts are read-only here; a background duty or routine can read settings but never change them. A daily cap of `0` means no spend. `aos doctor` flags unknown keys and bad values in either file. |
+| `aos config` · `aos config get <key>` · `aos config set <key> <value> [--dry-run]` · `aos config unset <key>` | Every setting in one list: its value, the file it comes from (`agenticos.json`, `brain/config.json` or the default) and a `*` where it differs from the default. `set` checks the value, writes it atomically to the file that actually wins, and runs what the change needs (clears the provider probe, pauses or resumes the Chief of Staff's duties), printing any step left as `next:`. `unset` goes back to the default. Install paths and hosts are read-only here; a background duty or routine can read settings but never change them. A daily cap of `0` means no spend. `aos doctor` flags unknown keys and bad values in either file. |
 | `aos cost enable [--budget <usd>]` · `aos cost disable` | Opt in or out of session costing. |
 | `aos graph` · `aos graph build [--semantic]\|on\|off\|semantic on\|off\|auto` | The vault graph: the pinned graphify, when it was last built, the semantic pass (last run, concepts, today's spend against its cap), counts, hubs and largest communities. `build` rebuilds it now; `build --semantic` runs the model pass now after a y/N; `off` stops scans rebuilding it; `semantic off\|on\|auto` controls the daily model pass. |
 | `aos routines list\|sync\|run <slug>\|enable <slug>\|disable <slug>\|next` · `aos routines hosts [--refresh]` · `aos routines import-cloud <file>` | The recurring actions in `brain/routines/`: list with cadence, next fire and health; render and load the OS schedules; run one now; flip one on or off. `hosts` lists, read-only, the routines each session host owns — the Codex app's Automations (read live from its local database) and the Claude Code cloud routines (a snapshot a session imports with `/routines cloud`). |
@@ -332,7 +332,6 @@ the cron caveats — is [docs/chief-of-staff.md](docs/chief-of-staff.md).
 | `aos skills [list [--all]]` · `aos skills sync [--dry-run]` · `aos skills exclude\|include\|reset <name>` | Every skill of both hosts with how to run it in each; share now instead of at session end; stop or resume sharing one skill (kept in `brain/config.json` `skills.exclude`); `reset` deletes a copy you edited by hand so the next sync writes it fresh. Sharing needs both hosts enabled; `skills.sync: false` turns it off. |
 | `aos agents [list [--all]]` · `aos agents sync [--dry-run]` · `aos agents exclude\|include\|reset <name>` | Every agent of both hosts with how to reach it in each (Claude Code `@agent-<name>`, Codex by name); share now instead of at session end; stop or resume sharing one agent (kept in `brain/config.json` `agents.exclude`); `reset` deletes a copy you edited by hand so the next sync writes it fresh. Sharing needs both hosts enabled and rides the `skills-sync` hook; `agents.sync: false` turns it off. |
 | `aos workspace list\|new <name>\|adopt <path>` | The projects in `workspaces/`: list them with each host's session counts and the folders sessions ran in elsewhere; create one with `README.md`, `CLAUDE.md` and `AGENTS.md`; move an existing project folder in. |
-| `aos terminal install` | Builds the native module for the HUD's terminal tab. |
 | `aos cross-review preflight --host claude\|codex` | Whether the other provider can review from this host: each CLI's path, version and login (no model call), the roles, today's cross-review spend against `crossReview.perDayUsd`. |
 | `aos uninstall [--keep-vault]` · `aos uninstall --host codex` | Removes the Claude Code and Codex plugins (or the direct Codex wiring: hook entries, MCP registration, generated skills), the schedules, the symlink and `agenticos.json`. The vault is deleted only if you type its path back. `--host claude\|codex` unwires one host and keeps everything else. |
 
@@ -408,7 +407,8 @@ Opus 5.5 (1M) ·high ·think │ Writing the spec │ my-project ⎇ feat/x* │
 - The third line is AgenticOS and appears only when something needs you: gates waiting on you, unread breaking
   news and alerts, open Chief of Staff flags, a live agent-team run, the spend nearest its daily cap (from half of
   it), an update, a background provider that fell to none, an unwrapped session. In a terminal with OSC 8 links,
-  each opens the Workbench tab that handles it. The Obsidian status bar shows the same.
+  each opens the Workbench tab that handles it (an `agenticos://` link the app registers). The app's status bar shows
+  the same.
 - The status line you had keeps running: install records it and runs it with the same input on every refresh, so a
   tool that writes files from its status line still works. `--chain-output` also shows its first line, and
   `aos statusline uninstall` puts it back (byte for byte when nothing else in the file changed).
@@ -434,7 +434,7 @@ flowchart LR
   RT --> V[("Your vault<br/>memory · daily notes · _index")]
   V -- "agenticos MCP server" --> CC
   V -- "agenticos MCP server" --> CX
-  V --> HUD["Obsidian · Agentic OS HUD"]
+  V --> HUD["AgenticOS Workbench app"]
   RT -. "provider: auto" .-> OL["Ollama (local)"]
   RT -. "provider: auto" .-> HC["headless Claude, capped"]
   RT -. "provider: auto" .-> HX["headless Codex, capped"]
@@ -443,7 +443,7 @@ flowchart LR
 - **Hosts.** A session runs under Claude Code, Codex CLI, or either of two on one vault. The runtime is the same; only the wiring differs: Claude Code loads `plugin/`, Codex loads `codex-plugin/`, and both come from the same marketplace. `codex-plugin/` is generated from `plugin/` (`npm run build:codex-plugin`, checked by the tests), so the hooks, the MCP server and the commands stay in lockstep across the two hosts. A Codex CLI without plugin support gets the same pieces written into its own config instead. The three modes are equivalent: **Claude Code only**, **Codex only**, or **both on one vault**. A hook learns which host fired it from one environment variable the wiring sets; where nothing sets it (the MCP server, an `aos` verb run inside a session), the runtime works it out from the session transcript's path, then from the config when only one host is enabled. One transcript reader understands both CLIs' session logs, and telemetry records the host and model of every run.
 - **Hooks.** Both hosts fire hooks for session start, every prompt, every tool use, stop and session end. Each one runs `aos <script>` inside your vault: inject context, update working memory, stream telemetry, write the heartbeat, cost the session, wrap it, rescan. Under Codex the conventions file is injected at every session start too, since `AGENTS.md` cannot include it. Codex fires session end late in its TUI (thread close, or 30 minutes idle) and, depending on the version, not at all under `codex exec` (0.144 did not, 0.155 does), so a reconcile pass on every session start and stop finishes any run idle for `telemetry.staleAfterMinutes`: it closes the telemetry, costs it and wraps it exactly as session end would have. A Claude Code terminal killed mid-session is healed the same way.
 - **Runners.** Persona duties and `prompt` routines run through `claude -p` when Claude Code is wired and installed, otherwise through `codex exec` (workspace-write sandbox, our hooks off, the spend estimated from its token counts since Codex has no budget flag; the daily caps still gate every start). `persona.runner` and `routines.runner` pin one; `aos doctor` shows the choice. The HUD's Chat tab is the one surface that still needs the `claude` CLI.
-- **The vault** is an ordinary folder that is both an Obsidian vault and the agent's second brain. Its `workspaces/` folder is the home for project working directories of both hosts: a project is anything with a `README.md`, `CLAUDE.md`, `AGENTS.md`, `STATUS.md`, `PLAN.md` or `.git`, every scan pins each host's sessions to the workspace they ran in, and the Spaces tab lists whatever ran outside. `AGENTICOS.md` documents the layout and the three-file rule: `MEMORY.md` is the index, `brain/memory/<type>/` holds the content, `brain/_index/BRAIN.md` is the compiled bootstrap injected on the first turn.
+- **The vault** is an ordinary folder of Markdown that is the agent's second brain, and what the AgenticOS Workbench app shows. Its `workspaces/` folder is the home for project working directories of both hosts: a project is anything with a `README.md`, `CLAUDE.md`, `AGENTS.md`, `STATUS.md`, `PLAN.md` or `.git`, every scan pins each host's sessions to the workspace they ran in, and the Spaces tab lists whatever ran outside. `AGENTICOS.md` documents the layout and the three-file rule: `MEMORY.md` is the index, `brain/memory/<type>/` holds the content, `brain/_index/BRAIN.md` is the compiled bootstrap injected on the first turn.
 - **Providers.** `auto` picks Ollama when it answers, otherwise headless Claude (`claude -p --model haiku`, capped per call and per day, every call ledgered), otherwise headless Codex when Codex is a wired host (`codex exec`, read-only, hooks off, spend estimated from its token counts), otherwise `none`. Under `none` nothing calls a model in the background; summaries are heuristic and `/wrap` extracts memories inside your own session through the `wrap_session` tool. Start Ollama (`ollama serve`) and `auto` switches over on its own. One role is the exception: the **reasoner** behind `/ask-brain --local`, `/reflect-week`, `/consolidate-memory` and the HUD's Chat tab is a Claude model (`reasoner.model`, default `claude-opus-5`, with its own per-call and per-day caps) whatever `auto` resolved, and falls back to the local workhorse when Claude is unavailable.
 - **The graph.** Every scan ends with a `graph-build` stage: `graphify update <vault>` writes `brain/graphify-out/graph.json`, a structural graph of pages, headings and links clustered into communities, in a second or two and with no model. It skips what `.graphifyignore` and the vault's `.gitignore` list (workspaces, the runtime, caches, templates). graphify is pinned (`aos upgrade` moves it only with a release), lives in a tool dir of its own, and never sees an API key. At most once a day a second stage, `graph-semantic`, runs `graphify extract` in the background: only new or changed notes go to Claude (`claude.model`, through a shim that gives every call the same isolation as the other headless calls — no tools, no hooks, no thinking, `--max-budget-usd`) or, where Codex is the host, to `codex exec` behind the same shim (read-only, no hooks, low effort, spend estimated), which adds concept nodes and `INFERRED` edges. It has its own daily cap, `graph.semantic.perDayUsd` ($1), separate from the hooks'; at the cap the remaining notes wait for the next run. `graph.semantic.enabled` is `auto`: on, unless the provider is set to `ollama` or `none`.
 - **The Chief of Staff** is built out of the same two pieces: its duties are routine files that the runner starts, and its watchdog is a routine that never calls a model. What it may change on its own is a file contract, not a code path — see [The Chief of Staff](#chief-of-staff).
@@ -465,7 +465,7 @@ brain/scripts      the runtime that gets vendored into your vault (hooks, collec
 cli                the installer and the aos subcommands (persona, schedule, routines, cost, the Codex host) + two install rehearsals
 plugin             the Claude Code plugin: hooks.json, .mcp.json, bin/aos, 21 commands, 9 skills (also the source of codex-plugin)
 codex-plugin       the Codex plugin, generated from plugin/ by npm run build:codex-plugin: hooks.json, .mcp.json, bin/aos, 28 skills
-obsidian-plugin    the Agentic OS HUD (TypeScript, esbuild)
+obsidian-plugin    the Workbench HUD's source (TypeScript, esbuild), which the app compiles
 app                the Workbench as a macOS app: the HUD above in an Electron window (its own lockfile; see app/README.md)
 vault-template     the seed vault (AGENTICOS.md, MEMORY.md, brain/ incl. the three duty routines, persona templates incl. the heartbeat watchdog, hourly tick and nightly reflect routines)
 extras             the launchd schedule template, the cost analyzer, optional Ollama helpers
