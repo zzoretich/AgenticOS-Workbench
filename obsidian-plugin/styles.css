@@ -2179,3 +2179,28 @@ a.aos-at-itemid:hover { text-decoration: underline; text-underline-offset: 2px; 
   .aos-at-manage .aos-at-mrow { grid-template-columns: 1fr auto; row-gap: 6px; }
   .aos-at-mrow .aos-at-picks { grid-column: 1 / -1; }
 }
+
+/* ── Files tab (spec 2026-10-05-workbench-app, phase 2) ── */
+.aos-fl-search { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.aos-fl-query { flex: 1; min-width: 0; background: var(--aos-bg); color: var(--aos-text); border: 1px solid var(--aos-border); font-family: var(--aos-mono); font-size: 12px; padding: 4px 8px; }
+.aos-fl-query:focus { border-color: var(--aos-cyan); outline: none; }
+.aos-fl-scope { display: flex; align-items: center; gap: 4px; font-size: 11px; white-space: nowrap; }
+.aos-fl-tree, .aos-fl-results { font-family: var(--aos-mono); font-size: 12px; }
+.aos-fl-row { display: flex; align-items: center; gap: 6px; padding: 2px 6px; cursor: pointer; border-radius: 3px; }
+.aos-fl-row:hover, .aos-fl-row:focus-visible { background: var(--aos-panel); outline: none; }
+.aos-fl-row.is-inert { cursor: default; color: var(--aos-dim); }
+.aos-fl-twisty { width: 10px; flex: none; color: var(--aos-dim); }
+.aos-fl-folder .aos-fl-name { color: var(--aos-amber); }
+.aos-fl-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aos-fl-acts { display: flex; gap: 8px; visibility: hidden; }
+.aos-fl-row:hover .aos-fl-acts, .aos-fl-row:focus-within .aos-fl-acts { visibility: visible; }
+.aos-fl-act { text-decoration: none; }
+.aos-fl-summary { font-size: 11px; margin-bottom: 6px; }
+.aos-fl-hit { margin-bottom: 8px; }
+.aos-fl-hitpath { color: var(--aos-cyan); cursor: pointer; padding: 2px 0; }
+.aos-fl-line { display: flex; gap: 8px; padding: 1px 6px; cursor: pointer; border-radius: 3px; }
+.aos-fl-line:hover, .aos-fl-line:focus-visible { background: var(--aos-panel); outline: none; }
+.aos-fl-lineno { width: 34px; flex: none; text-align: right; }
+.aos-fl-linetext { white-space: pre; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.aos-fl-mark { background: color-mix(in srgb, var(--aos-amber) 35%, transparent); color: var(--aos-text); }
+.aos-fl-form .aos-rt-errors.is-ok { color: var(--aos-dim); }
