@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as path from "path";
 import { createRequire } from "module";
-import { parseStatusline, isStale, barSegments, workbenchTabFrom, StatuslineModel } from "./statusline";
+import { parseStatusline, isStale, barSegments, workbenchTabFrom, workbenchTabFromUrl, StatuslineModel } from "./statusline";
 
 // The on-disk contract is shared with brain/scripts/lib/statusline-model.js (spec 2026-09-28-statusline-design D3): the
 // runtime builds the model from a fixture vault and this parser must read it back field for field.
@@ -67,4 +67,21 @@ test("workbenchTabFrom: only a rail tab id opens a tab", () => {
   assert.equal(workbenchTabFrom({ action: "agenticos", tab: "agent-teams" }, ids), "agent-teams");
   assert.equal(workbenchTabFrom({ action: "agenticos", tab: "../../etc" }, ids), null);
   assert.equal(workbenchTabFrom({ action: "agenticos" }, ids), null);
+});
+
+test("workbenchTabFromUrl: the app's agenticos://workbench links and the older obsidian://agenticos ones", () => {
+  const ids = ["pulse", "agent-teams", "notifications", "settings"];
+  // What the runtime writes now (brain/scripts/lib/hud-host.js links().tab) and what status lines wrote before the app.
+  assert.equal(workbenchTabFromUrl("agenticos://workbench?tab=agent-teams", ids), "agent-teams");
+  assert.equal(workbenchTabFromUrl("obsidian://agenticos?vault=AgenticOS&tab=notifications", ids), "notifications");
+  assert.equal(workbenchTabFromUrl("AgenticOS://Workbench?tab=settings", ids), "settings");
+  assert.equal(workbenchTabFromUrl("agenticos://workbench?tab=..%2F..%2Fetc", ids), null);
+  assert.equal(workbenchTabFromUrl("agenticos://workbench", ids), null);
+  assert.equal(workbenchTabFromUrl("agenticos://note?tab=pulse", ids), null, "a note link names no tab");
+  assert.equal(workbenchTabFromUrl("obsidian://open?tab=pulse", ids), null);
+  assert.equal(workbenchTabFromUrl("https://workbench?tab=pulse", ids), null);
+  assert.equal(workbenchTabFromUrl("not a url", ids), null);
+  // The runtime's own builder round-trips through the HUD's parser.
+  const hudHost = createRequire(__filename)(path.join(REPO, "brain/scripts/lib/hud-host.js"));
+  assert.equal(workbenchTabFromUrl(hudHost.links().tab("pulse"), ids), "pulse");
 });

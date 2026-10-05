@@ -159,15 +159,6 @@ function sideEffects(ctx, e, value, o, apply) {
       done.push('resumed scheduled duties (removed persona/DISABLED)');
     }
   }
-  if (e.key === 'dailyNote.layout' && o.dailyNotesJson && isDir(path.join(ctx.vault, '.obsidian'))) {
-    const f = path.join(ctx.vault, '.obsidian', 'daily-notes.json');
-    if (apply) {
-      let cur = {};
-      try { cur = JSON.parse(fs.readFileSync(f, 'utf8')); } catch { /* none yet, or unreadable: rewritten whole */ }
-      writer().writeAtomic(f, { ...(schema().isPlainObject(cur) ? cur : {}), ...o.dailyNotesJson(value) });
-    }
-    done.push('updated Obsidian\'s Daily Notes folder (.obsidian/daily-notes.json)');
-  }
   return done;
 }
 
@@ -256,7 +247,7 @@ async function main(argv, opts = {}) {
   const most = { list: 1, get: 2, set: 3, unset: 2 }[verb];
   if (words.length > most) throw new UsageError(`aos config ${verb}: too many arguments (quote a value that has spaces)`);
   const ctx = resolveCtx(opts);
-  const o = { io, json: flags.has('--json'), dryRun: flags.has('--dry-run'), now: opts.now || new Date(), dailyNotesJson: opts.dailyNotesJson, costCmd: opts.costCmd };
+  const o = { io, json: flags.has('--json'), dryRun: flags.has('--dry-run'), now: opts.now || new Date(), costCmd: opts.costCmd };
   try {
     switch (verb) {
       case 'list': return list(ctx, o);

@@ -84,7 +84,7 @@ test('AGENTICOS.md sections and .obsidian seeds', () => {
   const core = JSON.parse(read('.obsidian/core-plugins.json'));
   assert.equal(core['daily-notes'], true);
   assert.equal(core['file-explorer'], true);
-  assert.ok(!fs.existsSync(path.join(T, '.obsidian', 'daily-notes.json')), 'installer writes it');
+  assert.ok(!fs.existsSync(path.join(T, '.obsidian', 'daily-notes.json')), 'neither seeded nor written by the installer');
 });
 
 test('TODO.md seeds an empty list with Open and Done', () => {

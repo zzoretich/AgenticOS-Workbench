@@ -3,13 +3,14 @@
 /**
  * aos.js — AgenticOS Workbench installer and maintenance CLI. Zero dependencies (node: builtins only).
  *
- *   aos init [--vault <dir>] [--host auto|claude|codex|both] [--provider auto|ollama|claude|codex|none] [--no-obsidian]
- *            [--terminal] [--cost] [--budget <usd>] [--persona-json <file>] [--from-local <repo-dir>] [--dry-run] [--yes]
- *   (Obsidian, Ollama, python3 >= 3.9 and uv are hard prerequisites of init; --no-obsidian only skips the HUD bundle step.)
+ *   aos init [--vault <dir>] [--host auto|claude|codex|both] [--provider auto|ollama|claude|codex|none]
+ *            [--cost] [--budget <usd>] [--persona-json <file>] [--from-local <repo-dir>] [--dry-run] [--yes]
+ *   (Ollama, python3 >= 3.9 and uv are hard prerequisites of init. The Workbench is the AgenticOS Workbench app, which
+ *   installs nothing into the vault, so Obsidian is no longer one: --no-obsidian, --terminal and `aos terminal install`
+ *   are still accepted, and do nothing, so scripts written for an older release keep working.)
  *   aos doctor · aos status · aos provider [auto|ollama|claude|codex|none] · aos graph [status | build [--semantic] | on | off | semantic on|off|auto]
- *   aos upgrade [--from-local <repo-dir>] [--no-obsidian] · aos uninstall [--host claude|codex] [--keep-vault] [--yes]
+ *   aos upgrade [--from-local <repo-dir>] · aos uninstall [--host claude|codex] [--keep-vault] [--yes]
  *   aos persona [rename <name> | on | off] [--persona-json <file>] [--yes] · aos cost [enable [--budget <usd>] [--yes] | disable]
- *   aos terminal install
  *
  * Exit codes: 0 ok · 1 a check failed · 2 usage.
  * Runs from the repo checkout (`node cli/aos.js …`, `npm run setup`) and from its vendored copy at
@@ -27,25 +28,26 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const http = require('http');
-const https = require('https');
 const readline = require('readline');
 const { spawn, spawnSync } = require('child_process');
 
 const REPO_SLUG = 'zzoretich/AgenticOS-Workbench';
 const MARKETPLACE = 'agenticos-workbench';
 const PLUGIN_ID = `agenticos@${MARKETPLACE}`;
+// The folder an Obsidian-era install put the HUD in (<vault>/.obsidian/plugins/agentic-os/): upgrade only looks for it.
 const OBSIDIAN_PLUGIN_ID = 'agentic-os';
 const DEFAULT_VAULT = path.join(os.homedir(), 'AgenticOS');
 const PROVIDERS = ['auto', 'ollama', 'claude', 'codex', 'none'];
 const RUNTIME_SCRIPTS = { 'scan-vault': 'scan-vault.js', 'build-brain-md': 'build-brain-md.js', recall: 'sdk/recall-cli.js', 'skills-sync': 'skills-sync.js' };
 const HOST_CHOICES = ['auto', 'claude', 'codex', 'both'];
 const CH = require('./codex-host.js');
+const { stableNode, isCellarPath } = require('./node-path.js');
 
 const USAGE = `usage:
-  aos init [--vault <dir>] [--host auto|claude|codex|both] [--provider auto|ollama|claude|codex|none] [--no-obsidian]
-           [--terminal] [--cost] [--budget <usd>] [--persona-json <file>] [--from-local <repo-dir>] [--dry-run] [--yes]
+  aos init [--vault <dir>] [--host auto|claude|codex|both] [--provider auto|ollama|claude|codex|none]
+           [--cost] [--budget <usd>] [--persona-json <file>] [--from-local <repo-dir>] [--dry-run] [--yes]
   aos doctor | status | provider [auto|ollama|claude|codex|none]
-  aos upgrade [--from-local <repo-dir>] [--no-obsidian]
+  aos upgrade [--from-local <repo-dir>]
   aos uninstall [--host claude|codex] [--keep-vault] [--yes]
   aos persona [rename <name> | on | off] [--persona-json <file>] [--yes]
   aos cost [enable [--budget <usd>] [--yes] | disable]
@@ -57,8 +59,7 @@ const USAGE = `usage:
   aos workspace [list [--json] | new <name> | adopt <path> [--name <slug>]]
   aos statusline [install [--host claude|codex] [--force] [--chain-output] | uninstall [--host claude|codex] | status [--json] | preview [--width N] | refresh]
   aos update-status [--statusline | --snooze <N>d|<N>h | --off]
-  aos update-check [--quiet]
-  aos terminal install`;
+  aos update-check [--quiet]`;
 
 class UsageError extends Error {}
 class CheckFailed extends Error {}
@@ -117,6 +118,11 @@ function loadConfigOrThrow() {
 function scriptPath(vault, rel) { return path.join(vault, 'brain', 'scripts', rel); }
 
 // ── status line (spec 2026-09-28-statusline-design) ───────────────────────────
+/** lib/hud-host.js: the vendored copy beside this file (<vault>/brain/scripts/cli/..), else the checkout's. */
+function hudHost() {
+  for (const p of [path.join(__dirname, '..', 'lib', 'hud-host.js'), path.join(__dirname, '..', 'brain', 'scripts', 'lib', 'hud-host.js')]) if (exists(p)) return require(p);
+  return null;
+}
 /** The vault's vendored status line installer, or null for a runtime that predates it. */
 function statuslineLib(vault) {
   const p = vault && scriptPath(vault, 'lib/statusline-install.js');
@@ -234,17 +240,6 @@ function python3Version() {
   return m ? { major: Number(m[1]), minor: Number(m[2]) } : null;
 }
 function python3Ok(v) { return !!v && (v.major > 3 || (v.major === 3 && v.minor >= 9)); }
-/** Obsidian's install location (mandatory-prereqs D1): AOS_OBSIDIAN_APP → the app bundle on macOS, `obsidian` on PATH,
- *  the Flatpak dir or /usr/bin/obsidian on Linux → null. */
-function obsidianApp() {
-  return seam('AOS_OBSIDIAN_APP', () => {
-    const c = process.platform === 'darwin'
-      ? ['/Applications/Obsidian.app', path.join(os.homedir(), 'Applications', 'Obsidian.app')]
-      : [which('obsidian'), path.join(os.homedir(), '.var', 'app', 'md.obsidian.Obsidian'), '/usr/bin/obsidian'];
-    return c.find((p) => p && exists(p)) || null;
-  });
-}
-function obsidianDetected() { return !!obsidianApp(); }
 /** The Ollama install (mandatory-prereqs D1): AOS_OLLAMA_BIN → `ollama` on PATH → the macOS app bundle → null.
  *  Presence, not liveness: whether it answers is the separate `ollama reachable` probe. */
 function ollamaBin() {
@@ -340,9 +335,7 @@ async function doctor() {
   const checks = [];
   const add = (name, ok, detail, level = 'fail') => checks.push({ name, ok, detail, level });
   add('node >= 20', nodeMajor() >= 20, `v${process.versions.node}`);
-  // mandatory-prereqs D5: the three install prerequisites are fail rows; the HUD bundle and Ollama liveness stay warn.
-  const obsApp = obsidianApp();
-  add('obsidian app', !!obsApp, obsApp || 'not found — install Obsidian from obsidian.md');
+  // mandatory-prereqs D5: the install prerequisites are fail rows; the Workbench app and Ollama liveness stay warn.
   const ollBin = ollamaBin();
   add('ollama installed', !!ollBin, ollBin || 'not found on PATH — install Ollama from ollama.com');
   const py = python3Version();
@@ -374,6 +367,8 @@ async function doctor() {
     const missing = need.filter((r) => !exists(path.join(vault, r)));
     add('vault layout', missing.length === 0, missing.length ? `${vault} missing: ${missing.join(', ')}` : vault);
     add('node in config', exists(cfg.node), cfg.node);
+    // D12: a versioned Homebrew path disappears with the next `brew upgrade`, and every hook and schedule with it.
+    if (isCellarPath(cfg.node)) add('node path', false, 'a versioned Homebrew Cellar path — re-run `aos upgrade` to record the stable link', 'warn');
   }
   if (hosts.claude) {
     const plugin = bin ? installedPlugin(bin) : null;
@@ -440,7 +435,12 @@ async function doctor() {
       else add('cross-review', false, 'no CLI ready: claude and codex are both missing or logged out', 'warn');
     }
   }
-  if (vault) add('obsidian plugin', exists(path.join(vault, '.obsidian', 'plugins', OBSIDIAN_PLUGIN_ID, 'main.js')), `${vault}/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/main.js`, 'warn');
+  if (vault) {
+    // D11: the app records itself in the vault each time it starts; a warn, since the runtime works without it.
+    const H = hudHost();
+    const m = H && H.readMarker(vault);
+    add('workbench app', !!m, m ? `${m.name || 'AgenticOS Workbench'} ${m.version}` : 'not registered yet — open the AgenticOS Workbench app once', 'warn');
+  }
   // graphify spec §4.6: the pinned binary (fail when missing, warn on drift) and the graph's age (warn).
   if (cfg && vault) for (const row of graphCmd.doctorRows({ cfg, vault })) add(row.name, row.ok, row.detail, row.level);
   if (vault && isDir(path.join(vault, 'brain', 'routines'))) {
@@ -619,7 +619,6 @@ function provider(mode) {
 // Never vendored: installed deps, the test suite, and any lockfile (contract §4.3: the vendored runtime is
 // installed with a plain `npm install --omit=dev`; its two deps are pinned by `^` ranges in package.json).
 const VENDOR_EXCLUDE = /(^|\/)(node_modules|test|package-lock\.json)(\/|$)/;
-const BUNDLE_FILES = ['main.js', 'manifest.json', 'styles.css', 'package.json'];
 
 function isRepoRoot(d) {
   return !!d && exists(path.join(d, '.claude-plugin', 'marketplace.json')) &&
@@ -667,15 +666,9 @@ function assertVaultOk(vault) {
   if (insideDir(cxHome, vault)) throw new CheckFailed(`refusing ${vault}: it contains the Codex home ${cxHome}`);
 }
 
-/** Obsidian can express only a flat folder + file format; the year folder of the layout is the closest match (documented). */
-function dailyNotesJson(layout) {
-  const first = String(layout).split('/')[0];
-  return { folder: first.replace(/\{yyyy\}/g, String(new Date().getFullYear())), format: 'YYYY-MM-DD' };
-}
-
 function buildUserConfig(existing, { vault, provider, version, bin, hosts, codexBin: cxBin, codexHome: cxHome }) {
   const base = {
-    version, vault, node: process.execPath, claudeConfigDir: configDir(), provider: 'auto',
+    version, vault, node: stableNode(process.execPath), claudeConfigDir: configDir(), provider: 'auto',
     claude: { model: 'haiku', perCallUsd: 0.05, perDayUsd: 0.5 },
     ollama: { host: '127.0.0.1', port: 11434 },
     telemetry: { enabled: true, redact: true, retentionDays: 30 },
@@ -688,7 +681,8 @@ function buildUserConfig(existing, { vault, provider, version, bin, hosts, codex
   const merged = deepMerge(base, existing || {});
   merged.version = version;
   merged.vault = vault;
-  merged.node = process.execPath;
+  // D12: Homebrew's stable opt link rather than the versioned Cellar path `brew upgrade` deletes.
+  merged.node = stableNode(process.execPath);
   merged.claudeConfigDir = configDir();
   if (provider) merged.provider = provider;
   // Contract §2: record the resolved `claude` CLI; absent when none was found, so every reader falls back to its probe.
@@ -830,152 +824,19 @@ function unwireCodex(cfg) {
   out.log(`codex host removed: hooks ${r.hooksFileState} (${r.hooksRemoved} entries) · MCP ${r.mcp} · ${r.skills.length} skills deleted`);
 }
 
-/** GET url → dest (follows ≤5 redirects). `getFn` is injectable so tests can drive stream failures without the network.
- *  Data lands in `<dest>.part` and is renamed over `dest` only once the stream has closed cleanly, so a failure
- *  (offline, DNS, timeout, HTTP error, mid-stream error) removes only the partial file: a bundle already installed
- *  at `dest` survives every failure path (an offline `aos upgrade` must not delete the working Obsidian plugin). */
-function download(url, dest, hops = 0, getFn = (u, o, cb) => https.get(u, o, cb)) {
-  return new Promise((resolve, reject) => {
-    const tmp = `${dest}.part`;
-    let file = null;
-    let settled = false;
-    // Remove whatever reached disk, then reject. The write stream opens asynchronously, so the unlink waits for its
-    // 'close' (destroy() during the open still creates the file, then closes it) — an early unlink would let the
-    // open re-create tmp afterwards (execution finding 2026-09-14: flaky under parallel test load).
-    const fail = (e) => {
-      if (settled) return;
-      settled = true;
-      const done = () => { try { fs.unlinkSync(tmp); } catch { /* nothing written */ } reject(e); };
-      if (!file || file.closed) return done();
-      file.once('close', done);
-      if (!file.destroyed) file.destroy();
-    };
-    const succeed = () => { if (settled) return; settled = true; resolve(); };
-    const req = getFn(url, { headers: { 'user-agent': 'agenticos-installer' } }, (res) => {
-      if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location && hops < 5) {
-        res.resume();
-        if (settled) return;
-        // The inner download owns dest and its own .part from here on. Settle first, so a late error on the OUTER
-        // request (every release download is a redirect) cannot run fail() and unlink the inner download's file.
-        settled = true;
-        return resolve(download(res.headers.location, dest, hops + 1, getFn));
-      }
-      if (res.statusCode !== 200) { res.resume(); return fail(new Error(`HTTP ${res.statusCode} for ${url}`)); }
-      fs.mkdirSync(path.dirname(dest), { recursive: true });
-      file = fs.createWriteStream(tmp);
-      res.on('error', fail);
-      file.on('error', fail);
-      file.on('finish', () => file.close((e) => {
-        if (e) return fail(e);
-        try { fs.renameSync(tmp, dest); } catch (err) { return fail(err); }
-        succeed();
-      }));
-      res.pipe(file);
-    });
-    req.on('error', fail);
-    if (typeof req.setTimeout === 'function') req.setTimeout(30000, () => req.destroy(new Error(`timeout after 30 s for ${url}`)));
-  });
-}
-
-/** The newest modification time among the Obsidian plugin's sources (main.ts, src/, styles.css, manifest.json): a
- *  main.js older than this was built from other code. */
-function bundleSourcesMs(src) {
-  let newest = 0;
-  const visit = (p) => {
-    let st;
-    try { st = fs.statSync(p); } catch { return; }
-    if (st.isDirectory()) { for (const n of fs.readdirSync(p)) visit(path.join(p, n)); return; }
-    if (/\.(ts|css|json)$/.test(p)) newest = Math.max(newest, st.mtimeMs);
-  };
-  for (const f of ['main.ts', 'src', 'styles.css', 'manifest.json']) visit(path.join(src, f));
-  return newest;
-}
-
-async function obsidianBundle(ctx) {
-  const src = path.join(ctx.repo, 'obsidian-plugin');
-  const dest = path.join(ctx.vault, '.obsidian', 'plugins', OBSIDIAN_PLUGIN_ID);
-  await ctx.act(`install the Obsidian plugin bundle into ${dest}`, async () => {
-    // A checkout that can build always does. main.js is gitignored, so one left from an earlier build would otherwise be
-    // installed beside a newer manifest.json and styles.css, and the HUD would run old code under the new version.
-    const main = path.join(src, 'main.js');
-    const built = isDir(path.join(ctx.repo, 'node_modules'))
-      ? run(npmBin(), ['run', 'build', '-w', 'obsidian-plugin'], { cwd: ctx.repo, allowFail: true }).status === 0
-      : null;
-    ctx.bundle = 'kept';   // until a bundle is installed: upgrade() reports a Workbench it did not replace
-    if (exists(main) && built === false) {
-      // A failed build leaves whatever main.js was there before, whatever its time: never install it.
-      out.warn('the Obsidian build failed, so obsidian-plugin/main.js (from an earlier build) is not installed; fix npm run build -w obsidian-plugin, then aos upgrade. Trying the release bundle instead.');
-    } else if (exists(main) && fs.statSync(main).mtimeMs < bundleSourcesMs(src)) {
-      out.warn("obsidian-plugin/main.js is older than the plugin's sources, so it is not installed; run npm ci in the checkout, then aos upgrade. Trying the release bundle instead.");
-    } else if (exists(main)) {
-      // dest is created only once a source is known, so a run that installs nothing leaves no empty plugin folder.
-      fs.mkdirSync(dest, { recursive: true });
-      for (const f of BUNDLE_FILES) {
-        if (!exists(path.join(src, f))) continue;
-        fs.copyFileSync(path.join(src, f), path.join(dest, f));
-        ctx.written.push(`.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/${f}`);
-      }
-      ctx.bundle = 'installed';
-      return;
-    }
-    const version = (readJson(path.join(src, 'manifest.json')) || {}).version;
-    if (!version) { out.warn('no Obsidian bundle and no manifest to name a release; run `npm ci && npm run build -w obsidian-plugin` then `aos upgrade`'); return; }
-    // All three release files are staged in a temp dir first: an upgrade that cannot reach GitHub must leave the
-    // bundle already installed in dest exactly as it was, never a half-replaced (or deleted) plugin.
-    const releaseFiles = ['main.js', 'manifest.json', 'styles.css'];
-    let staging;
-    try {
-      staging = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-bundle-'));
-    } catch (e) {
-      out.warn(`could not create a staging dir to fetch v${version}: ${e.message} — build locally (npm ci && npm run build -w obsidian-plugin) then run aos upgrade`);
-      return;
-    }
-    try {
-      for (const f of releaseFiles) {
-        try {
-          await download(`https://github.com/${REPO_SLUG}/releases/download/v${version}/${f}`, path.join(staging, f), 0);
-        } catch (e) {
-          out.warn(`could not fetch ${f} for v${version}: ${e.message} — build locally (npm ci && npm run build -w obsidian-plugin) then run aos upgrade`);
-          return;
-        }
-      }
-      fs.mkdirSync(dest, { recursive: true });
-      for (const f of releaseFiles) {
-        fs.copyFileSync(path.join(staging, f), path.join(dest, f));
-        ctx.written.push(`.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/${f}`);
-      }
-      if (exists(path.join(src, 'package.json'))) fs.copyFileSync(path.join(src, 'package.json'), path.join(dest, 'package.json'));
-      ctx.bundle = 'installed';
-    } finally {
-      fs.rmSync(staging, { recursive: true, force: true });
-    }
-  });
-}
-
-function terminalInstall(vault) {
-  if (process.platform === 'win32') throw new CheckFailed('Windows is not supported in v1');
-  const dir = path.join(vault, '.obsidian', 'plugins', OBSIDIAN_PLUGIN_ID);
-  if (!exists(path.join(dir, 'package.json'))) throw new CheckFailed(`no package.json in ${dir}; install the Obsidian bundle first (aos upgrade)`);
-  run(npmBin(), ['install', '--omit=dev', '--no-audit', '--no-fund'], { cwd: dir });
-  const prebuilds = path.join(dir, 'node_modules', 'node-pty', 'prebuilds');
-  for (const d of (isDir(prebuilds) ? fs.readdirSync(prebuilds) : [])) {
-    const helper = path.join(prebuilds, d, 'spawn-helper');
-    if (exists(helper)) fs.chmodSync(helper, 0o755);
-  }
-  out.log(`terminal support installed in ${dir}; restart Obsidian to load it`);
-}
-
 /** Init step 8 (spec §10). Delegates to cli/persona-cmd.js; `act` already skipped us under --dry-run. */
 function personaInterview(ctx) {
   const cfg = readJson(configPath()) || {};
   if (cfg.persona && cfg.persona.enabled === false) { out.log('   persona disabled in config; skipping the interview'); return; }
   return require('./persona-cmd.js').runInterview({
-    configDir: configDir(), vault: ctx.vault, node: process.execPath,
+    configDir: configDir(), vault: ctx.vault, node: stableNode(process.execPath),
     answersFile: ctx.flags.personaJson ? path.resolve(ctx.flags.personaJson) : undefined,
     // dryRun is unreachable from init (act() skips this body under --dry-run — Open issue 6); kept so the function stays callable directly.
     yes: ctx.yes, dryRun: ctx.dry, exampleName: 'Proton', io: console,
   }).catch((e) => out.warn(`persona interview failed: ${e.message}; run \`aos persona\` later`));   // execution amendment 2026-09-15 (A11): Plan 3's allowFail — init stays exit 0
 }
+
+const TERMINAL_NOTE = 'terminal: nothing to install — the AgenticOS Workbench app brings its own terminal';
 
 function checklist(ctx) {
   const { vault, written, dry } = ctx;
@@ -996,7 +857,7 @@ function checklist(ctx) {
       ? `Open \`codex\`, run /hooks, and trust the ${CH.PLUGIN_ID} entries once; they stay trusted across aos upgrade.`
       : `Open \`codex\`, run /hooks, and trust the AgenticOS entries once (${CH.hooksFile(readJson(configPath()))}); they only need re-trusting if the vault moves.`);
   }
-  steps.push(`Open the vault in Obsidian: "Open folder as vault" → ${vault}, then enable "Agentic OS" under Settings → Community plugins.`);
+  steps.push('Open the AgenticOS Workbench app (macOS); it finds this vault through agenticos.json. Until its download arrives with 1.0, build it from app/ in the checkout (app/README.md).');
   steps.push(`Put ${path.join(os.homedir(), '.local', 'bin')} on your PATH, then run: aos doctor`);
   if (hosts.claude) steps.push('Start a new `claude` session; the first prompt receives <brain-context>. Use /wrap at the end.');
   if (hosts.codex) steps.push(codexPlugin
@@ -1051,10 +912,9 @@ async function init(flags) {
   const cxMode = hosts.codex ? CH.codexInstallMode(cxBin, run) : null;
   ctx.codexInstall = cxMode;
   out.log(`preflight: hosts ${hostLabel} · claude ${bin ? bin : 'absent'} · codex ${cxBin ? cxBin : 'absent'}${cxMode ? ` (${cxMode === 'plugin' ? 'plugin' : 'direct wiring'})` : ''}`);
-  // mandatory-prereqs D2: Obsidian, Ollama and python3 >= 3.9 are hard gates, checked before anything is written and not
-  // waived by --provider none (that flag is about model calls, not tools). --no-obsidian only skips the HUD bundle step (D4).
-  const obsApp = obsidianApp();
-  if (!obsApp) throw new CheckFailed('Obsidian not found — install it from obsidian.md (macOS: drag to Applications), then re-run aos init');
+  // mandatory-prereqs D2: Ollama and python3 >= 3.9 are hard gates, checked before anything is written and not waived by
+  // --provider none (that flag is about model calls, not tools). Obsidian no longer is: the Workbench is the AgenticOS
+  // Workbench app (workbench-app D1), and --no-obsidian is accepted as a no-op so older scripts keep working.
   const ollBin = ollamaBin();
   if (!ollBin) throw new CheckFailed('ollama not found — install it from ollama.com, then re-run aos init');
   const py = python3Version();
@@ -1062,7 +922,7 @@ async function init(flags) {
   // graphify spec D1: uv installs the pinned graphify (step 5c) with a Python of its own, so it is a hard gate too.
   const uv = require('./graph-cmd.js').uvBin();
   if (!uv) throw new CheckFailed('uv not found — install it (docs.astral.sh/uv), then re-run aos init');
-  out.log(`preflight: obsidian ${obsApp} · ollama ${ollBin} · python3 ${py.major}.${py.minor} · uv ${uv}`);
+  out.log(`preflight: ollama ${ollBin} · python3 ${py.major}.${py.minor} · uv ${uv}`);
   // execution amendment 2026-09-15 (A37): the analyzer ships from Plan 5 Task 1 on. --cost installs the module through
   // cost-cmd.js right after agenticos.json is written (step 5b); its python3 gate is now the unconditional one above (D7).
   if (flags.cost) {
@@ -1088,7 +948,7 @@ async function init(flags) {
     // final review F7: parse the user's brain/config.json BEFORE anything is written. readJson() conflated
     // ENOENT with a parse error, so a corrupt config took the "empty" branch and was replaced by the
     // defaults; refusing up front leaves the vault exactly as it was.
-    let current = readJsonStrict(cfgJson);
+    const current = readJsonStrict(cfgJson);
     // execution amendment 2026-09-15 (A8): vault-template/persona/ holds the raw {{…}} templates (Task 5); the interview renders
     // them into <vault>/persona/ itself (step 8), so the seed copy must not land identity.template.md / STATE.template.md there.
     copyTree(path.join(repo, 'vault-template'), vault, { exclude: /(^|\/)persona(\/|$)/, rename: { _gitignore: '.gitignore' }, written });
@@ -1097,10 +957,7 @@ async function init(flags) {
       const session = path.join(vault, 'brain', '_index', 'SESSION.md');
       fs.writeFileSync(session, fs.readFileSync(session, 'utf8').replace(/^updated: .*$/m, `updated: ${localDay()}`));
     }
-    if (!current || Object.keys(current).length === 0) { writeJson(cfgJson, defaults); written.push('brain/config.json'); current = defaults; }
-    const layout = (((current || {}).dailyNote || {}).layout) || defaults.dailyNote.layout;
-    writeJson(path.join(vault, '.obsidian', 'daily-notes.json'), dailyNotesJson(layout));
-    written.push('.obsidian/daily-notes.json');
+    if (!current || Object.keys(current).length === 0) { writeJson(cfgJson, defaults); written.push('brain/config.json'); }
   });
 
   // 4. vendor runtime
@@ -1134,9 +991,8 @@ async function init(flags) {
     ? `install the Codex plugin ${CH.PLUGIN_ID} from the ${MARKETPLACE} marketplace and remove any direct wiring`
     : 'wire the Codex host: hooks.json, the agenticos MCP server, and the skills under ~/.agents/skills', () => { ctx.codexInstall = wireCodex(ctx, { bin: cxBin, mode: cxMode }); });
 
-  // 7. obsidian bundle (+ optional terminal deps)
-  if (flags.obsidian !== false) await obsidianBundle(ctx);
-  if (flags.terminal) await act('install terminal support (node-pty) in the Obsidian plugin folder', () => terminalInstall(vault));
+  // 7. The Workbench is the app, which brings its own terminal: --terminal has nothing left to install.
+  if (flags.terminal) out.log(TERMINAL_NOTE);
 
   // 8. persona
   await act('run the Chief of Staff interview', () => personaInterview(ctx));
@@ -1170,7 +1026,7 @@ function migrateRoutines(ctx) {
   if (!S.isInstalled({ platform, vault })) { out.log('   no schedules installed; nothing to re-render (aos routines sync installs them)'); return; }
   const { scheduleVarsFor } = require('./routines.js');
   const cfg = readJson(configPath()) || {};
-  const vars = scheduleVarsFor({ vault, configDir: configDir(), node: cfg.node || process.execPath, cfg });
+  const vars = scheduleVarsFor({ vault, configDir: configDir(), node: stableNode(cfg.node || process.execPath), cfg });
   const r = S.installSchedules({ vars, platform, warn: (m) => out.warn(m) });
   out.log(`   schedules re-rendered: ${r.labels.join(', ') || 'none'}${r.removed.length ? ` (removed ${r.removed.map((x) => path.basename(x)).join(', ')})` : ''}`);
 }
@@ -1223,7 +1079,7 @@ async function agents(sub, flags) {
 async function config(sub, flags) {
   const C = require('./config-cmd.js');
   try {
-    return await C.main([...sub, ...(flags.json ? ['--json'] : []), ...(flags.dryRun ? ['--dry-run'] : [])], { io: console, dailyNotesJson, spend: spendByFamily });
+    return await C.main([...sub, ...(flags.json ? ['--json'] : []), ...(flags.dryRun ? ['--dry-run'] : [])], { io: console, spend: spendByFamily });
   } catch (e) {
     if (e instanceof C.UsageError) throw new UsageError(e.message);
     throw e;
@@ -1318,7 +1174,6 @@ async function upgrade(flags) {
       require('./graph-cmd.js').install({ vault, configDir: configDir(), template: path.join(repo, 'vault-template', '.graphifyignore'), io: out });
     } catch (e) { out.warn(`graph: ${e.message}`); }
   });
-  if (flags.obsidian !== false) await obsidianBundle(ctx);
   await act('share user skills and agents between the hosts (skills-sync)', () => {
     runScript(vault, 'skills-sync', [], { allowFail: true });
   });
@@ -1343,9 +1198,12 @@ async function upgrade(flags) {
     runScript(vault, 'build-brain-md', [], { allowFail: true });
     runScript(vault, 'recall', ['--warm'], { allowFail: true });
   });
-  // A Workbench left as it was is said plainly, not folded into "upgraded" (the warning above says why).
-  if (ctx.bundle === 'kept') out.warn(`the Obsidian Workbench was not updated to v${version}; it still runs the bundle it had. Fix the warning above, then run aos upgrade again.`);
-  out.log(`upgraded to v${version}${ctx.bundle === 'kept' ? ', except the Obsidian Workbench' : ''}. Memory, notes and persona were not touched.`);
+  // An install from the Obsidian era still has the HUD in the vault: say once where the Workbench went, and leave the
+  // folder alone (the user may still be running it until the app is installed).
+  if (isDir(path.join(vault, '.obsidian', 'plugins', OBSIDIAN_PLUGIN_ID))) {
+    out.log(`The Workbench is now the AgenticOS Workbench app for macOS; once you use the app, you can remove the old Obsidian plugin folder ${path.join(vault, '.obsidian', 'plugins', OBSIDIAN_PLUGIN_ID)}.`);
+  }
+  out.log(`upgraded to v${version}. Memory, notes and persona were not touched.`);
   return 0;
 }
 
@@ -1423,9 +1281,10 @@ async function uninstall(flags) {
   return 0;
 }
 
+/** Kept so a script written for an older release still runs: the app ships node-pty built for its own Electron. */
 function terminal(sub) {
   if (sub[0] !== 'install') throw new UsageError('usage: aos terminal install');
-  terminalInstall(loadConfigOrThrow().vault);
+  out.log(TERMINAL_NOTE);
   return 0;
 }
 
@@ -1461,6 +1320,7 @@ function updateNotice() {
 // ── args and main ─────────────────────────────────────────────────────────────
 const VALUE_FLAGS = new Set(['vault', 'provider', 'persona-json', 'from-local', 'budget', 'snooze', 'host', 'name']);
 const BOOL_FLAGS = new Set(['dry-run', 'yes', 'terminal', 'cost', 'keep-vault', 'statusline', 'off', 'quiet', 'json', 'refresh', 'semantic', 'all']);
+// --no-obsidian is parsed and ignored: Obsidian is no longer installed, and a script written for an older release keeps working.
 const NEGATABLE_FLAGS = new Set(['obsidian']);
 function camel(s) { return s.replace(/-([a-z])/g, (_, c) => c.toUpperCase()); }
 /** `--flag`, `--no-flag`, `--flag value`, `--flag=value`; unknown flags are a usage error (a typo must never start a real install). */
@@ -1543,11 +1403,11 @@ if (require.main === module) {
 
 module.exports = {
   parseArgs, deepMerge, configDir, configPath, readJson, readJsonStrict, writeJson, exists, isDir, insideDir, localDay,
-  run, which, claudeBin, codexBin, hostsOf, resolveHosts, pluginSourceDir, npmBin, claudeLoggedIn, installedPlugin, python3Version, python3Ok, pythonBin, obsidianDetected, obsidianApp, ollamaBin, httpProbe, ollamaEndpoint, ollamaProbeSkipped, ask,
+  run, which, claudeBin, codexBin, hostsOf, resolveHosts, pluginSourceDir, npmBin, claudeLoggedIn, installedPlugin, python3Version, python3Ok, pythonBin, ollamaBin, httpProbe, ollamaEndpoint, ollamaProbeSkipped, ask,
   runScript, scriptPath, mcpProbe, spendRowsToday, spendToday, spendByFamily, isDutyFeature, isHookFeature, loadConfigOrThrow,
   doctor, status, provider, main,
-  init, repoRoot, productVersion, upgradeReexecTarget, copyTree, assertVaultOk, dailyNotesJson, buildUserConfig, linkLauncher, vendorRuntime,
-  installPlugin, download, obsidianBundle, terminalInstall, personaInterview, checklist,
+  init, repoRoot, productVersion, upgradeReexecTarget, copyTree, assertVaultOk, buildUserConfig, linkLauncher, vendorRuntime,
+  installPlugin, personaInterview, checklist, hudHost,
   upgrade, uninstall, removeSchedules, terminal, persona, cost, graph, routines, workspace, config, updateCheck, updateStatus, updateNotice,
   PROVIDERS, HOST_CHOICES, PLUGIN_ID, MARKETPLACE, REPO_SLUG, OBSIDIAN_PLUGIN_ID, DEFAULT_VAULT, RUNTIME_SCRIPTS, USAGE,
   VALUE_FLAGS, BOOL_FLAGS, NEGATABLE_FLAGS,

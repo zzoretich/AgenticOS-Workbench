@@ -94,7 +94,7 @@ const SETTINGS = [
 
   // ── Memory & scanning ───────────────────────────────────────────────────────
   { key: 'dailyNote.layout', section: 'memory', label: 'Daily note layout', type: 'string', vaultOnly: true, applies: 'next-session',
-    help: 'Where daily notes go, as a date template ({yyyy}, {MM}, {MMMM}, {dd}). Also rewrites Obsidian\'s Daily Notes setting.' },
+    help: 'Where daily notes go, as a date template ({yyyy}, {MM}, {MMMM}, {dd}).' },
   { key: 'recallRoots', section: 'memory', label: 'Recall roots', type: 'list', applies: 'next-call',
     help: 'Vault folders recall searches, as a JSON list.' },
   { key: 'quickLinks', section: 'memory', label: 'BRAIN.md quick links', type: 'list', applies: 'next-scan',

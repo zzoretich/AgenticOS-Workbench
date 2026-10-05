@@ -21,17 +21,14 @@ function sandbox() {
   const cfg = path.join(dir, 'cfg');
   fs.mkdirSync(home, { recursive: true });
   fs.mkdirSync(cfg, { recursive: true });
-  // mandatory-prereqs D3/D6: the install gate wants Obsidian and Ollama present; point the seams at a temp app dir
-  // and the fixture so the positive path is exercised on a runner that has neither. python3 is real.
-  const obsidianApp = path.join(dir, 'Obsidian.app');
-  fs.mkdirSync(obsidianApp, { recursive: true });
+  // mandatory-prereqs D3/D6: the install gate wants Ollama present; point the seam at the fixture so the positive path is
+  // exercised on a runner that has none. python3 is real. Obsidian is no prerequisite (workbench-app D1).
   const env = {
     ...process.env,
     HOME: home,
     CLAUDE_CONFIG_DIR: cfg,
     AOS_CLAUDE_BIN: FAKE_CLAUDE,
     AOS_NPM_BIN: FAKE_NPM,
-    AOS_OBSIDIAN_APP: obsidianApp,
     AOS_OLLAMA_BIN: FAKE_OLLAMA,
     // graphify spec D1: uv is a prerequisite too; the fake installs a fake graphify into the sandboxed ~/.local/share.
     AOS_UV_BIN: FAKE_UV,
@@ -73,7 +70,7 @@ test('doctor without agenticos.json fails that check and exits 1', () => {
   assert.match(r.stdout, /ok\s+node >= 20/);
   assert.match(r.stdout, /ok\s+claude login/);
   assert.match(r.stdout, /info\s+ollama reachable\s+127\.0\.0\.1:1 not probed \(AOS_SKIP_OLLAMA_PROBE=1\)/);
-  assert.match(r.stdout, new RegExp(`ok\\s+obsidian app\\s+${reEsc(sb.env.AOS_OBSIDIAN_APP)}`));
+  assert.doesNotMatch(r.stdout, /^(?:ok|FAIL|warn|info)\s+obsidian/m, 'Obsidian is no longer a doctor row');
   assert.match(r.stdout, new RegExp(`ok\\s+ollama installed\\s+${reEsc(FAKE_OLLAMA)}`));
   assert.match(r.stdout, /ok\s+python3 >= 3\.9\s+3\.\d+/);
   assert.match(r.stdout, new RegExp(`ok\\s+uv installed\\s+${reEsc(FAKE_UV)}`));
@@ -82,7 +79,6 @@ test('doctor without agenticos.json fails that check and exits 1', () => {
 // mandatory-prereqs D2/D3/D5: each prerequisite has one env seam; '' means absent. init refuses before writing anything
 // (and --provider none does not waive it), doctor turns the row into a FAIL and exits 1.
 const PREREQ_CASES = [
-  { env: { AOS_OBSIDIAN_APP: '' }, initMsg: /Obsidian not found — install it from obsidian\.md/, row: /FAIL\s+obsidian app\s+not found/ },
   { env: { AOS_OLLAMA_BIN: '' }, initMsg: /ollama not found — install it from ollama\.com/, row: /FAIL\s+ollama installed\s+not found/ },
   { env: { AOS_PYTHON_BIN: '' }, initMsg: /python3 >= 3\.9 is required — python3 not found on PATH/, row: /FAIL\s+python3 >= 3\.9\s+python3 not found/ },
   { env: { AOS_UV_BIN: '' }, initMsg: /uv not found — install it \(docs\.astral\.sh\/uv\)/, row: /FAIL\s+uv installed\s+not found/ },
@@ -116,21 +112,34 @@ test('init rejects a python3 older than 3.9 and names the version it found', () 
 });
 
 test('a non-empty seam that points at a missing path counts as absent (D3)', () => {
-  const { obsidianApp, ollamaBin, pythonBin } = require('./aos.js');
+  const { ollamaBin, pythonBin } = require('./aos.js');
   const gone = path.join(os.tmpdir(), 'aos-nowhere-' + process.pid);
   const saved = { ...process.env };
   try {
-    process.env.AOS_OBSIDIAN_APP = gone; process.env.AOS_OLLAMA_BIN = gone; process.env.AOS_PYTHON_BIN = '';
-    assert.equal(obsidianApp(), null);
+    process.env.AOS_OLLAMA_BIN = gone; process.env.AOS_PYTHON_BIN = '';
     assert.equal(ollamaBin(), null);
     assert.equal(pythonBin(), null);
-    process.env.AOS_OBSIDIAN_APP = ROOT; process.env.AOS_OLLAMA_BIN = FAKE_OLLAMA; delete process.env.AOS_PYTHON_BIN;
-    assert.equal(obsidianApp(), ROOT);
+    process.env.AOS_OLLAMA_BIN = FAKE_OLLAMA; delete process.env.AOS_PYTHON_BIN;
     assert.equal(ollamaBin(), FAKE_OLLAMA);
     assert.equal(pythonBin(), 'python3');
   } finally {
-    for (const k of ['AOS_OBSIDIAN_APP', 'AOS_OLLAMA_BIN', 'AOS_PYTHON_BIN']) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; }
+    for (const k of ['AOS_OLLAMA_BIN', 'AOS_PYTHON_BIN']) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; }
   }
+});
+
+// workbench-app D1: the Workbench is the app, so init neither needs Obsidian nor writes into .obsidian/. --no-obsidian
+// and --terminal are still accepted (a script written for an older release keeps working) and do nothing.
+test('init needs no Obsidian, installs no HUD into the vault, and accepts --no-obsidian and --terminal as no-ops', () => {
+  const sb = sandbox();
+  const r = aos(sb, ['init', '--vault', sb.vault, '--no-obsidian', '--terminal', '--provider', 'none', '--yes'], { AOS_OBSIDIAN_APP: '' });
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  assert.match(r.stdout, /^preflight: ollama .* · python3 \d+\.\d+ · uv /m);
+  assert.doesNotMatch(r.stdout, /preflight: obsidian|Obsidian plugin bundle|Community plugins/);
+  assert.match(r.stdout, /terminal: nothing to install — the AgenticOS Workbench app brings its own terminal/);
+  assert.match(r.stdout, /Open the AgenticOS Workbench app \(macOS\)/);
+  assert.ok(!fs.existsSync(path.join(sb.vault, '.obsidian', 'plugins')), 'no HUD bundle in the vault');
+  assert.ok(!fs.existsSync(path.join(sb.vault, '.obsidian', 'daily-notes.json')), 'no Obsidian Daily Notes setting');
+  assert.doesNotMatch(aos(sb, ['help']).stdout, /--no-obsidian|--terminal|terminal install/, 'the no-ops are not advertised');
 });
 
 test('doctor warns (not fails) when ollama is installed but not answering', () => {
@@ -279,7 +288,7 @@ test('init into a temp vault: seed set, vendored runtime, agenticos.json, plugin
     'brain/_index/MOC-reference.md', 'brain/_index/MOC-projects.md', 'brain/_index/MOC-patterns.md', 'brain/_index/scanner-config.json',
     'brain/memory/user/profile.md', 'brain/memory/feedback/README.md', 'brain/memory/projects/README.md', 'brain/memory/reference/README.md',
     'brain/patterns/README.md', 'templates/daily-note.md', 'templates/meeting-note.md', 'templates/decision-record.md', 'templates/project-note.md',
-    '.obsidian/app.json', '.obsidian/community-plugins.json', '.obsidian/daily-notes.json',
+    '.obsidian/app.json', '.obsidian/community-plugins.json',
     'brain/routines/README.md', 'brain/routines/monitor.md', 'brain/routines/reflect.md', 'brain/routines/sitrep.md',
     'brain/scripts/package.json', 'brain/scripts/config.default.json', 'brain/scripts/lib/paths.js', 'brain/scripts/sdk/mcp-server.js',
     'brain/scripts/cli/aos.js', 'brain/scripts/cli/routines.js', 'brain/scripts/routines/run-routine.js', 'brain/scripts/bin/aos', 'brain/scripts/node_modules']) {
@@ -292,14 +301,14 @@ test('init into a temp vault: seed set, vendored runtime, agenticos.json, plugin
   assert.ok(fs.statSync(path.join(v, 'brain', 'scripts', 'bin', 'aos')).mode & 0o100, 'launcher is executable');
   assert.match(fs.readFileSync(path.join(v, 'brain', '_index', 'SESSION.md'), 'utf8'), new RegExp(`^updated: ${new Date().getFullYear()}-`, 'm'));
   assert.equal(readJson(path.join(v, 'brain', 'config.json')).dailyNote.layout, '{yyyy}/{yyyy}-{MM}-{MMMM}/{yyyy}-{MM}-{dd}.md');
-  assert.deepEqual(readJson(path.join(v, '.obsidian', 'daily-notes.json')), { folder: String(new Date().getFullYear()), format: 'YYYY-MM-DD' });
 
   const cfg = readJson(path.join(sb.cfg, 'agenticos.json'));
   assert.deepEqual(Object.keys(cfg), ['version', 'vault', 'node', 'claudeConfigDir', 'provider', 'claude', 'ollama', 'telemetry', 'cost', 'persona', 'graph', 'hosts']);
   // Design D1: a Claude-only install records exactly that; the Codex home is remembered for a later --host codex.
   assert.deepEqual(cfg.hosts, { claude: { enabled: true, configDir: sb.cfg, bin: FAKE_CLAUDE }, codex: { enabled: false, home: path.join(sb.home, '.codex') } });
   assert.equal(cfg.vault, v);
-  assert.equal(cfg.node, process.execPath);
+  // D12: Homebrew's stable opt link when this Node runs from the Cellar, else the running Node itself.
+  assert.equal(cfg.node, require('./node-path.js').stableNode(process.execPath));
   assert.equal(cfg.claudeConfigDir, sb.cfg);
   assert.equal(cfg.provider, 'none');
   // Contract §2: claude.bin records the resolved CLI (the sandbox's fake); the caps are unchanged — a subset check now.
@@ -382,228 +391,6 @@ test('init keeps going and prints the checklist when the plugin install fails', 
   assert.ok(fs.existsSync(path.join(v, 'brain', '_index', 'recall-index.json')), 'recall --warm ran');
 });
 
-test('download rejects on a mid-stream response error, removes the partial file, and does not crash', async () => {
-  const { download } = require('./aos.js');
-  const { PassThrough } = require('stream');
-  const { EventEmitter } = require('events');
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-download-'));
-  const dest = path.join(dir, 'main.js');
-  const fakeGet = (url, opts, cb) => {
-    const req = new EventEmitter();
-    req.setTimeout = () => {};
-    req.destroy = () => {};
-    setImmediate(() => {
-      const res = new PassThrough();
-      res.statusCode = 200;
-      res.headers = {};
-      cb(res);
-      res.write('partial');
-      setImmediate(() => res.emit('error', new Error('boom')));
-    });
-    return req;
-  };
-  await assert.rejects(download('https://example.invalid/main.js', dest, 0, fakeGet), /boom/);
-  assert.ok(!fs.existsSync(dest));
-  assert.ok(!fs.existsSync(dest + '.part'), 'the partial file is removed too');
-});
-
-test('download leaves an existing destination intact when the request fails before any response', async () => {
-  const { download } = require('./aos.js');
-  const { EventEmitter } = require('events');
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-download-keep-'));
-  const dest = path.join(dir, 'main.js');
-  fs.writeFileSync(dest, 'KEEP');
-  // Offline / DNS failure: the request errors before the callback ever runs, so nothing was downloaded and the
-  // bundle already installed at dest must survive (an offline `aos upgrade` must not delete the working plugin).
-  const fakeGet = (url, opts, cb) => {
-    const req = new EventEmitter();
-    req.setTimeout = () => {};
-    req.destroy = () => {};
-    setImmediate(() => req.emit('error', new Error('getaddrinfo ENOTFOUND example.invalid')));
-    return req;
-  };
-  await assert.rejects(download('https://example.invalid/main.js', dest, 0, fakeGet), /ENOTFOUND/);
-  assert.equal(fs.readFileSync(dest, 'utf8'), 'KEEP', 'a failed download never touches the installed file');
-  assert.ok(!fs.existsSync(dest + '.part'));
-});
-
-test('download writes the file only after the stream completes', async () => {
-  const { download } = require('./aos.js');
-  const { PassThrough } = require('stream');
-  const { EventEmitter } = require('events');
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-download-ok-'));
-  const dest = path.join(dir, 'main.js');
-  const fakeGet = (url, opts, cb) => {
-    const req = new EventEmitter();
-    req.setTimeout = () => {};
-    req.destroy = () => {};
-    setImmediate(() => {
-      const res = new PassThrough();
-      res.statusCode = 200;
-      res.headers = {};
-      cb(res);
-      res.write('hello');
-      res.end();
-    });
-    return req;
-  };
-  await download('https://example.invalid/main.js', dest, 0, fakeGet);
-  assert.equal(fs.readFileSync(dest, 'utf8'), 'hello');
-  assert.ok(!fs.existsSync(dest + '.part'), 'the staging file is renamed, not left behind');
-});
-
-test('download follows a redirect to completion, writing only to the final destination', async () => {
-  const { download } = require('./aos.js');
-  const { PassThrough } = require('stream');
-  const { EventEmitter } = require('events');
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-download-redirect-'));
-  const dest = path.join(dir, 'main.js');
-  let calls = 0;
-  const fakeGet = (url, opts, cb) => {
-    const req = new EventEmitter();
-    req.setTimeout = () => {};
-    req.destroy = () => {};
-    calls += 1;
-    const thisCall = calls;
-    setImmediate(() => {
-      const res = new PassThrough();
-      if (thisCall === 1) {
-        res.statusCode = 302;
-        res.headers = { location: 'https://example.invalid/final/main.js' };
-        cb(res);
-        res.end();
-      } else {
-        res.statusCode = 200;
-        res.headers = {};
-        cb(res);
-        res.write('redirected');
-        res.end();
-      }
-    });
-    return req;
-  };
-  await download('https://example.invalid/main.js', dest, 0, fakeGet);
-  assert.equal(calls, 2, 'the redirect was followed exactly once');
-  assert.equal(fs.readFileSync(dest, 'utf8'), 'redirected');
-  assert.ok(!fs.existsSync(dest + '.part'));
-});
-
-test('download resolves even when the outer redirected request errors late', async () => {
-  const { download } = require('./aos.js');
-  const { PassThrough } = require('stream');
-  const { EventEmitter } = require('events');
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-download-redirect-late-error-'));
-  const dest = path.join(dir, 'main.js');
-  let calls = 0;
-  let outerReq;
-  const fakeGet = (url, opts, cb) => {
-    const req = new EventEmitter();
-    req.setTimeout = () => {};
-    req.destroy = () => {};
-    calls += 1;
-    if (calls === 1) {
-      outerReq = req;
-      setImmediate(() => {
-        const res = new PassThrough();
-        res.statusCode = 302;
-        res.headers = { location: 'https://example.invalid/final/main.js' };
-        cb(res);
-        res.end();
-        // The OUTER request errors after the redirect has been handed to the inner download — this must not unlink
-        // the inner download's in-flight file or reject the outer promise.
-        setImmediate(() => outerReq.emit('error', new Error('outer socket reset')));
-      });
-    } else {
-      setImmediate(() => {
-        const res = new PassThrough();
-        res.statusCode = 200;
-        res.headers = {};
-        cb(res);
-        res.write('redirected');
-        res.end();
-      });
-    }
-    return req;
-  };
-  await download('https://example.invalid/main.js', dest, 0, fakeGet);
-  assert.equal(fs.readFileSync(dest, 'utf8'), 'redirected', 'the inner download completed despite the outer error');
-  assert.ok(!fs.existsSync(dest + '.part'));
-});
-
-test('obsidianBundle warns and leaves the vault alone when no staging dir can be created', async () => {
-  const { obsidianBundle, out } = require('./aos.js');
-  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-fake-repo-'));
-  fs.mkdirSync(path.join(repo, 'obsidian-plugin'), { recursive: true });
-  fs.writeFileSync(path.join(repo, 'obsidian-plugin', 'manifest.json'), JSON.stringify({ id: 'agentic-os', version: '9.9.9' }));
-  const vault = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-bundle-vault-'));
-  const warns = [];
-  const prevWarn = out.warn;
-  const prevTmp = process.env.TMPDIR;
-  out.warn = (m) => warns.push(m);
-  process.env.TMPDIR = path.join(vault, 'no-such-tmp'); // os.tmpdir() reads TMPDIR on every call
-  try {
-    await obsidianBundle({ repo, vault, written: [], act: async (_what, fn) => fn() });
-  } finally {
-    out.warn = prevWarn;
-    if (prevTmp === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = prevTmp;
-  }
-  assert.ok(warns.some((m) => /could not create a staging dir/.test(m)), warns.join('\n'));
-  assert.ok(!fs.existsSync(path.join(vault, '.obsidian', 'plugins')), 'nothing was written into the vault');
-});
-
-// A checkout's main.js is gitignored: one left from an earlier build must never be installed beside newer sources.
-async function bundleRun({ stale, nodeModules, buildFails = false }) {
-  const { obsidianBundle, out } = require('./aos.js');
-  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-fake-repo-'));
-  const src = path.join(repo, 'obsidian-plugin');
-  fs.mkdirSync(path.join(src, 'src'), { recursive: true });
-  fs.writeFileSync(path.join(src, 'manifest.json'), JSON.stringify({ id: 'agentic-os', version: '9.9.9' }));
-  fs.writeFileSync(path.join(src, 'styles.css'), '.a {}');
-  fs.writeFileSync(path.join(src, 'src', 'tab.ts'), 'export {};');
-  fs.writeFileSync(path.join(src, 'main.js'), 'old build');
-  const past = new Date(Date.now() - 86400000);
-  if (stale) fs.utimesSync(path.join(src, 'main.js'), past, past);
-  else for (const f of ['manifest.json', 'styles.css', 'src/tab.ts']) fs.utimesSync(path.join(src, f), past, past);
-  if (nodeModules) fs.mkdirSync(path.join(repo, 'node_modules'));
-  const npm = path.join(repo, 'fake-npm.sh');
-  fs.writeFileSync(npm, `#!/bin/sh\n[ "${buildFails ? 1 : 0}" = 1 ] && exit 1\nprintf 'fresh build' > obsidian-plugin/main.js\n`, { mode: 0o755 });
-  const vault = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-bundle-vault-'));
-  const warns = [];
-  const prev = { warn: out.warn, npm: process.env.AOS_NPM_BIN, tmp: process.env.TMPDIR };
-  out.warn = (m) => warns.push(m);
-  process.env.AOS_NPM_BIN = npm;
-  process.env.TMPDIR = path.join(vault, 'no-such-tmp'); // the release fallback stays offline: it cannot stage
-  const ctx = { repo, vault, written: [], act: async (_what, fn) => fn() };
-  try {
-    await obsidianBundle(ctx);
-  } finally {
-    out.warn = prev.warn;
-    for (const [k, v] of [['AOS_NPM_BIN', prev.npm], ['TMPDIR', prev.tmp]]) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
-  }
-  const installed = path.join(vault, '.obsidian', 'plugins', 'agentic-os', 'main.js');
-  return { warns, bundle: ctx.bundle, installed: fs.existsSync(installed) ? fs.readFileSync(installed, 'utf8') : null };
-}
-
-test('obsidianBundle rebuilds a checkout that can build, so a stale main.js is never installed', async () => {
-  assert.equal((await bundleRun({ stale: true, nodeModules: true })).installed, 'fresh build');
-  assert.equal((await bundleRun({ stale: false, nodeModules: true })).installed, 'fresh build', 'it builds even when main.js looks current');
-});
-
-test('obsidianBundle refuses a main.js older than its sources when it cannot rebuild, and says why', async () => {
-  const noDeps = await bundleRun({ stale: true, nodeModules: false });
-  assert.equal(noDeps.installed, null);
-  assert.ok(noDeps.warns.some((m) => /older than the plugin's sources, so it is not installed; run npm ci/.test(m)), noDeps.warns.join('\n'));
-  for (const stale of [true, false]) {
-    const failed = await bundleRun({ stale, nodeModules: true, buildFails: true });
-    assert.equal(failed.installed, null, `a failed build installs nothing (main.js ${stale ? 'older' : 'newer'} than the sources)`);
-    assert.ok(failed.warns.some((m) => /the Obsidian build failed, so obsidian-plugin\/main\.js .* is not installed/.test(m)), failed.warns.join('\n'));
-    assert.equal(failed.bundle, 'kept');
-  }
-  const current = await bundleRun({ stale: false, nodeModules: false });
-  assert.equal(current.installed, 'old build', 'a current main.js with no way to build installs as before');
-  assert.equal(current.bundle, 'installed');
-});
-
 function initialized() {
   const sb = sandbox();
   const r = aos(sb, ['init', '--vault', sb.vault, '--no-obsidian', '--provider', 'none', '--yes']);
@@ -619,10 +406,38 @@ test('doctor passes on an initialized vault when the plugin is installed (MCP pr
   assert.match(r.stdout, /ok\s+MCP server answers\s+serverInfo\.name=agenticos/);
   assert.match(r.stdout, new RegExp(`ok\\s+graphify ${reEsc(GRAPHIFY_PIN)}\\s+.*agenticos/graphify/bin/graphify`));
   assert.match(r.stdout, /ok\s+graph fresh\s+built \d+s ago · 5 nodes · 5 edges/);
-  assert.match(r.stdout, /warn\s+obsidian plugin/);
+  assert.match(r.stdout, /warn\s+workbench app\s+not registered yet — open the AgenticOS Workbench app once$/m);
+  assert.doesNotMatch(r.stdout, /^(?:ok|FAIL|warn|info)\s+obsidian/m);
   // cross-review spec D6: a Claude-only machine gets a warn row naming the same-provider fallback, never a failure.
   assert.match(r.stdout, /warn\s+cross-review\s+same-provider only: codex CLI not found — the skill offers a labelled same-provider review$/m);
   assert.match(r.stdout, /all checks passed/);
+});
+
+// workbench-app D11: the app records itself in brain/_index/hud-host.json; doctor names it, or says to open it once.
+test('doctor shows the Workbench app the vault was last opened with', () => {
+  const sb = initialized();
+  const marker = path.join(sb.vault, 'brain', '_index', 'hud-host.json');
+  fs.writeFileSync(marker, JSON.stringify({ schema: 1, host: 'app', name: 'AgenticOS Workbench', version: '1.0.0', at: new Date().toISOString() }));
+  const r = aos(sb, ['doctor'], { FAKE_PLUGIN_PATH: path.join(ROOT, 'plugin') });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /ok\s+workbench app\s+AgenticOS Workbench 1\.0\.0$/m);
+  fs.writeFileSync(marker, JSON.stringify({ schema: 1, host: 'app', name: 'AgenticOS Workbench', version: 'dev' }));
+  assert.match(aos(sb, ['doctor'], { FAKE_PLUGIN_PATH: path.join(ROOT, 'plugin') }).stdout, /warn\s+workbench app\s+not registered yet/, 'a version it cannot order is no record');
+});
+
+// D12: a versioned Homebrew path goes with the next `brew upgrade`; doctor says how to record the stable link.
+test('doctor warns on a node path recorded inside Homebrew\'s Cellar', () => {
+  const sb = initialized();
+  const cellar = path.join(sb.dir, 'brew', 'Cellar', 'node', '25.1.0', 'bin');
+  fs.mkdirSync(cellar, { recursive: true });
+  fs.copyFileSync(process.execPath, path.join(cellar, 'node'));
+  const cfgPath = path.join(sb.cfg, 'agenticos.json');
+  const recorded = readJson(cfgPath).node;
+  assert.doesNotMatch(aos(sb, ['doctor'], { FAKE_PLUGIN_PATH: path.join(ROOT, 'plugin') }).stdout, /node path/, recorded);
+  fs.writeFileSync(cfgPath, JSON.stringify({ ...readJson(cfgPath), node: path.join(cellar, 'node') }, null, 2));
+  const r = aos(sb, ['doctor'], { FAKE_PLUGIN_PATH: path.join(ROOT, 'plugin') });
+  assert.match(r.stdout, /warn\s+node path\s+a versioned Homebrew Cellar path — re-run `aos upgrade` to record the stable link$/m);
+  assert.match(r.stdout, /ok\s+node in config/);
 });
 
 test('doctor warns when AOS_VAULT points at a directory that does not exist', () => {
@@ -728,6 +543,26 @@ test('upgrade re-vendors the runtime, migrates config, keeps memory', () => {
   assert.equal(vc.scan.fileMapBudget, 7);
   assert.equal(vc.scan.embedBudget, 40);
   assert.match(r.stdout, /Memory, notes and persona were not touched/);
+  assert.doesNotMatch(r.stdout, /Obsidian/, 'a vault with no Obsidian-era plugin folder hears nothing about it');
+});
+
+// workbench-app D1, D12: upgrade installs no HUD into the vault, says once where an Obsidian-era Workbench went (and
+// leaves its folder alone), and records Homebrew's stable Node link.
+test('upgrade installs no HUD, points an Obsidian-era install at the app, and records the stable node path', () => {
+  const sb = initialized();
+  const old = path.join(sb.vault, '.obsidian', 'plugins', 'agentic-os');
+  fs.mkdirSync(old, { recursive: true });
+  fs.writeFileSync(path.join(old, 'main.js'), '// the Obsidian-era HUD\n');
+  const cfgPath = path.join(sb.cfg, 'agenticos.json');
+  fs.writeFileSync(cfgPath, JSON.stringify({ ...readJson(cfgPath), node: '/somewhere/old/node' }, null, 2));
+  const r = aos(sb, ['upgrade', '--no-obsidian', '--from-local', ROOT]);
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  const said = r.stdout.split('\n').filter((l) => /AgenticOS Workbench app/.test(l));
+  assert.equal(said.length, 1, r.stdout);
+  assert.match(said[0], /^The Workbench is now the AgenticOS Workbench app for macOS; once you use the app, you can remove the old Obsidian plugin folder .*\.obsidian\/plugins\/agentic-os\.$/);
+  assert.equal(fs.readFileSync(path.join(old, 'main.js'), 'utf8'), '// the Obsidian-era HUD\n', 'the old folder is left alone');
+  assert.deepEqual(fs.readdirSync(old), ['main.js'], 'nothing new installed into it');
+  assert.equal(readJson(cfgPath).node, require('./node-path.js').stableNode(process.execPath));
 });
 
 // graphify spec D3/§4.1: upgrade reinstalls only on a version drift, seeds a missing .graphifyignore, and moves a graph no
@@ -973,8 +808,8 @@ test('persona on/off toggle the kill switch; persona and cost subcommands are wi
   assert.match(aos(sb, ['cost']).stdout, /cost disabled/);
   assert.equal(aos(sb, ['terminal']).status, 2);
   const term = aos(sb, ['terminal', 'install']);
-  assert.equal(term.status, 1);
-  assert.match(term.stderr, /no package\.json/);
+  assert.equal(term.status, 0, term.stderr);
+  assert.match(term.stdout, /nothing to install — the AgenticOS Workbench app brings its own terminal/);
 });
 
 test('uninstall warns when the claude CLI cannot remove the plugin, and refuses to delete a structurally invalid vault', () => {

@@ -9,8 +9,7 @@
  *
  * Design: docs/superpowers/specs/2026-09-15-update-notification-design.md
  * Contract: every path exits 0 with empty stdout — a hook must never fail a Claude Code session.
- * Zero dependencies; the HTTP getter and the clock are injectable (the `getFn` seam mirrors
- * cli/aos.js download()).
+ * Zero dependencies; the HTTP getter and the clock are injectable (the `getFn` seam).
  */
 const fs = require('fs');
 const os = require('os');
@@ -93,22 +92,25 @@ function lowerVersion(a, b) {
 /** The lowest of the versions given (nulls skipped): what "installed" is when the parts of an install disagree. */
 function lowestVersion(...vs) { return vs.reduce((a, b) => lowerVersion(a, b), null); }
 
-/** The version an incomplete Workbench install counts as: below every release, so it is always behind. */
-const HUD_INCOMPLETE = '0.0.0';
+/** lib/hud-host.js: the vendored copy beside this file (<vault>/brain/scripts/cli/..), else the checkout's. */
+function hudHost() {
+  for (const p of [path.join(__dirname, '..', 'lib', 'hud-host.js'), path.join(__dirname, '..', 'brain', 'scripts', 'lib', 'hud-host.js')]) {
+    if (fs.existsSync(p)) return require(p);
+  }
+  return null;
+}
 
 /**
- * The Workbench's own version: the Obsidian plugin's manifest.json in the vault (the bundle `aos upgrade` installs, as
- * cli/aos.js OBSIDIAN_PLUGIN_ID names it). An upgrade that could not replace the bundle leaves its old manifest, so the
- * Workbench still counts as behind. A bundle whose manifest is missing or has no valid version (a copy cut short) is
- * incomplete and counts as behind too. null only when there is no bundle at all (`aos init --no-obsidian`).
+ * The Workbench's own version: the AgenticOS Workbench app's, from the marker it writes in the vault each time it starts
+ * (<vault>/brain/_index/hud-host.json, spec 2026-10-05-workbench-app-design D11). An app left on an older release
+ * keeps counting as behind until it is updated and opened. null when the app has not run against this vault, or the
+ * marker carries no version the check can order: the install is then judged by the plugin and the vault alone.
  */
 function hudVersionFrom(vault) {
   if (!vault) return null;
-  const dir = path.join(vault, '.obsidian', 'plugins', 'agentic-os');
-  const m = readJsonOrNull(path.join(dir, 'manifest.json'));
-  const v = m && typeof m.version === 'string' ? m.version : null;
-  if (v && parseSemver(v)) return v;
-  return m || fs.existsSync(path.join(dir, 'main.js')) || fs.existsSync(path.join(dir, 'manifest.json')) ? HUD_INCOMPLETE : null;
+  const H = hudHost();
+  const m = H ? H.readMarker(vault) : null;
+  return m && parseSemver(m.version) ? m.version : null;
 }
 
 function storePath(vault) { return path.join(vault, STORE_REL); }
@@ -171,8 +173,7 @@ function renderNotice(state, now = new Date()) {
   const { latest, pluginVersion, vaultVersion, hudVersion, installed } = state;
   const parts = [['plugin', pluginVersion], ['vault', vaultVersion], ['Workbench', hudVersion]].filter(([, v]) => v);
   const skew = new Set(parts.map(([, v]) => v)).size > 1;
-  const label = ([k, v]) => (k === 'Workbench' && v === HUD_INCOMPLETE ? 'Workbench incomplete' : `${k} ${v}`);
-  const have = skew ? parts.map(label).join(', ') : `you have ${installed}`;
+  const have = skew ? parts.map(([k, v]) => `${k} ${v}`).join(', ') : `you have ${installed}`;
   return `AgenticOS Workbench ${latest} available (${have}) — run \`aos upgrade\``;
 }
 
@@ -474,8 +475,8 @@ async function updateNoticeOnly({
     const at = now();
     let state = readState(vault);
 
-    // Only this process can see the plugin's own version; persist it so the other consumers can too. The Workbench's
-    // manifest is read again at every session start, so a bundle replaced (or not) since the last check counts now.
+    // Only this process can see the plugin's own version; persist it so the other consumers can too. The app's marker is
+    // read again at every session start, so an app updated (or not) since the last check counts now.
     const pv = pluginVersionFrom(pluginRoot);
     const hv = hudVersionFrom(vault);
     if (state && ((pv && pv !== state.pluginVersion) || hv !== (state.hudVersion || null))) {
@@ -509,7 +510,7 @@ module.exports = {
   statuslineNotice,
   REPO_SLUG, LATEST_URL, STORE_REL, LINE_REL, SCHEMA,
   DEFAULT_INTERVAL_HOURS, MAX_BACKOFF_DOUBLINGS, MAX_BODY_BYTES, TAG_RE,
-  parseTag, cmpSemver, lowerVersion, lowestVersion, hudVersionFrom, HUD_INCOMPLETE,
+  parseTag, cmpSemver, lowerVersion, lowestVersion, hudVersionFrom,
   storePath, linePath, writeAtomic, readState, writeState,
   isBehind, isSnoozed, isStale, renderStatusline, renderNotice, writeFragment,
   claudeConfigDir, agenticosPath, updatesConfig, httpGetJson, runCheck,
