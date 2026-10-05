@@ -3,6 +3,7 @@ import type AgenticOSPlugin from "../../main";
 import { PulseTab } from "./PulseTab";
 import { SpacesTab } from "./SpacesTab";
 import { MemoryTab } from "./MemoryTab";
+import { FilesTab } from "./FilesTab";
 import { RunsTab } from "./RunsTab";
 import { RoutinesTab } from "./RoutinesTab";
 import { SkillsTab } from "./SkillsTab";
@@ -26,6 +27,7 @@ interface RailTab { id: string; icon: string; label: string }
 
 const RAIL: RailTab[] = [
   { id: "pulse", icon: "◉", label: "Pulse" },
+  { id: "files", icon: "▤", label: "Files" },
   { id: "todo", icon: "☐", label: "To-Do" },
   { id: "proposals", icon: "⚖", label: "Proposals" },
   { id: "notifications", icon: "◔", label: "Notifications" },
@@ -228,6 +230,7 @@ export class WorkbenchView extends ItemView {
 
   private makeTab(id: string) {
     if (id === "pulse") return new PulseTab(this.plugin, this);
+    if (id === "files") return new FilesTab(this.plugin, this);
     if (id === "todo") return new TodoTab(this.plugin, this);
     if (id === "proposals") return new ProposalsTab(this.plugin, this);
     if (id === "notifications") return new NotificationsTab(this.plugin, this);

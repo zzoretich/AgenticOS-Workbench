@@ -205,6 +205,17 @@ export const SURFACES: readonly Surface[] = [
     verified: true,
   },
   {
+    id: "files",
+    label: "Files",
+    source: "views/FilesTab.ts and data/vaultFiles.ts: a new note (and its folders), a rename or move (both ends), a file to the Trash",
+    writes: ["**/*"],
+    folders: ["**"],
+    // The runtime's caches and vendored scripts, and the hosts' own folders: data/vaultFiles.ts PROTECTED_PREFIXES.
+    except: ["brain/_index/**", "brain/scripts/**", ".obsidian/**", ".git/**", "**/node_modules/**"],
+    spawns: [],
+    verified: true,
+  },
+  {
     id: "notes",
     label: "Notes",
     source: "the app's own note editor (compat/src/noteEditor.ts), not the HUD: saves of a Markdown note open in the note pane",

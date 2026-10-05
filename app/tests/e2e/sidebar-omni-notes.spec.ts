@@ -117,7 +117,7 @@ test.describe("⌘K omnisearch", () => {
 });
 
 test.describe("note view", () => {
-  test("a note opens rendered and read-only (Edit disabled without Notes), with Open in Obsidian and Show in Finder handed to the OS", async () => {
+  test("a note opens rendered and read-only (Edit disabled without Notes), with Show in Finder handed to the OS and no Open in Obsidian", async () => {
     const h = app();
     const { win } = h;
     await win.evaluate(() => (window as unknown as { aosHost: { app: { workspace: { openLinkText(l: string, s: string, n: boolean): Promise<void> } } } }).aosHost.app.workspace.openLinkText("MEMORY", "", true));
@@ -131,11 +131,10 @@ test.describe("note view", () => {
     const editBtn = noteBar(win).locator("button.aos-note-edit");
     await expect(editBtn).toBeDisabled();
     await expect(editBtn).toHaveAttribute("title", /^Read-only: Notes is off for this run \(AOS_APP_WRITE\)\./);
+    await expect(noteBar(win).locator("button", { hasText: "Open in Obsidian" })).toHaveCount(0);
     await noteBar(win).locator("button", { hasText: "Show in Finder" }).click();
-    await noteBar(win).locator("button", { hasText: "Open in Obsidian" }).click();
     await expect.poll(async () => (await h.opened()).map((o) => `${o.fn} ${o.arg}`)).toEqual(expect.arrayContaining([
       `showItemInFolder ${path.join(FX.vault, "MEMORY.md")}`,
-      `openExternal obsidian://open?path=${encodeURIComponent(path.join(FX.vault, "MEMORY.md"))}`,
     ]));
   });
 

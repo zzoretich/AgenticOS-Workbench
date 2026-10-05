@@ -55,6 +55,9 @@ export function buildAppMenu(commands: CommandInfo[], run: (id: string) => void,
     {
       label: "File",
       submenu: [
+        item("agentic-os:open-file", "Open File…", "CmdOrCtrl+O"),
+        item("agentic-os:search-vault", "Search Vault…", "CmdOrCtrl+Shift+F"),
+        { type: "separator" },
         item("agentic-os:quick-capture"),
         item("agentic-os:new-terminal"),
         { type: "separator" },

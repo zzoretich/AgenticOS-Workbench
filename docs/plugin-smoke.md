@@ -51,9 +51,18 @@ Run before tagging a release, on a vault created by `aos init` (not the develope
 - [ ] Listener leak: switch Pulse → Memory → Pulse → Term → Pulse five times, then in the developer console `app.plugins.plugins["agentic-os"].terminalPool._["session-add"].length` is 1 (the Pulse panel on screen), not one per visit. `_` is where Obsidian's `Events` keeps listeners in current builds; it is not public API.
 - [ ] Heartbeat pill: absent on a vault whose watchdog never ran; after `aos routines run heartbeat` a green `♥ <age>` pill sits next to the update pill and its tooltip lists each duty with status, last run and next fire. Backdate `checkedAt` in `brain/_index/persona-heartbeat.json` by 2 h → amber within a second (the file is watched); set one duty's `status` to `missed` → rose with `· 1 missed` in the label.
 
+## Files
+- [ ] The rail shows Files second; the tree lists the vault's top level, folders first, without dot-folders, node_modules or graphify-out
+- [ ] A folder opens and closes in place; a click on a note opens it in a tab
+- [ ] Search finds lines across notes with the hit highlighted; "all text files" adds code and data files; a line opens its note; Escape clears it
+- [ ] Open file… (⌘O in the app) matches paths fuzzily, Markdown first; Search vault… (⌘⇧F in the app) opens Files with the cursor in the search box
+- [ ] + note makes a Markdown note in the chosen folder (created if missing) and opens it; the form says why it refuses (exists, brain/_index or brain/scripts, a climb out, no name)
+- [ ] Rename keeps the folder and the extension; Move puts the file in another folder; both keep the bytes
+- [ ] ✕ asks first; Move to Trash puts the file in the macOS Trash; brain/_index and brain/scripts files offer no actions
+
 ## To-Do
 
-- [ ] The To-Do rail button sits between Pulse and Proposals. On a vault without `TODO.md` the tab reads "Nothing open"; `open TODO.md` creates it from the seed (same text as `vault-template/TODO.md`) and opens it.
+- [ ] The To-Do rail button sits between Files and Proposals. On a vault without `TODO.md` the tab reads "Nothing open"; `open TODO.md` creates it from the seed (same text as `vault-template/TODO.md`) and opens it.
 - [ ] Quick-add: type `Renew passport #personal`, pick `⏫ high` and a date, press Enter → `- [ ] Renew passport ⏫ 📅 <date> #personal` is appended to the end of `## Open`; the input clears. Tokens typed inline (`Call dentist 🔽 📅 2026-10-01`) are kept as written.
 - [ ] Items group into OVERDUE (rose, with `<n>d late`) / TODAY (amber) / UPCOMING / SOMEDAY and sort 🔺 ⏫ 🔼 (none) 🔽 within a group. The badge counts overdue + today and updates within a second of an edit, **with another tab active** (edit `TODO.md` by hand to check).
 - [ ] Ticking a row moves it, with any indented lines under it, to the top of `## Done` as `- [x] … ✅ <today>`; `▸ DONE THIS WEEK` lists it; unticking there moves it back to the end of `## Open` without the ✅.

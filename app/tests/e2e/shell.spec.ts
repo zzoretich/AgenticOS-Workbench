@@ -32,12 +32,14 @@ test("rail: the tabs in order, no Chat without a provider, ⚙ Settings at the f
   const { win } = app();
   const ids = await win.locator(".aos-wb-railtabs .aos-wb-railbtn").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.tab));
   expect(ids).toEqual(RAIL_ORDER.filter((id) => id !== "chat"));
-  // To-Do sits between Pulse and Proposals; Notifications right after Proposals; Agent Teams right after Agents.
-  expect(ids.indexOf("todo")).toBe(ids.indexOf("pulse") + 1);
+  // Files right after Pulse, then To-Do and Proposals; Notifications right after Proposals; Agent Teams right after Agents.
+  expect(ids.indexOf("files")).toBe(ids.indexOf("pulse") + 1);
+  expect(ids.indexOf("todo")).toBe(ids.indexOf("files") + 1);
   expect(ids.indexOf("proposals")).toBe(ids.indexOf("todo") + 1);
   expect(ids.indexOf("notifications")).toBe(ids.indexOf("proposals") + 1);
   expect(ids.indexOf("agent-teams")).toBe(ids.indexOf("agents") + 1);
   await expect(win.locator(".aos-wb-railfoot .aos-wb-railbtn[data-tab='settings']")).toHaveCount(1);
+  await expect(rail(win, "files").locator(".aos-wb-railicon")).toHaveText("▤");
   await expect(rail(win, "skills").locator(".aos-wb-railicon")).toHaveText("✦");
   await expect(rail(win, "agents").locator(".aos-wb-railicon")).toHaveText("♟");
   await expect(rail(win, "agent-teams").locator(".aos-wb-railicon")).toHaveText("⁂");

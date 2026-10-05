@@ -6,6 +6,8 @@ import { WorkbenchView, VIEW_TYPE_WORKBENCH, WORKBENCH_TAB_IDS } from "./src/vie
 import type { TermTab } from "./src/views/TermTab";
 import type { PulseTab } from "./src/views/PulseTab";
 import type { RunsTab } from "./src/views/RunsTab";
+import type { FilesTab } from "./src/views/FilesTab";
+import { QuickOpenModal } from "./src/ui/QuickOpenModal";
 import { TerminalPool } from "./src/data/terminalPool";
 import { setPluginDir as setTerminalPluginDir } from "./src/data/terminalSession";
 import { AgenticOSSettings, AgenticOSSettingTab, DEFAULT_SETTINGS } from "./src/settings";
@@ -116,6 +118,10 @@ export default class AgenticOSPlugin extends Plugin {
     });
     this.addCommand({ id: "open-omnisearch", name: "Omnisearch",
       callback: () => { void this.openOmni(); } });
+    // The Files tab's two entry points (no default hotkeys: in Obsidian ⌘O and ⌘⇧F are its own; the app's menu binds them).
+    this.addCommand({ id: "open-file", name: "Open file…", callback: () => { new QuickOpenModal(this.app).open(); } });
+    this.addCommand({ id: "search-vault", name: "Search vault…",
+      callback: () => { void this.openWorkbenchTab("files").then(() => this.currentFilesTab()?.focusSearch()); } });
 
     this.addSettingTab(new AgenticOSSettingTab(this.app, this));
 
@@ -537,6 +543,13 @@ export default class AgenticOSPlugin extends Plugin {
     if (leaf && typeof leaf.loadIfDeferred === "function") await leaf.loadIfDeferred();
     const view = leaf?.view;
     if (view instanceof WorkbenchView) view.setTab(tab);
+  }
+
+  /** Live FilesTab instance, if the Workbench view is open (as currentRunsTab). */
+  private currentFilesTab(): FilesTab | null {
+    const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_WORKBENCH)[0];
+    const view = leaf?.view;
+    return view instanceof WorkbenchView ? (view.getTab("files") as FilesTab | null) : null;
   }
 
   /** Live RunsTab instance, if the Workbench view is currently open — same
