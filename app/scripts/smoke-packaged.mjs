@@ -129,7 +129,8 @@ const info = await page.evaluate(() => {
   const sheets = [...document.styleSheets].filter((s) => s.href).map((s) => { try { return s.cssRules.length; } catch { return -1; } });
   return {
     info: h?.info, resourcesPath: h?.info?.resourcesPath, sheets,
-    status: document.querySelector(".aos-host-status")?.textContent?.trim() ?? "",
+    // What the status bar shows: the write-mode item is in the DOM but hidden (display: none) by default.
+    status: document.querySelector(".aos-host-status")?.innerText?.trim() ?? "",
   };
 });
 check("it reports the package's version", info.info?.appVersion === VERSION, info.info?.appVersion);
