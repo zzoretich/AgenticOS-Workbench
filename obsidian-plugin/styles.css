@@ -1262,7 +1262,8 @@
 .aos-wb-content { flex: 1; overflow-y: auto; padding: 12px; min-width: 0; }
 .aos-wb-drawer { width: 0; border-left: none; overflow: hidden; transition: width 0.15s; }
 .aos-wb-drawer.is-open { width: 220px; border-left: 1px solid var(--aos-border); padding: 10px; overflow-y: auto; }
-.aos-wb-drawerhead { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+/* padding-right keeps ✕ clear of the overlay scrollbar, which covers the drawer's right edge just after it scrolls. */
+.aos-wb-drawerhead { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; padding-right:10px; }
 .aos-wb-drawertitle { color: var(--aos-amber); font-family: var(--aos-mono); font-size: 11px; letter-spacing: 1px; }
 .aos-wb-draweractions { display: flex; gap: 6px; }
 
