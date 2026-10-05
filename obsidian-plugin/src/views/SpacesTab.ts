@@ -364,7 +364,6 @@ export class SpacesTab {
   // Obsidian vault root, so we open via the OS rather than the vault API.
   private reveal(abs: string): void {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
       void shell.openPath(abs);
     } catch (e) {
       new Notice(`Cannot open: ${abs}`);
@@ -389,7 +388,6 @@ export class SpacesTab {
   private openFolder(rel: string): void {
     try {
       const abs = `${this.vaultBase()}/${rel}`;
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
       void shell.openPath(abs);
     } catch (e) {
       new Notice(`Cannot open: ${rel}`);

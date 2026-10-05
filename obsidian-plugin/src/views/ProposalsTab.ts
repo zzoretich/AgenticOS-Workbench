@@ -251,7 +251,6 @@ export class ProposalsTab {
   private openPage(page: string): void {
     const abs = `${this.plugin.vaultRoot()}/${page}`;
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
       void shell.openPath(abs).then((err: string) => { if (err) new Notice(`Cannot open ${page}: ${err}`); });
     } catch {
       new Notice(`Cannot open: ${page}`);

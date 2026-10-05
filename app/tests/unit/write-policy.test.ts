@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
-import { SURFACES, SURFACE_IDS, WritePolicy, globToRegExp, parseSurfaces } from "../../src/shared/write-policy";
+import { SURFACES, SURFACE_IDS, WritePolicy, globToRegExp, parseSurfaces } from "../../src/main/policy/write-policy";
 
 const VAULT = "/vaults/demo";
 const v = (rel: string) => `${VAULT}/${rel}`;
@@ -219,7 +219,7 @@ test("settings may create the live-runs folder and summary log, and nothing else
 
 test("Notes lets the note editor save Markdown notes, never the runtime's or vendored files, and nothing else", () => {
   const p = new WritePolicy(VAULT, ["notes"]);
-  for (const rel of ["TODO.md", "MEMORY.md", "brain/memory/projects/harbor-map.md", "persona/IDENTITY.md", "2026/2026-09-September/2026-09-29.md", "notes/.hidden.md"]) {
+  for (const rel of ["TODO.md", "MEMORY.md", "brain/memory/projects/harbor-map.md", "persona/IDENTITY.md", "2026/2026-09-September/2026-09-29.md"]) {
     assert.equal(p.canSave(v(rel)), true, rel);
   }
   assert.equal(p.canSave(`${VAULT}/brain/_index/../../TODO.md`), true, "resolved before matching");
@@ -227,7 +227,18 @@ test("Notes lets the note editor save Markdown notes, never the runtime's or ven
     v("brain/_index/BRAIN.md"), v("brain/_index/proposals/x.md"), v("brain/scripts/README.md"), v(".obsidian/x.md"), v(".git/x.md"),
     v("tools/node_modules/pkg/README.md"), v("TODO.md.bak"), v("brain/config.json"), v("TODO.mdx"), "/elsewhere/TODO.md",
     `${VAULT}/../TODO.md`, "TODO.md", `${VAULT}/brain/memory/../_index/BRAIN.md`,
+    // Every dot-path (S7): hidden from the tree, and where the hosts read project config.
+    v("notes/.hidden.md"), v(".claude/agents/x.md"), v("workspaces/app/.claude/commands/x.md"), v(".codex/AGENTS.md"),
   ]) assert.equal(p.canSave(target), false, target);
+});
+
+test("Files never writes or creates a dot-path: a compromised page cannot plant a host's project config", () => {
+  const p = new WritePolicy(VAULT, ["files"]);
+  for (const rel of ["workspaces/app/PLAN.md", "notes/a.md", "a/b/c/d.txt", "x.y/z.md"]) assert.equal(p.canWrite(v(rel)), true, rel);
+  for (const rel of [".claude/settings.json", ".claude/settings.local.json", ".mcp.json", "workspaces/app/.mcp.json", "workspaces/app/.claude/settings.json",
+    ".codex/config.toml", ".git/hooks/pre-commit", ".envrc", "a/.vscode/tasks.json", ".obsidian/app.json"]) assert.equal(p.canWrite(v(rel)), false, rel);
+  for (const rel of [".claude", "workspaces/app/.claude", ".git/hooks"]) assert.equal(p.canMakeFolder(v(rel)), false, rel);
+  assert.equal(p.canMakeFolder(v("workspaces/new")), true);
 });
 
 test("switching Notes on never widens what the HUD may write, and a HUD surface never lets the editor save", () => {

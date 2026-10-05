@@ -1,6 +1,7 @@
 // Phase 3's exit criterion for a build (PLAN.md §7): the app and the DMG in dist/ are signed with a Developer ID under
 // the hardened runtime, notarized and stapled, carry exactly the entitlements and fuses electron-builder.yml asks for,
-// and ship nothing they should not (source maps, other platforms' prebuilds, a home folder's path).
+// and ship nothing they should not (source maps, other platforms' prebuilds, a home folder's path). Phase 4: the release
+// refuses to start with a debugging switch, so nothing can drive it from outside (src/main/policy/debug.ts).
 //
 //   node scripts/verify-dist.mjs [--notarize-dmg] [--app-only]
 //
@@ -10,8 +11,9 @@
 
 import { extractFile, listPackage } from "@electron/asar";
 import { FuseV1Options, getCurrentFuseWire } from "@electron/fuses";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -118,13 +120,47 @@ check("fuse WasmTrapHandlers on (Electron's default)", wire[WASM_TRAP_HANDLERS] 
 const asar = path.join(RES, "app.asar");
 const files = listPackage(asar, { isPack: false }).map((f) => f.replace(/\\/g, "/"));
 const outFiles = files.filter((f) => f.startsWith("/out/") && /\.[a-z]+$/.test(f)).sort();
-const expectedOut = ["/out/main/index.js", "/out/renderer/base.css", "/out/renderer/host.css", "/out/renderer/hud.css", "/out/renderer/hud.js", "/out/renderer/index.html"];
+const expectedOut = ["/out/main/index.js", "/out/preload/index.js", "/out/renderer/base.css", "/out/renderer/host.css", "/out/renderer/hud.css", "/out/renderer/hud.js", "/out/renderer/index.html"];
 check("out/ holds the app and nothing else", JSON.stringify(outFiles) === JSON.stringify(expectedOut), outFiles.join(" "));
 check("no source maps", !files.some((f) => f.endsWith(".map")));
 check("only this Mac's node-pty prebuild", !files.some((f) => /prebuilds\/(darwin-x64|win32)/.test(f)) && fs.readdirSync(path.dirname(PTY)).join() === "darwin-arm64");
 const home = os.homedir();
 const leaks = expectedOut.filter((f) => extractFile(asar, f.slice(1)).toString("utf8").includes(home));
 check("no home-folder path in the bundled code", leaks.length === 0, leaks.join(", "));
+
+// ── no way in from outside ───────────────────────────────────────────
+
+/** A port nothing listens on now. */
+const freePort = () => new Promise((resolve, reject) => {
+  const srv = net.createServer();
+  srv.once("error", reject);
+  srv.listen(0, "127.0.0.1", () => { const { port } = srv.address(); srv.close(() => resolve(port)); });
+});
+/** Whether something accepts a connection on the port. */
+const listening = (port) => new Promise((resolve) => {
+  const sock = net.connect(port, "127.0.0.1");
+  sock.once("connect", () => { sock.destroy(); resolve(true); });
+  sock.once("error", () => resolve(false));
+});
+
+{
+  const port = await freePort();
+  const userData = fs.mkdtempSync(path.join(os.tmpdir(), "aos-verify-"));
+  const exe = path.join(APP, "Contents", "MacOS", NAME);
+  const child = spawn(exe, [`--remote-debugging-port=${port}`], { env: { ...process.env, AOS_APP_USER_DATA: userData }, stdio: ["ignore", "ignore", "pipe"] });
+  let stderr = "";
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", (d) => { stderr += d; });
+  let opened = false;
+  const exit = await new Promise((resolve) => {
+    const poll = setInterval(async () => { if (await listening(port)) opened = true; }, 100);
+    const timer = setTimeout(() => { clearInterval(poll); child.kill("SIGKILL"); resolve(null); }, 15_000);
+    child.once("exit", (code) => { clearInterval(poll); clearTimeout(timer); resolve(code); });
+  });
+  check("a release build refuses --remote-debugging-port: it exits before anything listens", exit === 1 && !opened && /refusing to start/.test(stderr),
+    `exit ${exit}${opened ? ", the port answered" : ""}; ${firstLine(stderr)}`);
+  fs.rmSync(userData, { recursive: true, force: true });
+}
 
 // ── Gatekeeper and the ticket ────────────────────────────────────────
 

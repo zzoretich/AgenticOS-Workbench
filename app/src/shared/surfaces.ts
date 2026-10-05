@@ -1,23 +1,15 @@
-// The write policy (phase 2). The re-hosted HUD writes only through named surfaces. Each surface lists the vault files
-// it may write (vault-relative globs) and the runtime commands it may run (a script under <vault>/brain/scripts run by
-// node, or a program by name, each with an argument rule), and cites the HUD modules that do it. A surface is
-// off until it is enabled; with none enabled the app is read-only, as in phase 1. The background refreshes the HUD
-// starts on its own run whatever is enabled. Everything else is refused: a path outside the vault, a relative path, a
-// shell string, a spawn with `shell: true`, and any command this file does not name.
+// The write surfaces. The HUD writes only through named surfaces. Each surface lists the vault files it may write
+// (vault-relative globs) and the runtime commands it may run (a script under <vault>/brain/scripts run by node, or a
+// program by name, each with an argument rule), and cites the HUD modules that do it. A surface is off until it is
+// enabled; with none enabled the app is read-only. The background refreshes the HUD starts on its own run whatever is
+// enabled. Everything else is refused.
 //
 // One surface is the app's own rather than the HUD's: Notes, the note editor's saves. Its files are checked only when
 // the editor saves (canSave), never for the HUD's writes, so switching it on cannot widen what the HUD may write.
 //
-// Paths are checked lexically, after resolving `.` and `..`; symlinks are not followed. That is a fence for the HUD's
-// own code in stage 1 (PLAN.md §4), not a sandbox: phase 4 moves it into main behind the typed bridge. What a spawned
-// runtime command then writes is the runtime's business, under its own locks; what a Term session runs is the user's.
-//
-// Shared by main (settings, the menu) and the renderer's guards (compat/src/guard.ts installs it).
-// Sources below are relative to ../obsidian-plugin/src.
-
-import * as fs from "node:fs";
-import * as path from "node:path";
-import { fileURLToPath } from "node:url";
+// This file is data and pure matching over vault-relative paths, with no imports: the main process enforces it
+// (main/policy/write-policy.ts, behind the IPC bridge) and the sandboxed page reads it to show what writes are on and
+// whether a note may be edited. Sources below are relative to ../obsidian-plugin/src.
 
 export type ArgRule = RegExp | ((argv: readonly string[]) => boolean);
 
@@ -47,18 +39,17 @@ export interface Surface {
   writes: readonly string[];
   /** Folders it may create (never remove) that no file it writes would imply, as vault-relative globs. */
   folders?: readonly string[];
-  /** Vault-relative globs it never writes, even where `writes` matches. */
+  /** Vault-relative globs it never writes or creates, even where `writes` or `folders` match. */
   except?: readonly string[];
   /**
    * Whose writes it admits: the HUD's (the default), checked by the guarded fs and the vault adapter; or the app's
-   * note editor's, checked only by the editor's save (WritePolicy.canSave).
+   * note editor's, checked only by the editor's save (canSave).
    */
   scope?: "hud" | "editor";
   spawns: readonly SpawnRule[];
   /**
-   * Its writes were checked on a live vault with the Obsidian HUD open (phase 2's per-surface step; docs/phase-2.md
-   * records each check). Only these can be switched on from the app menu; `AOS_APP_WRITE` can enable any surface,
-   * which is how a surface's tests run before that check.
+   * Its writes were checked on a live vault with the Obsidian HUD open (phase 2's per-surface step). Only these are on
+   * by default; `AOS_APP_WRITE` can enable any surface, which is how a surface's tests run before that check.
    */
   verified: boolean;
 }
@@ -96,6 +87,11 @@ const claudeAsk = (effort: boolean): SpawnRule => ({
   args: argv("-p", ANY, "--model", WORD, ...(effort ? ["--effort", /low|medium|high/] : []), "--tools", "", "--setting-sources", "",
     "--strict-mcp-config", "--no-session-persistence", "--system-prompt", ANY, "--max-budget-usd", USD, "--output-format", "json"),
 });
+
+// What the Files tab and the note editor never touch: the runtime's caches and vendored scripts, dependency folders, and
+// every dot-path. The Files tree and the vault index never show a dot-path; refusing them also keeps a compromised page
+// from planting a host's project config in the vault (.claude/settings.json hooks, .mcp.json, .codex/, .git/hooks).
+const PROTECTED = ["brain/_index/**", "brain/scripts/**", "**/node_modules/**", "**/.*", "**/.*/**"];
 
 export const SURFACES: readonly Surface[] = [
   {
@@ -210,8 +206,8 @@ export const SURFACES: readonly Surface[] = [
     source: "views/FilesTab.ts and data/vaultFiles.ts: a new note (and its folders), a rename or move (both ends), a file to the Trash",
     writes: ["**/*"],
     folders: ["**"],
-    // The runtime's caches and vendored scripts, and the hosts' own folders: data/vaultFiles.ts PROTECTED_PREFIXES.
-    except: ["brain/_index/**", "brain/scripts/**", ".obsidian/**", ".git/**", "**/node_modules/**"],
+    // data/vaultFiles.ts PROTECTED_PREFIXES, and every dot-path.
+    except: PROTECTED,
     spawns: [],
     verified: true,
   },
@@ -222,7 +218,7 @@ export const SURFACES: readonly Surface[] = [
     scope: "editor",
     writes: ["**/*.md"],
     // Written only by the runtime's scripts (brain/_index), vendored (brain/scripts), or not notes at all.
-    except: ["brain/_index/**", "brain/scripts/**", ".obsidian/**", ".git/**", "**/node_modules/**"],
+    except: PROTECTED,
     spawns: [],
     verified: true,
   },
@@ -277,107 +273,56 @@ function folderPatterns(glob: string): RegExp[] {
   return out;
 }
 
-/** A string, Buffer or file: URL as a path; anything else (a descriptor, a FileHandle) as null. */
-export function pathOf(target: unknown): string | null {
-  if (typeof target === "string") return target;
-  if (target instanceof Uint8Array) return Buffer.from(target).toString();
-  // Duck-typed: the renderer has two URL classes (Node's and Blink's), so instanceof would miss one of them.
-  const url = target as { href?: unknown; protocol?: unknown } | null;
-  if (url && typeof url === "object" && typeof url.href === "string" && url.protocol === "file:") {
-    try { return fileURLToPath(url.href); } catch { return null; }
-  }
-  return null;
+/** A surface's rules, compiled: what it may write, the folders it may create, less what it never touches. */
+interface Compiled { files: RegExp[]; folders: RegExp[]; except: RegExp[] }
+const compile = (s: Surface): Compiled => ({
+  files: s.writes.map(globToRegExp),
+  folders: [...s.writes.flatMap(folderPatterns), ...(s.folders ?? []).map(globToRegExp)],
+  except: (s.except ?? []).map(globToRegExp),
+});
+const excepted = (r: Compiled, rel: string): boolean => r.except.some((re) => re.test(rel));
+const writesFile = (rules: readonly Compiled[], rel: string): boolean => rules.some((r) => r.files.some((re) => re.test(rel)) && !excepted(r, rel));
+
+function matches(rule: ArgRule, list: readonly string[]): boolean {
+  return typeof rule === "function" ? rule(list) : rule.test(list.join(" "));
 }
 
-const NODE = /^node(\.exe)?$/;
-
-/** A surface's writes, compiled: what it may write, less what it never writes. */
-interface FileRule { files: RegExp[]; except: RegExp[] }
-const compile = (s: Surface): FileRule => ({ files: s.writes.map(globToRegExp), except: (s.except ?? []).map(globToRegExp) });
-const admits = (rules: readonly FileRule[], rel: string): boolean => rules.some((r) => r.files.some((re) => re.test(rel)) && !r.except.some((re) => re.test(rel)));
-
-export class WritePolicy {
+/** The enabled surfaces' rules over vault-relative, `/`-separated paths (no leading `/`, no `..`). */
+export class SurfaceRules {
   /** The enabled surfaces, in table order. */
   readonly surfaces: readonly Surface[];
-  private readonly roots: string[];
-  private readonly files: FileRule[];
-  private readonly saves: FileRule[];
-  private readonly folders: RegExp[];
-  private readonly rules: readonly SpawnRule[];
+  private readonly hud: Compiled[];
+  private readonly editor: Compiled[];
+  private readonly spawns: readonly SpawnRule[];
 
-  constructor(vaultRoot: string | null, enabled: readonly string[] = [], table: readonly Surface[] = SURFACES) {
+  constructor(enabled: readonly string[] = [], table: readonly Surface[] = SURFACES) {
     this.surfaces = table.filter((s) => enabled.includes(s.id));
-    // The vault as configured and as the disk spells it (a symlinked home, /tmp → /private/tmp).
-    const roots = new Set<string>();
-    if (vaultRoot && path.isAbsolute(vaultRoot)) {
-      roots.add(path.resolve(vaultRoot));
-      try { roots.add(fs.realpathSync(vaultRoot)); } catch { /* not there yet */ }
-    }
-    this.roots = [...roots];
     const hud = this.surfaces.filter((s) => (s.scope ?? "hud") === "hud");
-    this.files = hud.map(compile);
-    this.saves = this.surfaces.filter((s) => s.scope === "editor").map(compile);
-    this.folders = [...hud.flatMap((s) => s.writes).flatMap(folderPatterns), ...hud.flatMap((s) => s.folders ?? []).map(globToRegExp)];
-    this.rules = [...BACKGROUND, ...hud.flatMap((s) => s.spawns)];
+    this.hud = hud.map(compile);
+    this.editor = this.surfaces.filter((s) => s.scope === "editor").map(compile);
+    this.spawns = [...BACKGROUND, ...hud.flatMap((s) => s.spawns)];
   }
 
   get ids(): string[] { return this.surfaces.map((s) => s.id); }
 
-  /** The path inside the vault, `/`-separated, or null when it is not strictly inside it. */
-  vaultPath(target: unknown): string | null {
-    const p = pathOf(target);
-    if (!p || p.includes("\0") || !path.isAbsolute(p)) return null;
-    const abs = path.resolve(p);
-    for (const root of this.roots) {
-      const rel = path.relative(root, abs);
-      if (!rel || rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) continue;
-      return rel.split(path.sep).join("/");
-    }
-    return null;
-  }
-
-  /** Whether an enabled HUD surface may create, change or remove this absolute path. */
-  canWrite(target: unknown): boolean {
-    const rel = this.vaultPath(target);
-    return rel !== null && admits(this.files, rel);
-  }
+  /** Whether an enabled HUD surface may create, change or remove this vault path. */
+  canWrite(rel: string): boolean { return writesFile(this.hud, rel); }
 
   /** Whether this folder may be created: a HUD surface may write it, or a file it may write could live in it. */
-  canMakeFolder(target: unknown): boolean {
-    const rel = this.vaultPath(target);
-    return rel !== null && (admits(this.files, rel) || this.folders.some((re) => re.test(rel)));
+  canMakeFolder(rel: string): boolean {
+    return this.canWrite(rel) || this.hud.some((r) => r.folders.some((re) => re.test(rel)) && !excepted(r, rel));
   }
 
-  /** Whether the app's note editor may save this absolute path (an enabled editor surface, Notes). */
-  canSave(target: unknown): boolean {
-    const rel = this.vaultPath(target);
-    return rel !== null && admits(this.saves, rel);
+  /** Whether the app's note editor may save this vault path (an enabled editor surface, Notes). */
+  canSave(rel: string): boolean { return writesFile(this.editor, rel); }
+
+  /** Whether `node <vault>/brain/scripts/<script> args…` is a background refresh or an enabled surface's command. */
+  canRunScript(script: string, args: readonly string[]): boolean {
+    return this.spawns.some((r) => r.script === script && matches(r.args, args));
   }
 
-  /**
-   * Whether `cmd args…`, run without a shell from `cwd`, is a background refresh or a command an enabled surface runs.
-   * A relative script path counts only with a cwd to resolve it against, as node would.
-   */
-  canSpawn(cmd: unknown, args: readonly unknown[] = [], cwd?: unknown): boolean {
-    if (typeof cmd !== "string" || !cmd) return false;
-    const list = args.map(String);
-    const name = path.basename(cmd);
-    if (NODE.test(name)) {
-      const script = this.scriptOf(list[0], cwd);
-      return !!script && this.rules.some((r) => r.script === script && matches(r.args, list.slice(1)));
-    }
-    return this.rules.some((r) => r.bin !== undefined && r.bin === name && matches(r.args, list));
+  /** Whether the program `bin` (a file name) with these arguments is an enabled surface's command. */
+  canRunProgram(bin: string, args: readonly string[]): boolean {
+    return this.spawns.some((r) => r.bin !== undefined && r.bin === bin && matches(r.args, args));
   }
-
-  /** A path to one of this vault's runtime scripts → its name relative to brain/scripts. */
-  private scriptOf(arg: string | undefined, cwd: unknown): string | null {
-    if (!arg || arg.startsWith("-")) return null;
-    const abs = path.isAbsolute(arg) ? arg : typeof cwd === "string" && path.isAbsolute(cwd) ? path.resolve(cwd, arg) : null;
-    const rel = abs && this.vaultPath(abs);
-    return rel && rel.startsWith("brain/scripts/") ? rel.slice("brain/scripts/".length) : null;
-  }
-}
-
-function matches(rule: ArgRule, list: readonly string[]): boolean {
-  return typeof rule === "function" ? rule(list) : rule.test(list.join(" "));
 }

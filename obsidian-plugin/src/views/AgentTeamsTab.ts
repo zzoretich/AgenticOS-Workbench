@@ -168,7 +168,6 @@ export class AgentTeamsTab {
     if (f instanceof TFile) { void this.plugin.app.workspace.getLeaf("tab").openFile(f); return; }
     const abs = path.join(this.plugin.vaultRoot(), p);
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
       void shell.openPath(abs).then((err: string) => { if (err) new Notice(`Cannot open ${abs}: ${err}`); });
     } catch { new Notice(`Cannot open ${abs}`); }
   }

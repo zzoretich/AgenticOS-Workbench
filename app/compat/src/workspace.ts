@@ -6,6 +6,7 @@
 
 import { Component, Events } from "./events";
 import { TFile, normalizePath } from "./files";
+import { bridge } from "./bridge";
 import { canSave } from "./guard";
 import { MarkdownRenderer } from "./markdown";
 import { NoteEditor, type SaveState } from "./noteEditor";
@@ -161,7 +162,7 @@ export class NoteView extends ItemView {
       this.editBtn.addEventListener("click", () => { void this.setMode(this.editor ? "read" : "edit"); });
     }
     const finder = bar.createEl("button", { cls: "aos-note-btn", text: "Show in Finder" });
-    finder.addEventListener("click", () => { (require("electron") as typeof import("electron")).shell.showItemInFolder(this.abs); });
+    finder.addEventListener("click", () => { bridge().shell.showItemInFolder(this.abs); });
     this.conflictEl = root.createDiv({ cls: "aos-note-conflict" });
     this.bodyEl = root.createDiv({ cls: "aos-note-body" });
 

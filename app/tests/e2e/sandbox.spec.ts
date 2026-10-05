@@ -1,0 +1,114 @@
+// Phase 4: the page is sandboxed. It has no Node, its window runs with Chromium's sandbox and context isolation, it
+// reaches main only through window.aos's named functions, and main refuses what the policy does not name: a read
+// outside the vault and the hosts' folders, a credential file, a write outside the surfaces, a shell, a planted program
+// or variable, a terminal running something other than a shell, a link that is not https, a file that would run when
+// opened, and anyone but the app's own page.
+
+import { expect, test } from "@playwright/test";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { FX, useApp } from "./harness";
+
+const app = useApp({
+  prepare: () => {
+    fs.mkdirSync(path.join(FX.home, ".codex"), { recursive: true });
+    fs.writeFileSync(path.join(FX.home, ".codex", "auth.json"), "{\"token\":\"fixture-secret\"}\n");
+    fs.writeFileSync(FX.v("workspaces/run-me.terminal"), "<plist/>\n");
+  },
+});
+
+type Aos = import("../../src/shared/ipc").AosBridge;
+const call = <T>(fn: (aos: Aos, arg: string) => T, arg = "") =>
+  app().win.evaluate(([f, a]) => (0, eval)(`(${f})`)((window as unknown as { aos: Aos }).aos, a), [fn.toString(), arg] as const) as Promise<T>;
+
+test("the page has no Node: no require, process, module, Buffer or Electron", async () => {
+  const globals = await app().win.evaluate(() => ["require", "process", "module", "Buffer", "global", "__dirname", "ipcRenderer", "electron"]
+    .filter((g) => typeof (window as unknown as Record<string, unknown>)[g] !== "undefined"));
+  expect(globals).toEqual([]);
+});
+
+test("the main window runs sandboxed, isolated, with no Node, and loads the app's own page", async () => {
+  const prefs = await app().app.evaluate(({ BrowserWindow }) => {
+    const w = BrowserWindow.getAllWindows().find((x) => x.webContents.getURL().startsWith("app://hud/"))!;
+    // Not in Electron's typings, but present: the preferences the window's page actually runs with.
+    const p = (w.webContents as unknown as { getLastWebPreferences(): Record<string, unknown> }).getLastWebPreferences();
+    return { sandbox: p.sandbox, contextIsolation: p.contextIsolation, nodeIntegration: p.nodeIntegration, webviewTag: p.webviewTag, url: w.webContents.getURL() };
+  });
+  expect(prefs).toEqual({ sandbox: true, contextIsolation: true, nodeIntegration: false, webviewTag: false, url: "app://hud/index.html" });
+});
+
+test("window.aos is named functions only: no channel, no ipcRenderer, no generic send", async () => {
+  const shape = await app().win.evaluate(() => {
+    const aos = (window as unknown as { aos: Record<string, unknown> }).aos;
+    const keys = (o: Record<string, unknown>) => Object.keys(o).sort();
+    return { top: keys(aos), fs: keys(aos.fs as Record<string, unknown>), proc: keys(aos.proc as Record<string, unknown>), pty: keys(aos.pty as Record<string, unknown>),
+      shell: keys(aos.shell as Record<string, unknown>), plugin: keys(aos.plugin as Record<string, unknown>) };
+  });
+  expect(shape.top).toEqual(["boot", "fs", "onCommand", "onProtocol", "onVaultChanges", "plugin", "proc", "pty", "ready", "shell"]);
+  expect(shape.fs).toEqual(["appendText", "copy", "exists", "mkdir", "readBytes", "readText", "readdir", "remove", "rename", "stat", "trash", "walk", "writeText"]);
+  expect(shape.proc).toEqual(["execSync", "kill", "onEvent", "spawn"]);
+  expect(shape.pty).toEqual(["available", "kill", "onEvent", "resize", "spawn", "write"]);
+  expect(shape.shell).toEqual(["openExternal", "openPath", "showItemInFolder"]);
+  expect(shape.plugin).toEqual(["loadData", "saveData"]);
+});
+
+test("reads stay inside the vault and the hosts' folders, and never return a credential", async () => {
+  expect(await call((aos, v) => aos.fs.readText(`${v}/TODO.md`).ok, FX.vault)).toBe(true);
+  expect(await call((aos) => aos.fs.readText("/etc/passwd"))).toMatchObject({ ok: false, code: "EROFS" });
+  expect(await call((aos) => aos.fs.readdir("/"))).toMatchObject({ ok: false, code: "EROFS" });
+  expect(await call((aos, h) => aos.fs.readText(`${h}/.codex/auth.json`), FX.home)).toMatchObject({ ok: false, code: "EROFS" });
+  expect(await call((aos, v) => aos.fs.readText(`${v}/../env.json`), FX.vault)).toMatchObject({ ok: false, code: "EROFS" });
+  expect(await call((aos) => aos.fs.readText("relative/TODO.md"))).toMatchObject({ ok: false, code: "EINVAL" });
+});
+
+test("writes outside the surfaces are refused, and leave the disk as it was (this run is read-only)", async () => {
+  const before = fs.readFileSync(FX.v("TODO.md"), "utf8");
+  expect(await call((aos, v) => aos.fs.writeText(`${v}/TODO.md`, "x", "hud"), FX.vault)).toMatchObject({ ok: false, code: "EROFS" });
+  expect(await call((aos, r) => aos.fs.writeText(`${r}/outside.md`, "x", "hud"), FX.root)).toMatchObject({ ok: false, code: "EROFS" });
+  expect(await call((aos, v) => aos.fs.writeText(`${v}/.claude/settings.json`, "{}", "editor"), FX.vault)).toMatchObject({ ok: false, code: "EROFS" });
+  expect(fs.readFileSync(FX.v("TODO.md"), "utf8")).toBe(before);
+  expect(fs.existsSync(path.join(FX.root, "outside.md"))).toBe(false);
+});
+
+test("a spawn runs only a named runtime command: no shell, no planted program, no injected variable", async () => {
+  const spawn = (req: object) => call((aos, r) => aos.proc.spawn(JSON.parse(r)), JSON.stringify(req));
+  const node = await app().win.evaluate(() => (window as unknown as { aosHost: { plugin: { nodeBin(): string } } }).aosHost.plugin.nodeBin());
+  const scan = { cmd: node, args: [FX.v("brain/scripts/scan-vault.js"), "--quiet"], cwd: FX.vault, stdio: "ignore" };
+  expect(await spawn({ id: "sbx-shell", cmd: "/bin/sh", args: ["-c", "id"], cwd: FX.vault })).toMatchObject({ ok: false, code: "EROFS" });
+  expect(await spawn({ id: "sbx-inline", cmd: node, args: ["-e", "1"], cwd: FX.vault })).toMatchObject({ ok: false, code: "EROFS" });
+  expect(await spawn({ id: "sbx-env", ...scan, env: { NODE_OPTIONS: "--require /tmp/x.js" } })).toMatchObject({ ok: false, code: "EROFS" });
+  expect(await spawn({ id: "sbx-cfg", ...scan, env: { CLAUDE_CONFIG_DIR: FX.v("planted") } })).toMatchObject({ ok: false, code: "EROFS" });
+  expect(await spawn({ id: "sbx-cwd", ...scan, cwd: FX.root })).toMatchObject({ ok: false, code: "EROFS" });
+  expect(await spawn({ id: "sbx-bad id", ...scan })).toMatchObject({ ok: false, code: "EINVAL" });
+  expect(await spawn({ id: "sbx-scan", ...scan })).toMatchObject({ ok: true });
+});
+
+test("a terminal starts only a listed shell, with no arguments", async () => {
+  const pty = (req: object) => call((aos, r) => aos.pty.spawn(JSON.parse(r)), JSON.stringify({ cols: 80, rows: 24, name: "xterm-256color", cwd: FX.vault, args: [], ...req }));
+  expect(await pty({ id: "sbx-t1", file: "/usr/bin/python3" })).toMatchObject({ ok: false, code: "EROFS" });
+  expect(await pty({ id: "sbx-t2", file: "/bin/sh", args: ["-c", "id"] })).toMatchObject({ ok: false, code: "EROFS" });
+  expect(await pty({ id: "sbx-t3", file: "/bin/sh", env: { NODE_OPTIONS: "x" } })).toMatchObject({ ok: false, code: "EROFS" });
+});
+
+test("only https links leave the app; a file that would run is shown in Finder, never opened", async () => {
+  const h = app();
+  const before = (await h.opened()).length;
+  await call((aos) => { aos.shell.openExternal("file:///etc/passwd"); aos.shell.openExternal("javascript:alert(1)"); aos.shell.openExternal("https://example.com/ok"); });
+  expect(await call((aos, p) => aos.shell.openPath(p), FX.v("workspaces/run-me.terminal"))).toBe("");
+  expect(await call((aos) => aos.shell.openPath("/etc/hosts"))).toBe("outside what the app reads");
+  await expect.poll(async () => (await h.opened()).slice(before).map((o) => `${o.fn} ${o.arg}`)).toEqual([
+    "openExternal https://example.com/ok",
+    `showItemInFolder ${FX.v("workspaces/run-me.terminal")}`,
+  ]);
+});
+
+test("only the app's own page is answered: the tray popover's window gets EPERM", async () => {
+  const h = app();
+  await expect.poll(() => h.app.windows().length).toBe(2);
+  const pop = h.app.windows().find((w) => w !== h.win)!;
+  const r = await pop.evaluate((v) => {
+    const aos = (window as unknown as { aos?: { fs: { readText(p: string): unknown } } }).aos;
+    return aos ? aos.fs.readText(`${v}/TODO.md`) : "no bridge";
+  }, FX.vault);
+  expect(r === "no bridge" || (r as { code?: string }).code === "EPERM").toBe(true);
+});

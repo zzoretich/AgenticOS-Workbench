@@ -1,9 +1,9 @@
 // The settings window's App tab: what this app is attached to and what it may write, read-only. Every Workbench surface
 // writes by default; $AOS_APP_WRITE narrows that for a run (tests, one-off runs), and this tab says which applies.
 
-import { shell } from "electron";
 import { Setting, SettingTab, type App } from "obsidian";
-import type { WritePolicy } from "../shared/write-policy";
+import type { AosBridge } from "../shared/ipc";
+import type { PagePolicy } from "./pagePolicy";
 
 export interface AppFacts {
   vaultRoot: string;
@@ -13,8 +13,10 @@ export interface AppFacts {
   appVersion: string;
   hudVersion: string;
   electron: string;
-  policy: () => WritePolicy;
+  policy: () => PagePolicy;
   writeSource: () => string;
+  /** The bridge to main, for Show in Finder. */
+  aos: AosBridge;
 }
 
 export class AppSettingTab extends SettingTab {
@@ -32,7 +34,7 @@ export class AppSettingTab extends SettingTab {
     el.createEl("h2", { text: "AgenticOS app" });
 
     const folder = (name: string, desc: string, p: string) => new Setting(el).setName(name).setDesc(desc)
-      .addButton((b) => b.setButtonText("Show in Finder").onClick(() => { shell.showItemInFolder(p); }))
+      .addButton((b) => b.setButtonText("Show in Finder").onClick(() => { f.aos.shell.showItemInFolder(p); }))
       .then((s) => { s.descEl.createDiv({ cls: "aos-app-path", text: p }); });
     folder("Vault", `The AgenticOS vault this window shows (${f.vaultSource}).`, f.vaultRoot);
     folder("App data", "The app's own settings and the Workbench plugin's settings. Nothing here is in the vault.", f.userData);

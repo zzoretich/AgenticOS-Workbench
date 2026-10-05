@@ -287,7 +287,6 @@ export class SettingsTab {
 
   private openFile(file: string): void {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
       void shell.openPath(file).then((err: string) => { if (err) new Notice(`Cannot open ${file}: ${err}`); });
     } catch { new Notice(`Cannot open ${file}`); }
   }

@@ -1,17 +1,31 @@
 // Main process: the Workbench window, the menubar item, the app menu, agenticos:// links and the vault watcher. The app
-// attaches to the vault an existing AgenticOS install uses (agenticos.json). Main writes nothing outside its own
-// userData but one file, the app's record in the vault's runtime cache (hud-host.ts); the HUD's writes to the vault are
-// the renderer's, within the write surfaces (write-policy.ts).
+// attaches to the vault an existing AgenticOS install uses (agenticos.json). The page runs sandboxed with no Node
+// (phase 4): every file it reads or writes, every process and terminal it starts and everything it hands to the OS goes
+// through the preload's bridge to the handlers in ./ipc, which check it against the read scope, the write surfaces and
+// the program rules (./policy). Main itself writes one file outside its userData: the app's record in the vault's
+// runtime cache (hud-host.ts).
 
-import { app, BrowserWindow, ipcMain, Menu, screen, shell, type IpcMainEvent, type Rectangle } from "electron";
+import { app, BrowserWindow, Menu, screen, type Rectangle } from "electron";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { APP_ORIGIN, CH, POPOVER, type BootInfo, type CommandInfo, type ProtocolRequest } from "../shared/ipc";
+import { APP_ORIGIN, CH, POPOVER, type BootInfo, type CommandInfo, type ProtocolRequest, type ReadyInfo } from "../shared/ipc";
 import { registerAppScheme, serveAppScheme } from "./app-scheme";
 import { writeHudHostMarker } from "./hud-host";
+import { registerFsIpc } from "./ipc/fs";
+import { registerHostIpc } from "./ipc/host";
+import { registerProcIpc } from "./ipc/proc";
+import { openExternalSafe, registerShellIpc } from "./ipc/shell";
+import { trustMainWindow } from "./ipc/trust";
 import { buildAppMenu } from "./menu";
+import { debugSwitches } from "./policy/debug";
+import { parseShells, type ProgramContext } from "./policy/programs";
+import { ReadScope, type AgenticosPaths } from "./policy/read-scope";
+import { WritePolicy } from "./policy/write-policy";
 import { SCHEME, parseAgenticosUrl, urlFromArgv } from "./protocol";
+import { FsService } from "./services/fs";
+import { ProcService } from "./services/proc";
+import { PtyService, type PtyLib } from "./services/pty";
 import { STATUSLINE_PATH, StatusTray } from "./tray";
 import { VaultWatcher } from "./watcher";
 import { loadWindowState, trackWindowState } from "./window-state";
@@ -19,12 +33,13 @@ import { loadWriteSettings } from "./write-settings";
 
 export type { BootInfo };
 
-/** Links the HUD may hand to the OS: web pages over https, and "Open in Obsidian". */
-const EXTERNAL_ALLOW = [/^https:\/\//i, /^obsidian:\/\//i];
-
-function openExternalSafe(url: string): void {
-  if (EXTERNAL_ALLOW.some((re) => re.test(url))) void shell.openExternal(url);
-  else console.warn(`[main] refused to open ${url}`);
+// A packaged release refuses to be debugged from outside (S8): a debugger would hand whoever started the app everything
+// it may do, its macOS permissions included. Chromium starts its DevTools server only once this script has run, so
+// leaving here keeps it from ever listening. The smoke build (`npm run dist:test`) is the one packaged build that allows it.
+const debugging = debugSwitches(process.argv);
+if (debugging.length && app.isPackaged && !__AOS_TEST_BUILD__) {
+  console.error(`[main] refusing to start with ${debugging.join(", ")}: this build cannot be debugged from outside`);
+  process.exit(1);
 }
 
 /** The vault an existing install points at: $AOS_APP_VAULT, else agenticos.json's `vault` (the launcher's lookup). */
@@ -48,6 +63,30 @@ registerAppScheme();
 
 const vault = resolveVault();
 const writes = loadWriteSettings();
+
+/** agenticos.json's install paths (only `aos init` and `aos upgrade` write them): the Claude and Codex folders main trusts. */
+function readAgenticos(): AgenticosPaths | null {
+  const configDir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
+  try { return JSON.parse(fs.readFileSync(process.env.AOS_CONFIG || path.join(configDir, "agenticos.json"), "utf8")) as AgenticosPaths; }
+  catch { return null; }
+}
+
+let shells: string[] = [];
+try { shells = parseShells(fs.readFileSync("/etc/shells", "utf8")); } catch { /* no /etc/shells: only $SHELL */ }
+const context: ProgramContext = {
+  vaultRoot: vault.root, home: os.homedir(), userData: app.getPath("userData"), env: process.env, agenticos: readAgenticos(), shells,
+};
+const policy = new WritePolicy(vault.root, writes.surfaces);
+const scope = new ReadScope(context);
+const fsService = vault.root ? new FsService({ vaultRoot: vault.root, userData: context.userData, scope: () => scope, policy: () => policy }) : null;
+const procService = new ProcService({ policy: () => policy, context: () => context, env: process.env, emit: (ev) => send(CH.procEvent, ev) });
+// The app's own node-pty: in a packaged build its JavaScript is in the archive and its native parts are unpacked beside it.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const ptyService = new PtyService({ context: () => context, env: process.env, emit: (ev) => send(CH.ptyEvent, ev), load: () => require("node-pty") as PtyLib });
+
+/** The variables the HUD reads (HudHost.env), from main's environment; nothing else of it reaches the page. */
+const PAGE_ENV = ["SHELL", "CLAUDE_CONFIG_DIR", "AOS_CONFIG", "AOS_VAULT", "CODEX_HOME"];
+
 const boot: BootInfo = {
   vaultRoot: vault.root,
   vaultSource: vault.source,
@@ -57,6 +96,10 @@ const boot: BootInfo = {
   mainWatcher: !!vault.root,
   appVersion: app.getVersion(),
   electron: process.versions.electron,
+  home: os.homedir(),
+  platform: process.platform,
+  env: Object.fromEntries(PAGE_ENV.flatMap((k) => (process.env[k] !== undefined ? [[k, process.env[k] as string]] : []))),
+  resourcesPath: process.resourcesPath,
 };
 
 let win: BrowserWindow | null = null;
@@ -68,9 +111,7 @@ let commands: CommandInfo[] = [];
 const pendingLinks: ProtocolRequest[] = [];
 
 /** Only our own page, in our own window's main frame, may talk to main. */
-function trusted(e: IpcMainEvent): boolean {
-  return !!win && e.sender === win.webContents && e.senderFrame === e.sender.mainFrame;
-}
+const trust = trustMainWindow(() => win);
 
 function send(channel: string, payload: unknown): void {
   if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
@@ -122,30 +163,25 @@ function setMenu(): void {
   Menu.setApplicationMenu(buildAppMenu(commands, runCommand, { dev }));
 }
 
-function validCommands(raw: unknown): CommandInfo[] {
-  const list = (raw as { commands?: unknown } | null)?.commands;
-  if (!Array.isArray(list)) return [];
-  return list
-    .filter((c): c is CommandInfo => !!c && typeof c.id === "string" && typeof c.name === "string" && c.id.length < 120 && c.name.length < 200)
-    .slice(0, 500)
-    .map((c) => ({
-      id: c.id,
-      name: c.name,
-      hotkeys: Array.isArray(c.hotkeys)
-        ? c.hotkeys.filter((h) => h && Array.isArray(h.modifiers) && typeof h.key === "string").map((h) => ({ modifiers: h.modifiers.map(String), key: h.key }))
-        : undefined,
-    }));
-}
-
-ipcMain.on(CH.boot, (e) => { e.returnValue = trusted(e) ? boot : null; });
-
-ipcMain.on(CH.ready, (e, info: unknown) => {
-  if (!trusted(e)) return;
-  rendererReady = true;
-  commands = validCommands(info);
-  setMenu();
-  for (const req of pendingLinks.splice(0)) send(CH.protocol, req);
+registerHostIpc(trust, {
+  boot: () => boot,
+  ready: (info: ReadyInfo) => {
+    rendererReady = true;
+    commands = info.commands;
+    setMenu();
+    for (const req of pendingLinks.splice(0)) send(CH.protocol, req);
+  },
+  fs: () => fsService,
 });
+registerFsIpc(trust, () => fsService);
+registerProcIpc(trust, procService, ptyService);
+registerShellIpc(trust, () => (vault.root ? scope : null));
+
+/** The page went (closed, crashed, or quitting): its terminals go with it, and the children it was waiting on. */
+function endPageWork(): void {
+  ptyService.killAll();
+  procService.killAttached();
+}
 
 function createWindow(): void {
   const state = loadWindowState(app.getPath("userData"));
@@ -158,14 +194,16 @@ function createWindow(): void {
     title: "AgenticOS",
     show: false,
     webPreferences: {
-      // Stage 1 (PLAN.md §4): the re-hosted HUD reads the vault and spawns the runtime from the renderer, as it does
-      // inside Obsidian. The mitigations are the CSP in index.html, DOMPurify on all Markdown, blocked navigation and
-      // new windows, the https allow-list above, and the renderer's write guards. Phase 4 moves this I/O behind a
-      // sandboxed, typed bridge.
-      nodeIntegration: true,
-      contextIsolation: false,
-      sandbox: false,
+      // Phase 4 (D7): no Node in the page, an isolated preload, Chromium's sandbox. The page reaches the disk, processes
+      // and the OS only through window.aos (src/preload), whose every call main checks (./ipc).
+      preload: path.join(__dirname, "../preload/index.js"),
+      nodeIntegration: false,
+      nodeIntegrationInSubFrames: false,
+      contextIsolation: true,
+      sandbox: true,
       webSecurity: true,
+      allowRunningInsecureContent: false,
+      webviewTag: false,
       spellcheck: false,
       // The tray popover's SidebarHUD runs in this renderer (renderer/popover.ts): keep it drawing while hidden.
       backgroundThrottling: false,
@@ -192,10 +230,10 @@ function createWindow(): void {
   win.webContents.on("will-navigate", (e, url) => { e.preventDefault(); openExternalSafe(url); });
   // Deny every permission except writing to the clipboard (the HUD's ⧉ copy buttons), which Obsidian allows too.
   win.webContents.session.setPermissionRequestHandler((_wc, permission, cb) => cb(permission === "clipboard-sanitized-write"));
-  win.webContents.on("render-process-gone", (_e, d) => console.error(`[main] renderer gone: ${d.reason}`));
+  win.webContents.on("render-process-gone", (_e, d) => { console.error(`[main] renderer gone: ${d.reason}`); endPageWork(); });
   // Closing the window hides it, as closing Obsidian's window would not stop a HUD you left running; ⌘Q quits.
   win.on("close", (e) => { if (!quitting && process.platform === "darwin") { e.preventDefault(); win?.hide(); } });
-  win.on("closed", () => { win = null; rendererReady = false; });
+  win.on("closed", () => { win = null; rendererReady = false; endPageWork(); });
   win.once("ready-to-show", () => win?.show());
   void win.loadURL(`${APP_ORIGIN}/index.html`);
 }
@@ -209,7 +247,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on("activate", () => show());
   app.on("before-quit", () => { quitting = true; });
   app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
-  app.on("will-quit", () => { watcher?.stop(); tray?.destroy(); });
+  app.on("will-quit", () => { watcher?.stop(); tray?.destroy(); endPageWork(); });
 
   void app.whenReady().then(() => {
     // Only a packaged, signed app claims the scheme; a dev run must not re-point the system's agenticos:// handler.

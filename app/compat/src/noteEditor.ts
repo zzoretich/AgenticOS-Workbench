@@ -6,7 +6,6 @@
 // have the same file open: when the disk no longer holds that text, nothing is written and the pane shows a conflict
 // until the user picks Reload (theirs) or Keep mine. A change on disk while there are no unsaved edits is simply taken.
 
-import * as fs from "node:fs";
 import { Annotation, EditorState, Transaction, type Extension } from "@codemirror/state";
 import { EditorView, drawSelection, highlightActiveLine, keymap } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
@@ -15,6 +14,7 @@ import { markdown } from "@codemirror/lang-markdown";
 import { yamlFrontmatter } from "@codemirror/lang-yaml";
 import { highlightSelectionMatches, search, searchKeymap } from "@codemirror/search";
 import { tags } from "@lezer/highlight";
+import { bridge, callError } from "./bridge";
 import { canSave, refuse } from "./guard";
 
 /**
@@ -106,6 +106,18 @@ export class NoteEditor {
     this.guardFocus();
   }
 
+  /** The note as it is on disk now, or null when it is gone (or unreadable). */
+  private readDisk(): string | null {
+    const r = bridge().fs.readText(this.opts.abs);
+    return r.ok ? r.data : null;
+  }
+
+  /** Saves `text` as the note editor (main allows it only where the Notes surface does). */
+  private writeDisk(text: string): void {
+    const r = bridge().fs.writeText(this.opts.abs, text, "editor");
+    if (!r.ok) throw r.code === "EROFS" ? refuse("write", `save ${this.opts.rel}`) : callError(r, `save ${this.opts.rel}`);
+  }
+
   get text(): string { return this.view.state.doc.toString(); }
   get dirty(): boolean { return this.text !== this.base; }
 
@@ -127,14 +139,13 @@ export class NoteEditor {
       this.setState("refused");
       return;
     }
-    let disk: string | null;
-    try { disk = await fs.promises.readFile(this.opts.abs, "utf8"); } catch { disk = null; }
+    const disk = this.readDisk();
     if (disk === null) { this.setState("deleted"); return; }
     if (disk !== this.base) { this.setState("conflict"); return; }
     const text = this.text;
     this.setState("saving");
     try {
-      await fs.promises.writeFile(this.opts.abs, text, "utf8");
+      this.writeDisk(text);
     } catch (err) {
       console.error(`[compat] saving ${this.opts.rel} failed`, err);
       this.setState("unsaved");
@@ -150,9 +161,9 @@ export class NoteEditor {
     if (this.timer) { clearTimeout(this.timer); this.timer = null; }
     if (this.state === "conflict" || this.state === "deleted" || !this.dirty || !canSave(this.opts.abs)) return;
     try {
-      if (fs.readFileSync(this.opts.abs, "utf8") !== this.base) return;
+      if (this.readDisk() !== this.base) return;
       const text = this.text;
-      fs.writeFileSync(this.opts.abs, text, "utf8");
+      this.writeDisk(text);
       this.base = text;
       this.setState("saved");
     } catch (err) { console.error(`[compat] saving ${this.opts.rel} on unload failed`, err); }
@@ -161,8 +172,7 @@ export class NoteEditor {
   /** The file changed on disk (a vault event): take it when there is nothing unsaved, else hold a conflict. */
   async diskChanged(): Promise<void> {
     while (this.saving) await this.saving;
-    let disk: string | null;
-    try { disk = await fs.promises.readFile(this.opts.abs, "utf8"); } catch { disk = null; }
+    const disk = this.readDisk();
     if (disk === null) { this.setState("deleted"); return; }
     if (disk === this.base) {
       if (this.state === "deleted") this.setState(this.dirty ? "unsaved" : "saved");
@@ -176,19 +186,18 @@ export class NoteEditor {
 
   /** Conflict: take the disk's text and drop the unsaved edits. */
   async reloadFromDisk(): Promise<void> {
-    let disk: string;
-    try { disk = await fs.promises.readFile(this.opts.abs, "utf8"); } catch { this.setState("deleted"); return; }
+    const disk = this.readDisk();
+    if (disk === null) { this.setState("deleted"); return; }
     this.replace(disk);
     this.setState("saved");
   }
 
   /** Conflict: keep the edits and write them over what is on disk now (or recreate a deleted file). */
   async keepMine(): Promise<void> {
-    let disk: string | null;
-    try { disk = await fs.promises.readFile(this.opts.abs, "utf8"); } catch { disk = null; }
+    const disk = this.readDisk();
     if (disk === null) {
       if (!canSave(this.opts.abs)) { refuse("write", `save ${this.opts.rel}`); this.setState("refused"); return; }
-      await fs.promises.writeFile(this.opts.abs, this.text, "utf8");
+      this.writeDisk(this.text);
       this.base = this.text;
       this.setState("saved");
       return;

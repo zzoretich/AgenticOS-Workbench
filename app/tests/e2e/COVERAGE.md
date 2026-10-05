@@ -6,7 +6,7 @@ is listed below with the spec that covers it, or why it is not covered here.
 - **covered**: every read-only part of the item is asserted.
 - **covered in part**: the read-only half is asserted; the rest writes (phase 2) or needs something named in the reason.
 - **phase 2 (writes)**: the item is a write, a spawn started by a click, or a model call; the app refuses those until
-  the write surface that covers it is enabled and tested (`src/shared/write-policy.ts`, docs/phase-2.md).
+  the write surface that covers it is enabled and tested (`src/shared/surfaces.ts`, docs/phase-2.md).
 - **N/A in the app**: the item is about the runtime CLI, a host session (Claude Code or Codex), Obsidian itself, or a
   step the app replaces.
 - **not covered**: read-only, but not automated yet, with the reason.
@@ -304,7 +304,7 @@ see below).
    `navigator.clipboard.writeText` rejects and the HUD shows "copy failed" for Skills and Agents ⧉, Spaces' copy abs /
    copy rel, and the Agent Teams no-terminal fallback. Obsidian allows it. Repro: open Skills, click ⧉ on any row.
    Documented as `test.fixme` in `skills-agents › Skills: ⧉ copies the invocation to the clipboard`.
-2. **The guard log hides the script name for a long vault path.** `describe()` in `src/renderer/guard/child_process.cjs`
+2. **The guard log hides the script name for a long vault path.** `describe()` (then in `src/renderer/guard/child_process.cjs`, now `src/renderer/bridgeHost.ts`)
    cuts each argument to 90 characters from its start, so `…/brain/scripts/reconcile-sessions.js` logs as
    `…/brain/scri…` and the spawns can only be told apart by their trailing arguments. `shell › read-only guard…` matches on
    those tails.

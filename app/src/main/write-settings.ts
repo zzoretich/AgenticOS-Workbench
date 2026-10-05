@@ -1,8 +1,8 @@
-// Which write surfaces are on (src/shared/write-policy.ts). The app is the Workbench, so every verified surface is on.
+// Which write surfaces are on (src/shared/surfaces.ts). The app is the Workbench, so every verified surface is on.
 // $AOS_APP_WRITE narrows that for tests and one-off runs ("todo,notifications", "all", or "" for none). Writes outside
 // every surface stay refused either way: the surface table is the allow-list the sandboxed build enforces too.
 
-import { SURFACES, parseSurfaces, type Surface } from "../shared/write-policy";
+import { SURFACES, parseSurfaces, type Surface } from "../shared/surfaces";
 import type { WriteSource } from "../shared/ipc";
 
 export interface WriteSettings { surfaces: string[]; source: WriteSource }

@@ -90,7 +90,7 @@ export function restoreFixture(): void {
 
 // ── launch ───────────────────────────────────────────────────────────
 
-export interface GuardEntry { kind: "write" | "spawn"; what: string; at: string }
+export interface GuardEntry { kind: "read" | "write" | "spawn"; what: string; at: string }
 export interface Opened { via: "main" | "renderer"; fn: string; arg: string }
 
 export interface AppHandle {
@@ -262,41 +262,30 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<AppHandle> {
   // The main window (the app page), not the tray popover, which is about:blank.
   await app.evaluate(({ BrowserWindow }, s) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().startsWith("app://hud/"))?.setContentSize(s.width, s.height), size);
 
-  // Nothing the specs click may reach the desktop: record the OS hand-offs in both processes instead.
-  await app.evaluate(({ shell }) => {
+  // Nothing the specs click may reach the desktop: record the OS hand-offs instead. The page has no Node (phase 4), so
+  // every one of them happens in main, behind the bridge. The Trash is the fixture's, not the desktop's: the file leaves
+  // the vault as it would, into <home>/.Trash.
+  await app.evaluate(({ shell }, trashDir) => {
     const g = globalThis as unknown as { __aosOpened: Array<{ via: string; fn: string; arg: string }> };
     g.__aosOpened = [];
     const s = shell as unknown as Record<string, unknown>;
     s.openExternal = async (url: string) => { g.__aosOpened.push({ via: "main", fn: "openExternal", arg: String(url) }); };
     s.openPath = async (p: string) => { g.__aosOpened.push({ via: "main", fn: "openPath", arg: String(p) }); return ""; };
     s.showItemInFolder = (p: string) => { g.__aosOpened.push({ via: "main", fn: "showItemInFolder", arg: String(p) }); };
-  });
-  await win.waitForSelector(".aos-wb-railbtn", { timeout: 30_000 });
-  await win.evaluate((trashDir) => {
-    const w = window as unknown as { require: (m: string) => any; __aosOpened: Array<{ via: string; fn: string; arg: string }> };
-    w.__aosOpened = [];
-    const shell = w.require("electron").shell as Record<string, unknown>;
-    shell.openExternal = async (url: string) => { w.__aosOpened.push({ via: "renderer", fn: "openExternal", arg: String(url) }); };
-    shell.openPath = async (p: string) => { w.__aosOpened.push({ via: "renderer", fn: "openPath", arg: String(p) }); return ""; };
-    shell.showItemInFolder = (p: string) => { w.__aosOpened.push({ via: "renderer", fn: "showItemInFolder", arg: String(p) }); };
-    // The Trash is the fixture's, not the desktop's: the file leaves the vault as it would, into <home>/.Trash. Node's
-    // own fs (window.require), as the OS would act, not the app's guarded copy.
-    shell.trashItem = async (p: string) => {
-      w.__aosOpened.push({ via: "renderer", fn: "trashItem", arg: String(p) });
-      const fs = w.require("fs"), path = w.require("path");
+    s.trashItem = async (p: string) => {
+      g.__aosOpened.push({ via: "main", fn: "trashItem", arg: String(p) });
+      const fs = process.getBuiltinModule("node:fs") as typeof import("node:fs");
+      const path = process.getBuiltinModule("node:path") as typeof import("node:path");
       fs.mkdirSync(trashDir, { recursive: true });
       fs.renameSync(p, path.join(trashDir, path.basename(p)));
     };
   }, path.join(FX.home, ".Trash"));
+  await win.waitForSelector(".aos-wb-railbtn", { timeout: 30_000 });
 
   const handle: AppHandle = {
     app, win, errors, notices,
     guard: () => win.evaluate(() => (window as unknown as { aosHost: { guard: { log: GuardEntry[] } } }).aosHost.guard.log.map((e) => ({ ...e }))),
-    opened: async () => {
-      const r = await win.evaluate(() => (window as unknown as { __aosOpened: Opened[] }).__aosOpened.map((e) => ({ ...e })));
-      const m = await app.evaluate(() => (globalThis as unknown as { __aosOpened: Opened[] }).__aosOpened.map((e) => ({ ...e })));
-      return [...r, ...m];
-    },
+    opened: () => app.evaluate(() => (globalThis as unknown as { __aosOpened: Opened[] }).__aosOpened.map((e) => ({ ...e }))),
     close: async () => {
       const proc = app.process();
       const closed = app.close().then(() => true, () => false);
@@ -386,11 +375,14 @@ export async function showWorkbench(win: Page): Promise<void> {
 
 /** Closes every note tab (main and split) the specs opened, leaving the Workbench. */
 export async function closeNotes(win: Page): Promise<void> {
-  for (;;) {
-    const note = win.locator(".aos-host-tab", { hasNot: win.locator(".aos-host-tab-title", { hasText: /^Workbench$/ }) }).first();
-    if (!(await note.count())) break;
-    await note.locator(".aos-host-tab-close").click();
+  const notes = win.locator(".aos-host-tab", { hasNot: win.locator(".aos-host-tab-title", { hasText: /^Workbench$/ }) });
+  for (let n = await notes.count(), tries = 0; n > 0 && tries < 50; n = await notes.count(), tries++) {
+    // A tab that is already closing (its note saving first: WorkspaceLeaf.detach) can go between count() and the click,
+    // which would then wait for a ✕ that is gone. Click whichever is first now; one that closed on its own needs none.
+    await notes.first().locator(".aos-host-tab-close").click({ timeout: 2_000 }).catch(() => undefined);
+    await expect(notes).not.toHaveCount(n, { timeout: 5_000 }).catch(() => undefined);
   }
+  await expect(notes).toHaveCount(0);
   await showWorkbench(win);
 }
 

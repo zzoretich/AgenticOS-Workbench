@@ -1,8 +1,7 @@
 // App, Plugin, SettingTab and PluginSettingTab. The host builds one App over one vault root and hands it the chrome
 // elements (ribbon, status bar); the plugin's commands, views, protocol handlers and settings tab are registered on it.
 
-import * as fs from "node:fs";
-import * as path from "node:path";
+import { bridge, callError } from "./bridge";
 import { Component } from "./events";
 import { setIcon } from "./notice";
 import { SettingModal } from "./settingModal";
@@ -53,8 +52,6 @@ export interface AppOptions {
   workspaceEl: HTMLElement;
   ribbonEl: HTMLElement;
   statusBarEl: HTMLElement;
-  /** Where plugins' loadData/saveData live: the app's own userData, never the vault. */
-  dataDir: string;
 }
 
 export class App {
@@ -66,7 +63,6 @@ export class App {
   protocolHandlers = new Map<string, (params: Record<string, string>) => unknown>();
   ribbonEl: HTMLElement;
   statusBarEl: HTMLElement;
-  dataDir: string;
   /** The settings window: the host's tabs and every tab a plugin registered (settingModal.ts). */
   setting: SettingModal;
 
@@ -74,7 +70,6 @@ export class App {
     this.vault = new Vault(opts.vaultRoot);
     this.ribbonEl = opts.ribbonEl;
     this.statusBarEl = opts.statusBarEl;
-    this.dataDir = opts.dataDir;
     this.workspace = new Workspace(this, opts.workspaceEl);
     this.setting = new SettingModal(this);
   }
@@ -133,24 +128,19 @@ export class Plugin extends Component {
   registerExtensions(_exts: string[], _viewType: string): void {}
   registerMarkdownPostProcessor(_fn: unknown): void {}
 
-  private dataFile(): string { return path.join(this.app.dataDir, `${this.manifest.id}.json`); }
-
   /**
-   * The plugin's settings, from the app's data folder. Until the app has saved any, the ones Obsidian keeps for this
-   * plugin in the vault are read instead (never written), so a vault that ran the HUD in Obsidian opens the same way;
-   * the first save gives the app its own copy.
+   * The plugin's settings, from the app's data folder (main reads <userData>/plugins/<id>.json). Until the app has saved
+   * any, the ones Obsidian keeps for this plugin in the vault are read instead (never written), so a vault that ran the
+   * HUD in Obsidian opens the same way; the first save gives the app its own copy.
    */
   async loadData(): Promise<unknown> {
-    const obsidian = path.join(this.app.vault.adapter.getBasePath(), this.app.vault.configDir, "plugins", this.manifest.id, "data.json");
-    for (const file of [this.dataFile(), obsidian]) {
-      try { return JSON.parse(await fs.promises.readFile(file, "utf8")); } catch { /* the next one */ }
-    }
-    return null;
+    const r = bridge().plugin.loadData(this.manifest.id);
+    return r.ok ? r.data : null;
   }
 
   async saveData(data: unknown): Promise<void> {
-    await fs.promises.mkdir(this.app.dataDir, { recursive: true });
-    await fs.promises.writeFile(this.dataFile(), `${JSON.stringify(data, null, 2)}\n`, "utf8");
+    const r = bridge().plugin.saveData(this.manifest.id, `${JSON.stringify(data, null, 2)}\n`);
+    if (!r.ok) throw callError(r, `save the ${this.manifest.id} settings`);
   }
 }
 

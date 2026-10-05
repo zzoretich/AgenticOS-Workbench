@@ -67,7 +67,8 @@ test.afterEach(async () => {
 test("Notes is the one surface on: the status bar names what the editor may save, and what it may not", async () => {
   const mode = app().win.locator(".aos-host-status .aos-host-mode");
   await expect(mode).toHaveText("WRITES: Notes");
-  await expect(mode).toHaveAttribute("title", /^Notes: \*\*\/\*\.md \(not brain\/_index\/\*\*, brain\/scripts\/\*\*, \.obsidian\/\*\*, \.git\/\*\*, \*\*\/node_modules\/\*\*\)\n/);
+  // Never the runtime's folders, a dependency folder or a dot-path (.obsidian, .git, a host's .claude or .codex: S7).
+  await expect(mode).toHaveAttribute("title", /^Notes: \*\*\/\*\.md \(not brain\/_index\/\*\*, brain\/scripts\/\*\*, \*\*\/node_modules\/\*\*, \*\*\/\.\*, \*\*\/\.\*\/\*\*\)\n/);
 });
 
 test("Edit opens the note in an editor; typing saves a moment later; undo saves it back byte for byte; Read renders it", async () => {
