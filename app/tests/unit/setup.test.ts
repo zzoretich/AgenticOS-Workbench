@@ -320,9 +320,29 @@ class FakePty extends EventEmitter implements PtyProcess {
   onExit(cb: (e: { exitCode: number; signal?: number }) => void): unknown { return this.on("exit", cb); }
 }
 
+/** A child process as JobRunner sees one: like Node's, it emits close only after both of its streams have ended. */
 function fakeChild(): { child: EventEmitter & { stdout: PassThrough; stderr: PassThrough; kill(): void }; finish(code: number): void } {
   const child = Object.assign(new EventEmitter(), { stdout: new PassThrough(), stderr: new PassThrough(), kill: () => { /* recorded by the caller */ } });
-  return { child, finish: (code) => { child.stdout.end(); child.stderr.end(); setImmediate(() => child.emit("close", code, null)); } };
+  return {
+    child,
+    finish: (code) => {
+      let open = 2;
+      const ended = (): void => { if (--open === 0) setImmediate(() => child.emit("close", code, null)); };
+      child.stdout.once("end", ended);
+      child.stderr.once("end", ended);
+      child.stdout.end();
+      child.stderr.end();
+    },
+  };
+}
+
+/** Waits until `events` holds an exit for `job` (or fails after 2 s). */
+async function exitOf(events: SetupEvent[], job: string): Promise<void> {
+  const end = Date.now() + 2000;
+  while (!events.some((e) => e.type === "exit" && e.job === job)) {
+    if (Date.now() > end) throw new Error(`no exit for ${job}`);
+    await new Promise((r) => setTimeout(r, 5));
+  }
 }
 
 test("jobs: one at a time; a terminal's output and exit stream as events, after the echoed command", () => {
@@ -357,7 +377,7 @@ test("jobs: a child process gets no stdin, and its line ends are made terminal-r
   assert.equal(opts.shell, false);
   child.stdout.write("a\nb\n");
   finish(0);
-  await new Promise((r) => setTimeout(r, 10));
+  await exitOf(events, "install");
   assert.deepEqual(events.filter((e) => e.type === "data").slice(1).map((e) => (e as { data: string }).data).join(""), "a\r\nb\r\n");
   assert.deepEqual(events.at(-1), { job: "install", type: "exit", code: 0, signal: null });
 });
@@ -404,7 +424,8 @@ test("controller: checks first, then a fix, the install with the answers file, C
 
   assert.equal(ctl.install({ ...req, host: "both" }).ok, true, "both hosts ready in the fake machine");
   children[0].finish(1);
-  await new Promise((r) => setTimeout(r, 10));
+  await exitOf(events, "install");
+  events.length = 0;
   assert.equal(ctl.finish().ok, true, "finish attaches whatever agenticos.json names");
   attachedVault = null;
 
@@ -417,7 +438,7 @@ test("controller: checks first, then a fix, the install with the answers file, C
   const busy = ctl.install(req);
   assert.ok(!busy.ok && busy.error === "another setup step is running", "one job at a time, refused by the policy first");
   children.at(-1)!.finish(0);
-  await new Promise((r) => setTimeout(r, 10));
+  await exitOf(events, "install");
   assert.equal(fs.existsSync(path.join(userData, "setup", "persona.json")), false, "the answers file goes when init ends");
 
   cfg = { hosts: { claude: { enabled: true, configDir: path.join(HOME, ".claude") } } };
