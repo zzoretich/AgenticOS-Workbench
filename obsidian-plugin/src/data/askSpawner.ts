@@ -7,7 +7,7 @@
 // Concurrency: hard-capped to 2 in-flight calls — matches serve.js's ASK_MAX.
 // Timeout: 90s default (longer than serve.js's 60s; SDK + tool calls add up).
 
-import { spawn, ChildProcess, SpawnOptions } from "child_process";
+import { spawn, type HostChild, type SpawnFn } from "../host";
 
 const DEFAULT_TIMEOUT_MS = 90_000;
 const MAX_CONCURRENT = 2;
@@ -49,7 +49,7 @@ export interface RunAskOptions {
   timeoutMs?: number;
 }
 
-export function runAsk(opts: RunAskOptions, deps: { spawn?: (file: string, args: string[], opts: SpawnOptions) => ChildProcess } = {}): AskHandle {
+export function runAsk(opts: RunAskOptions, deps: { spawn?: SpawnFn } = {}): AskHandle {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const start = Date.now();
   let stdoutBuf = "";
@@ -75,7 +75,7 @@ export function runAsk(opts: RunAskOptions, deps: { spawn?: (file: string, args:
   }
 
   inflight++;
-  let child: ChildProcess;
+  let child: HostChild;
   let killed = false;
   let cancelled = false;
   let killTimer: ReturnType<typeof setTimeout> | null = null;
@@ -85,10 +85,7 @@ export function runAsk(opts: RunAskOptions, deps: { spawn?: (file: string, args:
       // --local is mandatory: Plan 2 made ask.js default to --context (prints the
       // <<<AOS_CONTEXT feature=ask>>> block for a Claude Code session and exits without
       // answering). The Chat tab wants the answer, so it always asks for the provider path.
-      child = (deps.spawn ?? spawn)(opts.node ?? "node", ["brain/scripts/sdk/ask.js", "--local", opts.question], {
-        cwd: opts.vault,
-        windowsHide: true,
-      });
+      child = (deps.spawn ?? spawn)(opts.node ?? "node", ["brain/scripts/sdk/ask.js", "--local", opts.question], { cwd: opts.vault });
     } catch (err) {
       inflight--;
       clearTimeout(runIdTimer);
@@ -106,9 +103,8 @@ export function runAsk(opts: RunAskOptions, deps: { spawn?: (file: string, args:
       try { child.kill("SIGKILL"); } catch { /* ignore */ }
     }, timeoutMs);
 
-    child.stdout?.on("data", (d: Buffer) => { stdoutBuf += d.toString("utf8"); });
-    child.stderr?.on("data", (d: Buffer) => {
-      const chunk = d.toString("utf8");
+    child.stdout?.on("data", (d) => { stdoutBuf += d; });
+    child.stderr?.on("data", (chunk) => {
       // Scrape run_id from the first stderr write — the [telemetry] line is
       // emitted synchronously right after live ndjson is opened.
       if (!runId) {

@@ -13,12 +13,16 @@ All notable changes to AgenticOS Workbench. Versions follow the tags. From the n
 - **A Files tab** in the Workbench: the vault as a tree, search across notes (or every text file), Open file… and Search vault…, and a new note, rename, move and delete to the Trash. In the app it is where you work with notes; in Obsidian it sits beside Obsidian's own file explorer.
 
 ### Changed
+- The Files tab and the note editor no longer create or change dot-files and dot-folders (`.claude/`, `.codex/`, `.mcp.json`, `.git/`, `.obsidian/`), which they never showed. Edit those in a terminal or another editor.
 - Links into the Workbench are `agenticos://` links, which the AgenticOS Workbench app registers: `agenticos://workbench?tab=<tab>` from the status line, and `agenticos://note?file=<vault path>` for a note (the status line's flags link, and "Open in AgenticOS" on a proposal's page, which replaces "Open in Obsidian"). The Workbench still accepts the old `obsidian://agenticos?tab=<tab>` links.
 - `aos doctor` shows the Workbench app and its version (`workbench app`, from `brain/_index/hud-host.json`, which the app writes each time it starts) in place of the `obsidian app` and `obsidian plugin` rows, and warns until the app has run once.
 - Update notices count the app: the Workbench's version is the app's, read from that same file, no longer the Obsidian plugin's `manifest.json` in the vault.
 
 ### Removed
 - Obsidian is no longer required or installed. `aos init` no longer checks for it, no longer installs the HUD into `.obsidian/plugins/agentic-os/` and no longer writes `.obsidian/daily-notes.json`; `aos upgrade` no longer replaces the HUD there; `aos config set dailyNote.layout` no longer rewrites Obsidian's Daily Notes setting. `--no-obsidian`, `--terminal` and `aos terminal install` are still accepted and do nothing (the app brings its own terminal).
+
+### Security
+- **The app's page runs sandboxed** (Chromium's sandbox, context isolation, no Node). The Workbench reads and writes files, starts the runtime and its terminals, and opens links only through a narrow bridge to the app's main process, which checks every call: files only in the vault, LaunchAgents, the app's own data and what the Workbench shows of the Claude Code and Codex folders (skills, agents, `agenticos.json`; never a credential file such as Codex's `auth.json`, never a session transcript); writes only where a Workbench surface writes; only the runtime's own commands, the user's installed `node`, `claude` and shells, with no environment of the page's choosing; links over https only. A file that would run when opened (a script, a `.terminal` or `.command` file, an app, a web page the runtime did not write) is shown in Finder instead, and a folder only ever goes to the Trash. Packaged builds refuse to start with a debugging switch. The review is in `SECURITY.md`.
 
 ### Fixed
 - A Homebrew Node no longer breaks AgenticOS after `brew upgrade`. `aos init` and `aos upgrade` record Homebrew's stable link (`<prefix>/opt/<formula>/bin/node`) instead of the versioned `Cellar/` path, which `brew upgrade` deletes, and the schedules use it too. `aos doctor` warns about a `Cellar/` path still recorded.

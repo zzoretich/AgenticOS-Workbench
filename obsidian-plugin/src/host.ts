@@ -1,0 +1,196 @@
+// host.ts — the HudHost seam (docs/superpowers/plans/2026-10-05-sandbox-renderer.md S1). Everything the HUD does
+// outside its own DOM goes through one HudHost: read or write a file, start a process or a terminal, hand a path or a
+// link to the OS, read the environment. Under node:test and in Obsidian that is the Node host (nodeHost.ts); in the
+// AgenticOS Workbench app it is the sandboxed page's bridge to the main process, which checks every call.
+//
+// Modules import `fs`, `spawn`, `execFileSync`, `pty`, `shell` and `env` from here. Their names and signatures follow
+// Node's, so a call site reads as it did; only the types are narrower (the subset the HUD uses). nodeHost.ts is the one
+// HUD file that may import Node's I/O modules, node-pty or electron (host.test.ts fails on any other).
+import { createNodeHost } from "./nodeHost";
+
+export interface HostStats {
+  size: number;
+  mtimeMs: number;
+  ctimeMs: number;
+  isFile(): boolean;
+  isDirectory(): boolean;
+  isSymbolicLink(): boolean;
+}
+
+export interface HostDirent {
+  name: string;
+  isFile(): boolean;
+  isDirectory(): boolean;
+  isSymbolicLink(): boolean;
+}
+
+/** The filesystem calls the HUD makes. Paths are absolute. Errors are thrown as Node's are (`code` ENOENT, EROFS …). */
+export interface HostFs {
+  existsSync(p: string): boolean;
+  statSync(p: string): HostStats;
+  readFileSync(p: string, encoding: "utf8"): string;
+  readdirSync(p: string): string[];
+  readdirSync(p: string, opts: { withFileTypes: true }): HostDirent[];
+  /** Up to `length` bytes of a file from byte `position`: fewer at its end, none past it. */
+  readBytesSync(p: string, position: number, length: number): Uint8Array;
+  writeFileSync(p: string, data: string): void;
+  appendFileSync(p: string, data: string): void;
+  mkdirSync(p: string, opts?: { recursive?: boolean }): void;
+  chmodSync(p: string, mode: number): void;
+  /** Calls `listener` when the file at `p` may have changed; `close()` stops it. */
+  watch(p: string, listener: () => void): { close(): void };
+  promises: {
+    readFile(p: string, encoding: "utf8"): Promise<string>;
+    readdir(p: string, opts: { withFileTypes: true }): Promise<HostDirent[]>;
+    stat(p: string): Promise<HostStats>;
+    access(p: string): Promise<void>;
+  };
+}
+
+export interface HostSpawnOptions {
+  cwd?: string;
+  /** Variables set on top of the host's own environment (never a whole environment: the host keeps its own). */
+  env?: Record<string, string>;
+  /** Variables removed from it. */
+  unsetEnv?: string[];
+  /** "pipe" (the default) streams stdout and stderr as text; "ignore" drops them. */
+  stdio?: "pipe" | "ignore";
+  detached?: boolean;
+}
+
+export interface HostReadable {
+  on(event: "data", listener: (chunk: string) => void): unknown;
+}
+
+/** A started process: the part of Node's ChildProcess the HUD uses. Output arrives as UTF-8 text. */
+export interface HostChild {
+  readonly pid?: number;
+  readonly stdout: HostReadable | null;
+  readonly stderr: HostReadable | null;
+  on(event: "error", listener: (err: Error) => void): this;
+  on(event: "exit" | "close", listener: (code: number | null, signal: string | null) => void): this;
+  kill(signal?: string): boolean;
+  unref(): void;
+}
+
+export type SpawnFn = (command: string, args: string[], opts?: HostSpawnOptions) => HostChild;
+
+export interface HostPtyOptions {
+  name: string;
+  cols: number;
+  rows: number;
+  cwd: string;
+  /** Variables set on top of the host's own environment. */
+  env?: Record<string, string>;
+}
+
+/** One terminal: node-pty's IPty, as far as the HUD uses it. */
+export interface HostPtyProcess {
+  readonly pid: number;
+  write(data: string): void;
+  resize(cols: number, rows: number): void;
+  kill(signal?: string): void;
+  onData(listener: (data: string) => void): void;
+  onExit(listener: (info: { exitCode: number; signal?: number }) => void): void;
+}
+
+export interface HostPty {
+  /** Starts a terminal; throws when terminals are unavailable or this one is refused. */
+  spawn(file: string, args: string[], opts: HostPtyOptions): HostPtyProcess;
+  /** Why terminals are unavailable (loading node-pty failed), or null when they are. Loads it on first call. */
+  loadError(): string | null;
+  /** Obsidian: the plugin's folder, where "Install terminal support" puts node-pty. Ignored by hosts that bring their own. */
+  setPluginDir(dir: string): void;
+}
+
+export interface HostShell {
+  /** Opens a file or folder with the OS's default app: "" when it did, else why not (Electron's contract). */
+  openPath(p: string): Promise<string>;
+  openExternal(url: string): Promise<void>;
+  showItemInFolder(p: string): void;
+}
+
+export interface HostEnv {
+  /** A variable of the host's environment (the HUD reads CLAUDE_CONFIG_DIR, AOS_CONFIG, AOS_VAULT, CODEX_HOME, SHELL). */
+  get(name: string): string | undefined;
+  homedir(): string;
+  platform(): string;
+  /** The working directory (the vault, in a host that has none of its own). */
+  cwd(): string;
+  /** The Electron version the HUD runs in, or null outside Electron. */
+  electron(): string | null;
+}
+
+export interface HudHost {
+  fs: HostFs;
+  spawn: SpawnFn;
+  execFileSync(file: string, args: string[], opts: { encoding: "utf8"; timeout: number }): string;
+  pty: HostPty;
+  shell: HostShell;
+  env: HostEnv;
+}
+
+let current: HudHost | null = null;
+
+/** Installs the host every HUD module uses from now on. The app calls this before it loads the plugin. */
+export function setHudHost(host: HudHost): void { current = host; }
+
+/** The installed host; the Node host when none was installed (node:test, Obsidian). */
+export function hudHost(): HudHost {
+  current ??= createNodeHost();
+  return current;
+}
+
+// ── Node-shaped views of the current host, so `fs.readFileSync(…)` and `spawn(…)` read as they always did ──
+
+export const fs: HostFs = {
+  existsSync: (p) => hudHost().fs.existsSync(p),
+  statSync: (p) => hudHost().fs.statSync(p),
+  readFileSync: (p, encoding) => hudHost().fs.readFileSync(p, encoding),
+  readdirSync: ((p: string, opts?: { withFileTypes: true }) =>
+    (opts ? hudHost().fs.readdirSync(p, opts) : hudHost().fs.readdirSync(p))) as HostFs["readdirSync"],
+  readBytesSync: (p, position, length) => hudHost().fs.readBytesSync(p, position, length),
+  writeFileSync: (p, data) => hudHost().fs.writeFileSync(p, data),
+  appendFileSync: (p, data) => hudHost().fs.appendFileSync(p, data),
+  mkdirSync: (p, opts) => hudHost().fs.mkdirSync(p, opts),
+  chmodSync: (p, mode) => hudHost().fs.chmodSync(p, mode),
+  watch: (p, listener) => hudHost().fs.watch(p, listener),
+  promises: {
+    readFile: (p, encoding) => hudHost().fs.promises.readFile(p, encoding),
+    readdir: (p, opts) => hudHost().fs.promises.readdir(p, opts),
+    stat: (p) => hudHost().fs.promises.stat(p),
+    access: (p) => hudHost().fs.promises.access(p),
+  },
+};
+
+export const spawn: SpawnFn = (command, args, opts) => hudHost().spawn(command, args, opts);
+
+export function execFileSync(file: string, args: string[], opts: { encoding: "utf8"; timeout: number }): string {
+  return hudHost().execFileSync(file, args, opts);
+}
+
+export const pty: HostPty = {
+  spawn: (file, args, opts) => hudHost().pty.spawn(file, args, opts),
+  loadError: () => hudHost().pty.loadError(),
+  setPluginDir: (dir) => hudHost().pty.setPluginDir(dir),
+};
+
+export const shell: HostShell = {
+  openPath: (p) => hudHost().shell.openPath(p),
+  openExternal: (url) => hudHost().shell.openExternal(url),
+  showItemInFolder: (p) => hudHost().shell.showItemInFolder(p),
+};
+
+export const env: HostEnv = {
+  get: (name) => hudHost().env.get(name),
+  homedir: () => hudHost().env.homedir(),
+  platform: () => hudHost().env.platform(),
+  cwd: () => hudHost().env.cwd(),
+  electron: () => hudHost().env.electron(),
+};
+
+/** UTF-8 bytes → text, and the byte length of a text, without Node's Buffer (the app's page has none). */
+const decoder = new TextDecoder("utf-8");
+const encoder = new TextEncoder();
+export function utf8(bytes: Uint8Array): string { return decoder.decode(bytes); }
+export function utf8Bytes(text: string): Uint8Array { return encoder.encode(text); }

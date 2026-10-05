@@ -14,6 +14,7 @@ import type { ConfigList, ConfigRow, FollowUp, SetResult } from "../data/setting
 import { ConfirmModal } from "../ui/ConfirmModal";
 import { renderPluginSettings } from "../ui/pluginSettingRows";
 import type { PluginRowsHandle } from "../ui/pluginSettingRows";
+import { shell } from "../host";
 
 const SOURCE_PILL: Record<string, string> = { machine: "aos-pill-amber", vault: "aos-pill-cyan", default: "aos-pill-dim", unset: "aos-pill-dim" };
 
@@ -286,8 +287,6 @@ export class SettingsTab {
 
   private openFile(file: string): void {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { shell } = require("electron");
       void shell.openPath(file).then((err: string) => { if (err) new Notice(`Cannot open ${file}: ${err}`); });
     } catch { new Notice(`Cannot open ${file}`); }
   }

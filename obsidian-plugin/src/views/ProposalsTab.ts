@@ -8,6 +8,7 @@ import {
   isProposalFile, parseProposal, parseLedger, ledgerRates, historyRows, parseBacklog, parseConfirmations, ageDays,
 } from "../data/proposals";
 import { readAgenticosJson, reviewCommand } from "../data/aosConfig";
+import { shell } from "../host";
 
 const WATCHED = [LEDGER_PATH, BACKLOG_PATH, CONFIRMATIONS_PATH];
 const KIND_PILL: Record<string, string> = { self: "aos-pill-cyan", vault: "aos-pill-cyan", workflow: "aos-pill-green", product: "aos-pill-green" };
@@ -250,8 +251,6 @@ export class ProposalsTab {
   private openPage(page: string): void {
     const abs = `${this.plugin.vaultRoot()}/${page}`;
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { shell } = require("electron");
       void shell.openPath(abs).then((err: string) => { if (err) new Notice(`Cannot open ${page}: ${err}`); });
     } catch {
       new Notice(`Cannot open: ${page}`);

@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { FX, appEnv, badge, claudeCalls, codexCalls, command, content, drawer, guardWrites, installChatStubs, openTab, rail, terminalText, useApp } from "./harness";
-import { SURFACES } from "../../src/shared/write-policy";
+import { SURFACES } from "../../src/shared/surfaces";
 
 const editJson = (file: string, fn: (j: Record<string, any>) => void) => {
   const j = JSON.parse(fs.readFileSync(file, "utf8"));

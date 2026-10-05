@@ -1,28 +1,30 @@
-// Renderer entry: builds the Obsidian-compatible App over the vault, then constructs and loads the real Workbench
-// plugin from ../obsidian-plugin, exactly as Obsidian would. Main feeds it vault changes, menu commands
-// and agenticos:// links.
+// Page entry: builds the Obsidian-compatible App over the vault, then constructs and loads the real Workbench plugin
+// from ../obsidian-plugin, exactly as Obsidian would. The page is sandboxed with no Node (phase 4): it reaches main only
+// through window.aos (src/preload), and the HUD's own I/O goes through the bridge host installed here before the plugin
+// loads. Main feeds it vault changes, menu commands and agenticos:// links.
 
-import { ipcRenderer, type IpcRendererEvent } from "electron";
-import * as path from "node:path";
-import { App, Notice, guardState, setIcon, setMarkdownHost, setWriteGuard, type PluginManifest } from "obsidian";
+import { App, Notice, guardState, setBridge, setIcon, setMarkdownHost, setWriteGuard, type PluginManifest } from "obsidian";
 import AgenticOSPlugin from "@workbench/hud";
 import hudManifest from "@workbench/hud-manifest";
-import { CH, HOST_COMMANDS, type BootInfo, type ProtocolRequest, type ReadyInfo, type VaultChanges, type WriteSource } from "../shared/ipc";
-import { WritePolicy } from "../shared/write-policy";
+import { setHudHost } from "../../../obsidian-plugin/src/host";
+import { HOST_COMMANDS, type AosBridge, type ProtocolRequest, type ReadyInfo, type WriteSource } from "../shared/ipc";
 import { AppSettingTab } from "./appSettingTab";
+import { createBridgeHost } from "./bridgeHost";
+import { PagePolicy } from "./pagePolicy";
 import { openPopover } from "./popover";
 import { CommandPalette } from "./palette";
+import * as path from "./shims/path";
 
 /**
  * The status bar's first item, shown only while $AOS_APP_WRITE narrows the writes (tests, one-off runs): READ-ONLY, or
  * which surfaces may write, with what each one writes on hover. By default every surface writes and the item is hidden.
  */
-function showWriteMode(el: HTMLElement, policy: WritePolicy, source: WriteSource): void {
+function showWriteMode(el: HTMLElement, policy: PagePolicy, source: WriteSource): void {
   el.toggleClass("is-hidden", source === "default");
   const on = policy.surfaces;
   el.toggleClass("is-writing", on.length > 0);
   el.setText(on.length ? `WRITES: ${on.map((s) => s.label).join(", ")}` : "READ-ONLY");
-  const what = (s: WritePolicy["surfaces"][number]): string =>
+  const what = (s: PagePolicy["surfaces"][number]): string =>
     [...new Set([...s.writes, ...s.spawns.map((r) => r.script ?? r.bin)])].join(", ") + (s.except?.length ? ` (not ${s.except.join(", ")})` : "");
   el.setAttr("title", on.length
     ? `${on.map((s) => `${s.label}: ${what(s)}`).join("\n")}\nEverything else is refused for this run (AOS_APP_WRITE); the runtime's own background refreshes still run.`
@@ -30,10 +32,16 @@ function showWriteMode(el: HTMLElement, policy: WritePolicy, source: WriteSource
 }
 
 async function boot(): Promise<void> {
-  const info = ipcRenderer.sendSync(CH.boot) as BootInfo | null;
+  const aos = (window as unknown as { aos?: AosBridge }).aos;
+  if (!aos) throw new Error("The app's bridge to the main process is missing (the preload did not run).");
+  const info = aos.boot();
   const root = document.getElementById("app")!;
   if (!info) throw new Error("The main process did not answer the boot request.");
-  const policy = new WritePolicy(info.vaultRoot, info.writeSurfaces);
+  // Before the plugin loads: the compat layer's and the HUD's every file, process and OS call go to main from here on.
+  setBridge(aos);
+  const bridgeHost = createBridgeHost(aos, info);
+  setHudHost(bridgeHost.host);
+  const policy = new PagePolicy(info.vaultRoot, info.writeSurfaces);
   setWriteGuard(policy);
 
   if (!info.vaultRoot) {
@@ -55,11 +63,10 @@ async function boot(): Promise<void> {
     workspaceEl,
     ribbonEl,
     statusBarEl,
-    dataDir: path.join(info.userData, "plugins"),
   });
   setMarkdownHost(app);
 
-  // The HUD looks for node-pty under <vault>/<manifest.dir>; point that at the app's own data folder.
+  // The HUD keeps its own files (Obsidian's plugin folder) under <vault>/<manifest.dir>: the app's data folder instead.
   const pluginDir = path.join(info.userData, "plugins", hudManifest.id);
   const manifest: PluginManifest = { ...hudManifest, dir: path.relative(info.vaultRoot, pluginDir) };
   const plugin = new AgenticOSPlugin(app, manifest);
@@ -71,7 +78,7 @@ async function boot(): Promise<void> {
   // Workbench's Settings tab.
   app.setting.addSettingTab(new AppSettingTab(app, {
     vaultRoot: info.vaultRoot, vaultSource: info.vaultSource, userData: info.userData, appVersion: info.appVersion,
-    hudVersion: manifest.version, electron: info.electron, policy: () => policy, writeSource: () => info.writeSource,
+    hudVersion: manifest.version, electron: info.electron, policy: () => policy, writeSource: () => info.writeSource, aos,
   }));
   const openSettings = (): void => { if (!app.setting.isOpen) app.setting.open(); };
   app.commands.add({ id: HOST_COMMANDS.settings, name: "Open app settings", callback: openSettings });
@@ -80,11 +87,7 @@ async function boot(): Promise<void> {
   gear.addEventListener("click", openSettings);
   gear.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openSettings(); } });
 
-  app.vault.startWatching(info.mainWatcher ? (onPaths) => {
-    const listener = (_e: IpcRendererEvent, c: VaultChanges): void => { if (Array.isArray(c?.paths)) onPaths(c.paths); };
-    ipcRenderer.on(CH.vaultChanges, listener);
-    return () => { ipcRenderer.removeListener(CH.vaultChanges, listener); };
-  } : undefined);
+  app.vault.startWatching(info.mainWatcher ? (onPaths) => bridgeHost.onVaultChanges(onPaths) : undefined);
 
   // One keypress could reach both the page's listener below and a menu accelerator. The same command arriving by the
   // other route within 250 ms is that same keypress and is dropped; repeats by one route always run.
@@ -122,15 +125,15 @@ async function boot(): Promise<void> {
     runCommand(hit.id, "key");
   });
 
-  ipcRenderer.on(CH.command, (_e, id: unknown) => { if (typeof id === "string") runCommand(id, "menu"); });
-  ipcRenderer.on(CH.protocol, (_e, req: ProtocolRequest) => { if (req && typeof req.action === "string") routeLink(req); });
+  aos.onCommand((id) => runCommand(id, "menu"));
+  aos.onProtocol((req) => routeLink(req));
 
   runCommand("agentic-os:open-workbench");
 
   const ready: ReadyInfo = {
     commands: app.commands.list().map((c) => ({ id: c.id, name: c.name, hotkeys: c.hotkeys?.map((h) => ({ modifiers: [...h.modifiers], key: h.key })) })),
   };
-  ipcRenderer.send(CH.ready, ready);
+  aos.ready(ready);
 
   // The tray popover (hidden until the menubar icon is clicked): the plugin's SidebarHUD in a window of its own.
   void openPopover(app).catch((err: unknown) => console.warn("[host] tray popover unavailable", err));

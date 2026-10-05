@@ -2,10 +2,9 @@
 // the Obsidian Git plugin's backup timer (from its data.json) and any launchd label the owner lists
 // in `routines.externalLabels` (parsed from ~/Library/LaunchAgents/<label>.plist). Pure parsers over
 // text; only readExternalSchedules touches the filesystem. No actions are offered on these rows.
-import * as fs from "fs";
-import * as os from "os";
 import * as path from "path";
 import { describeCalendar } from "./cron";
+import { env, fs } from "../host";
 
 export interface ExternalSchedule {
   id: string;             // "obsidian-git" or the launchd label
@@ -57,7 +56,7 @@ export function describePlist(p: ReturnType<typeof parseLaunchdPlist>): string {
   return "no schedule (on demand)";
 }
 
-export function launchAgentsDir(home = os.homedir()): string { return path.join(home, "Library", "LaunchAgents"); }
+export function launchAgentsDir(home = env.homedir()): string { return path.join(home, "Library", "LaunchAgents"); }
 
 /** One row per allow-listed launchd label; a missing plist is reported as not loaded rather than dropped. */
 export function readLaunchdRows(labels: string[], dir = launchAgentsDir()): ExternalSchedule[] {
@@ -78,6 +77,6 @@ export function readExternalSchedules(vaultRoot: string, labels: string[], opts:
   try { raw = fs.readFileSync(path.join(vaultRoot, OBSIDIAN_GIT_DATA), "utf8"); } catch { /* plugin absent */ }
   const git = parseObsidianGit(raw);
   if (git) out.push(git);
-  if ((opts.platform ?? process.platform) === "darwin") out.push(...readLaunchdRows(labels, opts.launchAgents));
+  if ((opts.platform ?? env.platform()) === "darwin") out.push(...readLaunchdRows(labels, opts.launchAgents));
   return out;
 }

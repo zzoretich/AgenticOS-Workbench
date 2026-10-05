@@ -1,6 +1,5 @@
 import { Notice, TFile } from "obsidian";
 import type { TAbstractFile } from "obsidian";
-import * as os from "os";
 import * as path from "path";
 import type AgenticOSPlugin from "../../main";
 import type { WorkbenchView } from "./WorkbenchView";
@@ -15,6 +14,7 @@ import { renderBoard, renderGateCard } from "./teams/BoardPane";
 import { renderRoster } from "./teams/RosterPane";
 import { renderInteract } from "./teams/InteractPane";
 import { renderManage } from "./teams/ManagePane";
+import { env, shell } from "../host";
 
 /** While the tab is showing it re-reads every TICK_MS (ages move on) and asks `aos team list` to sweep killed runs,
  *  and name the presets, once SWEEP_EVERY_MS has passed: a dispatcher that died silently is recorded within a minute. */
@@ -115,7 +115,7 @@ export class AgentTeamsTab {
   private runner(): TeamRunner {
     const configDir = this.plugin.claudeConfigDir();
     // CLAUDE_CONFIG_DIR: `member add` finds agents in the folder this plugin is set to, not only the default one.
-    return teamRunner({ node: this.plugin.nodeBin(), vault: this.plugin.vaultRoot(), configDir, env: { ...process.env, CLAUDE_CONFIG_DIR: configDir } });
+    return teamRunner({ node: this.plugin.nodeBin(), vault: this.plugin.vaultRoot(), configDir, env: { CLAUDE_CONFIG_DIR: configDir } });
   }
 
   /** `aos team list --json`: records any killed run (its file events re-render) and names the presets Manage offers. */
@@ -168,8 +168,6 @@ export class AgentTeamsTab {
     if (f instanceof TFile) { void this.plugin.app.workspace.getLeaf("tab").openFile(f); return; }
     const abs = path.join(this.plugin.vaultRoot(), p);
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { shell } = require("electron");
       void shell.openPath(abs).then((err: string) => { if (err) new Notice(`Cannot open ${abs}: ${err}`); });
     } catch { new Notice(`Cannot open ${abs}`); }
   }
@@ -177,7 +175,7 @@ export class AgentTeamsTab {
   /** The folder each host's session should use, as the runtime resolves it (lib/host.js), set on the command only when
    *  a new terminal would find another. */
   private hostEnv(): Record<SessionHost, string> {
-    const envCodex = path.resolve(process.env.CODEX_HOME || path.join(os.homedir(), ".codex"));
+    const envCodex = path.resolve(env.get("CODEX_HOME") || path.join(env.homedir(), ".codex"));
     const cfgCodex = readAgenticosJson(this.plugin.claudeConfigDir())?.hosts?.codex?.home;
     return {
       claude: envPrefix("CLAUDE_CONFIG_DIR", this.plugin.claudeConfigDir(), envClaudeConfigDir()),

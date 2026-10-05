@@ -8,10 +8,8 @@
 // Each answered call appends the contract §3 spend row to brain/_index/provider-spend.jsonl
 // (feature "reason:chat" by default: the reasoner cap's family) so `aos status` and the daily
 // caps account for chat spend too. chatRoute() decides between this path and askSpawner.
-import { spawn as nodeSpawn, ChildProcess, SpawnOptions } from "child_process";
-import * as fs from "fs";
-import * as os from "os";
 import * as path from "path";
+import { env, fs, spawn as hostSpawn, type HostChild, type HostSpawnOptions, type SpawnFn } from "../host";
 import { lastStderrLine, type AskHandle, type AskResult } from "./askSpawner";
 import { readAgenticosJson, readProviderState, AgenticosJson, ProviderState } from "./aosConfig";
 
@@ -29,12 +27,12 @@ export interface ClaudeAskOptions {
 }
 
 export interface ClaudeAskDeps {
-  spawn: (file: string, args: string[], opts: SpawnOptions) => ChildProcess;
+  spawn: SpawnFn;
   appendFileSync: (p: string, s: string) => void;
 }
 
 const DEFAULT_DEPS: ClaudeAskDeps = {
-  spawn: (file, args, opts) => nodeSpawn(file, args, opts),
+  spawn: (file, args, opts) => hostSpawn(file, args, opts),
   appendFileSync: (p, s) => fs.appendFileSync(p, s),
 };
 
@@ -78,10 +76,9 @@ export function buildClaudeArgs(o: { prompt: string; model: string; maxBudgetUsd
   ];
 }
 
-export function headlessEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...base, AOS_HEADLESS: "1" };
-  delete env.CLAUDECODE;
-  return env;
+/** What a headless claude gets on top of the host's environment: AOS_HEADLESS=1, and no CLAUDECODE, so the user's hooks never re-enter. */
+export function headlessEnv(): Pick<HostSpawnOptions, "env" | "unsetEnv"> {
+  return { env: { AOS_HEADLESS: "1" }, unsetEnv: ["CLAUDECODE"] };
 }
 
 export interface ClaudeJsonResult { text: string; usd: number; inputTokens: number; outputTokens: number; isError: boolean }
@@ -102,13 +99,13 @@ export function parseClaudeJson(stdout: string): ClaudeJsonResult | null {
 
 interface Collected { code: number | null; stdout: string; stderr: string; killed: boolean }
 
-function collect(child: ChildProcess, timeoutMs: number): Promise<Collected> {
+function collect(child: HostChild, timeoutMs: number): Promise<Collected> {
   return new Promise((resolve) => {
     let stdout = "", stderr = "", killed = false, done = false;
     const finish = (c: Collected) => { if (!done) { done = true; clearTimeout(timer); resolve(c); } };
     const timer = setTimeout(() => { killed = true; try { child.kill("SIGKILL"); } catch { /* ignore */ } }, timeoutMs);
-    child.stdout?.on("data", (d: Buffer) => { stdout += d.toString("utf8"); });
-    child.stderr?.on("data", (d: Buffer) => { stderr += d.toString("utf8"); });
+    child.stdout?.on("data", (d) => { stdout += d; });
+    child.stderr?.on("data", (d) => { stderr += d; });
     child.on("error", (e) => finish({ code: null, stdout, stderr: `${stderr}${e.message}`, killed }));
     child.on("close", (code) => finish({ code, stdout, stderr, killed }));
   });
@@ -125,7 +122,7 @@ const DEFAULT_BIN_DEPS: ClaudeBinDeps = {
   readAgenticosJson: () => readAgenticosJson(),
   readProviderState,
   existsSync: (p) => fs.existsSync(p),
-  homedir: () => os.homedir(),
+  homedir: () => env.homedir(),
 };
 
 /**
@@ -148,7 +145,7 @@ export function resolveClaudeBin(vaultRoot: string, deps: Partial<ClaudeBinDeps>
 export function runClaudeAsk(opts: ClaudeAskOptions, deps: ClaudeAskDeps = DEFAULT_DEPS): AskHandle {
   const start = Date.now();
   let cancelled = false;
-  let current: ChildProcess | null = null;
+  let current: HostChild | null = null;
   const fail = (error: string, extra: Partial<AskResult> = {}): AskResult =>
     ({ ok: false, runId: null, answer: "", stderr: "", elapsedMs: Date.now() - start, exitCode: null, error, ...extra });
 
@@ -157,7 +154,7 @@ export function runClaudeAsk(opts: ClaudeAskOptions, deps: ClaudeAskDeps = DEFAU
     let context = "";
     try {
       const rc = deps.spawn(opts.node, [path.join(opts.vault, "brain", "scripts", "sdk", "recall-cli.js"), opts.question],
-        { cwd: opts.vault, env: { ...process.env, AOS_VAULT: opts.vault }, windowsHide: true });
+        { cwd: opts.vault, env: { AOS_VAULT: opts.vault } });
       current = rc;
       const r = await collect(rc, opts.recallTimeoutMs ?? 15_000);
       if (r.code === 0) context = r.stdout;
@@ -165,11 +162,11 @@ export function runClaudeAsk(opts: ClaudeAskOptions, deps: ClaudeAskDeps = DEFAU
     if (cancelled) return fail("cancelled");
 
     // 2. headless claude
-    let child: ChildProcess;
+    let child: HostChild;
     try {
       child = deps.spawn(opts.claudeBin,
         buildClaudeArgs({ prompt: composePrompt(opts.question, context), model: opts.model, maxBudgetUsd: opts.maxBudgetUsd, effort: opts.effort }),
-        { cwd: opts.vault, env: headlessEnv(process.env), windowsHide: true });
+        { cwd: opts.vault, ...headlessEnv() });
     } catch (e) {
       return fail(e instanceof Error ? e.message : String(e));
     }

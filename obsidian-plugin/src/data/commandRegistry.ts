@@ -1,7 +1,6 @@
 import { App, Notice, TFile } from "obsidian";
-import { spawn } from "child_process";
 import * as path from "path";
-import * as fs from "fs";
+import { env, fs, spawn } from "../host";
 import { CaptureModal } from "../ui/CaptureModal";
 import { RememberModal } from "../ui/RememberModal";
 import { PatternModal } from "../ui/PatternModal";
@@ -13,13 +12,13 @@ import { invocation, readAgenticosJson, sessionHosts } from "./aosConfig";
 export function resolveExe(name: string): string {
   if (name.startsWith("/")) return name;
   const candidates: string[] = [];
-  if (process.platform === "darwin") {
+  if (env.platform() === "darwin") {
     candidates.push(
       `/opt/homebrew/bin/${name}`,   // Apple Silicon Homebrew
       `/usr/local/bin/${name}`,       // Intel Homebrew / Node installer
       `/usr/bin/${name}`,
     );
-  } else if (process.platform === "linux") {
+  } else if (env.platform() === "linux") {
     candidates.push(
       `/usr/local/bin/${name}`,
       `/usr/bin/${name}`,
@@ -114,21 +113,17 @@ export async function executeCommand(app: App, cmd: SlashCommand): Promise<void>
       }
       try {
         const adapter = app.vault.adapter as unknown as { getBasePath?: () => string };
-        const base = adapter.getBasePath ? adapter.getBasePath() : process.cwd();
+        const base = adapter.getBasePath ? adapter.getBasePath() : env.cwd();
         const root = spawnCtx?.vaultRoot ?? base;
         const args = (cmd.args || []).map((a) =>
           a.startsWith("/") || a.startsWith("-") || a.startsWith("--") ? a : path.join(root, a)
         );
         const exe = cmd.cmd === "node" && spawnCtx ? spawnCtx.node : resolveExe(cmd.cmd);
         new Notice(`▶ ${cmd.name}`);
-        const child = spawn(exe, args, {
-          cwd: root,
-          stdio: ["ignore", "pipe", "pipe"],
-          detached: !!cmd.background,
-        });
+        const child = spawn(exe, args, { cwd: root, detached: !!cmd.background });
         let out = "", err = "";
-        child.stdout?.on("data", (b: Buffer) => { out += b.toString(); });
-        child.stderr?.on("data", (b: Buffer) => { err += b.toString(); });
+        child.stdout?.on("data", (b) => { out += b; });
+        child.stderr?.on("data", (b) => { err += b; });
         if (cmd.background) {
           child.unref();
           setTimeout(() => new Notice(`${cmd.name} running in background`), 200);

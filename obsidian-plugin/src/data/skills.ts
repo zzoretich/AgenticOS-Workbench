@@ -2,8 +2,8 @@
 // both session hosts, written by the runtime only — `aos skills sync` (lib/skills.js), which also mirrors each host's user
 // skills into the other host's folder. Pure parsing and formatting; only readSkills touches the filesystem. The tab runs
 // a skill by typing its invocation into a fresh terminal session on the chosen host.
-import * as fs from "fs";
 import * as path from "path";
+import { fs } from "../host";
 
 export const SKILLS_PATH = "brain/_index/skills.json";
 export const SKILL_HOSTS = ["claude", "codex"] as const;

@@ -15,7 +15,11 @@ export { Setting, ButtonComponent, ExtraButtonComponent, ToggleComponent, TextCo
 export { MarkdownRenderer, setMarkdownHost } from "./markdown";
 export { Notice, setIcon, getIconIds } from "./notice";
 export { App, Plugin, SettingTab, PluginSettingTab, Commands, type PluginManifest, type Command, type Hotkey } from "./plugin";
-export { guardState, setWriteGuard, canWrite, canMakeFolder, canSpawn, canSave, refuse, type GuardEntry, type GuardState, type WriteGuard } from "./guard";
+export { guardState, setWriteGuard, canSave, refuse, type GuardEntry, type GuardState, type WriteGuard } from "./guard";
+export { setBridge } from "./bridge";
 
-export const Platform = { isDesktop: true, isDesktopApp: true, isMobile: false, isMobileApp: false, isMacOS: process.platform === "darwin", isWin: process.platform === "win32", isLinux: process.platform === "linux" };
+// The app is macOS only (D2). The page has no `process`: the platform is what the browser reports.
+const nav = (globalThis as { navigator?: { platform?: string } }).navigator?.platform ?? "";
+const mac = /^Mac/i.test(nav);
+export const Platform = { isDesktop: true, isDesktopApp: true, isMobile: false, isMobileApp: false, isMacOS: mac, isWin: /^Win/i.test(nav), isLinux: /Linux/i.test(nav) };
 export const apiVersion = "1.13.1-compat";

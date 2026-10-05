@@ -1,31 +1,31 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import type { ChildProcess } from "node:child_process";
+import type { HostChild, HostSpawnOptions } from "../host";
 import { runClaudeAsk, buildClaudeArgs, composePrompt, parseClaudeJson, headlessEnv, resolveClaudeBin, chatRoute, ClaudeAskDeps } from "./claudeAsk";
 
-function fakeChild(stdout: string, code = 0, stderr = ""): ChildProcess {
+function fakeChild(stdout: string, code = 0, stderr = ""): HostChild {
   const child = new EventEmitter() as EventEmitter & { stdout: EventEmitter; stderr: EventEmitter; kill: () => boolean };
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
   child.kill = () => true;
   setImmediate(() => {
-    if (stdout) child.stdout.emit("data", Buffer.from(stdout));
-    if (stderr) child.stderr.emit("data", Buffer.from(stderr));
+    if (stdout) child.stdout.emit("data", stdout);
+    if (stderr) child.stderr.emit("data", stderr);
     child.emit("close", code);
   });
-  return child as unknown as ChildProcess;
+  return child as unknown as HostChild;
 }
 
 /** A child whose "close" fires (with code null, as a real killed process reports) only when
  *  kill() is called — never on its own, unlike fakeChild's setImmediate. Models the headless
  *  claude process while a user cancel is in flight. */
-function cancelableChild(): ChildProcess {
+function cancelableChild(): HostChild {
   const child = new EventEmitter() as EventEmitter & { stdout: EventEmitter; stderr: EventEmitter; kill: () => boolean };
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
   child.kill = () => { setImmediate(() => child.emit("close", null)); return true; };
-  return child as unknown as ChildProcess;
+  return child as unknown as HostChild;
 }
 
 const CLAUDE_JSON = JSON.stringify({
@@ -33,11 +33,11 @@ const CLAUDE_JSON = JSON.stringify({
   total_cost_usd: 0.0034, usage: { input_tokens: 1505, output_tokens: 185 }, duration_api_ms: 2911,
 });
 
-function harness(children: ChildProcess[]) {
-  const calls: Array<{ file: string; args: string[]; cwd?: string | URL; env?: NodeJS.ProcessEnv }> = [];
+function harness(children: HostChild[]) {
+  const calls: Array<{ file: string; args: string[]; cwd?: string; env?: HostSpawnOptions["env"]; unsetEnv?: string[] }> = [];
   const ledger: string[] = [];
   const deps: ClaudeAskDeps = {
-    spawn: (file, args, opts) => { calls.push({ file, args, cwd: opts.cwd, env: opts.env }); return children.shift()!; },
+    spawn: (file, args, opts = {}) => { calls.push({ file, args, cwd: opts.cwd, env: opts.env, unsetEnv: opts.unsetEnv }); return children.shift()!; },
     appendFileSync: (_p, s) => { ledger.push(s); },
   };
   return { calls, ledger, deps };
@@ -55,7 +55,7 @@ test("runClaudeAsk: recall context first, then the exact headless recipe; usd su
   assert.equal(c.file, "/bin/claude");
   assert.equal(c.cwd, "/tmp/v");
   assert.equal(c.env?.AOS_HEADLESS, "1");
-  assert.equal("CLAUDECODE" in (c.env ?? {}), false);
+  assert.deepEqual(c.unsetEnv, ["CLAUDECODE"]);
   assert.equal(c.args[0], "-p");
   assert.match(c.args[1], /CONTEXT \(recall hits from the vault\):\nhit one\nhit two/);
   assert.match(c.args[1], /QUESTION: what did I decide\?$/);
@@ -127,10 +127,7 @@ test("composePrompt caps the context at 12k chars; buildClaudeArgs emits the rec
   assert.equal(composePrompt("q", big).length, 12_000 + "CONTEXT (recall hits from the vault):\n".length + "\n\nQUESTION: q".length);
   const args = buildClaudeArgs({ prompt: "P", model: "haiku", maxBudgetUsd: 0.02 });
   assert.deepEqual(args.slice(0, 4), ["-p", "P", "--model", "haiku"]);
-  const env = headlessEnv({ CLAUDECODE: "1", HOME: "/home/alice" });
-  assert.equal(env.AOS_HEADLESS, "1");
-  assert.equal(env.CLAUDECODE, undefined);
-  assert.equal(env.HOME, "/home/alice");
+  assert.deepEqual(headlessEnv(), { env: { AOS_HEADLESS: "1" }, unsetEnv: ["CLAUDECODE"] });
 });
 
 test("a BILLED failure is ledgered anyway (contract §3, claude-cli.js:114) and still reports the error", async () => {

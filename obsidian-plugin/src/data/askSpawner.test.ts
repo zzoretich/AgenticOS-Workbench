@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import type { ChildProcess } from "node:child_process";
+import type { HostChild } from "../host";
 import { lastStderrLine, runAsk } from "./askSpawner";
 
 test("lastStderrLine skips stack frames and blank lines, returning the last meaningful line", () => {
@@ -16,12 +16,12 @@ test("lastStderrLine skips stack frames and blank lines, returning the last mean
 /** A child whose "close" fires (with code null, as a real killed process reports) only when
  *  kill() is called — never on its own. Models the local ask.js process while a user cancel
  *  is in flight. Mirrors claudeAsk.test.ts:23-29. */
-function cancelableChild(): ChildProcess {
+function cancelableChild(): HostChild {
   const child = new EventEmitter() as EventEmitter & { stdout: EventEmitter; stderr: EventEmitter; kill: () => boolean };
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
   child.kill = () => { setImmediate(() => child.emit("close", null)); return true; };
-  return child as unknown as ChildProcess;
+  return child as unknown as HostChild;
 }
 
 test('a user cancel under ollama reports "cancelled", never "cancelled (timeout)"', async () => {

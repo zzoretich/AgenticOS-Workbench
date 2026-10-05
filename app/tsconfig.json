@@ -29,7 +29,8 @@
   "include": [
     "src/**/*.ts",
     "compat/src/**/*.ts",
-    "tests/unit/**/*.ts"
+    "tests/unit/**/*.ts",
+    "tests/e2e/**/*.ts"
   ],
   "exclude": [
     "node_modules",

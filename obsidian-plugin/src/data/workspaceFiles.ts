@@ -1,5 +1,5 @@
 import * as path from "path";
-import { promises as fs } from "fs";
+import { fs, utf8, utf8Bytes } from "../host";
 
 export const IGNORED = new Set([".git", "node_modules", ".DS_Store"]);
 
@@ -34,8 +34,9 @@ export const MAX_PREVIEW_LINES = 5000;
 export function truncate(text: string): { text: string; truncated: boolean } {
   let truncated = false;
   let out = text;
-  if (Buffer.byteLength(out, "utf8") > MAX_PREVIEW_BYTES) {
-    out = Buffer.from(out, "utf8").subarray(0, MAX_PREVIEW_BYTES).toString("utf8");
+  const bytes = utf8Bytes(out);
+  if (bytes.length > MAX_PREVIEW_BYTES) {
+    out = utf8(bytes.subarray(0, MAX_PREVIEW_BYTES));
     // a byte cut can land mid-codepoint; toString() leaves a trailing U+FFFD — drop it
     if (out.endsWith("�")) out = out.slice(0, -1);
     truncated = true;
@@ -49,7 +50,7 @@ export function truncate(text: string): { text: string; truncated: boolean } {
 }
 
 export async function listDir(absDir: string): Promise<DirEntry[]> {
-  const dirents = await fs.readdir(absDir, { withFileTypes: true });
+  const dirents = await fs.promises.readdir(absDir, { withFileTypes: true });
   const entries: DirEntry[] = [];
   for (const d of dirents) {
     if (isIgnored(d.name)) continue;
@@ -70,37 +71,22 @@ export interface PreviewResult {
 }
 
 export async function readPreview(absPath: string): Promise<PreviewResult> {
-  const stat = await fs.stat(absPath);
+  const stat = await fs.promises.stat(absPath);
   const size = stat.size;
   if (size === 0) return { kind: "empty", size };
 
-  const fh = await fs.open(absPath, "r");
-  try {
-    const sniffLen = Math.min(SNIFF_BYTES, size);
-    const sniff = Buffer.alloc(sniffLen);
-    const { bytesRead: sniffRead } = await fh.read(sniff, 0, sniffLen, 0);
-    const sniffData = sniff.subarray(0, sniffRead);
-    if (!looksTextual(path.basename(absPath), sniffData)) {
-      return { kind: "binary", size };
-    }
-    const readLen = Math.min(size, MAX_PREVIEW_BYTES);
-    let data: Buffer;
-    if (readLen <= sniffRead) {
-      // small file already fully captured by the sniff read — no second I/O
-      data = sniff.subarray(0, readLen);
-    } else {
-      const full = Buffer.alloc(readLen);
-      const { bytesRead } = await fh.read(full, 0, readLen, 0);
-      data = full.subarray(0, bytesRead);
-    }
-    const { text, truncated } = truncate(data.toString("utf8"));
-    return { kind: "text", size, text, truncated: truncated || size > MAX_PREVIEW_BYTES };
-  } finally {
-    await fh.close();
+  const sniff = fs.readBytesSync(absPath, 0, Math.min(SNIFF_BYTES, size));
+  if (!looksTextual(path.basename(absPath), sniff)) {
+    return { kind: "binary", size };
   }
+  const readLen = Math.min(size, MAX_PREVIEW_BYTES);
+  // small file already fully captured by the sniff read — no second I/O
+  const data = readLen <= sniff.length ? sniff.subarray(0, readLen) : fs.readBytesSync(absPath, 0, readLen);
+  const { text, truncated } = truncate(utf8(data));
+  return { kind: "text", size, text, truncated: truncated || size > MAX_PREVIEW_BYTES };
 }
 
-export function looksTextual(name: string, sample: Buffer): boolean {
+export function looksTextual(name: string, sample: Uint8Array): boolean {
   const lower = name.toLowerCase();
   const ext = path.extname(lower);
   if (ext && TEXT_EXTS.has(ext)) return true;

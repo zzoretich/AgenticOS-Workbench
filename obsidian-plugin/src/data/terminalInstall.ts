@@ -15,20 +15,20 @@
 //     @electron/rebuild through npx with process.versions.electron — never a pinned version.
 // Windows is not supported in v1 (cli/aos.js:548 refuses it): the PATH join below is ':'-only
 // and the npm/npx siblings have no .cmd fallback.
-import { spawn as nodeSpawn, ChildProcess } from "child_process";
-import * as fs from "fs";
 import * as path from "path";
+import { env as hostEnv, fs, spawn as hostSpawn, type HostChild } from "../host";
 import { npmSiblingOf } from "./nodeResolver";
 
 export interface InstallDeps {
-  spawn: (file: string, args: string[], opts: { cwd: string; env: NodeJS.ProcessEnv; windowsHide: boolean }) => ChildProcess;
+  /** `env` is set on top of the host's environment (PATH, with node's folder first). */
+  spawn: (file: string, args: string[], opts: { cwd: string; env: Record<string, string> }) => HostChild;
   readdirSync: (p: string) => string[];
   existsSync: (p: string) => boolean;
   chmodSync: (p: string, mode: number) => void;
 }
 
 const DEFAULT_DEPS: InstallDeps = {
-  spawn: (file, args, opts) => nodeSpawn(file, args, opts),
+  spawn: (file, args, opts) => hostSpawn(file, args, opts),
   readdirSync: (p) => fs.readdirSync(p),
   existsSync: (p) => fs.existsSync(p),
   chmodSync: (p, mode) => fs.chmodSync(p, mode),
@@ -37,7 +37,7 @@ const DEFAULT_DEPS: InstallDeps = {
 export interface InstallResult { ok: boolean; code: number | null; output: string; chmodded: string[] }
 
 export function electronVersion(): string | null {
-  return (process.versions as Record<string, string | undefined>).electron ?? null;
+  return hostEnv.electron();
 }
 
 export function chmodSpawnHelpers(pluginDir: string, d: Pick<InstallDeps, "readdirSync" | "existsSync" | "chmodSync"> = DEFAULT_DEPS): string[] {
@@ -63,16 +63,16 @@ export function npxSiblingOf(nodeBin: string): string {
 }
 
 function runTool(o: { exe: string; pluginDir: string; nodeBin: string; args: string[]; timeoutMs: number }, d: InstallDeps): Promise<{ code: number | null; output: string }> {
-  const env: NodeJS.ProcessEnv = { ...process.env };
-  if (path.isAbsolute(o.nodeBin)) env.PATH = `${path.dirname(o.nodeBin)}:${process.env.PATH ?? ""}`;
+  const env: Record<string, string> = {};
+  if (path.isAbsolute(o.nodeBin)) env.PATH = `${path.dirname(o.nodeBin)}:${hostEnv.get("PATH") ?? ""}`;
   return new Promise((resolve) => {
     let output = "";
-    let child: ChildProcess;
-    try { child = d.spawn(o.exe, o.args, { cwd: o.pluginDir, env, windowsHide: true }); }
+    let child: HostChild;
+    try { child = d.spawn(o.exe, o.args, { cwd: o.pluginDir, env }); }
     catch (e) { resolve({ code: null, output: e instanceof Error ? e.message : String(e) }); return; }
     const timer = setTimeout(() => { try { child.kill("SIGKILL"); } catch { /* ignore */ } }, o.timeoutMs);
-    child.stdout?.on("data", (b: Buffer) => { output += b.toString("utf8"); });
-    child.stderr?.on("data", (b: Buffer) => { output += b.toString("utf8"); });
+    child.stdout?.on("data", (b) => { output += b; });
+    child.stderr?.on("data", (b) => { output += b; });
     child.on("error", (e) => { clearTimeout(timer); resolve({ code: null, output: `${output}${e.message}` }); });
     child.on("close", (code) => { clearTimeout(timer); resolve({ code, output }); });
   });
@@ -82,7 +82,7 @@ function runTool(o: { exe: string; pluginDir: string; nodeBin: string; args: str
 export const NO_PACKAGE_JSON = "no package.json here — install the bundle with `aos upgrade` first";
 
 /** An `aos init` / `aos upgrade` bundle carries package.json; a release-asset or BRAT install does not. */
-export function hasBundle(pluginDir: string, existsSync: (p: string) => boolean = fs.existsSync): boolean {
+export function hasBundle(pluginDir: string, existsSync: (p: string) => boolean = (p) => fs.existsSync(p)): boolean {
   return existsSync(path.join(pluginDir, "package.json"));
 }
 

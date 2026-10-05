@@ -1,6 +1,7 @@
-// TerminalSession — wraps one node-pty instance.
+// TerminalSession — wraps one terminal from the host (host.ts: node-pty in Obsidian; the app's main process in the app).
 // Holds a circular scrollback buffer so xterm instances can be (re)attached at will.
-// node-pty is loaded lazily so import errors degrade gracefully.
+// The host loads node-pty lazily, so a missing or broken install degrades to "terminals unavailable".
+import { pty as hostPty, type HostPtyProcess } from "../host";
 
 export interface TerminalSessionOptions {
   id: string;
@@ -14,44 +15,8 @@ export interface TerminalSessionOptions {
 type DataListener = (data: string) => void;
 type ExitListener = (info: { exitCode: number; signal?: number }) => void;
 
-let ptyLib: unknown = null;
-let ptyLoadError: string | null = null;
-
-// Plugin dir injected by main.ts at plugin load. Required because Obsidian
-// renderer's require() can't resolve "node-pty" by bare name and __dirname
-// isn't reliable in this context — we need an explicit absolute path.
-let pluginDir: string | null = null;
-export function setPluginDir(dir: string): void { pluginDir = dir; }
-
-function loadPty(): unknown {
-  if (ptyLib) return ptyLib;
-  if (ptyLoadError) throw new Error(`node-pty failed to load: ${ptyLoadError}`);
-  const attempts: Array<{ where: string; err: string }> = [];
-  try {
-    const path = require("path") as typeof import("path");
-    const candidates: string[] = [];
-    if (pluginDir) {
-      candidates.push(path.join(pluginDir, "node_modules", "node-pty"));
-      candidates.push(path.join(pluginDir, "node_modules", "node-pty", "lib", "index.js"));
-    }
-    // last-ditch: bare name in case Electron's resolver finds it
-    candidates.push("node-pty");
-
-    for (const c of candidates) {
-      try {
-        ptyLib = require(c);
-        return ptyLib;
-      } catch (e) {
-        attempts.push({ where: c, err: e instanceof Error ? e.message : String(e) });
-      }
-    }
-    const detail = attempts.map(a => `  • ${a.where} → ${a.err.split("\n")[0]}`).join("\n");
-    throw new Error(`tried ${attempts.length} paths:\n${detail}`);
-  } catch (e) {
-    ptyLoadError = e instanceof Error ? e.message : String(e);
-    throw new Error(`node-pty failed to load: ${ptyLoadError}`);
-  }
-}
+/** Obsidian: the plugin folder, where "Install terminal support" puts node-pty (main.ts sets it at load). */
+export function setPluginDir(dir: string): void { hostPty.setPluginDir(dir); }
 
 const SCROLLBACK_CAP = 200_000;
 
@@ -59,7 +24,7 @@ export class TerminalSession {
   readonly id: string;
   readonly shell: string;
   readonly cwd: string;
-  private pty: { write: (s: string) => void; resize: (c: number, r: number) => void; kill: (s?: string) => void; onData: (cb: (d: string) => void) => void; onExit: (cb: (info: { exitCode: number; signal?: number }) => void) => void };
+  private pty: HostPtyProcess;
   private scrollback: string = "";
   private dataListeners = new Set<DataListener>();
   private exitListeners = new Set<ExitListener>();
@@ -72,19 +37,12 @@ export class TerminalSession {
     this.cwd = opts.cwd;
     this.title = `t${opts.id}`;
 
-    const lib = loadPty() as { spawn: (shell: string, args: string[], options: Record<string, unknown>) => typeof this.pty };
-    this.pty = lib.spawn(opts.shell, [], {
+    this.pty = hostPty.spawn(opts.shell, [], {
       name: "xterm-256color",
       cols: opts.cols || 80,
       rows: opts.rows || 24,
       cwd: opts.cwd,
-      env: {
-        ...process.env,
-        ...(opts.env || {}),
-        TERM: "xterm-256color",
-        COLORTERM: "truecolor",
-        AGENTIC_OS: "1",
-      } as Record<string, string>,
+      env: { ...(opts.env || {}), TERM: "xterm-256color", COLORTERM: "truecolor", AGENTIC_OS: "1" },
     });
 
     this.pty.onData((d: string) => {
@@ -136,9 +94,9 @@ export class TerminalSession {
 }
 
 export function getPtyLoadError(): string | null {
-  return ptyLoadError;
+  return hostPty.loadError();
 }
 
 export function isPtyAvailable(): boolean {
-  try { loadPty(); return true; } catch { return false; }
+  return hostPty.loadError() === null;
 }

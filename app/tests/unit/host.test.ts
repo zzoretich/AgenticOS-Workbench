@@ -5,7 +5,7 @@ import { parseAgenticosUrl, urlFromArgv } from "../../src/main/protocol";
 import { trayTitle } from "../../src/main/tray";
 import { accelerator } from "../../src/main/menu";
 import { loadWriteSettings } from "../../src/main/write-settings";
-import { SURFACES } from "../../src/shared/write-policy";
+import { SURFACES } from "../../src/main/policy/write-policy";
 import * as os from "node:os";
 import * as path from "node:path";
 import { isIgnored } from "../../compat/src/ignore";

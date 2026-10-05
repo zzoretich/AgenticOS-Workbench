@@ -1,7 +1,7 @@
 // Phase 3: runs the packaged app and checks what only a packaged build can get wrong. It starts from its archive with
 // the fuses on; every tab draws without an error; node-pty loads from app.asar.unpacked and a shell runs in the Term
 // tab; the tray popover draws with its styles; and quitting leaves no process behind. The page comes from app://hud
-// (src/main/app-scheme.ts), which main reads out of app.asar.
+// (src/main/app-scheme.ts), which main reads out of app.asar, and runs sandboxed (phase 4).
 //
 //   node scripts/smoke-packaged.mjs [--app <path>] [--live] [--work <dir>] [--keep]
 //
@@ -11,8 +11,11 @@
 // LaunchServices (`open`) as Finder starts it. Nothing is typed there: its shell is the user's own.
 //
 // The fuses switch off --inspect, so Playwright's _electron cannot drive a packaged build. The smoke connects to the
-// renderer over the DevTools protocol (--remote-debugging-port) instead, the same page the e2e suite drives. It quits
-// the app with SIGTERM, which Electron handles as app.quit(), the path ⌘Q takes.
+// renderer over the DevTools protocol (--remote-debugging-port) instead, the same page the e2e suite drives. A release
+// build refuses that switch (phase 4, S8; `npm run dist:verify` checks it does), so the smoke drives the smoke build:
+// `npm run dist:test` packages the same sources the same way (archive, fuses, unpacked node-pty, ad-hoc signed) into
+// dist-test/, with the one difference that it accepts the switch. It quits the app with SIGTERM, which Electron handles
+// as app.quit(), the path ⌘Q takes.
 
 import { chromium } from "playwright";
 import { execFileSync, spawn } from "node:child_process";
@@ -25,14 +28,14 @@ import { fileURLToPath } from "node:url";
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const argv = process.argv.slice(2);
 const flag = (name, fallback) => { const i = argv.indexOf(name); return i >= 0 && argv[i + 1] ? argv[i + 1] : fallback; };
-const APP = path.resolve(flag("--app", path.join(repo, "dist", "mac-arm64", "AgenticOS Workbench.app")));
+const APP = path.resolve(flag("--app", path.join(repo, "dist-test", "mac-arm64", "AgenticOS Workbench.app")));
 const LIVE = argv.includes("--live");
 const KEEP = argv.includes("--keep");
 const EXE = path.join(APP, "Contents", "MacOS", path.basename(APP, ".app"));
 const VERSION = JSON.parse(fs.readFileSync(path.join(repo, "package.json"), "utf8")).version;
 const TABS = ["pulse", "todo", "proposals", "notifications", "spaces", "memory", "runs", "routines", "skills", "agents", "agent-teams", "chat", "term", "settings"];
 
-if (!fs.existsSync(EXE)) { console.error(`no packaged app at ${APP}: run \`npm run dist\``); process.exit(2); }
+if (!fs.existsSync(EXE)) { console.error(`no packaged app at ${APP}: run \`npm run dist:test\``); process.exit(2); }
 
 const work = fs.mkdtempSync(path.join(path.resolve(flag("--work", os.tmpdir())), "aos-smoke-"));
 const userData = path.join(work, "userData");
@@ -125,8 +128,9 @@ const info = await page.evaluate(() => {
   const h = window.aosHost;
   const sheets = [...document.styleSheets].filter((s) => s.href).map((s) => { try { return s.cssRules.length; } catch { return -1; } });
   return {
-    info: h?.info, resourcesPath: process.resourcesPath, sheets,
-    status: document.querySelector(".aos-host-status")?.textContent?.trim() ?? "",
+    info: h?.info, resourcesPath: h?.info?.resourcesPath, sheets,
+    // What the status bar shows: the write-mode item is in the DOM but hidden (display: none) by default.
+    status: document.querySelector(".aos-host-status")?.innerText?.trim() ?? "",
   };
 });
 check("it reports the package's version", info.info?.appVersion === VERSION, info.info?.appVersion);
@@ -162,8 +166,10 @@ const sessions = await until(() => page.evaluate(() => {
   return list.length && list.every((s) => !s.isExited) ? list.map((s) => ({ id: s.id, pid: s.pty?.pid ?? null, shell: s.shell })) : null;
 }), 15_000);
 check("node-pty starts a shell (spawn-helper from app.asar.unpacked)", sessions, sessions ? sessions.map((s) => `${s.shell} pid ${s.pid}`).join(", ") : "no live session");
-const loadedFrom = await page.evaluate(() => Object.keys(require.cache).filter((k) => k.includes("node-pty")).map((k) => k.replace(/^.*\.app\/Contents\/Resources\//, "")).slice(0, 3));
-check("node-pty is the bundle's", loadedFrom.length && loadedFrom.every((k) => k.startsWith("app.asar")), loadedFrom.join(", "));
+// node-pty runs in main (phase 4): the native module main has mapped is the one unpacked beside the archive.
+const loadedFrom = execFileSync("lsof", ["-Fn", "-p", String(mainPid)], { encoding: "utf8" }).split("\n")
+  .filter((l) => l.startsWith("n") && l.includes("pty.node")).map((l) => l.slice(1).replace(/^.*\.app\/Contents\/Resources\//, ""));
+check("node-pty is the bundle's", loadedFrom.length && loadedFrom.every((k) => k.startsWith("app.asar.unpacked/")), loadedFrom.join(", "));
 const scrollback = () => page.evaluate(() => window.aosHost.plugin.terminalPool.list().map((s) => s.getScrollback()).join("\n"));
 if (LIVE) {
   check("the shell draws its prompt", await until(async () => (await scrollback()).trim().length > 0, 15_000));
