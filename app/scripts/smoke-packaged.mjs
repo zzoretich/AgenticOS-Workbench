@@ -5,9 +5,9 @@
 //
 //   node scripts/smoke-packaged.mjs [--app <path>] [--live] [--work <dir>] [--keep]
 //
-// Default: a fresh synthetic install (scripts/make-fixture-vault.mjs) in a temp folder, read-only, with the app started
+// Default: a fresh synthetic install (scripts/make-fixture-vault.mjs) in a temp folder, with the app started
 // directly in that install's environment. A command typed into the Term tab must come back computed by the shell.
-// --live: the vault named in ~/.claude/agenticos.json, read-only, with a userData of its own, started through
+// --live: the vault named in ~/.claude/agenticos.json, with a userData of its own, started through
 // LaunchServices (`open`) as Finder starts it. Nothing is typed there: its shell is the user's own.
 //
 // The fuses switch off --inspect, so Playwright's _electron cannot drive a packaged build. The smoke connects to the
@@ -134,7 +134,11 @@ check("it keeps its data in its own folder", info.info?.userData === userData, i
 check("it attaches to the expected vault", LIVE ? !!info.info?.vaultRoot : info.info?.vaultRoot === vault, info.info?.vaultRoot ?? "none");
 check("its resources are the bundle's", info.resourcesPath === path.join(APP, "Contents", "Resources"), info.resourcesPath);
 check("its three linked stylesheets load from app://hud", info.sheets.length === 3 && info.sheets.every((n) => n > 0), JSON.stringify(info.sheets));
-check("it is read-only", /READ-ONLY/.test(info.status), info.status.split(/\s{2,}/)[0]);
+// The app is the Workbench (phase 1, D6): with no AOS_APP_WRITE every verified surface writes, and the status bar item
+// that names a narrowed run (READ-ONLY, or WRITES: …) is hidden.
+check("it writes with every verified surface by default (no READ-ONLY)",
+  info.info?.writeSource === "default" && (info.info?.writeSurfaces?.length ?? 0) > 0 && !/READ-ONLY|WRITES:/.test(info.status),
+  `${info.info?.writeSource ?? "?"}: ${(info.info?.writeSurfaces ?? []).join(",") || "none"}`);
 
 // ── every tab ────────────────────────────────────────────────────────
 
@@ -207,7 +211,7 @@ if (!LIVE) check("no main-process errors", mainErrors.length === 0, mainErrors.s
 
 const failed = results.filter((r) => !r.ok);
 fs.writeFileSync(path.join(work, "report.json"), `${JSON.stringify({ app: APP, live: LIVE, results, errors, guard, tree: tree.map((p) => p.command.slice(0, 200)) }, null, 2)}\n`);
-console.log(`\n${results.length - failed.length}/${results.length} checks passed${LIVE ? " (live vault, read-only)" : " (fixture)"}`);
+console.log(`\n${results.length - failed.length}/${results.length} checks passed${LIVE ? " (live vault)" : " (fixture)"}`);
 if (KEEP || failed.length) console.log(`kept: ${work}`);
 else fs.rmSync(work, { recursive: true, force: true });
 process.exit(failed.length ? 1 : 0);
