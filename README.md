@@ -466,6 +466,7 @@ cli                the installer and the aos subcommands (persona, schedule, rou
 plugin             the Claude Code plugin: hooks.json, .mcp.json, bin/aos, 21 commands, 9 skills (also the source of codex-plugin)
 codex-plugin       the Codex plugin, generated from plugin/ by npm run build:codex-plugin: hooks.json, .mcp.json, bin/aos, 28 skills
 obsidian-plugin    the Agentic OS HUD (TypeScript, esbuild)
+app                the Workbench as a macOS app: the HUD above in an Electron window (its own lockfile; see app/README.md)
 vault-template     the seed vault (AGENTICOS.md, MEMORY.md, brain/ incl. the three duty routines, persona templates incl. the heartbeat watchdog, hourly tick and nightly reflect routines)
 extras             the launchd schedule template, the cost analyzer, optional Ollama helpers
 tools              export-from-vault, the privacy gate, and the brand-asset generator behind docs/assets
@@ -487,6 +488,7 @@ sh cli/rehearsal/first-run.sh              # a complete install in a temp HOME w
 sh cli/rehearsal/codex-host.sh             # a Codex-only machine: direct wiring, then the upgrade to the Codex plugin; hooks and MCP run for real
 npm run build:codex-plugin                 # regenerate codex-plugin/ after changing plugin/ (the tests fail until you do)
 npm run build -w obsidian-plugin           # rebuild the HUD bundle
+(cd app && npm ci && npm run test:e2e)     # the app: see app/README.md (macOS)
 node tools/brand-assets.js                 # regenerate the brand assets under docs/assets
 ```
 

@@ -17,8 +17,13 @@ const rules = {
 const languageOptions = (sourceType) => ({ ecmaVersion: 2023, sourceType, globals: { ...globals.node } });
 
 module.exports = [
-  // Generated or bundled output, the HUD's TypeScript sources (tsc), and the gitignored private *.local.* files.
-  { ignores: ['**/node_modules/**', 'codex-plugin/**', 'obsidian-plugin/main.js', 'obsidian-plugin/src/**', '**/*.local.*'] },
+  // Generated or bundled output, the HUD's TypeScript sources (tsc), and the gitignored private *.local.* files. The app's
+  // TypeScript is checked by its own tsc (`npm run typecheck` in app/); its .js/.cjs/.mjs scripts are linted here.
+  { ignores: ['**/node_modules/**', 'codex-plugin/**', 'obsidian-plugin/main.js', 'obsidian-plugin/src/**', '**/*.local.*',
+    // The app's build output, packages, test runs and generated fixture vault (app/.gitignore).
+    'app/out/**', 'app/out-test/**', 'app/dist/**', 'app/test-results/**', 'app/playwright-report/**', 'app/spike-output/**', 'app/tests/.fixture/**', 'app/tests/.cache/**'] },
   { files: ['**/*.js', '**/*.cjs'], languageOptions: languageOptions('commonjs'), rules },
   { files: ['**/*.mjs'], languageOptions: languageOptions('module'), rules },
+  // The app's Playwright drivers: the functions they hand to evaluate() run in the app's window.
+  { files: ['app/scripts/smoke-packaged.mjs', 'app/scripts/spike-screens.mjs'], languageOptions: { globals: { ...globals.browser } } },
 ];

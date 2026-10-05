@@ -1,0 +1,407 @@
+// The e2e harness: launches the built app against the synthetic fixture (scripts/make-fixture-vault.mjs) in an isolated
+// environment, collects renderer and main-process errors, records what the app hands to the OS instead of letting it
+// open anything, and closes the app cleanly.
+//
+// Fixture lifecycle: globalSetup generates tests/.fixture once per run and keeps a pristine copy in
+// tests/.fixture/.pristine. Each spec file (useApp) restores vault/ and home/ from that copy before it launches, so a
+// runtime refresh or an edit in one file never leaks into the next. The copy is restored to the same paths the
+// generator used, because the runtime's caches (snapshot.json, agenticos.json, routine plists) hold absolute paths.
+
+import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
+import { spawnSync } from "node:child_process";
+import * as fs from "node:fs";
+import * as path from "node:path";
+
+export const REPO = path.resolve(__dirname, "..", "..");
+const ROOT = process.env.AOS_E2E_FIXTURE ? path.resolve(process.env.AOS_E2E_FIXTURE) : path.join(REPO, "tests", ".fixture");
+
+export const FX = {
+  root: ROOT,
+  vault: path.join(ROOT, "vault"),
+  home: path.join(ROOT, "home"),
+  claude: path.join(ROOT, "home", ".claude"),
+  pristine: path.join(ROOT, ".pristine"),
+  /** A path inside the vault. */
+  v: (rel: string) => path.join(ROOT, "vault", rel),
+};
+
+// ── expected values the generator read back from the runtime ─────────
+
+export interface ExpectedNotification { id: string; from: string; level: string; title: string; created: string; read: boolean; archived: boolean }
+export interface Expected {
+  generatedAt: string;
+  today: string;
+  vault: string;
+  home: string;
+  persona: string;
+  todo: {
+    open: number; overdue: number; today: number; upcoming: number; someday: number; badge: number; doneThisWeek: number; tags: string[];
+    items: Record<"overdue" | "today" | "upcoming" | "someday", Array<[string, string | null, string | null, string | null]>>;
+  };
+  proposals: {
+    pending: Array<{ name: string; slug: string; kind: string; surface?: string; target: string; confirmations?: number; lint?: number }>;
+    ledger?: { approvalRate: number | null; acceptRate: number | null; days?: number; counts?: Record<string, number> };
+    pages: string[];
+    backlog: Array<{ filed: string; kind: string; slug: string }>;
+  };
+  notifications: { items: ExpectedNotification[]; unread: number; total: number; archived: number; unreadable: number; senders: string[] };
+  config?: { settings: Array<{ key: string; source: string; value: unknown; default: unknown; section: string; readonly?: boolean }>; files: { machine: string; vault: string } };
+  teams?: unknown;
+  teamItems: Array<Record<string, unknown>>;
+  runs: string[];
+  snapshot: string;
+}
+
+let cachedExpected: Expected | null = null;
+export function expected(): Expected {
+  cachedExpected ??= JSON.parse(fs.readFileSync(path.join(ROOT, "expected.json"), "utf8")) as Expected;
+  return cachedExpected;
+}
+
+export function readVaultJson<T = unknown>(rel: string): T { return JSON.parse(fs.readFileSync(FX.v(rel), "utf8")) as T; }
+
+// ── fixture copy ─────────────────────────────────────────────────────
+
+const COPY = { recursive: true, mode: fs.constants.COPYFILE_FICLONE, verbatimSymlinks: true } as const;
+
+/** globalSetup: keep the freshly generated vault and home as the pristine copy every spec file restores from. */
+export function snapshotPristine(): void {
+  fs.rmSync(FX.pristine, { recursive: true, force: true });
+  fs.mkdirSync(FX.pristine, { recursive: true });
+  for (const d of ["vault", "home"]) fs.cpSync(path.join(ROOT, d), path.join(FX.pristine, d), COPY);
+}
+
+/** Puts vault/ and home/ back to the pristine copy (the runtime's node_modules is kept: nothing writes to it). */
+export function restoreFixture(): void {
+  if (!fs.existsSync(path.join(FX.pristine, "vault"))) throw new Error(`no pristine fixture in ${FX.pristine}: run the suite through playwright (globalSetup builds it)`);
+  const keep = path.join(FX.vault, "brain", "scripts", "node_modules");
+  const parked = path.join(ROOT, ".node_modules.parked");
+  fs.rmSync(parked, { recursive: true, force: true });
+  if (fs.existsSync(keep)) fs.renameSync(keep, parked);
+  for (const d of ["vault", "home"]) {
+    fs.rmSync(path.join(ROOT, d), { recursive: true, force: true });
+    fs.cpSync(path.join(FX.pristine, d), path.join(ROOT, d), {
+      ...COPY,
+      filter: (src) => !(fs.existsSync(parked) && src === path.join(FX.pristine, "vault", "brain", "scripts", "node_modules")),
+    });
+  }
+  if (fs.existsSync(parked)) fs.renameSync(parked, keep);
+}
+
+// ── launch ───────────────────────────────────────────────────────────
+
+export interface GuardEntry { kind: "write" | "spawn"; what: string; at: string }
+export interface Opened { via: "main" | "renderer"; fn: string; arg: string }
+
+export interface AppHandle {
+  app: ElectronApplication;
+  win: Page;
+  /** Uncaught renderer exceptions and console.error lines from the renderer and the main process. */
+  errors: string[];
+  /** Every Notice the HUD raised (the compat Notice logs "[notice] …"). */
+  notices: string[];
+  /** The write guard's log: writes and spawns it refused. */
+  guard(): Promise<GuardEntry[]>;
+  /** What the app asked the OS to open (shell.openPath / openExternal / showItemInFolder), recorded and not opened. */
+  opened(): Promise<Opened[]>;
+  close(): Promise<void>;
+}
+
+export interface LaunchOptions {
+  /** Changes the restored fixture before the app starts (a variant: provider on, cost off, an empty vault …). */
+  prepare?: () => void;
+  /** Extra environment for the app; undefined removes a variable. */
+  env?: Record<string, string | undefined>;
+  size?: { width: number; height: number };
+}
+
+/** The environment the generator ran the runtime with, pointed at the fixture, plus the app's own vault and data dirs. */
+export function appEnv(extra: Record<string, string | undefined> = {}): Record<string, string> {
+  const env = JSON.parse(fs.readFileSync(path.join(ROOT, "env.json"), "utf8")) as Record<string, string>;
+  Object.assign(env, {
+    AOS_APP_VAULT: FX.vault,
+    // The other branch's userData override; on this one CFFIXED_USER_HOME already puts userData under the fake HOME.
+    AOS_APP_USER_DATA: path.join(FX.home, "Library", "Application Support", "AgenticOS Workbench (e2e)"),
+    ELECTRON_ENABLE_LOGGING: "0",
+    // Read-only unless a spec turns surfaces on with its own AOS_APP_WRITE. The app's own default (every verified
+    // surface) is what a spec gets with `AOS_APP_WRITE: undefined` (variants.spec.ts covers it).
+    AOS_APP_WRITE: "",
+  });
+  // The runtime runs above used AOS_HEADLESS=1; an app launched from Finder has no such variable, and under it the
+  // runtime refreshes the app is allowed to start (scan-vault, reconcile-sessions) would exit without doing anything.
+  delete env.AOS_HEADLESS;
+  for (const [k, v] of Object.entries(extra)) { if (v === undefined) delete env[k]; else env[k] = v; }
+  return env;
+}
+
+/**
+ * A `prepare` for a machine with both session hosts: Codex turned on in agenticos.json, then the vault's own
+ * `aos skills sync` and `aos agents sync`, as a session's end would run them. Sharing is on, and each of the fixture's
+ * Claude Code skills and agents gets its mirror in Codex's folders (home/.agents/skills, home/.codex/agents).
+ */
+export function shareBothHosts(): void {
+  const file = path.join(FX.claude, "agenticos.json");
+  const j = JSON.parse(fs.readFileSync(file, "utf8")) as { hosts: { codex: { enabled: boolean } } };
+  j.hosts.codex.enabled = true;
+  fs.writeFileSync(file, `${JSON.stringify(j, null, 2)}\n`);
+  for (const kind of ["skills", "agents"]) {
+    const r = spawnSync("/bin/sh", [FX.v("brain/scripts/bin/aos"), kind, "sync"], { env: appEnv({ AOS_HEADLESS: undefined }), encoding: "utf8" });
+    if (r.status !== 0) throw new Error(`aos ${kind} sync exited ${r.status}: ${r.stderr}`);
+  }
+}
+
+// ── Chat's stand-ins for the model CLIs ──────────────────────────────
+
+/** The chat stubs' folder: their scripts, call logs and canned replies. Outside vault/ and home/; each prepare rewrites it. */
+export const STUBS = path.join(ROOT, "chat-stubs");
+export const CLAUDE_STUB = path.join(STUBS, "claude");
+export const CODEX_STUB = path.join(STUBS, "codex");
+
+export interface ClaudeCall { argv: string[]; cwd: string; env: { AOS_HEADLESS: string | null; CLAUDECODE: string | null } }
+export interface CodexCall { argv: string[]; stdin: string; cwd: string }
+/** What the claude stub answers next: stdout, stderr and exit code, after a delay. Unset fields keep the default answer's. */
+export interface StubReply { stdout?: string; stderr?: string; code?: number; delayMs?: number }
+
+/** The claude stub's default answer: a `--output-format json` result, as headless Claude prints it. */
+export const CLAUDE_ANSWER = { text: "**Tide tables** come first, then the harbour chart.", usd: 0.0123, inputTokens: 321, outputTokens: 45 };
+/** The codex stub's answer, which it writes to the `-o` file as `codex exec` does. */
+export const CODEX_ANSWER = { text: "Codex says: the harbour chart is **next**.", inputTokens: 1200, outputTokens: 80 };
+
+/**
+ * A `prepare` for Chat: `claude` and `codex` stubs that record every call and answer from a canned reply, so no model is
+ * ever called. Their paths go where `aos init` records the real ones (`claude.bin`, and the legacy `codex.bin`, which
+ * lets the reasoner fall back to Codex without switching on the Codex host). claude answers as `chatReply` last set;
+ * codex answers CODEX_ANSWER the way `codex exec --json -o <file>` does.
+ */
+export function installChatStubs(): void {
+  fs.rmSync(STUBS, { recursive: true, force: true });
+  fs.mkdirSync(STUBS, { recursive: true });
+  const node = path.join(ROOT, "bin", "node");
+  const answer = JSON.stringify({
+    type: "result", subtype: "success", is_error: false, result: CLAUDE_ANSWER.text, total_cost_usd: CLAUDE_ANSWER.usd,
+    usage: { input_tokens: CLAUDE_ANSWER.inputTokens, output_tokens: CLAUDE_ANSWER.outputTokens },
+  });
+  fs.writeFileSync(CLAUDE_STUB, `#!${node}
+// fixture stub: never reaches the real claude. Records the call, then answers as reply.json says.
+const fs = require("fs");
+fs.appendFileSync(${JSON.stringify(path.join(STUBS, "claude-calls.jsonl"))}, JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd(), env: { AOS_HEADLESS: process.env.AOS_HEADLESS ?? null, CLAUDECODE: process.env.CLAUDECODE ?? null } }) + "\\n");
+let r = { stdout: ${JSON.stringify(answer)}, stderr: "", code: 0, delayMs: 0 };
+try { r = { ...r, ...JSON.parse(fs.readFileSync(${JSON.stringify(path.join(STUBS, "claude-reply.json"))}, "utf8")) }; } catch {}
+setTimeout(() => { process.stdout.write(r.stdout); process.stderr.write(r.stderr); process.exitCode = r.code; }, r.delayMs);
+`, { mode: 0o755 });
+  fs.writeFileSync(CODEX_STUB, `#!${node}
+// fixture stub: never reaches the real codex. Records the call and its stdin, writes the answer to -o, prints the events.
+const fs = require("fs");
+const argv = process.argv.slice(2);
+let stdin = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", (d) => { stdin += d; });
+process.stdin.on("end", () => {
+  fs.appendFileSync(${JSON.stringify(path.join(STUBS, "codex-calls.jsonl"))}, JSON.stringify({ argv, stdin, cwd: process.cwd() }) + "\\n");
+  const out = argv[argv.indexOf("-o") + 1];
+  if (argv.includes("-o") && out) fs.writeFileSync(out, ${JSON.stringify(CODEX_ANSWER.text)});
+  process.stdout.write([
+    { type: "thread.started", thread_id: "fixture" },
+    { type: "item.completed", item: { type: "agent_message", text: ${JSON.stringify(CODEX_ANSWER.text)} } },
+    { type: "turn.completed", usage: { input_tokens: ${CODEX_ANSWER.inputTokens}, cached_input_tokens: 0, output_tokens: ${CODEX_ANSWER.outputTokens} } },
+  ].map((e) => JSON.stringify(e)).join("\\n") + "\\n");
+});
+`, { mode: 0o755 });
+  const file = path.join(FX.claude, "agenticos.json");
+  const j = JSON.parse(fs.readFileSync(file, "utf8")) as { claude: Record<string, unknown>; codex?: Record<string, unknown> };
+  j.claude.bin = CLAUDE_STUB;
+  j.codex = { ...(j.codex ?? {}), bin: CODEX_STUB };
+  fs.writeFileSync(file, `${JSON.stringify(j, null, 2)}\n`);
+}
+
+const jsonl = <T>(file: string): T[] => (fs.existsSync(file) ? fs.readFileSync(file, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as T) : []);
+export const claudeCalls = (): ClaudeCall[] => jsonl<ClaudeCall>(path.join(STUBS, "claude-calls.jsonl"));
+export const codexCalls = (): CodexCall[] => jsonl<CodexCall>(path.join(STUBS, "codex-calls.jsonl"));
+/** Sets the claude stub's next answers; null goes back to CLAUDE_ANSWER. */
+export function chatReply(r: StubReply | null): void {
+  const file = path.join(STUBS, "claude-reply.json");
+  if (r) fs.writeFileSync(file, JSON.stringify(r)); else fs.rmSync(file, { force: true });
+}
+
+/**
+ * Puts what the scripts' provider probe publishes in provider-state.json: the global provider, and fresh login caches
+ * for both CLIs, which the runtime trusts for 24 hours instead of probing. Chat routes on these (claudeAsk.ts chatRoute).
+ */
+export function providerState(name: string, logins: { claude: boolean; codex: boolean }): void {
+  const file = FX.v("brain/_index/provider-state.json");
+  const at = new Date().toISOString();
+  const j = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>;
+  Object.assign(j, {
+    name, reason: "forced", checkedAt: at,
+    claude: { loggedIn: logins.claude, checkedAt: at, bin: CLAUDE_STUB },
+    codex: { loggedIn: logins.codex, checkedAt: at, bin: CODEX_STUB },
+  });
+  fs.writeFileSync(file, `${JSON.stringify(j, null, 2)}\n`);
+}
+
+/** Errors that are part of the app's read-only phase, not faults: none so far. Add a pattern here only with a reason. */
+const KNOWN_ERRORS: RegExp[] = [];
+
+export async function launchApp(opts: LaunchOptions = {}): Promise<AppHandle> {
+  const main = path.join(REPO, "out", "main", "index.js");
+  if (!fs.existsSync(main)) throw new Error("out/ is missing: run `npm run build` (npm run test:e2e builds first)");
+  opts.prepare?.();
+  const app = await electron.launch({ args: [REPO], cwd: REPO, env: appEnv(opts.env), timeout: 60_000 });
+  const errors: string[] = [];
+  const notices: string[] = [];
+  const known = (t: string) => KNOWN_ERRORS.some((re) => re.test(t));
+  app.on("console", (m) => { if (m.type() === "error" && !known(m.text())) errors.push(`[main] ${m.text()}`); });
+  const win = await app.firstWindow();
+  win.on("pageerror", (e) => errors.push(`[pageerror] ${e.message}\n${e.stack ?? ""}`));
+  win.on("console", (m) => {
+    const t = m.text();
+    if (t.startsWith("[notice]")) notices.push(t.slice("[notice]".length).trim());
+    if (m.type() === "error" && !known(t)) errors.push(`[renderer] ${t}`);
+  });
+  const size = opts.size ?? { width: 1480, height: 920 };
+  // The main window (the app page), not the tray popover, which is about:blank.
+  await app.evaluate(({ BrowserWindow }, s) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().startsWith("app://hud/"))?.setContentSize(s.width, s.height), size);
+
+  // Nothing the specs click may reach the desktop: record the OS hand-offs in both processes instead.
+  await app.evaluate(({ shell }) => {
+    const g = globalThis as unknown as { __aosOpened: Array<{ via: string; fn: string; arg: string }> };
+    g.__aosOpened = [];
+    const s = shell as unknown as Record<string, unknown>;
+    s.openExternal = async (url: string) => { g.__aosOpened.push({ via: "main", fn: "openExternal", arg: String(url) }); };
+    s.openPath = async (p: string) => { g.__aosOpened.push({ via: "main", fn: "openPath", arg: String(p) }); return ""; };
+    s.showItemInFolder = (p: string) => { g.__aosOpened.push({ via: "main", fn: "showItemInFolder", arg: String(p) }); };
+  });
+  await win.waitForSelector(".aos-wb-railbtn", { timeout: 30_000 });
+  await win.evaluate(() => {
+    const w = window as unknown as { require: (m: string) => { shell: Record<string, unknown> }; __aosOpened: Array<{ via: string; fn: string; arg: string }> };
+    w.__aosOpened = [];
+    const shell = w.require("electron").shell;
+    shell.openExternal = async (url: string) => { w.__aosOpened.push({ via: "renderer", fn: "openExternal", arg: String(url) }); };
+    shell.openPath = async (p: string) => { w.__aosOpened.push({ via: "renderer", fn: "openPath", arg: String(p) }); return ""; };
+    shell.showItemInFolder = (p: string) => { w.__aosOpened.push({ via: "renderer", fn: "showItemInFolder", arg: String(p) }); };
+  });
+
+  const handle: AppHandle = {
+    app, win, errors, notices,
+    guard: () => win.evaluate(() => (window as unknown as { aosHost: { guard: { log: GuardEntry[] } } }).aosHost.guard.log.map((e) => ({ ...e }))),
+    opened: async () => {
+      const r = await win.evaluate(() => (window as unknown as { __aosOpened: Opened[] }).__aosOpened.map((e) => ({ ...e })));
+      const m = await app.evaluate(() => (globalThis as unknown as { __aosOpened: Opened[] }).__aosOpened.map((e) => ({ ...e })));
+      return [...r, ...m];
+    },
+    close: async () => {
+      const proc = app.process();
+      const closed = app.close().then(() => true, () => false);
+      const timeout = new Promise<boolean>((r) => setTimeout(() => r(false), 15_000));
+      if (!(await Promise.race([closed, timeout]))) proc.kill("SIGKILL");
+    },
+  };
+  return handle;
+}
+
+/**
+ * Registers one app for the spec file: restore the fixture, launch before the first test, close after the last.
+ * Playwright re-runs beforeAll in a fresh worker after a failure, so a failed test never poisons the rest of the file.
+ */
+export function useApp(opts: LaunchOptions = {}): () => AppHandle {
+  let h: AppHandle | null = null;
+  test.beforeAll(async () => {
+    restoreFixture();
+    h = await launchApp(opts);
+  });
+  test.afterAll(async () => { await h?.close(); h = null; });
+  return () => {
+    if (!h) throw new Error("the app is not running (beforeAll failed?)");
+    return h;
+  };
+}
+
+// ── helpers the specs share ──────────────────────────────────────────
+
+export const RAIL_ORDER = ["pulse", "todo", "proposals", "notifications", "spaces", "memory", "runs", "routines", "skills", "agents", "agent-teams", "chat", "term"];
+
+export const rail = (win: Page, id: string) => win.locator(`.aos-wb-railbtn[data-tab="${id}"]`);
+export const badge = (win: Page, id: string) => rail(win, id).locator(".aos-wb-railbadge");
+export const content = (win: Page) => win.locator(".aos-wb-content");
+export const drawer = (win: Page) => win.locator(".aos-wb-drawer");
+
+/** Clicks a rail button and waits until the tab is the active one and has drawn something. */
+export async function openTab(win: Page, id: string): Promise<void> {
+  await rail(win, id).click();
+  await expect(rail(win, id)).toHaveClass(/is-active/);
+  await expect(content(win)).not.toBeEmpty();
+}
+
+/** Runs a plugin command by id, as the palette or a hotkey would. */
+export async function command(win: Page, id: string): Promise<boolean> {
+  return win.evaluate((cmd) => (window as unknown as { aosHost: { app: { commands: { executeCommandById(id: string): boolean } } } }).aosHost.app.commands.executeCommandById(cmd), id);
+}
+
+/** The runtime's background cache refreshes the HUD spawns on its own (phase-0 decision: allowed on the next branch). */
+export const BACKGROUND_SPAWNS: RegExp[] = [
+  /reconcile-sessions\.js/,
+  /statusline\.js refresh/,
+  /scan-vault\.js --quiet/,
+  /aos\.js routines hosts --refresh/,
+  /aos\.js skills sync/,
+  /aos\.js agents sync/,
+  /team\.js list/,
+];
+
+/** Fails the test when the app raised renderer or main-process errors since `from` (an index into handle.errors). */
+export function expectNoErrors(h: AppHandle, from = 0): void {
+  expect(h.errors.slice(from), `renderer/main errors:\n${h.errors.slice(from).join("\n")}`).toEqual([]);
+}
+
+/** Local YYYY-MM-DD, offset by `n` days. */
+export function day(n = 0): string {
+  const d = new Date();
+  d.setDate(d.getDate() + n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** Text of every element matching `selector` under `scope`, trimmed. */
+export async function texts(scope: ReturnType<Page["locator"]>, selector: string): Promise<string[]> {
+  return (await scope.locator(selector).allTextContents()).map((t) => t.trim());
+}
+
+/** The writes the write guard refused so far (what the HUD tried to write). */
+export async function guardWrites(h: AppHandle): Promise<string[]> {
+  return (await h.guard()).filter((e) => e.kind === "write").map((e) => e.what);
+}
+
+/** Brings the Workbench tab back to the front of the main pane. */
+export async function showWorkbench(win: Page): Promise<void> {
+  await win.locator(".aos-host-tab", { has: win.locator(".aos-host-tab-title", { hasText: /^Workbench$/ }) }).click();
+  await expect(win.locator(".aos-wb-rail")).toBeVisible();
+}
+
+/** Closes every note tab (main and split) the specs opened, leaving the Workbench. */
+export async function closeNotes(win: Page): Promise<void> {
+  for (;;) {
+    const note = win.locator(".aos-host-tab", { hasNot: win.locator(".aos-host-tab-title", { hasText: /^Workbench$/ }) }).first();
+    if (!(await note.count())) break;
+    await note.locator(".aos-host-tab-close").click();
+  }
+  await showWorkbench(win);
+}
+
+/** The visible text of the active terminal (xterm's DOM renderer). */
+/** What the terminal shows plus every session's scrollback, so output that scrolled out of view still counts. */
+export async function terminalText(win: Page): Promise<string> {
+  return win.evaluate(() => {
+    const visible = Array.from(document.querySelectorAll<HTMLElement>(".aos-wb-content .xterm")).filter((x) => x.offsetParent !== null);
+    const rows = visible.map((x) => Array.from(x.querySelectorAll(".xterm-rows > div")).map((r) => r.textContent ?? "").join("\n")).join("\n");
+    const pool = (window as unknown as { aosHost?: { plugin?: { terminalPool?: { list(): Array<{ getScrollback(): string }> } } } }).aosHost?.plugin?.terminalPool;
+    // Raw pty output: drop the escape sequences (CSI, OSC) and carriage returns.
+    const scrollback = (pool?.list() ?? []).map((s) => s.getScrollback()).join("\n")
+      .replace(/\x1b\][^\x07\x1b]*(\x07|\x1b\\)/g, "").replace(/\x1b\[[0-9;?]*[ -\/]*[@-~]/g, "").replace(/\x1b[()][A-Z0-9]/g, "").replace(/\r/g, "");
+    return `${rows}\n${scrollback}`;
+  });
+}
+
+/** The note open in the main pane's active leaf (other note leaves stay in the DOM, hidden). */
+const activeLeaf = (win: Page) => win.locator(".aos-host-pane.is-main > .workspace-leaf.is-active");
+export const notePath = (win: Page) => activeLeaf(win).locator(".aos-note-path");
+export const noteBody = (win: Page) => activeLeaf(win).locator(".aos-note-body");
+export const noteBar = (win: Page) => activeLeaf(win).locator(".aos-note-bar");

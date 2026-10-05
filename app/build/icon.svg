@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none">
+<!-- The app icon: the Workbench's own mark (../docs/assets/banner.svg) on the macOS icon grid.
+     scripts/make-icon.cjs renders it to icon.png, which electron-builder turns into the app's .icns. -->
+<defs>
+<linearGradient id="mark" x1="0" y1="0" x2="1" y2="1">
+<stop offset="0" stop-color="#58a6ff"/>
+<stop offset="1" stop-color="#bc8cff"/>
+</linearGradient>
+<filter id="shadow" x="-10%" y="-10%" width="120%" height="125%">
+<feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#000" flood-opacity="0.32"/>
+</filter>
+</defs>
+<rect x="100" y="100" width="824" height="824" rx="185" fill="url(#mark)" filter="url(#shadow)"/>
+<!-- The banner's 56-unit mark at (40, 52), scaled onto the 824-unit tile. -->
+<g transform="translate(100 100) scale(14.714) translate(-40 -52)" stroke="#0d1117" stroke-width="2.6" stroke-linecap="round" fill="#0d1117">
+<circle cx="57" cy="71" r="4.2"/>
+<circle cx="79" cy="71" r="4.2"/>
+<circle cx="68" cy="91" r="4.2"/>
+<path d="M61.2 71 H74.8"/>
+<path d="M59.4 74.8 L65.6 87.2"/>
+<path d="M76.6 74.8 L70.4 87.2"/>
+</g>
+</svg>

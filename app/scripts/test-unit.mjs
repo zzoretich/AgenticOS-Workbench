@@ -1,0 +1,34 @@
+// Unit tests: bundles each tests/unit/*.test.ts with esbuild (TypeScript, the .cjs guards and the HUD's modules
+// all resolve the way the app build resolves them) and runs the bundles with node --test.
+
+import * as esbuild from "esbuild";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, readdirSync, rmSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const dir = path.join(root, "tests/unit");
+const out = path.join(root, "out-test");
+rmSync(out, { recursive: true, force: true });
+mkdirSync(out, { recursive: true });
+
+const entries = readdirSync(dir).filter((f) => f.endsWith(".test.ts")).map((f) => path.join(dir, f));
+await esbuild.build({
+  entryPoints: entries,
+  outdir: out,
+  outExtension: { ".js": ".cjs" },
+  bundle: true,
+  platform: "node",
+  format: "cjs",
+  target: "node22",
+  plugins: [{
+    name: "electron-stub",
+    setup(build) { build.onResolve({ filter: /^electron$/ }, () => ({ path: path.join(dir, "electron-stub.cjs") })); },
+  }],
+  logLevel: "warning",
+});
+
+const files = readdirSync(out).filter((f) => f.endsWith(".cjs")).map((f) => path.join(out, f));
+const r = spawnSync(process.execPath, ["--test", ...files], { stdio: "inherit" });
+process.exit(r.status ?? 1);

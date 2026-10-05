@@ -1,0 +1,211 @@
+// To-Do with its write surface on (AOS_APP_WRITE=todo), the phase 2 rows of plugin-smoke: To-Do. Quick-add, tick and
+// untick, edit, priority, due date and delete write TODO.md byte for byte as the HUD's model says; a missing TODO.md is
+// created from the template; the stale-write guard keeps two HUDs honest; every other surface stays refused.
+
+import { expect, test, type Page } from "@playwright/test";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { TODO_TEMPLATE } from "../../../obsidian-plugin/src/data/todos";
+import { FX, badge, closeNotes, content, day, expected, guardWrites, openTab, useApp } from "./harness";
+
+const app = useApp({ env: { AOS_APP_WRITE: "todo" } });
+
+const FILE = FX.v("TODO.md");
+const pristine = (): string => fs.readFileSync(path.join(FX.pristine, "vault", "TODO.md"), "utf8");
+const onDisk = (): string => fs.readFileSync(FILE, "utf8");
+const td = (win: Page) => content(win);
+const row = (win: Page, text: string) => td(win).locator(".aos-td-row", { has: win.locator(".aos-td-text", { hasText: text }) });
+const count = (win: Page) => td(win).locator(".aos-rt-count");
+const T = day(0);
+
+/** The fixture's today item with its child line, as it sits in ## Open. */
+const REVIEW = `- [ ] Review the tide parser PR 🔼 📅 ${T} #harbor\n    - bring the three open review comments\n`;
+const LAST_OPEN = "- [ ] Sort the old survey photos 🔽\n";
+
+/** What ticking `line` (an open item line plus any children) writes: out of ## Open, to the top of ## Done. */
+function ticked(text: string, block: string): string {
+  const [first, ...children] = block.split("\n");
+  const done = [`${first.replace("- [ ] ", "- [x] ")} ✅ ${T}`, ...children].join("\n");
+  return text.replace(block, "").replace("## Done\n", `## Done\n${done}`);
+}
+
+test.beforeEach(async () => {
+  const { win } = app();
+  const e = expected().todo;
+  if (onDisk() !== pristine()) fs.writeFileSync(FILE, pristine());
+  await openTab(win, "todo");
+  await expect(count(win)).toHaveText(`${e.open} open · ${e.overdue} overdue · ${e.today} today`);
+});
+
+test.afterEach(async () => {
+  // Every write in this file is To-Do's own: nothing may have been refused on the way.
+  expect(await guardWrites(app())).toEqual([]);
+});
+
+test("To-Do is the one surface on: the status bar names it and what it writes", async () => {
+  const { win } = app();
+  const mode = win.locator(".aos-host-status .aos-host-mode");
+  await expect(mode).toHaveText("WRITES: To-Do");
+  await expect(mode).toHaveClass(/is-writing/);
+  await expect(mode).toHaveAttribute("title", /^To-Do: TODO\.md\n/);
+  const info = await win.evaluate(() => (window as unknown as { aosHost: { info: { writeSurfaces: string[]; writeSource: string } } }).aosHost.info);
+  expect(info).toMatchObject({ writeSurfaces: ["todo"], writeSource: "AOS_APP_WRITE" });
+});
+
+test("quick-add appends to the end of ## Open with priority and date, and clears the row (T2)", async () => {
+  const { win } = app();
+  const e = expected().todo;
+  const input = td(win).locator("input.aos-td-input");
+  await input.fill("Pay the mooring fee #harbor");
+  await td(win).locator(".aos-td-add select.aos-td-prio").selectOption("high");
+  await td(win).locator(".aos-td-add input.aos-td-date").fill(T);
+  await input.press("Enter");
+  // Priority goes on the end; the date after it, since the tag is not the body's last token.
+  const first = `- [ ] Pay the mooring fee #harbor ⏫ 📅 ${T}\n`;
+  await expect.poll(onDisk).toBe(pristine().replace(LAST_OPEN, `${LAST_OPEN}${first}`));
+  await expect(td(win).locator("input.aos-td-input")).toHaveValue("");
+  await expect(td(win).locator(".aos-td-add select.aos-td-prio")).toHaveValue("");
+  await expect(td(win).locator(".aos-td-add input.aos-td-date")).toHaveValue("");
+  await expect(count(win)).toHaveText(`${e.open + 1} open · ${e.overdue} overdue · ${e.today + 1} today`);
+  await expect(badge(win, "todo")).toHaveText(String(e.badge + 1));
+  // ⏫ sorts first in TODAY.
+  await expect(td(win).locator(".aos-rt-table").nth(1).locator(".aos-td-text").first()).toHaveText("Pay the mooring fee");
+
+  await td(win).locator("input.aos-td-input").fill("Check the bilge pump");
+  await td(win).locator(".aos-td-add button", { hasText: "+ add" }).click();
+  await expect.poll(onDisk).toBe(pristine().replace(LAST_OPEN, `${LAST_OPEN}${first}- [ ] Check the bilge pump\n`));
+  await expect(row(win, "Check the bilge pump")).toBeVisible();
+});
+
+test("ticking moves the item and its child line to the top of ## Done with today's date; unticking brings it back (T4)", async () => {
+  const { win } = app();
+  const e = expected().todo;
+  await row(win, "Review the tide parser PR").locator(".aos-td-check").click();
+  await expect.poll(onDisk).toBe(ticked(pristine(), REVIEW));
+  await expect(count(win)).toHaveText(`${e.open - 1} open · ${e.overdue} overdue · ${e.today - 1} today`);
+  await expect(badge(win, "todo")).toHaveText(String(e.badge - 1));
+
+  const head = td(win).locator(".aos-rt-subhead", { hasText: "DONE THIS WEEK" });
+  await expect(head).toHaveText(`▸ DONE THIS WEEK (${e.doneThisWeek + 1})`);
+  await head.click();
+  const done = row(win, "Review the tide parser PR");
+  await expect(done).toHaveClass(/is-done/);
+  await expect(done.locator(".aos-td-when")).toHaveText(`✅ ${T}`);
+  await done.locator(".aos-td-check").click();
+  // Unticked items go to the end of ## Open, without their ✅ date.
+  await expect.poll(onDisk).toBe(pristine().replace(REVIEW, "").replace(LAST_OPEN, `${LAST_OPEN}${REVIEW}`));
+  await expect(count(win)).toHaveText(`${e.open} open · ${e.overdue} overdue · ${e.today} today`);
+  await td(win).locator(".aos-rt-subhead", { hasText: "DONE THIS WEEK" }).click();
+});
+
+test("edit saves on Enter; the priority button cycles; the date picker sets 📅; ✕ asks first (T5)", async () => {
+  const { win } = app();
+  await row(win, "Draft the release notes").locator(".aos-td-text").dblclick();
+  const edit = td(win).locator("input.aos-td-edit");
+  await expect(edit).toHaveValue(`Draft the release notes 📅 ${day(1)} #harbor`);
+  await edit.fill(`Draft the release notes for 0.22 📅 ${day(1)} #harbor`);
+  await edit.press("Enter");
+  let want = pristine().replace(`- [ ] Draft the release notes 📅 ${day(1)} #harbor`, `- [ ] Draft the release notes for 0.22 📅 ${day(1)} #harbor`);
+  await expect.poll(onDisk).toBe(want);
+  await expect(td(win).locator("input.aos-td-edit")).toHaveCount(0);
+
+  // · → ⏫, placed before the date as the Tasks plugin expects.
+  await row(win, "File the quarterly notes").locator(".aos-td-prio-btn").click();
+  want = want.replace(`- [ ] File the quarterly notes 📅 ${day(-1)} #admin`, `- [ ] File the quarterly notes ⏫ 📅 ${day(-1)} #admin`);
+  await expect.poll(onDisk).toBe(want);
+  await expect(row(win, "File the quarterly notes").locator(".aos-td-prio-btn")).toHaveText("⏫");
+
+  // A due date goes before trailing tags; the item moves from SOMEDAY to UPCOMING.
+  await row(win, "Read the field guide").locator("input.aos-td-date").fill(day(3));
+  want = want.replace("- [ ] Read the field guide #reading", `- [ ] Read the field guide 📅 ${day(3)} #reading`);
+  await expect.poll(onDisk).toBe(want);
+  await expect(td(win).locator(".aos-rt-subhead", { hasText: "UPCOMING" })).toHaveText(`UPCOMING (${expected().todo.upcoming + 1})`);
+
+  await row(win, "Sort the old survey photos").locator(".aos-td-del").click();
+  const modal = win.locator(".modal");
+  await expect(modal.locator("h3")).toHaveText("Delete todo?");
+  await expect(modal.locator("p")).toContainText('"Sort the old survey photos" will be removed from TODO.md.');
+  await modal.locator("button", { hasText: "Cancel" }).click();
+  await expect(modal).toHaveCount(0);
+  expect(onDisk()).toBe(want);
+  await row(win, "Sort the old survey photos").locator(".aos-td-del").click();
+  await win.locator(".modal button.mod-cta", { hasText: "Delete" }).click();
+  await expect.poll(onDisk).toBe(want.replace(LAST_OPEN, ""));
+  await expect(row(win, "Sort the old survey photos")).toHaveCount(0);
+});
+
+test("a tick made in the other HUD shows here while the tab is open, and the next edit applies to the new text", async () => {
+  const { win } = app();
+  const e = expected().todo;
+  // What the Obsidian HUD (or /todo) writes when it ticks the item.
+  const theirs = ticked(pristine(), REVIEW);
+  fs.writeFileSync(FILE, theirs);
+  await expect(count(win)).toHaveText(`${e.open - 1} open · ${e.overdue} overdue · ${e.today - 1} today`, { timeout: 3000 });
+  await expect(badge(win, "todo")).toHaveText(String(e.badge - 1));
+  const call = `- [ ] Call the chart vendor 📅 ${T} #harbor\n`;
+  await row(win, "Call the chart vendor").locator(".aos-td-check").click();
+  await expect.poll(onDisk).toBe(ticked(theirs, call));
+});
+
+test("stale guard: a line changed underneath is reported, nothing is written, and the quick-add draft survives (T7)", async () => {
+  const { win } = app();
+  const e = expected().todo;
+  await td(win).locator("input.aos-td-input").fill("Keep this draft");
+  // Hold back the vault's events so the tab still shows the old line, as when the other HUD's write has not reached
+  // this one yet; then tick here what was just ticked there.
+  await win.evaluate(() => {
+    const v = (window as unknown as { aosHost: { app: { vault: Record<string, unknown> } } }).aosHost.app.vault;
+    v.__trigger = v.trigger;
+    v.trigger = () => undefined;
+  });
+  try {
+    const call = `- [ ] Call the chart vendor 📅 ${T} #harbor\n`;
+    const theirs = ticked(pristine(), call);
+    fs.writeFileSync(FILE, theirs);
+    await row(win, "Call the chart vendor").locator(".aos-td-check").click();
+    await expect(win.locator(".notice-container")).toContainText("TODO.md changed underneath — reloaded, try again");
+    // The tab re-read the file: the item is done there, the draft is still in the box, and this HUD wrote nothing.
+    await expect(count(win)).toHaveText(`${e.open - 1} open · ${e.overdue} overdue · ${e.today - 1} today`);
+    await expect(td(win).locator("input.aos-td-input")).toHaveValue("Keep this draft");
+    expect(onDisk()).toBe(theirs);
+  } finally {
+    await win.evaluate(() => {
+      const v = (window as unknown as { aosHost: { app: { vault: Record<string, unknown> } } }).aosHost.app.vault;
+      v.trigger = v.__trigger;
+      delete v.__trigger;
+    });
+  }
+  await td(win).locator("input.aos-td-input").fill("");
+});
+
+test("without TODO.md, open TODO.md creates it from the template, and a quick-add creates it too (T1)", async () => {
+  const { win } = app();
+  fs.rmSync(FILE);
+  await expect(td(win).locator(".aos-rt-table .aos-inv-row.aos-dim")).toContainText("Nothing open — add one above", { timeout: 3000 });
+  await td(win).locator("button", { hasText: "open TODO.md" }).click();
+  await expect(win.locator(".aos-host-tab.is-active .aos-host-tab-title")).toHaveText("TODO");
+  expect(onDisk()).toBe(TODO_TEMPLATE);
+  await closeNotes(win);
+
+  fs.rmSync(FILE);
+  await openTab(win, "todo");
+  await expect(td(win).locator(".aos-rt-count")).toHaveText("0 open · 0 overdue · 0 today", { timeout: 3000 });
+  await td(win).locator("input.aos-td-input").fill("First thing");
+  await td(win).locator("input.aos-td-input").press("Enter");
+  // An empty ## Open takes the item right under its heading.
+  await expect.poll(onDisk).toBe(TODO_TEMPLATE.replace("## Open\n", "## Open\n- [ ] First thing\n"));
+  await expect(row(win, "First thing")).toBeVisible();
+});
+
+test("with only To-Do on, other surfaces stay refused: opening an unread notification still cannot mark it read", async () => {
+  const h = app();
+  await openTab(h.win, "notifications");
+  const unread = content(h.win).locator(".aos-nt-row.is-unread").first();
+  await unread.click();
+  await expect.poll(async () => (await guardWrites(h)).length).toBeGreaterThan(0);
+  expect((await guardWrites(h)).every((w) => w.includes("brain/notifications/state.json"))).toBe(true);
+  await expect(h.win.locator(".notice-container")).toContainText("Could not update brain/notifications/state.json");
+  await unread.click();
+  // The refusal was expected here; clear it so afterEach checks the rest of the file.
+  await h.win.evaluate(() => { (window as unknown as { aosHost: { guard: { log: unknown[] } } }).aosHost.guard.log.length = 0; });
+});

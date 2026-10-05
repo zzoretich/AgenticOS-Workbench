@@ -1,0 +1,213 @@
+// Phase 3: runs the packaged app and checks what only a packaged build can get wrong. It starts from its archive with
+// the fuses on; every tab draws without an error; node-pty loads from app.asar.unpacked and a shell runs in the Term
+// tab; the tray popover draws with its styles; and quitting leaves no process behind. The page comes from app://hud
+// (src/main/app-scheme.ts), which main reads out of app.asar.
+//
+//   node scripts/smoke-packaged.mjs [--app <path>] [--live] [--work <dir>] [--keep]
+//
+// Default: a fresh synthetic install (scripts/make-fixture-vault.mjs) in a temp folder, read-only, with the app started
+// directly in that install's environment. A command typed into the Term tab must come back computed by the shell.
+// --live: the vault named in ~/.claude/agenticos.json, read-only, with a userData of its own, started through
+// LaunchServices (`open`) as Finder starts it. Nothing is typed there: its shell is the user's own.
+//
+// The fuses switch off --inspect, so Playwright's _electron cannot drive a packaged build. The smoke connects to the
+// renderer over the DevTools protocol (--remote-debugging-port) instead, the same page the e2e suite drives. It quits
+// the app with SIGTERM, which Electron handles as app.quit(), the path ⌘Q takes.
+
+import { chromium } from "playwright";
+import { execFileSync, spawn } from "node:child_process";
+import fs from "node:fs";
+import net from "node:net";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const argv = process.argv.slice(2);
+const flag = (name, fallback) => { const i = argv.indexOf(name); return i >= 0 && argv[i + 1] ? argv[i + 1] : fallback; };
+const APP = path.resolve(flag("--app", path.join(repo, "dist", "mac-arm64", "AgenticOS Workbench.app")));
+const LIVE = argv.includes("--live");
+const KEEP = argv.includes("--keep");
+const EXE = path.join(APP, "Contents", "MacOS", path.basename(APP, ".app"));
+const VERSION = JSON.parse(fs.readFileSync(path.join(repo, "package.json"), "utf8")).version;
+const TABS = ["pulse", "todo", "proposals", "notifications", "spaces", "memory", "runs", "routines", "skills", "agents", "agent-teams", "chat", "term", "settings"];
+
+if (!fs.existsSync(EXE)) { console.error(`no packaged app at ${APP}: run \`npm run dist\``); process.exit(2); }
+
+const work = fs.mkdtempSync(path.join(path.resolve(flag("--work", os.tmpdir())), "aos-smoke-"));
+const userData = path.join(work, "userData");
+const results = [];
+const check = (name, ok, detail = "") => {
+  results.push({ name, ok: !!ok, detail });
+  console.log(`${ok ? "ok  " : "FAIL"} ${name}${detail ? `: ${detail}` : ""}`);
+};
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function until(fn, timeoutMs, stepMs = 250) {
+  const end = Date.now() + timeoutMs;
+  for (;;) {
+    try { const v = await fn(); if (v) return v; } catch { /* not yet */ }
+    if (Date.now() > end) return null;
+    await sleep(stepMs);
+  }
+}
+const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+function processTable() {
+  return execFileSync("ps", ["-axo", "pid=,ppid=,command="], { encoding: "utf8" }).split("\n").filter(Boolean).map((l) => {
+    const m = /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(l);
+    return m ? { pid: Number(m[1]), ppid: Number(m[2]), command: m[3] } : null;
+  }).filter(Boolean);
+}
+function descendants(root) {
+  const table = processTable();
+  const out = [];
+  const walk = (pid) => { for (const p of table) if (p.ppid === pid) { out.push(p); walk(p.pid); } };
+  walk(root);
+  return out;
+}
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const srv = net.createServer();
+    srv.once("error", reject);
+    srv.listen(0, "127.0.0.1", () => { const { port } = srv.address(); srv.close(() => resolve(port)); });
+  });
+}
+
+// ── start ────────────────────────────────────────────────────────────
+
+const port = await freePort();
+const appArgs = [`--remote-debugging-port=${port}`];
+let mainPid = null;
+let stderr = "";
+let vault = null;
+let t0 = Date.now();
+if (LIVE) {
+  execFileSync("open", ["-n", "-a", APP, "--env", `AOS_APP_USER_DATA=${userData}`, "--args", ...appArgs]);
+  mainPid = (await until(() => processTable().find((p) => p.command.startsWith(EXE) && p.command.includes(appArgs[0]))?.pid, 20_000)) ?? null;
+} else {
+  const fx = path.join(work, "fixture");
+  const g0 = Date.now();
+  execFileSync(process.execPath, [path.join(repo, "scripts", "make-fixture-vault.mjs"), "--out", fx, "--quiet"], { stdio: "inherit" });
+  console.log(`fixture: ${((Date.now() - g0) / 1000).toFixed(1)} s`);
+  const env = JSON.parse(fs.readFileSync(path.join(fx, "env.json"), "utf8"));
+  // As the e2e harness does: an app started from Finder has no AOS_HEADLESS, and under it the runtime refreshes the app
+  // starts would do nothing. userData is set explicitly, so CFFIXED_USER_HOME goes too: with it, the keychain the
+  // cookie-encryption fuse reaches would be looked for in the fake home.
+  delete env.AOS_HEADLESS;
+  delete env.CFFIXED_USER_HOME;
+  vault = path.join(fx, "vault");
+  Object.assign(env, { AOS_APP_VAULT: vault, AOS_APP_USER_DATA: userData });
+  t0 = Date.now();
+  const child = spawn(EXE, appArgs, { env, stdio: ["ignore", "ignore", "pipe"] });
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", (d) => { stderr += d; });
+  mainPid = child.pid ?? null;
+}
+check("the app starts", mainPid && alive(mainPid), mainPid ? `pid ${mainPid}` : "no process");
+if (!mainPid) process.exit(1);
+
+// ── connect ──────────────────────────────────────────────────────────
+
+const browser = await until(() => chromium.connectOverCDP(`http://127.0.0.1:${port}`, { timeout: 2_000 }), 30_000, 500);
+check("the renderer answers over the DevTools protocol", browser);
+if (!browser) { process.kill(mainPid, "SIGKILL"); process.exit(1); }
+const ctx = browser.contexts()[0];
+const page = await until(() => ctx.pages().find((p) => p.url() === "app://hud/index.html"), 20_000);
+check("the main window loads the app's page", page, page?.url() ?? "none");
+if (!page) { process.kill(mainPid, "SIGKILL"); process.exit(1); }
+
+const errors = [];
+page.on("pageerror", (e) => errors.push(`[pageerror] ${e.message}`));
+page.on("console", (m) => { if (m.type() === "error") errors.push(`[renderer] ${m.text()}`); });
+
+const booted = await until(() => page.locator(".aos-wb-railbtn").count(), 30_000);
+check("the Workbench draws", booted, `${((Date.now() - t0) / 1000).toFixed(1)} s after launch`);
+const info = await page.evaluate(() => {
+  const h = window.aosHost;
+  const sheets = [...document.styleSheets].filter((s) => s.href).map((s) => { try { return s.cssRules.length; } catch { return -1; } });
+  return {
+    info: h?.info, resourcesPath: process.resourcesPath, sheets,
+    status: document.querySelector(".aos-host-status")?.textContent?.trim() ?? "",
+  };
+});
+check("it reports the package's version", info.info?.appVersion === VERSION, info.info?.appVersion);
+check("it keeps its data in its own folder", info.info?.userData === userData, info.info?.userData);
+check("it attaches to the expected vault", LIVE ? !!info.info?.vaultRoot : info.info?.vaultRoot === vault, info.info?.vaultRoot ?? "none");
+check("its resources are the bundle's", info.resourcesPath === path.join(APP, "Contents", "Resources"), info.resourcesPath);
+check("its three linked stylesheets load from app://hud", info.sheets.length === 3 && info.sheets.every((n) => n > 0), JSON.stringify(info.sheets));
+check("it is read-only", /READ-ONLY/.test(info.status), info.status.split(/\s{2,}/)[0]);
+
+// ── every tab ────────────────────────────────────────────────────────
+
+for (const id of TABS) {
+  const btn = page.locator(`.aos-wb-railbtn[data-tab="${id}"]`);
+  // Chat hides itself when no model provider is on record, as under the fixture's `none` (docs/phase-2.md, Chat).
+  if (!(await btn.count())) { check(`tab ${id}`, id === "chat" && !LIVE, "not in the rail"); continue; }
+  const before = errors.length;
+  await btn.click();
+  const drawn = await until(async () => (await btn.getAttribute("class"))?.includes("is-active")
+    && (await page.evaluate(() => document.querySelector(".aos-wb-content")?.textContent?.trim().length ?? 0)) > 0, 10_000);
+  await sleep(600);
+  check(`tab ${id}`, drawn && errors.length === before, errors.slice(before).join(" | ").slice(0, 300));
+}
+
+// ── the terminal ─────────────────────────────────────────────────────
+
+await page.locator('.aos-wb-railbtn[data-tab="term"]').click();
+const sessions = await until(() => page.evaluate(() => {
+  const list = window.aosHost.plugin.terminalPool.list();
+  return list.length && list.every((s) => !s.isExited) ? list.map((s) => ({ id: s.id, pid: s.pty?.pid ?? null, shell: s.shell })) : null;
+}), 15_000);
+check("node-pty starts a shell (spawn-helper from app.asar.unpacked)", sessions, sessions ? sessions.map((s) => `${s.shell} pid ${s.pid}`).join(", ") : "no live session");
+const loadedFrom = await page.evaluate(() => Object.keys(require.cache).filter((k) => k.includes("node-pty")).map((k) => k.replace(/^.*\.app\/Contents\/Resources\//, "")).slice(0, 3));
+check("node-pty is the bundle's", loadedFrom.length && loadedFrom.every((k) => k.startsWith("app.asar")), loadedFrom.join(", "));
+const scrollback = () => page.evaluate(() => window.aosHost.plugin.terminalPool.list().map((s) => s.getScrollback()).join("\n"));
+if (LIVE) {
+  check("the shell draws its prompt", await until(async () => (await scrollback()).trim().length > 0, 15_000));
+} else {
+  await until(async () => (await scrollback()).includes("fixture"), 15_000);
+  await page.locator(".aos-wb-content .xterm-helper-textarea").first().focus();
+  await page.keyboard.type("echo aos-smoke-$((6*7))");
+  await page.keyboard.press("Enter");
+  check("a command typed in the Term tab runs in the shell", await until(async () => (await scrollback()).includes("aos-smoke-42"), 15_000));
+}
+
+// ── the tray popover ─────────────────────────────────────────────────
+
+const popover = await until(() => ctx.pages().find((p) => p.url() === "about:blank"), 10_000);
+const pop = popover ? await until(() => popover.evaluate(() => {
+  const leaf = document.querySelector(".aos-popover-leaf");
+  const sheets = [...document.styleSheets].filter((s) => s.href).map((s) => { try { return s.cssRules.length; } catch { return -1; } });
+  const text = leaf?.textContent?.trim().length ?? 0;
+  return text > 0 && sheets.length === 3 && sheets.every((n) => n > 0) ? { text, sheets } : null;
+}), 10_000) : null;
+check("the tray popover draws the SidebarHUD with its styles", pop, pop ? `${pop.text} chars, sheets ${JSON.stringify(pop.sheets)}` : "not drawn");
+
+// ── what the guard refused, and the errors ───────────────────────────
+
+const guard = await page.evaluate(() => window.aosHost.guard.log.map((e) => `${e.kind} ${e.what}`));
+check("the write guard refused nothing", guard.length === 0, guard.slice(0, 3).join(" | "));
+check("no renderer errors", errors.length === 0, errors.slice(0, 3).join(" | "));
+
+// ── quit ─────────────────────────────────────────────────────────────
+
+const tree = descendants(mainPid);
+const shells = (sessions ?? []).map((s) => s.pid).filter(Boolean);
+process.kill(mainPid, "SIGTERM");
+const exited = await until(() => !alive(mainPid), 20_000);
+check("SIGTERM quits the app", exited);
+const watched = [...new Set([...tree.map((p) => p.pid), ...shells])];
+const gone = await until(() => watched.every((pid) => !alive(pid)) && !processTable().some((p) => p.command.startsWith(APP)), 15_000);
+const left = processTable().filter((p) => watched.includes(p.pid) || p.command.startsWith(APP));
+check("quitting leaves no process", gone, gone ? `${watched.length} processes ended (${shells.length} shell${shells.length === 1 ? "" : "s"})` : left.map((p) => `${p.pid} ${p.command.slice(0, 120)}`).join(" | "));
+if (!exited) process.kill(mainPid, "SIGKILL");
+await browser.close().catch(() => {});
+
+const mainErrors = stderr.split("\n").filter((l) => /\[main\].*(error|refused|gone)/i.test(l));
+if (!LIVE) check("no main-process errors", mainErrors.length === 0, mainErrors.slice(0, 3).join(" | "));
+
+const failed = results.filter((r) => !r.ok);
+fs.writeFileSync(path.join(work, "report.json"), `${JSON.stringify({ app: APP, live: LIVE, results, errors, guard, tree: tree.map((p) => p.command.slice(0, 200)) }, null, 2)}\n`);
+console.log(`\n${results.length - failed.length}/${results.length} checks passed${LIVE ? " (live vault, read-only)" : " (fixture)"}`);
+if (KEEP || failed.length) console.log(`kept: ${work}`);
+else fs.rmSync(work, { recursive: true, force: true });
+process.exit(failed.length ? 1 : 0);
