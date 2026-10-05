@@ -102,7 +102,7 @@ export interface AppHandle {
   notices: string[];
   /** The write guard's log: writes and spawns it refused. */
   guard(): Promise<GuardEntry[]>;
-  /** What the app asked the OS to open (shell.openPath / openExternal / showItemInFolder), recorded and not opened. */
+  /** What the app asked the OS to do (shell.openPath / openExternal / showItemInFolder / trashItem), recorded instead. */
   opened(): Promise<Opened[]>;
   close(): Promise<void>;
 }
@@ -272,14 +272,22 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<AppHandle> {
     s.showItemInFolder = (p: string) => { g.__aosOpened.push({ via: "main", fn: "showItemInFolder", arg: String(p) }); };
   });
   await win.waitForSelector(".aos-wb-railbtn", { timeout: 30_000 });
-  await win.evaluate(() => {
-    const w = window as unknown as { require: (m: string) => { shell: Record<string, unknown> }; __aosOpened: Array<{ via: string; fn: string; arg: string }> };
+  await win.evaluate((trashDir) => {
+    const w = window as unknown as { require: (m: string) => any; __aosOpened: Array<{ via: string; fn: string; arg: string }> };
     w.__aosOpened = [];
-    const shell = w.require("electron").shell;
+    const shell = w.require("electron").shell as Record<string, unknown>;
     shell.openExternal = async (url: string) => { w.__aosOpened.push({ via: "renderer", fn: "openExternal", arg: String(url) }); };
     shell.openPath = async (p: string) => { w.__aosOpened.push({ via: "renderer", fn: "openPath", arg: String(p) }); return ""; };
     shell.showItemInFolder = (p: string) => { w.__aosOpened.push({ via: "renderer", fn: "showItemInFolder", arg: String(p) }); };
-  });
+    // The Trash is the fixture's, not the desktop's: the file leaves the vault as it would, into <home>/.Trash. Node's
+    // own fs (window.require), as the OS would act, not the app's guarded copy.
+    shell.trashItem = async (p: string) => {
+      w.__aosOpened.push({ via: "renderer", fn: "trashItem", arg: String(p) });
+      const fs = w.require("fs"), path = w.require("path");
+      fs.mkdirSync(trashDir, { recursive: true });
+      fs.renameSync(p, path.join(trashDir, path.basename(p)));
+    };
+  }, path.join(FX.home, ".Trash"));
 
   const handle: AppHandle = {
     app, win, errors, notices,
@@ -318,7 +326,7 @@ export function useApp(opts: LaunchOptions = {}): () => AppHandle {
 
 // ── helpers the specs share ──────────────────────────────────────────
 
-export const RAIL_ORDER = ["pulse", "todo", "proposals", "notifications", "spaces", "memory", "runs", "routines", "skills", "agents", "agent-teams", "chat", "term"];
+export const RAIL_ORDER = ["pulse", "files", "todo", "proposals", "notifications", "spaces", "memory", "runs", "routines", "skills", "agents", "agent-teams", "chat", "term"];
 
 export const rail = (win: Page, id: string) => win.locator(`.aos-wb-railbtn[data-tab="${id}"]`);
 export const badge = (win: Page, id: string) => rail(win, id).locator(".aos-wb-railbadge");

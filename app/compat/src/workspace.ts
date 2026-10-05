@@ -128,7 +128,7 @@ const STATE_TEXT: Record<SaveState, string> = {
 
 /**
  * Stands in for Obsidian's editor: a vault file rendered to read, and a Markdown note edited in place with CodeMirror
- * (noteEditor.ts) when the Notes write surface allows its path. Open in Obsidian and Show in Finder hand it to the OS.
+ * (noteEditor.ts) when the Notes write surface allows its path. Show in Finder hands it to the OS.
  */
 export class NoteView extends ItemView {
   file: TFile;
@@ -160,8 +160,6 @@ export class NoteView extends ItemView {
       this.editBtn = bar.createEl("button", { cls: "aos-note-btn aos-note-edit", text: "Edit" });
       this.editBtn.addEventListener("click", () => { void this.setMode(this.editor ? "read" : "edit"); });
     }
-    const obs = bar.createEl("button", { cls: "aos-note-btn", text: "Open in Obsidian" });
-    obs.addEventListener("click", () => { window.open(`obsidian://open?path=${encodeURIComponent(this.abs)}`); });
     const finder = bar.createEl("button", { cls: "aos-note-btn", text: "Show in Finder" });
     finder.addEventListener("click", () => { (require("electron") as typeof import("electron")).shell.showItemInFolder(this.abs); });
     this.conflictEl = root.createDiv({ cls: "aos-note-conflict" });
