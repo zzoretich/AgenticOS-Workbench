@@ -3,7 +3,7 @@
 // HUD sends and small enough that one call cannot exhaust main.
 
 import { z } from "zod";
-import type { ExecRequest, PtySpawnRequest, ReadyInfo, SpawnRequest, WriteVia } from "../../shared/ipc";
+import type { ExecRequest, InstallRequest, PersonaAnswers, PtySpawnRequest, ReadyInfo, SetupFixId, SpawnRequest, WriteVia } from "../../shared/ipc";
 
 const MB = 1024 * 1024;
 
@@ -73,4 +73,36 @@ export const ReadyInfoSchema: z.ZodType<ReadyInfo> = z.object({
     name: z.string().max(199),
     hotkeys: z.array(z.object({ modifiers: z.array(z.string().max(16)).max(4), key: z.string().max(32) })).max(8).optional(),
   })).max(500),
+});
+
+// ── setup (phase 5) ──────────────────────────────────────────────────
+
+const FIX_IDS = ["homebrew", "node", "python", "uv", "ollama", "claude", "codex", "claude-login", "codex-login"] as const satisfies readonly SetupFixId[];
+
+const Cols = z.number().int().min(1).max(2000);
+const Rows = z.number().int().min(1).max(1000);
+
+export const FixArgs = z.object({ id: z.enum(FIX_IDS), cols: Cols, rows: Rows });
+export const SetupInputArgs = z.object({ data: z.string().max(64 * 1024) });
+export const SetupResizeArgs = z.object({ cols: Cols, rows: Rows });
+
+/** A model name as the CLIs take it (haiku, claude-sonnet-4-5, opus[1m], gpt-5.1-codex); blank for the default. */
+const Model = z.string().trim().max(80).regex(/^[A-Za-z0-9._:/[\]-]*$/);
+
+/** brain/scripts/persona/interview.js normalizeAnswers' rules, checked before `aos init` sees them. */
+export const PersonaSchema: z.ZodType<PersonaAnswers> = z.object({
+  name: z.string().trim().regex(/^[A-Za-z][A-Za-z0-9 _-]{1,39}$/),
+  addressAs: Text(200),
+  voice: Text(200),
+  priorities: z.array(Text(200)).max(20),
+  dutyModel: Model,
+  dutyCodexModel: Model,
+  dutyEffort: z.enum(["low", "medium", "high"]),
+  schedule: z.boolean(),
+});
+
+export const InstallRequestSchema: z.ZodType<InstallRequest> = z.object({
+  host: z.enum(["claude", "codex", "both"]),
+  vault: Text(4096).refine((s) => s.trim().length > 0, "a folder"),
+  persona: PersonaSchema.nullable(),
 });

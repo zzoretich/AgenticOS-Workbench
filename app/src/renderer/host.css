@@ -73,3 +73,60 @@ body.aos-popover { background: var(--compat-bg); }
 
 /* The write-mode item exists only while $AOS_APP_WRITE narrows the writes; by default every surface writes. */
 .aos-host-mode.is-hidden { display: none; }
+
+/* The first-run wizard (renderer/setup/wizard.ts): one column, the steps across the top, a terminal under the step. */
+.aos-setup { max-width: 860px; margin: 0 auto; padding: 32px 24px 48px; height: 100vh; overflow: auto; box-sizing: border-box; display: flex; flex-direction: column; gap: 14px; }
+.aos-setup-head h1 { margin: 0 0 4px; font-size: 22px; }
+.aos-setup-sub, .aos-setup-hint { color: var(--compat-dim); font-size: 12px; margin: 0; }
+.aos-setup-steps { display: flex; gap: 6px; font: 11px var(--compat-mono); color: var(--compat-dim); }
+.aos-setup-step { padding: 4px 10px; border: 1px solid var(--compat-border); border-radius: 999px; }
+.aos-setup-step.is-active { color: var(--compat-bg); background: var(--compat-accent); border-color: var(--compat-accent); }
+.aos-setup-step.is-done { color: var(--compat-text); }
+.aos-setup-body { display: flex; flex-direction: column; gap: 10px; }
+.aos-setup-body h2 { margin: 6px 0 0; font-size: 16px; }
+.aos-setup-body h3 { margin: 10px 0 0; font-size: 13px; }
+.aos-setup-checks { display: flex; flex-direction: column; border: 1px solid var(--compat-border); border-radius: 8px; overflow: hidden; }
+.aos-setup-check { display: flex; align-items: center; gap: 12px; padding: 8px 12px; background: var(--compat-panel); }
+.aos-setup-check + .aos-setup-check { border-top: 1px solid var(--compat-border); }
+.aos-setup-mark { width: 16px; text-align: center; font-weight: 600; }
+.aos-setup-check.is-ok .aos-setup-mark { color: #7fd962; }
+.aos-setup-check.is-missing .aos-setup-mark { color: var(--compat-warn); }
+.aos-setup-what { flex: 1; min-width: 0; }
+.aos-setup-label { font-size: 13px; }
+.aos-setup-detail { font: 11px var(--compat-mono); color: var(--compat-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aos-setup-fix { font-size: 12px; }
+.aos-setup-foot { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.aos-setup-spacer { flex: 1; }
+.aos-setup-callout { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--compat-border); border-left: 3px solid var(--compat-accent); border-radius: 6px; background: var(--compat-raised); font-size: 12px; }
+.aos-setup-callout.is-warn, .aos-setup-status.is-warn { border-left-color: var(--compat-warn); color: var(--compat-warn); }
+.aos-setup-callout > span { flex: 1; }
+.aos-setup-error { color: var(--compat-warn); font-size: 12px; min-height: 0; }
+.aos-setup-error.is-shown { padding: 8px 12px; border: 1px solid var(--compat-warn); border-radius: 6px; }
+.aos-setup-hosts { display: flex; gap: 18px; font-size: 13px; }
+.aos-setup-host.is-disabled { color: var(--compat-dim); }
+.aos-setup-vault { display: flex; gap: 8px; }
+.aos-setup-vault-input { flex: 1; font: 12px var(--compat-mono); }
+.aos-setup-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; }
+.aos-setup-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.aos-setup-field label { color: var(--compat-dim); }
+.aos-setup-form .aos-setup-error { grid-column: 1 / -1; }
+.aos-setup-check-field { grid-column: 1 / -1; font-size: 12px; }
+.aos-setup-status { font-size: 13px; }
+.aos-setup-section { padding: 12px; border: 1px solid var(--compat-border); border-radius: 8px; background: var(--compat-panel); display: flex; flex-direction: column; gap: 8px; }
+.aos-setup-diff { border: 1px solid var(--compat-border); border-radius: 6px; background: var(--compat-field); font: 12px/1.6 var(--compat-mono); overflow-x: auto; }
+.aos-setup-diff-path { padding: 4px 10px; border-bottom: 1px solid var(--compat-border); color: var(--compat-dim); }
+.aos-setup-diff-line { padding: 0 10px; white-space: pre; }
+.aos-setup-diff-line.is-context { color: var(--compat-dim); }
+.aos-setup-diff-line.is-add { color: #7fd962; background: rgba(127, 217, 98, 0.08); }
+.aos-setup-ok { color: #7fd962; font-size: 12px; }
+.aos-setup-termhost.is-hidden { display: none; }
+.aos-setup-term { height: 260px; padding: 6px; border: 1px solid var(--compat-border); border-radius: 8px; background: #0d1219; }
+
+/* Attach mode (renderer/setup/attach.ts): the note, the runtime update, and the status bar items beside them. */
+.aos-attach-modal { width: min(640px, 90vw); }
+.aos-attach-list { margin: 0 0 12px; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.aos-runtime-modal .aos-setup-term { margin-top: 10px; height: 220px; }
+.aos-host-runtime, .aos-host-update.is-ready { color: var(--compat-accent); cursor: pointer; }
+.aos-host-update.is-hidden { display: none; }
+.aos-setup-error:empty { display: none; }
+.aos-setup-section h3 { margin: 0; }

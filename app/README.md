@@ -7,9 +7,24 @@ the Claude Code and Codex plugins, the routines and the vault format are the one
 Design and roadmap: `docs/superpowers/specs/2026-10-05-workbench-app-design.md` and
 `docs/superpowers/plans/2026-10-05-workbench-app.md`. macOS only.
 
+## Install and update (phase 5)
+
+A packaged app carries the runtime in `Contents/Resources/payload`: a release tree (`scripts/make-payload.mjs`) with the
+runtime's dependencies, from which the app runs `aos init` and `aos upgrade` with your own Node. With no install it
+opens a setup wizard: it checks what `aos init` needs, offers a fix for each missing piece (run in a terminal inside the
+wizard), asks for the hosts, the vault folder and the Chief of Staff, runs `aos init`, offers the `CLAUDE.md` line as a
+diff, and opens the Workbench. With an install it opens the Workbench (attach mode), says once what changed, and offers
+`aos upgrade` when it carries a newer runtime than the vault has. Plan:
+`docs/superpowers/plans/2026-10-05-install-and-update.md`.
+
+The app updates itself from this repo's GitHub Releases (electron-updater; a packaged release build only, and off when
+`updates.check` is false or `AOS_APP_NO_UPDATES=1`). `npm run release:app` puts a release's app there.
+
 ## Run it from a checkout
 
-Requires Node 22.12+ and an AgenticOS install (the app reads the vault from `agenticos.json`, or `$AOS_APP_VAULT`).
+Requires Node 22.12+. With an AgenticOS install the app reads the vault from `agenticos.json` (or `$AOS_APP_VAULT`);
+without one it shows the setup wizard, which installs only when the run has a payload: `npm run payload`, then start it
+with `AOS_APP_PAYLOAD=$PWD/payload`.
 
 ```sh
 cd app
@@ -45,12 +60,14 @@ npm run dist:test && npm run smoke:packaged                               # the 
 compat/          the `obsidian` module as the app provides it (the HUD imports it by that name)
 src/main/        Electron main: window, menubar item, app menu, agenticos:// links, app://hud, vault watcher
 src/main/ipc/    the bridge's handlers: sender check, zod schemas, a Result for every call
-src/main/policy/ what the page may read, write, run and open (read scope, write policy, programs, shell, debug switches)
+src/main/policy/ what the page may read, write, run and open (read scope, write policy, programs, shell, debug switches, setup)
+src/main/setup/  the wizard and attach mode: login PATH, preflight, fix-its, aos init/upgrade from the payload, CLAUDE.md
+src/main/updater.ts the app's own updates (electron-updater)
 src/main/services/ the page's files, processes and terminals (node-pty), as main runs them
 src/preload/     window.aos: the contextBridge of named functions, the page's only way into main
-src/renderer/    boot, the HUD's host over the bridge, the POSIX path shim, host chrome
+src/renderer/    boot, the HUD's host over the bridge, the POSIX path shim, host chrome, the setup wizard (setup/)
 src/shared/      the IPC contract (no imports) and the write surfaces
-scripts/         build, compat tripwire, fixture generator, unit-test runner, live-vault driver, packaged checks
+scripts/         build, payload, compat tripwire, fixture generator, unit-test runner, live-vault driver, packaged checks, release
 build/           the packaged app's entitlements and icon (electron-builder.yml is beside this file)
 tests/           unit tests, and the end-to-end suite with its coverage map (tests/e2e/COVERAGE.md)
 ```
@@ -70,7 +87,9 @@ tests/           unit tests, and the end-to-end suite with its coverage map (tes
 | `npm run dist` | build, then package, sign and (with `APPLE_KEYCHAIN_PROFILE`) notarize the app and its DMG into `dist/` |
 | `npm run dist:verify` | check the build's signature, entitlements, fuses, contents, notarization and DMG, and that it refuses a debugger |
 | `npm run dist:test` | the smoke build in `dist-test/`: packaged like `dist`, ad-hoc signed, the one build that accepts the DevTools port |
-| `npm run smoke:packaged` | run the smoke build on a fresh synthetic install (`-- --live`: on your vault, read-only; `-- --app <path>`) |
+| `npm run smoke:packaged` | run the smoke build on a fresh synthetic install, then once with no install (the wizard) (`-- --live`: on your vault, read-only; `-- --app <path>`) |
+| `npm run payload` | build the runtime the app carries into `payload/` (the dist scripts run it first) |
+| `npm run release:app` | for a tagged release: build, sign, notarize, staple, verify, and upload the DMG, the zip and `latest-mac.yml` to the tag's GitHub release (`-- --dry-run` prints the checks and the plan) |
 
 `app/` has its own lockfile and is not an npm workspace, so the runtime's installs and the repo's other CI jobs never
 pull Electron or native modules. CI runs all of the above on macOS (`.github/workflows/ci.yml`, job `app`).

@@ -1,0 +1,107 @@
+// What the wizard and attach mode may run (phase 5, I4, I5). The page names a fix-it by id and a step by name; the
+// commands, the program, the arguments and the files are main's. A fix-it is a fixed command line the user sees typed
+// in the wizard's terminal before it runs: the installers macOS users already know (Homebrew's, `brew install`,
+// `npm install -g` for the two CLIs) and the two logins. `aos init` and `aos upgrade` are the payload's own CLI run
+// with the node preflight found, never through a shell.
+
+import * as os from "node:os";
+import * as path from "node:path";
+import type { InstallRequest, PersonaAnswers, SetupCheckId, SetupFixId } from "../../shared/ipc";
+
+export interface Fix {
+  label: string;
+  /** Run by /bin/sh -c in the wizard's terminal, with the login PATH (setup/env.ts). */
+  command: string;
+  /** The checks that must pass first (the fix needs brew, or npm, or the CLI it logs in to). */
+  needs: SetupCheckId[];
+}
+
+export const FIXES: Record<SetupFixId, Fix> = {
+  homebrew: {
+    label: "Install Homebrew",
+    command: '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"',
+    needs: [],
+  },
+  node: { label: "Install Node.js", command: "brew install node", needs: ["homebrew"] },
+  python: { label: "Install Python", command: "brew install python", needs: ["homebrew"] },
+  uv: { label: "Install uv", command: "brew install uv", needs: ["homebrew"] },
+  ollama: { label: "Install Ollama", command: "brew install ollama && brew services start ollama", needs: ["homebrew"] },
+  claude: { label: "Install Claude Code", command: "npm install -g @anthropic-ai/claude-code", needs: ["node"] },
+  codex: { label: "Install the Codex CLI", command: "npm install -g @openai/codex", needs: ["node"] },
+  "claude-login": { label: "Log in", command: "claude auth login", needs: ["claude"] },
+  "codex-login": { label: "Log in", command: "codex login", needs: ["codex"] },
+};
+
+export const FIX_IDS = Object.keys(FIXES) as SetupFixId[];
+
+/** Why a fix cannot run while only `ok` checks pass, else null. */
+export function fixBlocked(id: SetupFixId, ok: ReadonlySet<SetupCheckId>): string | null {
+  const missing = FIXES[id].needs.filter((n) => !ok.has(n));
+  if (!missing.length) return null;
+  const names: Partial<Record<SetupCheckId, string>> = { homebrew: "Homebrew", node: "Node.js", claude: "Claude Code", codex: "the Codex CLI" };
+  return `needs ${missing.map((n) => names[n] ?? n).join(" and ")} first`;
+}
+
+/** The program and arguments of a fix-it's terminal. */
+export function fixCommandLine(id: SetupFixId): { file: string; args: string[] } {
+  return { file: "/bin/sh", args: ["-c", FIXES[id].command] };
+}
+
+/** A vault folder as the user typed or picked it: absolute, or ~/…; null when it is neither, or is home or a root. */
+export function resolveVaultPath(input: string, home: string = os.homedir()): string | null {
+  const raw = input.trim();
+  const p = raw === "~" ? home : raw.startsWith("~/") ? path.join(home, raw.slice(2)) : raw;
+  if (!path.isAbsolute(p) || p.includes("\0")) return null;
+  const abs = path.resolve(p);
+  if (abs === path.resolve(home) || path.parse(abs).root === abs) return null;
+  return abs;
+}
+
+/** The answers `aos init --persona-json` reads (persona/interview.js normalizeAnswers checks them again). */
+export function personaJson(a: PersonaAnswers, hosts: { claude: boolean; codex: boolean }): Record<string, unknown> {
+  return {
+    name: a.name.trim(),
+    addressAs: a.addressAs.trim(),
+    voice: a.voice.trim(),
+    priorities: a.priorities.map((p) => p.trim()).filter(Boolean),
+    ...(hosts.claude && a.dutyModel.trim() ? { dutyModel: a.dutyModel.trim() } : {}),
+    ...(hosts.codex && a.dutyCodexModel.trim() ? { dutyCodexModel: a.dutyCodexModel.trim() } : {}),
+    dutyEffort: a.dutyEffort,
+    schedule: a.schedule,
+  };
+}
+
+/** `aos init`'s arguments: unattended (--yes), the user's host and folder, the persona answers when given. */
+export function installArgs(cli: string, req: InstallRequest, vault: string, personaFile: string | null): string[] {
+  return [cli, "init", "--yes", "--vault", vault, "--host", req.host, ...(personaFile ? ["--persona-json", personaFile] : [])];
+}
+
+export type SetupStep = "preflight" | "fix" | "install" | "upgrade" | "finish" | "claude-md";
+
+export interface SetupState {
+  /** A vault is attached (the Workbench is showing). */
+  attached: boolean;
+  /** `aos init` finished with exit 0 in this run. */
+  installed: boolean;
+  /** The app carries a runtime. */
+  payload: boolean;
+  /** The vault's runtime is older than the payload's. */
+  behind: boolean;
+  /** A fix, the install or an upgrade is running. */
+  busy: boolean;
+}
+
+/** Why a step may not run now, or null. */
+export function stepRefusal(step: SetupStep, s: SetupState): string | null {
+  if (s.busy && step !== "claude-md" && step !== "preflight") return "another setup step is running";
+  switch (step) {
+    // The checks and their fixes are the wizard's: once a vault is attached, neither runs.
+    case "preflight": case "fix": return s.attached ? "a vault is already attached" : null;
+    case "install": return s.attached ? "a vault is already attached" : !s.payload ? "this build carries no runtime" : null;
+    case "upgrade": return !s.payload ? "this build carries no runtime" : !s.attached ? "no vault is attached" : !s.behind ? "the vault's runtime is not behind this app's" : null;
+    // Attaches only what agenticos.json names, which main reads itself: after the wizard's install, or a terminal's
+    // `aos init`, or a vault folder that is back (an external disk).
+    case "finish": return s.attached ? "a vault is already attached" : null;
+    case "claude-md": return s.attached || s.installed ? null : "no vault yet";
+  }
+}

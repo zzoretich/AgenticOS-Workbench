@@ -2,7 +2,8 @@
 // reaches main only through window.aos's named functions, and main refuses what the policy does not name: a read
 // outside the vault and the hosts' folders, a credential file, a write outside the surfaces, a shell, a planted program
 // or variable, a terminal running something other than a shell, a link that is not https, a file that would run when
-// opened, and anyone but the app's own page.
+// opened, and anyone but the app's own page. Phase 5 adds setup and updates: a fix-it is named by id only, and each
+// setup step is refused outside the state it belongs to.
 
 import { expect, test } from "@playwright/test";
 import * as fs from "node:fs";
@@ -42,14 +43,39 @@ test("window.aos is named functions only: no channel, no ipcRenderer, no generic
     const aos = (window as unknown as { aos: Record<string, unknown> }).aos;
     const keys = (o: Record<string, unknown>) => Object.keys(o).sort();
     return { top: keys(aos), fs: keys(aos.fs as Record<string, unknown>), proc: keys(aos.proc as Record<string, unknown>), pty: keys(aos.pty as Record<string, unknown>),
-      shell: keys(aos.shell as Record<string, unknown>), plugin: keys(aos.plugin as Record<string, unknown>) };
+      shell: keys(aos.shell as Record<string, unknown>), plugin: keys(aos.plugin as Record<string, unknown>),
+      setup: keys(aos.setup as Record<string, unknown>), update: keys(aos.update as Record<string, unknown>) };
   });
-  expect(shape.top).toEqual(["boot", "fs", "onCommand", "onProtocol", "onVaultChanges", "plugin", "proc", "pty", "ready", "shell"]);
+  expect(shape.top).toEqual(["boot", "fs", "onCommand", "onProtocol", "onVaultChanges", "plugin", "proc", "pty", "ready", "setup", "shell", "update"]);
   expect(shape.fs).toEqual(["appendText", "copy", "exists", "mkdir", "readBytes", "readText", "readdir", "remove", "rename", "stat", "trash", "walk", "writeText"]);
   expect(shape.proc).toEqual(["execSync", "kill", "onEvent", "spawn"]);
   expect(shape.pty).toEqual(["available", "kill", "onEvent", "resize", "spawn", "write"]);
   expect(shape.shell).toEqual(["openExternal", "openPath", "showItemInFolder"]);
   expect(shape.plugin).toEqual(["loadData", "saveData"]);
+  expect(shape.setup).toEqual(["applyClaudeMd", "cancel", "chooseVault", "claudeMd", "finish", "fix", "input", "install", "noted", "onEvent", "preflight", "resize", "upgrade"]);
+  expect(shape.update).toEqual(["check", "install", "onState", "state"]);
+});
+
+test("setup names a fix by id only, and refuses each step outside its state", async () => {
+  // A command, or a fix the table does not have, does not parse.
+  expect(await call((aos) => (aos.setup.fix as (id: string, c: number, r: number) => unknown)("rm -rf ~", 80, 24))).toMatchObject({ ok: false, code: "EINVAL" });
+  // The checks and fix-its are the wizard's: with a vault attached, refused.
+  expect(await call((aos) => aos.setup.fix("uv", 80, 24))).toMatchObject({ ok: false, code: "EROFS", error: "a vault is already attached" });
+  expect(await call((aos) => aos.setup.preflight())).toMatchObject({ ok: false, code: "EROFS", error: "a vault is already attached" });
+  // A vault is attached: no install, no second attach; no payload in a dev run: no upgrade.
+  expect(await call((aos) => aos.setup.install({ host: "claude", vault: "~/Elsewhere", persona: null }))).toMatchObject({ ok: false, code: "EROFS", error: "a vault is already attached" });
+  expect(await call((aos) => aos.setup.finish())).toMatchObject({ ok: false, code: "EROFS" });
+  expect(await call((aos) => aos.setup.upgrade())).toMatchObject({ ok: false, code: "EROFS", error: "this build carries no runtime" });
+  expect(await call((aos) => aos.setup.chooseVault())).toBeNull();
+  // A persona name the interview would refuse, or a host that is not one, does not parse.
+  const persona = { name: "x", addressAs: "", voice: "", priorities: [], dutyModel: "", dutyCodexModel: "", dutyEffort: "medium", schedule: false };
+  expect(await call((aos, p) => aos.setup.install({ host: "claude", vault: "~/V", persona: JSON.parse(p) }), JSON.stringify(persona))).toMatchObject({ ok: false, code: "EINVAL" });
+  expect(await call((aos) => aos.setup.install({ host: "all" as "both", vault: "~/V", persona: null }))).toMatchObject({ ok: false, code: "EINVAL" });
+  // The CLAUDE.md preview names the attached vault's line; the page sends no path.
+  const md = await call((aos) => aos.setup.claudeMd());
+  expect(md).toMatchObject({ ok: true, data: { line: `@${FX.v("AGENTICOS.md")}` } });
+  // Updates are off in a dev run.
+  expect(await call((aos) => aos.update.state())).toMatchObject({ status: "off", reason: "a development run" });
 });
 
 test("reads stay inside the vault and the hosts' folders, and never return a credential", async () => {

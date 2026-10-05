@@ -3,7 +3,10 @@
 // an event object. Main checks every call's sender and arguments; this file only carries them.
 
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
-import { CH, type AosBridge, type BootInfo, type ProcEvent, type ProtocolRequest, type PtyEvent, type Result } from "../shared/ipc";
+import { CH, type AosBridge, type BootInfo, type ProcEvent, type ProtocolRequest, type PtyEvent, type Result, type SetupEvent, type UpdateState } from "../shared/ipc";
+
+/** What the page sees when main does not answer an update query: updates off. */
+const OFF: UpdateState = { status: "off", reason: "no answer from the app", version: null, percent: null, error: null };
 
 const sync = <T>(channel: string, args: unknown): Result<T> => ipcRenderer.sendSync(channel, args) as Result<T>;
 const invoke = <T>(channel: string, args: unknown): Promise<Result<T>> => ipcRenderer.invoke(channel, args) as Promise<Result<T>>;
@@ -58,6 +61,27 @@ const api: AosBridge = {
   plugin: {
     loadData: (id) => sync(CH.pluginLoadData, { id }),
     saveData: (id, json) => sync(CH.pluginSaveData, { id, json }),
+  },
+  setup: {
+    preflight: () => invoke(CH.setupPreflight, {}),
+    fix: (id, cols, rows) => sync(CH.setupFix, { id, cols, rows }),
+    input: (data) => ipcRenderer.send(CH.setupInput, { data }),
+    resize: (cols, rows) => ipcRenderer.send(CH.setupResize, { cols, rows }),
+    cancel: () => ipcRenderer.send(CH.setupCancel, {}),
+    chooseVault: async () => { const r = await invoke<string | null>(CH.setupChooseVault, {}); return r.ok ? r.data : null; },
+    install: (req) => sync(CH.setupInstall, req),
+    claudeMd: () => sync(CH.setupClaudeMd, {}),
+    applyClaudeMd: () => sync(CH.setupApplyClaudeMd, {}),
+    finish: () => sync(CH.setupFinish, {}),
+    upgrade: () => sync(CH.setupUpgrade, {}),
+    noted: () => ipcRenderer.send(CH.setupNoted, {}),
+    onEvent: (cb) => listen<SetupEvent>(CH.setupEvent, cb),
+  },
+  update: {
+    state: () => { const r = sync<UpdateState>(CH.updateState, {}); return r.ok ? r.data : OFF; },
+    check: () => ipcRenderer.send(CH.updateCheck, {}),
+    install: () => ipcRenderer.send(CH.updateInstall, {}),
+    onState: (cb) => listen<UpdateState>(CH.updateEvent, cb),
   },
 };
 

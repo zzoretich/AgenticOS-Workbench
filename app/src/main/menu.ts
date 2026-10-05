@@ -2,7 +2,7 @@
 // a tab or a command shows up here without a change to the app.
 
 import { Menu, shell, type MenuItemConstructorOptions } from "electron";
-import { HOST_COMMANDS, type CommandInfo } from "../shared/ipc";
+import { HOST_COMMANDS, type CommandInfo, type UpdateState } from "../shared/ipc";
 
 const WORKBENCH = "agentic-os:open-workbench";
 /** ⌘1 opens the Workbench; ⌘2–⌘9 the first rail tabs, in rail order. */
@@ -23,7 +23,19 @@ function tabAccelerator(id: string): string | undefined {
   return i >= 0 ? `CmdOrCtrl+${i + 2}` : undefined;
 }
 
-export function buildAppMenu(commands: CommandInfo[], run: (id: string) => void, opts: { dev: boolean }): Menu {
+export interface MenuUpdate { state: UpdateState; check: () => void; install: () => void }
+
+/** The app menu's update item: Check for Updates…, what it is doing, or Restart to Update once one is downloaded. */
+export function updateItem(u: MenuUpdate): MenuItemConstructorOptions {
+  const s = u.state;
+  if (s.status === "downloaded") return { label: `Restart to Update${s.version ? ` to ${s.version}` : ""}`, click: () => u.install() };
+  if (s.status === "off") return { label: "Check for Updates…", enabled: false, toolTip: s.reason ?? undefined };
+  if (s.status === "checking") return { label: "Checking for Updates…", enabled: false };
+  if (s.status === "available" || s.status === "downloading") return { label: `Downloading ${s.version ?? "Update"}${s.percent ? ` (${s.percent}%)` : ""}…`, enabled: false };
+  return { label: "Check for Updates…", click: () => u.check() };
+}
+
+export function buildAppMenu(commands: CommandInfo[], run: (id: string) => void, opts: { dev: boolean; setup?: boolean; update?: MenuUpdate }): Menu {
   const item = (id: string, label?: string, accel?: string): MenuItemConstructorOptions => {
     const cmd = commands.find((c) => c.id === id);
     return { label: label ?? cmd?.name ?? id, accelerator: accel ?? (cmd ? accelerator(cmd) : undefined), enabled: !!cmd || id.startsWith("host:"), click: () => run(id) };
@@ -39,6 +51,7 @@ export function buildAppMenu(commands: CommandInfo[], run: (id: string) => void,
       label: "AgenticOS",
       submenu: [
         { role: "about" },
+        ...(opts.update ? [updateItem(opts.update)] : []),
         { type: "separator" },
         item(`${WORKBENCH}-settings`, "Settings…", "CmdOrCtrl+,"),
         item(HOST_COMMANDS.settings, "App Settings…", "CmdOrCtrl+Shift+,"),
@@ -82,7 +95,7 @@ export function buildAppMenu(commands: CommandInfo[], run: (id: string) => void,
         ...(opts.dev ? [{ type: "separator" } as MenuItemConstructorOptions, { role: "reload" } as MenuItemConstructorOptions, { role: "toggleDevTools" } as MenuItemConstructorOptions] : []),
       ],
     },
-    { label: "Commands", submenu: others.length ? others : [{ label: "Loading…", enabled: false }] },
+    { label: "Commands", submenu: others.length ? others : [{ label: opts.setup ? "Set up AgenticOS first" : "Loading…", enabled: false }] },
     { role: "windowMenu" },
     {
       role: "help",

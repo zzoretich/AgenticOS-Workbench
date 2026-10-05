@@ -52,6 +52,29 @@ export const CH = {
   // A plugin's own settings (Obsidian's loadData/saveData), in the app's data folder.
   pluginLoadData: "plugin:load-data",
   pluginSaveData: "plugin:save-data",
+
+  // Setup (phase 5): the first-run wizard and attach mode. The page names a check, a fix or a step; main runs it.
+  setupPreflight: "setup:preflight",
+  setupFix: "setup:fix",
+  setupInput: "setup:input",
+  setupResize: "setup:resize",
+  setupCancel: "setup:cancel",
+  setupChooseVault: "setup:choose-vault",
+  setupInstall: "setup:install",
+  setupClaudeMd: "setup:claude-md",
+  setupApplyClaudeMd: "setup:apply-claude-md",
+  setupFinish: "setup:finish",
+  setupUpgrade: "setup:upgrade",
+  setupNoted: "setup:noted",
+  /** main → page: a setup job's output and exit. */
+  setupEvent: "setup:event",
+
+  // The app's own updates (electron-updater).
+  updateState: "update:state",
+  updateCheck: "update:check",
+  updateInstall: "update:install",
+  /** main → page: the updater's state changed. */
+  updateEvent: "update:event",
 } as const;
 
 /** Where the app's own pages come from (main/app-scheme.ts): the main window loads `${APP_ORIGIN}/index.html`. */
@@ -80,6 +103,112 @@ export interface BootInfo {
   env: Record<string, string>;
   /** Where the app's resources are (the packaged smoke checks it is the bundle's). */
   resourcesPath: string;
+  /** With no vault: why, and what the wizard starts from. null when a vault is attached. */
+  setup: SetupBoot | null;
+  /** With a vault: what attach mode shows. null when there is none. */
+  attach: AttachInfo | null;
+  update: UpdateState;
+}
+
+// ── setup and updates (phase 5) ──────────────────────────────────────
+
+/** The runtime this app carries (Contents/Resources/payload), a release tree `aos init` and `aos upgrade` run from. */
+export interface PayloadInfo { version: string; runtimeDeps: boolean }
+
+export interface SetupBoot {
+  /** no-config: no agenticos.json. no-vault: it names a vault that is not there. */
+  reason: "no-config" | "no-vault";
+  payload: PayloadInfo | null;
+  /** The vault agenticos.json names (no-vault), else null. */
+  configuredVault: string | null;
+  /** Where a new vault goes unless the user picks another folder: ~/AgenticOS. */
+  defaultVault: string;
+  agenticosFile: string;
+}
+
+export interface AttachInfo {
+  /** The first time this app opens this vault: the "What changed" note is due. */
+  firstTime: boolean;
+  /** agenticos.json's `version`: the runtime the vault has. */
+  runtimeVersion: string | null;
+  payloadVersion: string | null;
+  /** The vault's runtime is older than the one this app carries: offer `aos upgrade`. */
+  behind: boolean;
+  hosts: { claude: boolean; codex: boolean };
+}
+
+export type SetupCheckId = "homebrew" | "node" | "claude" | "claude-login" | "codex" | "codex-login" | "ollama" | "python" | "uv";
+export type SetupFixId = "homebrew" | "node" | "python" | "uv" | "ollama" | "claude" | "codex" | "claude-login" | "codex-login";
+
+export interface SetupCheck {
+  id: SetupCheckId;
+  label: string;
+  state: "ok" | "missing";
+  /** A version, a path, or what is wrong. */
+  detail: string;
+  /** Whether `aos init` needs it (the host rows count through `hosts`). */
+  required: boolean;
+  fix: SetupFixId | null;
+  /** The fix's label and the command it runs, as the user will see it typed. */
+  fixLabel: string | null;
+  fixCommand: string | null;
+  /** Why the fix cannot run yet (it needs Homebrew, or Node), else null. */
+  fixBlocked: string | null;
+}
+
+export interface PreflightReport {
+  checks: SetupCheck[];
+  /** The hosts that are installed and logged in. */
+  hosts: { claude: boolean; codex: boolean };
+  /** Every required check passes and at least one host is ready. */
+  ready: boolean;
+}
+
+/** The Chief of Staff interview (brain/scripts/persona/interview.js), as a form. */
+export interface PersonaAnswers {
+  name: string;
+  addressAs: string;
+  voice: string;
+  priorities: string[];
+  dutyModel: string;
+  dutyCodexModel: string;
+  dutyEffort: "low" | "medium" | "high";
+  schedule: boolean;
+}
+
+export interface InstallRequest {
+  host: "claude" | "codex" | "both";
+  /** Absolute, or starting with ~/. */
+  vault: string;
+  /** null: no interview now (`aos persona` later). */
+  persona: PersonaAnswers | null;
+}
+
+export type SetupJob = "fix" | "install" | "upgrade";
+
+export type SetupEvent =
+  | { job: SetupJob; type: "data"; data: string }
+  | { job: SetupJob; type: "exit"; code: number | null; signal: string | null };
+
+/** The line `aos init` asks Claude Code users to add, as a diff against their CLAUDE.md. */
+export interface ClaudeMdPreview {
+  path: string;
+  line: string;
+  present: boolean;
+  /** The file's last lines as context, then the added line. */
+  diff: Array<{ kind: "context" | "add"; text: string }>;
+}
+
+export type UpdateStatus = "off" | "idle" | "checking" | "none" | "available" | "downloading" | "downloaded" | "error";
+
+export interface UpdateState {
+  status: UpdateStatus;
+  /** Why updates are off (a dev run, the smoke build, `updates.check: false` …). */
+  reason: string | null;
+  /** The version on offer, once known. */
+  version: string | null;
+  percent: number | null;
+  error: string | null;
 }
 
 export interface CommandInfo {
@@ -200,5 +329,34 @@ export interface AosBridge {
   plugin: {
     loadData(id: string): Result<unknown>;
     saveData(id: string, json: string): Result<null>;
+  };
+  /** The first-run wizard and attach mode. One job (a fix, the install, an upgrade) runs at a time. */
+  setup: {
+    preflight(): Promise<Result<PreflightReport>>;
+    /** Runs a fix-it in a terminal main opens (output on onEvent, job "fix"). */
+    fix(id: SetupFixId, cols: number, rows: number): Result<null>;
+    /** Keys typed into the running fix's terminal (a password, a prompt's answer). */
+    input(data: string): void;
+    resize(cols: number, rows: number): void;
+    cancel(): void;
+    /** A folder picker; null when cancelled. */
+    chooseVault(): Promise<string | null>;
+    install(req: InstallRequest): Result<null>;
+    claudeMd(): Result<ClaudeMdPreview>;
+    applyClaudeMd(): Result<ClaudeMdPreview>;
+    /** Attaches the vault `aos init` just recorded; main then reloads the page into the Workbench. */
+    finish(): Result<null>;
+    /** `aos upgrade` from the payload (attach mode, when the vault's runtime is behind). */
+    upgrade(): Result<null>;
+    /** The "What changed" note was read. */
+    noted(): void;
+    onEvent(cb: (ev: SetupEvent) => void): () => void;
+  };
+  update: {
+    state(): UpdateState;
+    check(): void;
+    /** Quits and installs a downloaded update. */
+    install(): void;
+    onState(cb: (s: UpdateState) => void): () => void;
   };
 }

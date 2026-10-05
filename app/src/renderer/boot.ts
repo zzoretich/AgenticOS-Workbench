@@ -11,6 +11,8 @@ import { HOST_COMMANDS, type AosBridge, type ProtocolRequest, type ReadyInfo, ty
 import { AppSettingTab } from "./appSettingTab";
 import { createBridgeHost } from "./bridgeHost";
 import { PagePolicy } from "./pagePolicy";
+import { attachUi } from "./setup/attach";
+import { runSetup } from "./setup/wizard";
 import { openPopover } from "./popover";
 import { CommandPalette } from "./palette";
 import * as path from "./shims/path";
@@ -44,10 +46,9 @@ async function boot(): Promise<void> {
   const policy = new PagePolicy(info.vaultRoot, info.writeSurfaces);
   setWriteGuard(policy);
 
+  // No vault: the first-run wizard (phase 5), which ends by asking main to attach the vault it installed.
   if (!info.vaultRoot) {
-    const empty = root.createDiv({ cls: "aos-host-empty" });
-    empty.createEl("h1", { text: "No AgenticOS vault found" });
-    empty.createEl("p", { text: `Looked in ${info.vaultSource}. Install AgenticOS Workbench first, or set AOS_APP_VAULT.` });
+    runSetup(root, aos, info);
     return;
   }
 
@@ -134,6 +135,10 @@ async function boot(): Promise<void> {
     commands: app.commands.list().map((c) => ({ id: c.id, name: c.name, hotkeys: c.hotkeys?.map((h) => ({ modifiers: [...h.modifiers], key: h.key })) })),
   };
   aos.ready(ready);
+
+  // Attach mode (phase 5): the one-time "What changed" note, the runtime update when this app carries a newer one, and
+  // the app's own update in the status bar.
+  attachUi(app, aos, info.attach, statusBarEl);
 
   // The tray popover (hidden until the menubar icon is clicked): the plugin's SidebarHUD in a window of its own.
   void openPopover(app).catch((err: unknown) => console.warn("[host] tray popover unavailable", err));
