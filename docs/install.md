@@ -2,6 +2,12 @@
 
 AgenticOS Workbench runs on **macOS** with Node 20+, Claude Code and/or Codex CLI (logged in), Ollama, python3 3.9+, and uv. All five are checked before `aos init` writes anything. The Workbench itself is the **AgenticOS Workbench** app, a macOS app that reads the vault the installer records; Obsidian is not needed (the vault stays plain Markdown, so any editor still opens it). The app's download arrives with 1.0; until then, build it from `app/` in the checkout ([app/README.md](../app/README.md)). The runtime's Linux code (cron schedules) is still there but untested and unsupported; Windows is not supported.
 
+## From the app
+
+Opened with no install, the AgenticOS Workbench app runs this same install for you. Its setup wizard checks the prerequisites and both hosts' logins, offers a fix for each missing one (Homebrew's installer, `brew install node|python|uv|ollama`, `npm install -g` for Claude Code or Codex, `claude auth login`, `codex login`; each runs in a terminal inside the wizard, so you see the command and can answer a password prompt), asks which hosts and which vault folder, asks the Chief of Staff questions in a form, and runs `aos init --yes` from the runtime the app carries in `Contents/Resources/payload`, whose dependencies come with it (no npm). For Claude Code it then shows the `CLAUDE.md` line as a diff and adds it only if you say so; for Codex it reminds you to trust the hooks under `/hooks`. It ends in the Workbench.
+
+With an install, the app opens it. When the app carries a newer runtime than the vault has (after the app updates itself), it offers to run `aos upgrade` from that runtime, never on its own. `node "/Applications/AgenticOS Workbench.app/Contents/Resources/payload/cli/aos.js" upgrade` does the same from a terminal. The app's download arrives with 1.0; the terminal path below does the same install from a checkout.
+
 ## Ten-minute path
 
 ```

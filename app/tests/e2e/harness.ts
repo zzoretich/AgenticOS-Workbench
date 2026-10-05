@@ -113,6 +113,22 @@ export interface LaunchOptions {
   /** Extra environment for the app; undefined removes a variable. */
   env?: Record<string, string | undefined>;
   size?: { width: number; height: number };
+  /** What shows once the app is up: the Workbench's rail by default; the wizard's `.aos-setup` with no install. */
+  ready?: string;
+  /** Whether the app has already shown the fixture vault its one-time "What changed" note (default: yes). */
+  noted?: boolean;
+}
+
+/** The app's data folder in the fixture (appEnv's AOS_APP_USER_DATA). */
+export const USER_DATA = path.join(FX.home, "Library", "Application Support", "AgenticOS Workbench (e2e)");
+
+/** Records that the app showed `vault` its "What changed" note (src/main/setup/attach.ts), or forgets every vault. */
+export function markNoted(vault: string | null): void {
+  const file = path.join(USER_DATA, "attach.json");
+  if (!vault) { fs.rmSync(file, { force: true }); return; }
+  fs.mkdirSync(USER_DATA, { recursive: true });
+  const at = new Date().toISOString();
+  fs.writeFileSync(file, `${JSON.stringify({ vaults: { [path.resolve(vault)]: { firstAt: at, notedAt: at } } }, null, 2)}\n`);
 }
 
 /** The environment the generator ran the runtime with, pointed at the fixture, plus the app's own vault and data dirs. */
@@ -121,7 +137,7 @@ export function appEnv(extra: Record<string, string | undefined> = {}): Record<s
   Object.assign(env, {
     AOS_APP_VAULT: FX.vault,
     // The other branch's userData override; on this one CFFIXED_USER_HOME already puts userData under the fake HOME.
-    AOS_APP_USER_DATA: path.join(FX.home, "Library", "Application Support", "AgenticOS Workbench (e2e)"),
+    AOS_APP_USER_DATA: USER_DATA,
     ELECTRON_ENABLE_LOGGING: "0",
     // Read-only unless a spec turns surfaces on with its own AOS_APP_WRITE. The app's own default (every verified
     // surface) is what a spec gets with `AOS_APP_WRITE: undefined` (variants.spec.ts covers it).
@@ -245,6 +261,7 @@ const KNOWN_ERRORS: RegExp[] = [];
 export async function launchApp(opts: LaunchOptions = {}): Promise<AppHandle> {
   const main = path.join(REPO, "out", "main", "index.js");
   if (!fs.existsSync(main)) throw new Error("out/ is missing: run `npm run build` (npm run test:e2e builds first)");
+  markNoted(opts.noted === false ? null : FX.vault);
   opts.prepare?.();
   const app = await electron.launch({ args: [REPO], cwd: REPO, env: appEnv(opts.env), timeout: 60_000 });
   const errors: string[] = [];
@@ -282,7 +299,7 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<AppHandle> {
       fs.renameSync(p, path.join(trashDir, path.basename(p)));
     };
   }, path.join(FX.home, ".Trash"));
-  await win.waitForSelector(".aos-wb-railbtn", { timeout: 30_000 });
+  await win.waitForSelector(opts.ready ?? ".aos-wb-railbtn", { timeout: 30_000 });
 
   const handle: AppHandle = {
     app, win, errors, notices,
@@ -407,3 +424,65 @@ const activeLeaf = (win: Page) => win.locator(".aos-host-pane.is-main > .workspa
 export const notePath = (win: Page) => activeLeaf(win).locator(".aos-note-path");
 export const noteBody = (win: Page) => activeLeaf(win).locator(".aos-note-body");
 export const noteBar = (win: Page) => activeLeaf(win).locator(".aos-note-bar");
+
+// ── setup's stand-ins (phase 5): the tools the wizard checks for, and the runtime the app carries ──
+
+export const SETUP = {
+  root: path.join(ROOT, "setup"),
+  /** The wizard's whole PATH ($AOS_SETUP_PATH): stand-ins for brew, node, claude, codex, ollama, python3; uv appears when brew installs it. */
+  bin: path.join(ROOT, "setup", "bin"),
+  /** A release tree whose cli/aos.js records its calls and writes agenticos.json as `aos init` would. */
+  payload: path.join(ROOT, "setup", "payload"),
+  calls: path.join(ROOT, "setup", "aos-calls.jsonl"),
+};
+
+export interface AosCall { argv: string[]; persona: Record<string, unknown> | null }
+export const aosCalls = (): AosCall[] => jsonl<AosCall>(SETUP.calls);
+
+/**
+ * Writes the stand-ins. The payload's `aos init` copies the pristine fixture's agenticos.json to $AOS_CONFIG with the
+ * vault it was given, so the Workbench the wizard ends in is the fixture's; `aos upgrade` moves its version to the
+ * payload's. `codex` is installed but not logged in; uv is missing until the brew stand-in installs it.
+ */
+export function installSetupStubs(version: string): void {
+  fs.rmSync(SETUP.root, { recursive: true, force: true });
+  fs.mkdirSync(SETUP.bin, { recursive: true });
+  fs.mkdirSync(path.join(SETUP.payload, "cli"), { recursive: true });
+  const sh = (name: string, body: string) => fs.writeFileSync(path.join(SETUP.bin, name), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+  fs.symlinkSync(fs.realpathSync(path.join(ROOT, "bin", "node")), path.join(SETUP.bin, "node"));
+  sh("brew", `if [ "$1" = install ] && [ "$2" = uv ]; then
+  echo "==> Pouring uv--0.9.0.arm64_sequoia.bottle.tar.gz"
+  printf '#!/bin/sh\\necho "uv 0.9.0"\\n' > "${SETUP.bin}/uv"
+  /bin/chmod 755 "${SETUP.bin}/uv"
+  echo "==> uv 0.9.0 installed"
+  exit 0
+fi
+echo "brew stand-in: $*" >&2; exit 1`);
+  sh("claude", `case "$1" in --version) echo "2.1.0 (Claude Code)";; auth) echo '{"loggedIn": true, "authMethod": "claude.ai"}';; *) exit 1;; esac`);
+  sh("codex", `case "$1" in --version) echo "codex-cli 0.150.0";; login) echo "Not logged in"; exit 1;; *) exit 1;; esac`);
+  sh("ollama", `echo "ollama version is 0.12.0"`);
+  sh("python3", `echo "Python 3.12.1"`);
+  fs.writeFileSync(path.join(SETUP.payload, "payload.json"), `${JSON.stringify({ schema: 1, version, commit: null, builtAt: new Date().toISOString(), runtimeDeps: false })}\n`);
+  fs.writeFileSync(path.join(SETUP.payload, "package.json"), `${JSON.stringify({ name: "agenticos-workbench", version })}\n`);
+  fs.writeFileSync(path.join(SETUP.payload, "cli", "aos.js"), `// e2e stand-in for the payload's cli/aos.js: records the call, then does what init or upgrade would to agenticos.json.
+const fs = require("fs");
+const argv = process.argv.slice(2);
+const at = (f) => argv[argv.indexOf(f) + 1];
+const persona = argv.includes("--persona-json") ? JSON.parse(fs.readFileSync(at("--persona-json"), "utf8")) : null;
+fs.appendFileSync(${JSON.stringify(SETUP.calls)}, JSON.stringify({ argv, persona }) + "\\n");
+const file = process.env.AOS_CONFIG;
+if (argv[0] === "init") {
+  console.log("preflight: node " + process.version + " (stand-in)");
+  console.log("vault: " + at("--vault"));
+  const cfg = JSON.parse(fs.readFileSync(${JSON.stringify(path.join(FX.pristine, "home", ".claude", "agenticos.json"))}, "utf8"));
+  cfg.vault = at("--vault");
+  fs.writeFileSync(file, JSON.stringify(cfg, null, 2) + "\\n");
+  console.log("done.");
+} else if (argv[0] === "upgrade") {
+  const cfg = JSON.parse(fs.readFileSync(file, "utf8"));
+  cfg.version = ${JSON.stringify(version)};
+  fs.writeFileSync(file, JSON.stringify(cfg, null, 2) + "\\n");
+  console.log("upgraded to v" + cfg.version);
+} else process.exit(2);
+`);
+}

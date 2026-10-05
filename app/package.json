@@ -18,10 +18,12 @@
     "test:e2e": "node scripts/build.mjs && playwright test",
     "test:unit": "node scripts/test-unit.mjs",
     "fixture": "node scripts/make-fixture-vault.mjs",
-    "dist": "node scripts/build.mjs && electron-builder --mac --arm64 --publish never",
-    "dist:test": "AOS_APP_TEST_BUILD=1 node scripts/build.mjs && electron-builder --mac --arm64 --dir --publish never -c.directories.output=dist-test -c.mac.identity=- -c.mac.hardenedRuntime=false -c.mac.notarize=false",
+    "payload": "node scripts/make-payload.mjs",
+    "dist": "node scripts/make-payload.mjs && node scripts/build.mjs && electron-builder --mac --arm64 --publish never",
+    "dist:test": "node scripts/make-payload.mjs && AOS_APP_TEST_BUILD=1 node scripts/build.mjs && electron-builder --mac --arm64 --dir --publish never -c.directories.output=dist-test -c.mac.identity=- -c.mac.hardenedRuntime=false -c.mac.notarize=false",
     "dist:verify": "node scripts/verify-dist.mjs",
-    "smoke:packaged": "node scripts/smoke-packaged.mjs"
+    "smoke:packaged": "node scripts/smoke-packaged.mjs",
+    "release:app": "node scripts/release-app.mjs"
   },
   "dependencies": {
     "node-pty": "^1.1.0"
@@ -44,8 +46,9 @@
     "@xterm/addon-web-links": "^0.11.0",
     "@xterm/xterm": "^5.5.0",
     "dompurify": "^3.4.16",
-    "electron": "^44.4.5",
+    "electron": "^44.5.1",
     "electron-builder": "^26.17.0",
+    "electron-updater": "^6.8.9",
     "esbuild": "^0.28.2",
     "lucide": "^1.48.0",
     "markdown-it": "^15.0.2",

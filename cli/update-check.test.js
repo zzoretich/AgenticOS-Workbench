@@ -166,6 +166,23 @@ test('renderNotice names the skew when the plugin and vault disagree', () => {
   assert.equal(U.renderNotice(null, now), '');
 });
 
+// install-and-update I6: `aos upgrade` moves the plugin and the vault; the app updates itself. The notice says which.
+test('renderNotice sends a user whose app alone is behind to the app, and names both when both are', () => {
+  const now = new Date('2026-09-16T00:00:00.000Z');
+  assert.equal(
+    U.renderNotice(behindState({ pluginVersion: '0.2.0', vaultVersion: '0.2.0', hudVersion: '0.1.0', installed: '0.1.0' }), now),
+    'AgenticOS Workbench 0.2.0 available (plugin 0.2.0, vault 0.2.0, Workbench 0.1.0) — update the AgenticOS Workbench app (AgenticOS ▸ Check for Updates…)');
+  assert.equal(
+    U.renderNotice(behindState({ pluginVersion: '0.2.0', vaultVersion: '0.1.0', hudVersion: '0.1.0', installed: '0.1.0' }), now),
+    'AgenticOS Workbench 0.2.0 available (plugin 0.2.0, vault 0.1.0, Workbench 0.1.0) — run `aos upgrade` and update the app');
+  assert.equal(
+    U.renderNotice(behindState({ hudVersion: '0.1.0' }), now),
+    'AgenticOS Workbench 0.2.0 available (you have 0.1.0) — run `aos upgrade` and update the app');
+  assert.equal(
+    U.renderNotice(behindState({ pluginVersion: '0.1.0', vaultVersion: '0.1.0', hudVersion: '0.2.0' }), now),
+    'AgenticOS Workbench 0.2.0 available (plugin 0.1.0, vault 0.1.0, Workbench 0.2.0) — run `aos upgrade`', 'an app on the latest is not named');
+});
+
 test('writeFragment writes zero bytes when there is nothing to say', () => {
   const w = vaultWorld();
   const now = new Date('2026-09-16T00:00:00.000Z');
@@ -570,7 +587,7 @@ test('runCheck counts a Workbench left on an older version as behind, and the no
   const s = await check(w, { vaultVersion: '0.2.0', pluginVersion: '0.2.0', get: fakeGet({ body: release('v0.2.0') }) });
   assert.deepEqual([s.hudVersion, s.installed, s.behind], ['0.1.0', '0.1.0', true]);
   assert.equal(w.line(), '⬆ AgenticOS 0.2.0\n');
-  assert.equal(U.renderNotice(s, NOW3()), 'AgenticOS Workbench 0.2.0 available (plugin 0.2.0, vault 0.2.0, Workbench 0.1.0) — run `aos upgrade`');
+  assert.equal(U.renderNotice(s, NOW3()), 'AgenticOS Workbench 0.2.0 available (plugin 0.2.0, vault 0.2.0, Workbench 0.1.0) — update the AgenticOS Workbench app (AgenticOS ▸ Check for Updates…)');
   hudManifest(w.vault, '0.2.0');
   const t = await check(w, { vaultVersion: '0.2.0', pluginVersion: '0.2.0', get: fakeGet({ body: release('v0.2.0') }) });
   assert.deepEqual([t.hudVersion, t.installed, t.behind], ['0.2.0', '0.2.0', false], 'replaced: nothing pending');

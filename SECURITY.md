@@ -39,6 +39,14 @@ output. The design treats the page that shows them as untrusted (design D7,
     plus a few named variables with fixed or trusted values: never `NODE_OPTIONS`, `PATH` or `DYLD_*`, and a Claude
     or Codex folder only when it is one main trusts.
   - *Terminals:* a shell listed in `/etc/shells` (or your `$SHELL`), with no arguments.
+  - *Setup (phase 5):* the wizard names a fix by id; main runs that fix's fixed command (`app/src/main/policy/setup.ts`:
+    Homebrew's installer, `brew install …`, `npm install -g` for the two CLIs, the two logins) with `/bin/sh -c` in a
+    terminal the wizard shows, and only once its own checks say what it needs is there. `aos init` and `aos upgrade`
+    are the bundled runtime's CLI, run with the `node` main found, never through a shell and with no stdin. The
+    persona answers are checked against the interview's rules, written to the app's data folder (mode 0600) and
+    removed when `aos init` ends. The `CLAUDE.md` line and file are main's to compute; the line is appended only when
+    the page asks, for a Claude Code install. Install runs only with no vault attached, upgrade only when the app's
+    runtime is newer than the vault's, and one job runs at a time.
   - *The OS:* links open in the browser over https only. A document or a folder opens with its app; a file that would
     run when opened (a script, a `.terminal` or `.command` file, an app or other bundle), or a web page anywhere but the
     runtime's own proposal pages, is shown in Finder instead. A folder is never deleted for good: it goes to the
@@ -47,6 +55,10 @@ output. The design treats the page that shows them as untrusted (design D7,
   `--inspect`, and the archive is integrity-checked. Chromium's remote debugging has no fuse, so a release build refuses
   to start with `--remote-debugging-*`, `--inspect*` or `--js-flags` (`app/src/main/policy/debug.ts`;
   `npm run dist:verify` checks it). Releases are signed with a Developer ID under the hardened runtime and notarized.
+- **Updates come only from this repo's releases, signed like the app.** electron-updater reads `latest-mac.yml` from the
+  latest GitHub release and downloads the zip it names over https, checking its sha512; Squirrel.Mac then installs it
+  only if its code signature satisfies the running app's designated requirement (same Developer ID team). A dev run
+  and the smoke build never update; `updates.check: false` turns updates off.
 
 ## What the design accepts
 
@@ -56,6 +68,8 @@ output. The design treats the page that shows them as untrusted (design D7,
 | The page can do what the Workbench's buttons do | Routines run agent prompts, Settings changes settings, Agent Teams approves gates | Each is a named command with an argument rule; nothing outside the surfaces runs |
 | Links you made inside the vault are followed | Checks are on the vault's paths; a workspace linked to a code folder is read and written through the link, as you set it up | The page cannot create links |
 | An https link can carry data out | Notifications link to the web; the browser shows every link it opens | Opening is visible; the page has no network access of its own (`connect-src 'self'`) |
+| A fix-it runs an installer from the network (Homebrew's `install.sh`, npm packages) | That is how those tools install, and the wizard exists so a user need not type it | The commands are fixed in main and shown before they run, in a terminal the user watches and can stop; the page can only pick one, and only while setup shows |
+| A compromised page could start a fix-it, the install or an upgrade | They are the wizard's and attach mode's buttons | Each is fixed, allowed only in its state (no install over an attached vault), and visible as it runs |
 
 ## Review: phase 4 (Electron hardening checklist)
 
@@ -79,7 +93,7 @@ release-configured build (`npm run dist:verify`) and the smoke build (`npm run s
 | 13 | Navigation | pass | `index.ts:218, 223`: every navigation is prevented (an https link goes to the browser) |
 | 14 | New windows | pass | `index.ts:209-217`: only the blank tray popover; anything else is denied |
 | 15 | `openExternal` | pass | https only (`policy/shell.ts` `externalAllowed`); the menu's one fixed link |
-| 16 | A current Electron | pass | 44.4.5, the current major (44.5.1 is out: note, take it with the next release) |
+| 16 | A current Electron | pass | 44.5.1, the current release of the current major (phase 5) |
 | 17 | IPC sender and arguments | pass | every handler goes through `ipc/trust.ts:33-48`: main window, main frame, `app://hud`, then a zod schema (`ipc/schemas.ts`) |
 | 18 | Custom protocol | pass | `app-scheme.ts:39-44`, `protocol.handle` |
 | 19 | Fuses | pass | `dist:verify` reads them from the packaged app: `runAsNode` off, `NODE_OPTIONS` off, `--inspect` off, archive integrity on, only from the archive, no `file:` privileges |

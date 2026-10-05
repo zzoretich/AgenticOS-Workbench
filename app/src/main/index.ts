@@ -1,20 +1,22 @@
 // Main process: the Workbench window, the menubar item, the app menu, agenticos:// links and the vault watcher. The app
-// attaches to the vault an existing AgenticOS install uses (agenticos.json). The page runs sandboxed with no Node
-// (phase 4): every file it reads or writes, every process and terminal it starts and everything it hands to the OS goes
-// through the preload's bridge to the handlers in ./ipc, which check it against the read scope, the write surfaces and
-// the program rules (./policy). Main itself writes one file outside its userData: the app's record in the vault's
-// runtime cache (hud-host.ts).
+// attaches to the vault an existing AgenticOS install uses (agenticos.json); with none, the page shows the first-run
+// wizard, which runs `aos init` from the runtime the app carries (./setup, phase 5) and then attaches the vault it made
+// without a relaunch. The page runs sandboxed with no Node (phase 4): every file it reads or writes, every process and
+// terminal it starts and everything it hands to the OS goes through the preload's bridge to the handlers in ./ipc, which
+// check it against the read scope, the write surfaces and the program rules (./policy). Main itself writes one file
+// outside its userData: the app's record in the vault's runtime cache (hud-host.ts). The app updates itself (./updater).
 
-import { app, BrowserWindow, Menu, screen, type Rectangle } from "electron";
+import { app, BrowserWindow, dialog, Menu, screen, type Rectangle } from "electron";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { APP_ORIGIN, CH, POPOVER, type BootInfo, type CommandInfo, type ProtocolRequest, type ReadyInfo } from "../shared/ipc";
+import { APP_ORIGIN, CH, POPOVER, type AttachInfo, type BootInfo, type CommandInfo, type ProtocolRequest, type ReadyInfo } from "../shared/ipc";
 import { registerAppScheme, serveAppScheme } from "./app-scheme";
 import { writeHudHostMarker } from "./hud-host";
 import { registerFsIpc } from "./ipc/fs";
 import { registerHostIpc } from "./ipc/host";
 import { registerProcIpc } from "./ipc/proc";
+import { registerSetupIpc, registerUpdateIpc } from "./ipc/setup";
 import { openExternalSafe, registerShellIpc } from "./ipc/shell";
 import { trustMainWindow } from "./ipc/trust";
 import { buildAppMenu } from "./menu";
@@ -26,7 +28,11 @@ import { SCHEME, parseAgenticosUrl, urlFromArgv } from "./protocol";
 import { FsService } from "./services/fs";
 import { ProcService } from "./services/proc";
 import { PtyService, type PtyLib } from "./services/pty";
+import { attachInfo } from "./setup/attach";
+import { SetupController, type AgenticosJson } from "./setup/controller";
+import { findPayload } from "./setup/payload";
 import { STATUSLINE_PATH, StatusTray } from "./tray";
+import { UpdateService, updatesConfig, updatesWanted, type UpdaterLike } from "./updater";
 import { VaultWatcher } from "./watcher";
 import { loadWindowState, trackWindowState } from "./window-state";
 import { loadWriteSettings } from "./write-settings";
@@ -44,14 +50,17 @@ if (debugging.length && app.isPackaged && !__AOS_TEST_BUILD__) {
 
 /** The install's agenticos.json (the launcher's lookup): its path, and what `aos init` / `aos upgrade` wrote there. */
 const agenticosFile = process.env.AOS_CONFIG || path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude"), "agenticos.json");
-let agenticos: (AgenticosPaths & { vault?: string }) | null = null;
-try { agenticos = JSON.parse(fs.readFileSync(agenticosFile, "utf8")) as AgenticosPaths & { vault?: string }; } catch { /* no install */ }
+type Agenticos = AgenticosPaths & AgenticosJson & { vault?: string };
+function readAgenticos(): Agenticos | null {
+  try { return JSON.parse(fs.readFileSync(agenticosFile, "utf8")) as Agenticos; } catch { return null; }
+}
+let agenticos = readAgenticos();
 
-/** The vault an existing install points at: $AOS_APP_VAULT, else agenticos.json's `vault`. */
-function resolveVault(): { root: string | null; source: string } {
-  if (process.env.AOS_APP_VAULT) return { root: process.env.AOS_APP_VAULT, source: "AOS_APP_VAULT" };
-  const v = agenticos?.vault;
-  return v && fs.existsSync(v) ? { root: v, source: agenticosFile } : { root: null, source: agenticosFile };
+/** The vault an existing install points at: $AOS_APP_VAULT, else agenticos.json's `vault` when that folder is there. */
+function resolveVault(): { root: string | null; source: string; configured: string | null } {
+  if (process.env.AOS_APP_VAULT) return { root: process.env.AOS_APP_VAULT, source: "AOS_APP_VAULT", configured: process.env.AOS_APP_VAULT };
+  const v = typeof agenticos?.vault === "string" ? agenticos.vault : null;
+  return { root: v && fs.existsSync(v) ? v : null, source: agenticosFile, configured: v };
 }
 
 const dev = !app.isPackaged;
@@ -61,8 +70,10 @@ app.setPath("userData", process.env.AOS_APP_USER_DATA || path.join(app.getPath("
 // The app's page comes from app://hud (app-scheme.ts), which must be registered before `ready`.
 registerAppScheme();
 
-const vault = resolveVault();
+let vault = resolveVault();
 const writes = loadWriteSettings();
+// The runtime the app carries (phase 5, I1): what the wizard installs and attach mode upgrades from.
+const payload = findPayload({ packaged: app.isPackaged, resourcesPath: process.resourcesPath, env: process.env });
 
 let shells: string[] = [];
 try { shells = parseShells(fs.readFileSync("/etc/shells", "utf8")); } catch { /* no /etc/shells: only $SHELL */ }
@@ -70,9 +81,11 @@ const context: ProgramContext = {
   // agenticos.json's install paths (`aos config set` cannot change them): the Claude and Codex folders main trusts.
   vaultRoot: vault.root, home: os.homedir(), userData: app.getPath("userData"), env: process.env, agenticos, shells,
 };
-const policy = new WritePolicy(vault.root, writes.surfaces);
-const scope = new ReadScope(context);
-const fsService = vault.root ? new FsService({ vaultRoot: vault.root, userData: context.userData, scope: () => scope, policy: () => policy }) : null;
+// The vault-bound services: replaced when the wizard's install attaches a vault (attachVault).
+let policy = new WritePolicy(vault.root, writes.surfaces);
+let scope = new ReadScope(context);
+let fsService = vault.root ? new FsService({ vaultRoot: vault.root, userData: context.userData, scope: () => scope, policy: () => policy }) : null;
+let attached: AttachInfo | null = null;
 const procService = new ProcService({ policy: () => policy, context: () => context, env: process.env, emit: (ev) => send(CH.procEvent, ev) });
 // The app's own node-pty: in a packaged build its JavaScript is in the archive and its native parts are unpacked beside it.
 const ptyService = new PtyService({ context: () => context, env: process.env, emit: (ev) => send(CH.ptyEvent, ev), load: () => require("node-pty") as PtyLib });
@@ -80,20 +93,32 @@ const ptyService = new PtyService({ context: () => context, env: process.env, em
 /** The variables the HUD reads (HudHost.env), from main's environment; nothing else of it reaches the page. */
 const PAGE_ENV = ["SHELL", "CLAUDE_CONFIG_DIR", "AOS_CONFIG", "AOS_VAULT", "CODEX_HOME"];
 
-const boot: BootInfo = {
-  vaultRoot: vault.root,
-  vaultSource: vault.source,
-  userData: app.getPath("userData"),
-  writeSurfaces: writes.surfaces,
-  writeSource: writes.source,
-  mainWatcher: !!vault.root,
-  appVersion: app.getVersion(),
-  electron: process.versions.electron,
-  home: os.homedir(),
-  platform: process.platform,
-  env: Object.fromEntries(PAGE_ENV.flatMap((k) => (process.env[k] !== undefined ? [[k, process.env[k] as string]] : []))),
-  resourcesPath: process.resourcesPath,
-};
+/** What the page boots with: the vault (or why there is none, for the wizard), attach mode's facts, the updater's state. */
+function bootInfo(): BootInfo {
+  return {
+    vaultRoot: vault.root,
+    vaultSource: vault.source,
+    userData: app.getPath("userData"),
+    writeSurfaces: writes.surfaces,
+    writeSource: writes.source,
+    mainWatcher: !!vault.root,
+    appVersion: app.getVersion(),
+    electron: process.versions.electron,
+    home: os.homedir(),
+    platform: process.platform,
+    env: Object.fromEntries(PAGE_ENV.flatMap((k) => (process.env[k] !== undefined ? [[k, process.env[k] as string]] : []))),
+    resourcesPath: process.resourcesPath,
+    setup: vault.root ? null : {
+      reason: vault.configured ? "no-vault" : "no-config",
+      payload: payload ? { version: payload.version, runtimeDeps: payload.runtimeDeps } : null,
+      configuredVault: vault.configured,
+      defaultVault: path.join(os.homedir(), "AgenticOS"),
+      agenticosFile,
+    },
+    attach: attached,
+    update: updates.state,
+  };
+}
 
 let win: BrowserWindow | null = null;
 let tray: StatusTray | null = null;
@@ -102,6 +127,17 @@ let quitting = false;
 let rendererReady = false;
 let commands: CommandInfo[] = [];
 const pendingLinks: ProtocolRequest[] = [];
+
+// The app's own updates (phase 5, I6): a packaged release build only, and never against the runtime's updates.check.
+const updateConfig = updatesConfig(vault.root, agenticosFile);
+const updates = new UpdateService({
+  ...updatesWanted({ packaged: app.isPackaged, testBuild: __AOS_TEST_BUILD__, env: process.env, config: updateConfig }),
+  intervalHours: updateConfig.intervalHours,
+  load: () => (require("electron-updater") as { autoUpdater: UpdaterLike }).autoUpdater,
+  emit: (s) => { send(CH.updateEvent, s); setMenu(); },
+});
+/** How many times the page asked to restart into an update (the e2e suite reads it: a dev run has no update to install). */
+let installRequests = 0;
 
 /** Only our own page, in our own window's main frame, may talk to main. */
 const trust = trustMainWindow(() => win);
@@ -153,11 +189,78 @@ function openLink(url: string): void {
 }
 
 function setMenu(): void {
-  Menu.setApplicationMenu(buildAppMenu(commands, runCommand, { dev }));
+  Menu.setApplicationMenu(buildAppMenu(commands, runCommand, {
+    dev, setup: rendererReady && !vault.root,
+    update: { state: updates.state, check: () => updates.check(), install: () => updates.install() },
+  }));
 }
 
+/**
+ * Attaches a vault: the services the page's calls go through, the app's record in the vault, the menubar item and the
+ * watcher. At launch for an existing install; after the wizard's install, then the page reloads into the Workbench.
+ */
+function attachVault(root: string, source: string): void {
+  vault = { root, source, configured: root };
+  context.vaultRoot = root;
+  context.agenticos = agenticos;
+  policy = new WritePolicy(root, writes.surfaces);
+  scope = new ReadScope(context);
+  fsService = new FsService({ vaultRoot: root, userData: context.userData, scope: () => scope, policy: () => policy });
+  attached = attachInfo(context.userData, root, agenticos, payload?.version ?? null);
+  // D11: tell the runtime which app this vault is used with (doctor's `workbench app` row, the update check). A
+  // vault the app cannot write to still opens: the record is informational.
+  try { writeHudHostMarker(root, { name: app.getName(), version: app.getVersion() }); }
+  catch (err) { console.warn(`[main] could not record the app in ${root}: ${err instanceof Error ? err.message : String(err)}`); }
+  tray?.destroy();
+  tray = new StatusTray(root, {
+    openTab: (tab) => runCommand(tab === "pulse" ? "agentic-os:open-workbench" : `agentic-os:open-workbench-${tab}`),
+    openFile: (rel) => openLink(`${SCHEME}://note?file=${encodeURIComponent(rel)}`),
+    command: runCommand,
+    show,
+    togglePopover,
+  });
+  watcher?.stop();
+  watcher = new VaultWatcher(root, (paths) => {
+    send(CH.vaultChanges, { paths });
+    if (paths.includes(STATUSLINE_PATH)) tray?.refresh();
+  });
+  watcher.start();
+}
+
+const setup = new SetupController({
+  home: os.homedir(),
+  userData: context.userData,
+  env: process.env,
+  payload,
+  emit: (ev) => send(CH.setupEvent, ev),
+  pty: () => require("node-pty") as PtyLib,
+  attached: () => vault.root,
+  attachInfo: () => attached,
+  readAgenticos,
+  attach: () => {
+    agenticos = readAgenticos();
+    const next = resolveVault();
+    if (!next.root) return false;
+    attachVault(next.root, next.source);
+    // The page boots again, into the Workbench; links wait for its ready.
+    rendererReady = false;
+    setTimeout(() => win?.webContents.reload(), 0);
+    return true;
+  },
+  refreshAttach: () => {
+    agenticos = readAgenticos();
+    context.agenticos = agenticos;
+    if (vault.root) attached = attachInfo(context.userData, vault.root, agenticos, payload?.version ?? null);
+  },
+  chooseFolder: async () => {
+    const opts: Electron.OpenDialogOptions = { title: "Choose the folder for your AgenticOS vault", buttonLabel: "Use This Folder", defaultPath: os.homedir(), properties: ["openDirectory", "createDirectory"] };
+    const r = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts);
+    return r.canceled || !r.filePaths[0] ? null : r.filePaths[0];
+  },
+});
+
 registerHostIpc(trust, {
-  boot: () => boot,
+  boot: () => bootInfo(),
   ready: (info: ReadyInfo) => {
     rendererReady = true;
     commands = info.commands;
@@ -168,12 +271,20 @@ registerHostIpc(trust, {
 });
 registerFsIpc(trust, () => fsService);
 registerProcIpc(trust, procService, ptyService);
-registerShellIpc(trust, () => (vault.root ? scope : null), vault.root);
+registerShellIpc(trust, () => (vault.root ? scope : null), () => vault.root);
+registerSetupIpc(trust, setup);
+registerUpdateIpc(trust, {
+  state: () => updates.state,
+  check: () => updates.check(),
+  install: () => { installRequests += 1; updates.install(); },
+});
 
-/** The page went (closed, crashed, or quitting): its terminals go with it, and the children it was waiting on. */
+/** The page went (closed, crashed, reloaded, or quitting): its terminals go with it, and the children it was waiting on.
+ *  A setup job (a fix-it's terminal, `aos init`, `aos upgrade`) is the page's too. */
 function endPageWork(): void {
   ptyService.killAll();
   procService.killAttached();
+  setup.jobs.cancel();
 }
 
 function createWindow(): void {
@@ -240,7 +351,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on("activate", () => show());
   app.on("before-quit", () => { quitting = true; });
   app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
-  app.on("will-quit", () => { watcher?.stop(); tray?.destroy(); endPageWork(); });
+  app.on("will-quit", () => { watcher?.stop(); tray?.destroy(); updates.stop(); endPageWork(); });
 
   void app.whenReady().then(() => {
     // Only a packaged, signed app claims the scheme; a dev run must not re-point the system's agenticos:// handler.
@@ -248,25 +359,8 @@ if (!app.requestSingleInstanceLock()) {
     serveAppScheme(path.join(__dirname, "../renderer"));
     setMenu();
     createWindow();
-    if (vault.root) {
-      const root = vault.root;
-      // D11: tell the runtime which app this vault is used with (doctor's `workbench app` row, the update check). A
-      // vault the app cannot write to still opens: the record is informational.
-      try { writeHudHostMarker(root, { name: app.getName(), version: app.getVersion() }); }
-      catch (err) { console.warn(`[main] could not record the app in ${root}: ${err instanceof Error ? err.message : String(err)}`); }
-      tray = new StatusTray(root, {
-        openTab: (tab) => runCommand(tab === "pulse" ? "agentic-os:open-workbench" : `agentic-os:open-workbench-${tab}`),
-        openFile: (rel) => openLink(`${SCHEME}://note?file=${encodeURIComponent(rel)}`),
-        command: runCommand,
-        show,
-        togglePopover,
-      });
-      watcher = new VaultWatcher(root, (paths) => {
-        send(CH.vaultChanges, { paths });
-        if (paths.includes(STATUSLINE_PATH)) tray?.refresh();
-      });
-      watcher.start();
-    }
+    if (vault.root) attachVault(vault.root, vault.source);
+    updates.start();
     const cold = urlFromArgv(process.argv);
     if (cold) openLink(cold);
   });
@@ -277,4 +371,8 @@ if (!app.requestSingleInstanceLock()) {
   openLink, runCommand, tray: () => tray?.state() ?? null,
   togglePopover: () => togglePopover({ x: 0, y: 0, width: 0, height: 0 }),
   popoverVisible: () => !!popover && !popover.isDestroyed() && popover.isVisible(),
+  // The updater's state as a spec sets it (a dev run never downloads one), and the Restart to Update requests.
+  setUpdateState: (s: Parameters<UpdateService["set"]>[0]) => updates.set(s),
+  installRequests: () => installRequests,
+  vaultRoot: () => vault.root,
 };

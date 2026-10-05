@@ -546,6 +546,68 @@ test('upgrade re-vendors the runtime, migrates config, keeps memory', () => {
   assert.doesNotMatch(r.stdout, /Obsidian/, 'a vault with no Obsidian-era plugin folder hears nothing about it');
 });
 
+// install-and-update I1/I2: the app's payload is a release tree that carries its runtime's dependencies. A copy of the
+// parts init and upgrade read, plus payload.json and a stand-in node_modules; its own cli/aos.js finds it as the repo.
+function releaseTree(sb, { deps = { 'fake-dep/index.js': 'module.exports = "from the payload";\n' }, manifest = { schema: 1, version: '9.9.9', runtimeDeps: true } } = {}) {
+  const tree = path.join(sb.dir, 'payload');
+  const skip = /(^|\/)(node_modules|test|fixtures|rehearsal|package-lock\.json)(\/|$)|\.test\.js$/;
+  for (const rel of ['package.json', '.claude-plugin', '.agents', 'brain/scripts', 'cli', 'plugin', 'vault-template', 'extras']) {
+    fs.cpSync(path.join(ROOT, rel), path.join(tree, rel), { recursive: true, filter: (src) => !skip.test(path.relative(ROOT, src)) });
+  }
+  if (manifest) fs.writeFileSync(path.join(tree, 'payload.json'), JSON.stringify(manifest));
+  for (const [rel, text] of Object.entries(deps)) {
+    const f = path.join(tree, 'brain', 'scripts', 'node_modules', rel);
+    fs.mkdirSync(path.dirname(f), { recursive: true });
+    fs.writeFileSync(f, text);
+  }
+  return { tree, aos: (args, env = {}) => spawnSync(process.execPath, [path.join(tree, 'cli', 'aos.js'), ...args], { encoding: 'utf8', env: { ...sb.env, ...env }, cwd: sb.dir }) };
+}
+
+test('init from a release tree copies its runtime dependencies and never runs npm', () => {
+  const sb = sandbox();
+  const { tree, aos: run } = releaseTree(sb);
+  const r = run(['init', '--vault', sb.vault, '--provider', 'none', '--yes']);
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  assert.match(r.stdout, new RegExp(`preflight: node v[\\d.]+ · checkout ${reEsc(fs.realpathSync(tree))} \\(v[\\d.]+\\)`), 'the tree its own CLI sits in is the source');
+  const nm = path.join(sb.vault, 'brain', 'scripts', 'node_modules');
+  assert.equal(fs.readFileSync(path.join(nm, 'fake-dep', 'index.js'), 'utf8'), 'module.exports = "from the payload";\n');
+  assert.ok(!fs.lstatSync(nm).isSymbolicLink(), 'a real copy, not a link into the app bundle');
+  assert.doesNotMatch(sb.log('FAKE_NPM_LOG'), /install/, 'npm was never called');
+  assert.deepEqual(fs.readdirSync(path.join(sb.vault, 'brain', 'scripts')).filter((n) => n.startsWith('node_modules.')), [], 'no staging folder left behind');
+  // The plugin still comes from GitHub, as the terminal install's does (I3): no --from-local, no marketplace in the bundle.
+  assert.match(sb.log('FAKE_CLAUDE_LOG'), /^plugin marketplace add zzoretich\/AgenticOS-Workbench$/m);
+});
+
+test('upgrade from a release tree swaps node_modules whole: what the old tree had and the new one lacks is gone', () => {
+  const sb = sandbox();
+  const first = releaseTree(sb, { deps: { 'old-dep/index.js': 'old\n', 'kept-dep/index.js': 'v1\n' } });
+  assert.equal(first.aos(['init', '--vault', sb.vault, '--provider', 'none', '--yes']).status, 0);
+  fs.rmSync(first.tree, { recursive: true, force: true });
+  const { aos: run } = releaseTree(sb, { deps: { 'kept-dep/index.js': 'v2\n', 'new-dep/index.js': 'new\n' } });
+  const r = run(['upgrade']);
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  const nm = path.join(sb.vault, 'brain', 'scripts', 'node_modules');
+  assert.deepEqual(fs.readdirSync(nm).sort(), ['kept-dep', 'new-dep']);
+  assert.equal(fs.readFileSync(path.join(nm, 'kept-dep', 'index.js'), 'utf8'), 'v2\n');
+  assert.doesNotMatch(sb.log('FAKE_NPM_LOG'), /install/);
+  assert.deepEqual(fs.readdirSync(path.join(sb.vault, 'brain', 'scripts')).filter((n) => n.startsWith('node_modules.')), []);
+});
+
+test('releaseTreeDeps: only a payload.json saying runtimeDeps, with the folder present, skips npm', () => {
+  const { releaseTreeDeps } = require('./aos.js');
+  const sb = sandbox();
+  assert.equal(releaseTreeDeps(ROOT), null, 'a checkout installs with npm');
+  const { tree } = releaseTree(sb);
+  assert.equal(releaseTreeDeps(tree), path.join(tree, 'brain', 'scripts', 'node_modules'));
+  fs.writeFileSync(path.join(tree, 'payload.json'), JSON.stringify({ schema: 1, runtimeDeps: false }));
+  assert.equal(releaseTreeDeps(tree), null, 'a payload built with --skip-deps');
+  fs.writeFileSync(path.join(tree, 'payload.json'), JSON.stringify({ schema: 2, runtimeDeps: true }));
+  assert.equal(releaseTreeDeps(tree), null, 'a schema this CLI does not know');
+  fs.writeFileSync(path.join(tree, 'payload.json'), JSON.stringify({ schema: 1, runtimeDeps: true }));
+  fs.rmSync(path.join(tree, 'brain', 'scripts', 'node_modules'), { recursive: true });
+  assert.equal(releaseTreeDeps(tree), null, 'the folder is missing');
+});
+
 // workbench-app D1, D12: upgrade installs no HUD into the vault, says once where an Obsidian-era Workbench went (and
 // leaves its folder alone), and records Homebrew's stable Node link.
 test('upgrade installs no HUD, points an Obsidian-era install at the app, and records the stable node path', () => {

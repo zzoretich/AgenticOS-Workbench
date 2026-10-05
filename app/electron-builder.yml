@@ -1,6 +1,6 @@
-# Phase 3 (PLAN.md §7): a signed, notarized private build, installed by hand. D9 names it; D6 keeps it off any update
-# feed while it is private. `npm run dist` builds it into dist/, `npm run dist:verify` checks it, and
-# `npm run smoke:packaged` runs it (docs/phase-3.md).
+# The signed, notarized app (spec 2026-10-05-workbench-app-design D9). `npm run dist` builds it into dist/,
+# `npm run dist:verify` checks it, `npm run smoke:packaged` runs the smoke build, and `npm run release:app` builds, signs,
+# notarizes and uploads a release (phase 5, docs/superpowers/plans/2026-10-05-install-and-update.md).
 appId: com.zzoretich.agenticos-workbench
 productName: AgenticOS Workbench
 artifactName: AgenticOS-Workbench-${version}-${arch}.${ext}
@@ -24,12 +24,20 @@ files:
 # app.asar.unpacked). Both are signed with the app.
 asarUnpack:
   - node_modules/node-pty/prebuilds/darwin-arm64/*
+# Phase 5 (I1): the runtime the app installs and upgrades from, a release tree scripts/make-payload.mjs builds. Plain
+# files under Resources, sealed by the app's signature; the wizard runs its cli/aos.js with the user's own Node.
+extraResources:
+  - from: payload
+    to: payload
 # The N-API prebuild loads in this Electron as it is (docs/phase-0.md); a rebuild would compile it from source.
 npmRebuild: false
 
 mac:
+  # The DMG is what people download; the zip is what the updater installs from (Squirrel.Mac takes a zip).
   target:
     - target: dmg
+      arch: [arm64]
+    - target: zip
       arch: [arm64]
   category: public.app-category.developer-tools
   icon: build/icon.png
@@ -51,11 +59,17 @@ protocols:
 dmg:
   # Signed here, then notarized and stapled by scripts/verify-dist.mjs --notarize-dmg.
   sign: true
-  # A blockmap only serves update feeds (D6: none).
+  # The updater downloads the zip, so the DMG needs no blockmap.
   writeUpdateInfo: false
 
-# D6: no update feed while the app is private.
-publish: null
+# Phase 5 (I6): the update feed is this repo's GitHub Releases. electron-builder writes app-update.yml into the app and
+# latest-mac.yml beside the build; it never uploads (--publish never): scripts/release-app.mjs does, after the DMG is
+# stapled.
+publish:
+  provider: github
+  owner: zzoretich
+  repo: AgenticOS-Workbench
+  releaseType: release
 
 electronFuses:
   runAsNode: false

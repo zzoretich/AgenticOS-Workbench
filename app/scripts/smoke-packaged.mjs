@@ -1,7 +1,9 @@
 // Phase 3: runs the packaged app and checks what only a packaged build can get wrong. It starts from its archive with
 // the fuses on; every tab draws without an error; node-pty loads from app.asar.unpacked and a shell runs in the Term
 // tab; the tray popover draws with its styles; and quitting leaves no process behind. The page comes from app://hud
-// (src/main/app-scheme.ts), which main reads out of app.asar, and runs sandboxed (phase 4).
+// (src/main/app-scheme.ts), which main reads out of app.asar, and runs sandboxed (phase 4). Phase 5: the bundle carries
+// the runtime (Resources/payload) at the app's version, updates stay off in the smoke build, and with no install the
+// app opens the first-run wizard on that payload.
 //
 //   node scripts/smoke-packaged.mjs [--app <path>] [--live] [--work <dir>] [--keep]
 //
@@ -137,6 +139,18 @@ check("it reports the package's version", info.info?.appVersion === VERSION, inf
 check("it keeps its data in its own folder", info.info?.userData === userData, info.info?.userData);
 check("it attaches to the expected vault", LIVE ? !!info.info?.vaultRoot : info.info?.vaultRoot === vault, info.info?.vaultRoot ?? "none");
 check("its resources are the bundle's", info.resourcesPath === path.join(APP, "Contents", "Resources"), info.resourcesPath);
+// Phase 5: the runtime the wizard installs from, and the updater, which the ad-hoc-signed smoke build never runs.
+let payload = null;
+try { payload = JSON.parse(fs.readFileSync(path.join(APP, "Contents", "Resources", "payload", "payload.json"), "utf8")); } catch { /* none */ }
+check("the bundle carries the runtime at the app's version, with its dependencies", payload?.version === VERSION && payload?.runtimeDeps === true
+  && fs.existsSync(path.join(APP, "Contents", "Resources", "payload", "brain", "scripts", "node_modules", "@modelcontextprotocol", "sdk", "package.json")),
+  payload ? `${payload.version}${payload.commit ? ` (${String(payload.commit).slice(0, 7)})` : ""}` : "no payload.json");
+check("updates are off in the smoke build", info.info?.update?.status === "off" && info.info?.update?.reason === "the smoke build", JSON.stringify(info.info?.update));
+check("attach mode knows the vault", !!info.info?.attach && (LIVE || info.info.attach.behind === false), JSON.stringify(info.info?.attach));
+// A fresh data folder: the one-time "What changed" note is up, over the Workbench, until it is read.
+const noted = await until(async () => (await page.locator(".aos-attach-modal .aos-attach-ok").count()) > 0, 10_000);
+check("the one-time What changed note shows on a first attach", noted);
+if (noted) await page.locator(".aos-attach-modal .aos-attach-ok").click();
 check("its three linked stylesheets load from app://hud", info.sheets.length === 3 && info.sheets.every((n) => n > 0), JSON.stringify(info.sheets));
 // The app is the Workbench (phase 1, D6): with no AOS_APP_WRITE every verified surface writes, and the status bar item
 // that names a narrowed run (READ-ONLY, or WRITES: …) is hidden.
@@ -214,6 +228,38 @@ await browser.close().catch(() => {});
 
 const mainErrors = stderr.split("\n").filter((l) => /\[main\].*(error|refused|gone)/i.test(l));
 if (!LIVE) check("no main-process errors", mainErrors.length === 0, mainErrors.slice(0, 3).join(" | "));
+
+// ── no install: the wizard, on the bundle's payload ──────────────────
+
+if (!LIVE) {
+  const fx = path.join(work, "fixture");
+  const env = JSON.parse(fs.readFileSync(path.join(fx, "env.json"), "utf8"));
+  delete env.AOS_HEADLESS;
+  delete env.CFFIXED_USER_HOME;
+  const none = path.join(work, "no-install");
+  fs.mkdirSync(path.join(none, "claude"), { recursive: true });
+  // No agenticos.json where the app looks, and no vault named: a first run.
+  Object.assign(env, { AOS_CONFIG: path.join(none, "claude", "agenticos.json"), CLAUDE_CONFIG_DIR: path.join(none, "claude"), AOS_APP_USER_DATA: path.join(none, "userData") });
+  delete env.AOS_APP_VAULT;
+  const port2 = await freePort();
+  const child = spawn(EXE, [`--remote-debugging-port=${port2}`], { env, stdio: ["ignore", "ignore", "pipe"] });
+  let stderr2 = "";
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", (d) => { stderr2 += d; });
+  const b2 = await until(() => chromium.connectOverCDP(`http://127.0.0.1:${port2}`, { timeout: 2_000 }), 30_000, 500);
+  const p2 = b2 ? await until(() => b2.contexts()[0]?.pages().find((p) => p.url() === "app://hud/index.html"), 20_000) : null;
+  const wizard = p2 ? await until(() => p2.evaluate(() => {
+    const sub = document.querySelector(".aos-setup-sub")?.textContent ?? "";
+    const rows = document.querySelectorAll(".aos-setup-check").length;
+    return rows >= 9 ? { sub, rows } : null;
+  }), 30_000) : null;
+  check("with no install it opens the wizard on the bundle's runtime, and the checks run", wizard && wizard.sub.includes(`runtime ${VERSION}`), wizard ? `${wizard.rows} checks · ${wizard.sub}` : "no wizard");
+  child.kill("SIGTERM");
+  check("the wizard's app quits", await until(() => child.exitCode !== null || child.signalCode !== null, 20_000));
+  await b2?.close().catch(() => {});
+  const wizardErrors = stderr2.split("\n").filter((l) => /\[main\].*(error|refused|gone)/i.test(l));
+  check("no main-process errors in the wizard", wizardErrors.length === 0, wizardErrors.slice(0, 3).join(" | "));
+}
 
 const failed = results.filter((r) => !r.ok);
 fs.writeFileSync(path.join(work, "report.json"), `${JSON.stringify({ app: APP, live: LIVE, results, errors, guard, tree: tree.map((p) => p.command.slice(0, 200)) }, null, 2)}\n`);

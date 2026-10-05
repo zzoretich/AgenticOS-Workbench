@@ -1,7 +1,10 @@
 // Phase 3's exit criterion for a build (PLAN.md §7): the app and the DMG in dist/ are signed with a Developer ID under
 // the hardened runtime, notarized and stapled, carry exactly the entitlements and fuses electron-builder.yml asks for,
 // and ship nothing they should not (source maps, other platforms' prebuilds, a home folder's path). Phase 4: the release
-// refuses to start with a debugging switch, so nothing can drive it from outside (src/main/policy/debug.ts).
+// refuses to start with a debugging switch, so nothing can drive it from outside (src/main/policy/debug.ts). Phase 5: the
+// bundle carries the runtime (Resources/payload) at the app's version, with its dependencies and without tests, npm's
+// .bin links or a home path, and its CLI loads; a full build knows its update feed (app-update.yml) and has the zip and
+// latest-mac.yml the updater reads.
 //
 //   node scripts/verify-dist.mjs [--notarize-dmg] [--app-only]
 //
@@ -128,6 +131,26 @@ const home = os.homedir();
 const leaks = expectedOut.filter((f) => extractFile(asar, f.slice(1)).toString("utf8").includes(home));
 check("no home-folder path in the bundled code", leaks.length === 0, leaks.join(", "));
 
+// ── the runtime it carries, and its update feed (phase 5) ────────────
+
+const PAYLOAD = path.join(RES, "payload");
+let manifest = null;
+try { manifest = JSON.parse(fs.readFileSync(path.join(PAYLOAD, "payload.json"), "utf8")); } catch { /* none */ }
+check("the payload is this version's release tree, with its dependencies", manifest?.schema === 1 && manifest.version === pkg.version && manifest.runtimeDeps === true
+  && ["cli/aos.js", "brain/scripts/package.json", "vault-template", ".claude-plugin/marketplace.json", "plugin/bin/aos", "codex-plugin",
+    "brain/scripts/node_modules/@modelcontextprotocol/sdk/package.json"].every((f) => fs.existsSync(path.join(PAYLOAD, f))),
+  manifest ? `${manifest.version} · deps ${manifest.runtimeDeps}` : "no payload.json");
+const payloadFiles = [];
+const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); payloadFiles.push({ p, e }); if (e.isDirectory()) walk(p); } };
+if (manifest) walk(PAYLOAD);
+const rel = (p) => path.relative(PAYLOAD, p);
+const stray = payloadFiles.filter(({ p, e }) => e.isSymbolicLink() || /(^|\/)(\.bin|test|fixtures|rehearsal)$/.test(rel(p)) && e.isDirectory() && !rel(p).includes("node_modules/") || /\.test\.js$/.test(p) && !rel(p).includes("node_modules/"));
+check("the payload has no tests, fixtures or symlinks", stray.length === 0, stray.slice(0, 5).map(({ p }) => rel(p)).join(", "));
+const homeHits = payloadFiles.filter(({ p, e }) => e.isFile() && !rel(p).includes("node_modules/") && fs.statSync(p).size < 1024 * 1024 && fs.readFileSync(p, "utf8").includes(home));
+check("no home-folder path in the payload", homeHits.length === 0, homeHits.slice(0, 5).map(({ p }) => rel(p)).join(", "));
+const cliLoads = run(process.execPath, ["-e", `require(${JSON.stringify(path.join(PAYLOAD, "cli", "aos.js"))}); require(${JSON.stringify(path.join(PAYLOAD, "brain", "scripts", "node_modules", "@modelcontextprotocol", "sdk", "package.json"))})`]);
+check("the payload's CLI and runtime dependencies load", cliLoads.code === 0, firstLine(cliLoads.out));
+
 // ── no way in from outside ───────────────────────────────────────────
 
 /** A port nothing listens on now. */
@@ -172,6 +195,15 @@ check("the app's ticket is stapled", st.code === 0, firstLine(st.out));
 // ── the DMG ──────────────────────────────────────────────────────────
 
 if (!argv.includes("--app-only")) {
+  // The updater's files (I6): the app's own feed (electron-builder writes app-update.yml only when it builds a DMG or a
+  // zip, so a --dir build has none), the zip Squirrel installs from and the feed that names it.
+  const feed = fs.existsSync(path.join(RES, "app-update.yml")) ? fs.readFileSync(path.join(RES, "app-update.yml"), "utf8") : "";
+  check("the app knows its update feed (GitHub Releases of this repo)", /provider: github/.test(feed) && /owner: zzoretich/.test(feed) && /repo: AgenticOS-Workbench/.test(feed), feed.replace(/\n/g, " ").trim());
+  const ZIP = path.join(repo, "dist", `AgenticOS-Workbench-${pkg.version}-arm64.zip`);
+  const latest = path.join(repo, "dist", "latest-mac.yml");
+  const yml = fs.existsSync(latest) ? fs.readFileSync(latest, "utf8") : "";
+  check("the update zip and latest-mac.yml are built, for this version", fs.existsSync(ZIP) && new RegExp(`^version: ${pkg.version.replace(/\./g, "\\.")}$`, "m").test(yml) && yml.includes(path.basename(ZIP)),
+    `${path.basename(ZIP)}${fs.existsSync(ZIP) ? "" : " missing"} · ${yml.split("\n")[0] ?? ""}`);
   if (!fs.existsSync(DMG)) check("the DMG exists", false, DMG);
   else {
     const dsig = run("codesign", ["--verify", "--verbose=2", DMG]);
