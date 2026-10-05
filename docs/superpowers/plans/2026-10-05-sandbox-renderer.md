@@ -30,7 +30,7 @@ The compat layer (`app/compat/src/{vault,plugin,noteEditor,workspace,index}.ts`)
 | S3 | **Main is the policy.** `WritePolicy` moves to main; the surface table becomes import-free data the renderer can show. Every fs call is checked in main against a read scope (vault, the Claude and Codex folders `agenticos.json` and the environment name, `~/.agents`, LaunchAgents and `/etc/shells` read-only, the app's own plugin data) and the write policy | Keeping the checks in the renderer: an injected script would skip them |
 | S4 | **Programs are resolved in main.** A spawn's program is a bare name (main's PATH) or an absolute executable outside the vault and the app's data; node runs only `<vault>/brain/scripts/…`; the child's environment is main's plus an allow-listed set of variables (no `NODE_OPTIONS`, no `PATH`). The renderer names ids for its children and pty sessions; main caps how many run | Trusting the renderer's `env` and binary paths: `NODE_OPTIONS` or a `node` of its choosing would run anything |
 | S5 | **The pty lives in main** (the app's own node-pty). Sessions start a shell from `/etc/shells` with no arguments; data streams as events. The Terminal tab is a shell by design: SECURITY.md records it as the residual risk the sandbox cannot remove | Keeping node-pty in the renderer: impossible with `sandbox: true` |
-| S6 | **`shell.openPath` opens folders and document types only** (html, md, txt, json, jsonl, csv, yaml, pdf, images); `openExternal` takes `https:` only (the `obsidian://` entry goes) | Any path: a `.terminal` or `.command` file written into the vault would run on open |
+| S6 | **`shell.openPath` opens folders and document types only** (md, txt, json, jsonl, csv, yaml, pdf, images; html and svg only from `brain/_index`, the runtime's proposal pages) and shows anything else in Finder; `openExternal` takes `https:` only (the `obsidian://` entry goes) | Any path: a `.terminal` or `.command` file written into the vault would run on open |
 | S7 | **Files and Notes never write a dot-path** (`**/.*`, `**/.*/**`). The Files tree and the index already hide them; this keeps a compromised page from planting `.claude/settings.json` hooks, `.mcp.json` or `.codex/` config in the vault | Listing each host's config file: the list would drift |
 | S8 | **Packaged builds refuse `--remote-debugging-*`, `--inspect*` and `--js-flags`** at the top of main, before Chromium starts its DevTools server. `npm run dist:test` builds an ad-hoc-signed smoke build (`AOS_APP_TEST_BUILD=1`, its own `dist-test/`) that accepts them; `smoke:packaged` drives that build, and `dist:verify` checks that the release build exits on the flag | An environment switch in the release build: whoever can launch the app with a variable set could also borrow its permissions through the debugger |
 | S9 | **The preload exposes named functions only** (`window.aos`), built from an import-free contract; zod schemas and sender checks live in main. Refusals come back as results; the renderer records them in the guard log the e2e suite reads | A generic `invoke(channel)`: hands the page every channel |
@@ -70,11 +70,14 @@ the contract; a `Result` back, never a thrown error. Paths are absolute, NUL-fre
 
 ## Tasks
 
-- [ ] HUD seam, Node host, modules through it; `npm test -w obsidian-plugin` green, tripwire test.
-- [ ] Main policy modules and handlers with unit tests (scope, programs, env, schemas, refusals).
-- [ ] Preload, bridge host, compat on the host, build (preload bundle, `path` shim, HUD Node imports are build errors).
-- [ ] `sandbox: true`, `contextIsolation: true`, `nodeIntegration: false`; debug switches refused when packaged.
-- [ ] e2e green sandboxed, plus `sandbox.spec.ts`; harden `teams-writes.spec.ts:69` and `notes-writes.spec.ts:178`.
-- [ ] `dist:test` + smoke, `dist:verify` refusal check; SECURITY.md; CHANGELOG.
+- [x] HUD seam, Node host, modules through it; `npm test -w obsidian-plugin` green, tripwire test.
+- [x] Main policy modules and handlers with unit tests (scope, programs, env, schemas, refusals).
+- [x] Preload, bridge host, compat on the host, build (preload bundle, `path` shim, HUD Node imports are build errors).
+- [x] `sandbox: true`, `contextIsolation: true`, `nodeIntegration: false`; debug switches refused when packaged.
+- [x] e2e green sandboxed, plus `sandbox.spec.ts`; harden `teams-writes.spec.ts:69` and `notes-writes.spec.ts:178`.
+- [x] `dist:test` + smoke, `dist:verify` refusal check; SECURITY.md; CHANGELOG.
 
-**Exit:** app e2e green with the renderer sandboxed; SECURITY.md with no open high finding.
+**Exit:** app e2e green with the renderer sandboxed; SECURITY.md with no open high finding. The independent review's
+two medium findings (a folder removed with the runtime's folders in it; credential files refused by name only) were
+fixed before the PR: a folder only goes to the Trash and never holds `brain/_index` or `brain/scripts`, and the page
+reads only what it shows of the hosts' folders.
