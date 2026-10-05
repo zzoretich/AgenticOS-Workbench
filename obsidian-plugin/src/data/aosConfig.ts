@@ -6,9 +6,8 @@
 // VAULT_CONFIG_DEFAULTS is a verbatim copy of brain/scripts/config.default.json as it stands
 // after Plan 2 Task 3 (contract §1 shape + scan.fileMapBudgetUnderClaude); the merge order
 // (defaults ← vault config ← agenticos.json) matches lib/config.js loadConfig().
-import * as fs from "fs";
-import * as os from "os";
 import * as path from "path";
+import { env, fs } from "../host";
 
 export type ProviderName = "ollama" | "claude" | "codex" | "none";
 export type ProviderMode = ProviderName | "auto";
@@ -148,7 +147,7 @@ export function reviewCommand(cfg: AgenticosJson | null): { host: SessionHost; l
 }
 
 export function claudeConfigDir(): string {
-  return path.resolve(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude"));
+  return path.resolve(env.get("CLAUDE_CONFIG_DIR") || path.join(env.homedir(), ".claude"));
 }
 
 /**
@@ -158,7 +157,7 @@ export function claudeConfigDir(): string {
  * $AOS_CONFIG still outranks both: it names the file directly (the CLI/test knob).
  */
 export function agenticosJsonPath(configDir?: string): string {
-  return path.resolve(process.env.AOS_CONFIG || path.join(configDir || claudeConfigDir(), "agenticos.json"));
+  return path.resolve(env.get("AOS_CONFIG") || path.join(configDir || claudeConfigDir(), "agenticos.json"));
 }
 
 function readJson<T>(p: string): T | null {

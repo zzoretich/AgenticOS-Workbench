@@ -1,7 +1,7 @@
 import { App } from "obsidian";
-import * as fs from "fs";
 import * as path from "path";
 import { parseFrontmatter, firstLine } from "./frontmatter";
+import { fs } from "../host";
 
 export interface StaffAgent {
   name: string;

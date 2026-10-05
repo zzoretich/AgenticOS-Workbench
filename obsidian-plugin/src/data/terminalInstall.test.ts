@@ -1,14 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import type { ChildProcess } from "node:child_process";
+import type { HostChild } from "../host";
 import { installTerminalSupport, chmodSpawnHelpers, rebuildPty, InstallDeps } from "./terminalInstall";
 
-function fakeChild(out: string, code = 0): ChildProcess {
+function fakeChild(out: string, code = 0): HostChild {
   const c = new EventEmitter() as EventEmitter & { stdout: EventEmitter; stderr: EventEmitter; kill: () => boolean };
   c.stdout = new EventEmitter(); c.stderr = new EventEmitter(); c.kill = () => true;
-  setImmediate(() => { c.stdout.emit("data", Buffer.from(out)); c.emit("close", code); });
-  return c as unknown as ChildProcess;
+  setImmediate(() => { c.stdout.emit("data", out); c.emit("close", code); });
+  return c as unknown as HostChild;
 }
 
 const PLUGIN = "/vault/.obsidian/plugins/agentic-os";
@@ -16,7 +16,7 @@ const PREBUILDS = `${PLUGIN}/node_modules/node-pty/prebuilds`;
 
 // `pkg` is whether <pluginDir>/package.json exists: true in an `aos init`/`aos upgrade`
 // bundle, false in a release-asset or BRAT install (three files only).
-function deps(children: ChildProcess[], tree: Record<string, string[]>, pkg = true, failChmodFor: string[] = []) {
+function deps(children: HostChild[], tree: Record<string, string[]>, pkg = true, failChmodFor: string[] = []) {
   const calls: Array<{ file: string; args: string[]; cwd: string; path: string }> = [];
   const chmods: Array<[string, number]> = [];
   const d: InstallDeps = {

@@ -1,7 +1,7 @@
 import { App } from "obsidian";
-import * as fs from "fs";
 import * as path from "path";
 import { parseFrontmatter, firstLine, asStringList } from "./frontmatter";
+import { fs, type HostStats } from "../host";
 
 export interface InventoryAgent {
   name: string;
@@ -59,7 +59,7 @@ function readAgentsFromFs(vault: string): InventoryAgent[] {
   for (const name of names) {
     if (!name.endsWith(".md")) continue;
     const abs = path.join(dir, name);
-    let txt: string, stat: fs.Stats;
+    let txt: string, stat: HostStats;
     try { txt = fs.readFileSync(abs, "utf8"); stat = fs.statSync(abs); } catch { continue; }
     const fm = parseFrontmatter(txt);
     const base = name.replace(/\.md$/, "");
@@ -88,11 +88,11 @@ function readSkillsFromFs(vault: string): InventorySkill[] {
   const out: InventorySkill[] = [];
   for (const d of dirs) {
     const dirAbs = path.join(dir, d);
-    let dstat: fs.Stats;
+    let dstat: HostStats;
     try { dstat = fs.statSync(dirAbs); } catch { continue; }
     if (!dstat.isDirectory()) continue;
     const skillMd = path.join(dirAbs, "SKILL.md");
-    let txt = "", stat: fs.Stats = { size: 0, mtimeMs: dstat.mtimeMs } as fs.Stats, missing = false;
+    let txt = "", stat: HostStats = { size: 0, mtimeMs: dstat.mtimeMs } as HostStats, missing = false;
     try { txt = fs.readFileSync(skillMd, "utf8"); stat = fs.statSync(skillMd); }
     catch { missing = true; }
     const fm = parseFrontmatter(txt);

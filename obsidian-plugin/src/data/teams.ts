@@ -5,10 +5,10 @@
 //
 // JSONL follows the prototype reader's rule: a bad complete line is someone's hand edit and is skipped (and counted); an
 // unparsable last line with no newline is an append still in flight, so it is left out and the tab reads again.
-import * as fs from "fs";
 import * as path from "path";
 import { stepIn } from "./settingsModel";
 import type { AgentsCache, AgentHost } from "./agents";
+import { fs } from "../host";
 
 export const TEAMS_DIR = "persona/teams";
 export const DEFAULT_STAGES = ["discuss", "plan", "execute", "verify", "ship"];

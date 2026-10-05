@@ -3,8 +3,8 @@
 // which also mirrors each host's user agents into the other host's agents folder. Pure parsing and formatting; only
 // readAgents touches the filesystem. The tab starts an agent by typing the row's run command into a fresh terminal:
 // `claude --agent <name>` (a session as the agent) or `codex '<starter prompt>'` (Codex spawns the role it is asked for).
-import * as fs from "fs";
 import * as path from "path";
+import { fs } from "../host";
 
 export const AGENTS_PATH = "brain/_index/agents.json";
 export const AGENT_HOSTS = ["claude", "codex"] as const;

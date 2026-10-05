@@ -23,7 +23,7 @@ function world() {
   const configDir = path.join(base, "claude");
   fs.mkdirSync(path.join(configDir, "agents"), { recursive: true });
   fs.writeFileSync(path.join(configDir, "agents", "team-scout.md"), "---\nname: team-scout\ndescription: Looks ahead.\n---\nScout.\n");
-  const env = { ...process.env, CLAUDE_CONFIG_DIR: configDir, CODEX_HOME: path.join(base, "codex") };
+  const env = { CLAUDE_CONFIG_DIR: configDir, CODEX_HOME: path.join(base, "codex") };
   const runner = teamRunner({ node: process.execPath, vault, configDir, cli: CLI, env });
   const team = async (id: string): Promise<Team> => (await readTeams(diskAdapter(vault))).find((t) => t.id === id)!;
   const item = async (id: string, itemId: string) => (await team(id)).board.find((i) => i.id === itemId)!;

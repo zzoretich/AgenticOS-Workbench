@@ -1,7 +1,7 @@
 import { App } from "obsidian";
-import * as fs from "fs";
 import * as path from "path";
 import { AgentRun } from "./runs";
+import { fs } from "../host";
 
 export interface RunEvent {
   type: string;

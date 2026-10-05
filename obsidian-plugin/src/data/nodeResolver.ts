@@ -8,10 +8,8 @@
 //   5. "node"                     (let spawn try the system PATH)
 // The probe is slow (~200-800 ms) and runs at most once per process; a success is
 // persisted by the caller so it never runs again on that install.
-import * as fs from "fs";
-import * as os from "os";
 import * as path from "path";
-import { execFileSync } from "child_process";
+import { env as hostEnv, execFileSync, fs } from "../host";
 import { readAgenticosJson } from "./aosConfig";
 import type { AgenticOSSettings } from "../settingsDefaults";
 
@@ -29,9 +27,10 @@ const DEFAULT_DEPS: NodeResolverDeps = {
   existsSync: (p) => { try { return fs.existsSync(p); } catch { return false; } },
   readdirSync: (p) => fs.readdirSync(p),
   execFileSync: (file, args, opts) => execFileSync(file, args, opts),
-  homedir: () => os.homedir(),
-  platform: process.platform,
-  env: process.env,
+  homedir: () => hostEnv.homedir(),
+  // Getters: read from the host when a resolve runs, never when this module loads.
+  get platform() { return hostEnv.platform() as NodeJS.Platform; },
+  get env() { return { SHELL: hostEnv.get("SHELL") }; },
   agenticosNode: (configDir) => readAgenticosJson(configDir)?.node ?? null,
 };
 

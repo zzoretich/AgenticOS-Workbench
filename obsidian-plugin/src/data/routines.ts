@@ -5,9 +5,9 @@
 // the runtime's, so a file this module writes is a file run-routine.js reads — both sides are checked
 // against brain/scripts/test/fixtures/routines/*.
 import type { App } from "obsidian";
-import * as fs from "fs";
 import * as path from "path";
 import { describe, next, validateCron } from "./cron";
+import { fs, utf8 } from "../host";
 
 export const ROUTINES_DIR = "brain/routines";
 export const ROUTINES_STATE_PATH = "brain/_index/routines.json";
@@ -224,16 +224,12 @@ export function parseDutyLogTail(tail: string, mtimeIso: string): DutyLogRun | n
 export function readDutyLogLast(vaultRoot: string, slug: string): DutyLogRun | null {
   if (!SLUG_RE.test(slug)) return null;
   const file = path.join(vaultRoot, DUTY_LOG_DIR, `duty-${slug}.log`);
-  let fd: number | null = null;
   try {
     const st = fs.statSync(file);
     if (!st.isFile() || !st.size) return null;
-    fd = fs.openSync(file, "r");
     const len = Math.min(st.size, 4096);
-    const buf = Buffer.alloc(len);
-    fs.readSync(fd, buf, 0, len, st.size - len);
-    return parseDutyLogTail(buf.toString("utf8"), st.mtime.toISOString());
-  } catch { return null; } finally { if (fd !== null) fs.closeSync(fd); }
+    return parseDutyLogTail(utf8(fs.readBytesSync(file, st.size - len, len)), new Date(st.mtimeMs).toISOString());
+  } catch { return null; }
 }
 
 /** A duty's entry, or one synthesized from its log when the log's run end falls after the recorded run's window

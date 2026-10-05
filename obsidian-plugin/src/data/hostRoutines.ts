@@ -3,8 +3,8 @@
 // app's Automations, read through sqlite3) and `aos routines import-cloud` (the Claude Code cloud snapshot a
 // session fetched with RemoteTrigger). Pure parsing; only readHostRoutines touches the filesystem. The rows are
 // read-only in the tab: a Codex Automation is edited in the Codex app, a cloud routine at claude.ai/code/routines.
-import * as fs from "fs";
 import * as path from "path";
+import { fs } from "../host";
 
 export const HOST_ROUTINES_PATH = "brain/_index/routines-hosts.json";
 export const HOST_NAMES = ["codex", "claude"] as const;

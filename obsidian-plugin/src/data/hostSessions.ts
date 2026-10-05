@@ -1,7 +1,7 @@
 // hostSessions.ts — formatting for the per-workspace session counts the runtime's
 // collectors/hostSessions.js attaches to the snapshot (workspace hub spec D5). Pure, so node:test can load it.
-import * as os from "os";
 import type { HostSessionsOutside, WorkspaceSessions } from "./snapshot";
+import { env } from "../host";
 
 export function agoLabel(iso: string | null | undefined, now: number = Date.now()): string {
   if (!iso) return "never";
@@ -21,7 +21,7 @@ export function sessionsChip(s: WorkspaceSessions | undefined | null, now: numbe
   return parts.join(" · ");
 }
 
-export function shortenCwd(cwd: string, home: string = os.homedir()): string {
+export function shortenCwd(cwd: string, home: string = env.homedir()): string {
   if (home && (cwd === home || cwd.startsWith(home + "/"))) return "~" + cwd.slice(home.length);
   return cwd;
 }
@@ -29,7 +29,7 @@ export function shortenCwd(cwd: string, home: string = os.homedir()): string {
 export interface OutsideRow { cwd: string; label: string; chip: string }
 
 /** The footer rows: newest first (the runtime sorts), capped, with a ~-shortened path. */
-export function outsideRows(list: HostSessionsOutside[] | undefined | null, limit = 8, now: number = Date.now(), home: string = os.homedir()): OutsideRow[] {
+export function outsideRows(list: HostSessionsOutside[] | undefined | null, limit = 8, now: number = Date.now(), home: string = env.homedir()): OutsideRow[] {
   return (list ?? []).slice(0, limit).map((o) => ({
     cwd: o.cwd,
     label: shortenCwd(o.cwd, home),

@@ -1,7 +1,5 @@
 import { TAbstractFile } from "obsidian";
-import * as fs from "fs";
 import * as path from "path";
-import * as os from "os";
 import type AgenticOSPlugin from "../../main";
 import type { WorkbenchView } from "./WorkbenchView";
 import { loadSnapshot, Snapshot, SNAPSHOT_PATH } from "../data/snapshot";
@@ -19,6 +17,7 @@ import { TerminalPanel } from "../ui/TerminalPanel";
 import { COMMAND_REGISTRY, executeCommand } from "../data/commandRegistry";
 import { sweepLine } from "../data/maintenance";
 import { renderSystemDrawer } from "./SystemDrawer";
+import { env, fs } from "../host";
 
 /** True when <claude-config-dir>/projects/<any slug>/<sid>.jsonl exists — mirrors auto-cost.js findTranscript(). */
 function transcriptExists(sid: string, configDir: string): boolean {
@@ -119,7 +118,7 @@ export class PulseTab {
     try {
       const configDir = this.plugin.claudeConfigDir();
       const cfg = readAgenticosJson();
-      const codexHome = cfg?.hosts?.codex?.home || process.env.CODEX_HOME || path.join(os.homedir(), ".codex");
+      const codexHome = cfg?.hosts?.codex?.home || env.get("CODEX_HOME") || path.join(env.homedir(), ".codex");
       const seen = new Set<string>();
       let count = 0;
       for (const r of runs) {

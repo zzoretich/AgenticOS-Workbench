@@ -34,9 +34,8 @@ import { loadInventory } from "./src/data/inventory";
 import type { FixAction } from "./src/data/fixQueue";
 import { buildOmniItems } from "./src/data/omni";
 import { OmniModal } from "./src/ui/OmniModal";
-import { spawn } from "child_process";
-import * as fs from "fs";
 import * as path from "path";
+import { env, fs, spawn } from "./src/host";
 
 // How often to regenerate snapshot.json while Obsidian is open. The HUD nags
 // once the snapshot is >30 min old (see briefing.ts); 15 min keeps it ahead of
@@ -52,7 +51,7 @@ export default class AgenticOSPlugin extends Plugin {
   private statusBarEl: HTMLElement | null = null;
   private statusBarTimer: number | null = null;
   private statuslineRefreshing = false;
-  private runsWatcher: fs.FSWatcher | null = null;
+  private runsWatcher: { close(): void } | null = null;
   private runsBytesSeen: number = 0;
   private snapshotRefreshing: boolean = false;
 
@@ -75,8 +74,8 @@ export default class AgenticOSPlugin extends Plugin {
 
     // terminal pool — defaults resolved here
     const adapter = this.app.vault.adapter as unknown as { getBasePath?: () => string };
-    const vaultPath = adapter.getBasePath ? adapter.getBasePath() : process.cwd();
-    const defaultShell = this.settings.terminalShell || process.env.SHELL || (process.platform === "win32" ? "cmd.exe" : "/bin/zsh");
+    const vaultPath = adapter.getBasePath ? adapter.getBasePath() : env.cwd();
+    const defaultShell = this.settings.terminalShell || env.get("SHELL") || (env.platform() === "win32" ? "cmd.exe" : "/bin/zsh");
     const defaultCwd = this.settings.terminalCwd || vaultPath;
     // tell the terminal session loader where to find node_modules/node-pty
     const pluginPath = this.pluginDir();
@@ -212,7 +211,7 @@ export default class AgenticOSPlugin extends Plugin {
   vaultRoot(): string {
     if (this.settings.vaultRoot) return this.settings.vaultRoot;
     const adapter = this.app.vault.adapter as unknown as { getBasePath?: () => string };
-    return adapter.getBasePath ? adapter.getBasePath() : process.cwd();
+    return adapter.getBasePath ? adapter.getBasePath() : env.cwd();
   }
 
   /**
@@ -268,7 +267,7 @@ export default class AgenticOSPlugin extends Plugin {
   /** Absolute plugin folder (where node_modules/node-pty must live); Obsidian supplies manifest.dir. */
   pluginDir(): string {
     const adapter = this.app.vault.adapter as unknown as { getBasePath?: () => string };
-    const base = adapter.getBasePath ? adapter.getBasePath() : process.cwd();
+    const base = adapter.getBasePath ? adapter.getBasePath() : env.cwd();
     return path.join(base, this.manifest.dir ?? path.join(".obsidian", "plugins", this.manifest.id));
   }
 
@@ -296,7 +295,7 @@ export default class AgenticOSPlugin extends Plugin {
     }
   }
 
-  /** "Rebuild for this Electron": npx @electron/rebuild -v <process.versions.electron> … */
+  /** "Rebuild for this Electron": npx @electron/rebuild -v <the host's Electron version> … */
   async rebuildTerminalSupport(): Promise<void> {
     if (this.terminalWorkBusy) { new Notice("Terminal support: an install or rebuild is already running — wait for it to finish"); return; }
     const dir = this.pluginDir();
@@ -441,7 +440,7 @@ export default class AgenticOSPlugin extends Plugin {
       const abs = path.join(base, RUNS_PATH);
       if (!fs.existsSync(abs)) return;
       this.runsBytesSeen = fs.statSync(abs).size;
-      this.runsWatcher = fs.watch(abs, { persistent: false }, () => {
+      this.runsWatcher = fs.watch(abs, () => {
         try {
           const size = fs.statSync(abs).size;
           if (size > this.runsBytesSeen) {
@@ -523,7 +522,7 @@ export default class AgenticOSPlugin extends Plugin {
         return;
       }
       // opts.env: the Routines tab pins AOS_VAULT/AOS_CONFIG so the runtime resolves the same vault and config dir the HUD shows.
-      const child = spawn(this.nodeBin(), [script, ...args], { cwd: base, stdio: "ignore", detached: true, env: opts.env ? { ...process.env, ...opts.env } : process.env });
+      const child = spawn(this.nodeBin(), [script, ...args], { cwd: base, stdio: "ignore", detached: true, env: opts.env });
       child.unref();
       child.on("error", (e) => {
         console.warn("[agentic-os] runBrainScript failed:", e);

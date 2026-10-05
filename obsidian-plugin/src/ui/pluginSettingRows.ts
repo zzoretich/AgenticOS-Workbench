@@ -10,8 +10,7 @@ import { resultSummary, valueArg } from "../data/settingsModel";
 import type { SetResult } from "../data/settingsModel";
 import { pluginChoices, pluginStep, parseShells } from "../data/pluginChoices";
 import type { PluginChoiceEnv } from "../data/pluginChoices";
-import * as fs from "fs";
-import * as os from "os";
+import { env, fs } from "../host";
 
 function isDirectory(p: string): boolean {
   try { return fs.statSync(p).isDirectory(); } catch { return false; }
@@ -24,7 +23,7 @@ export interface PluginRowsHandle {
 
 function basePath(plugin: AgenticOSPlugin): string {
   const adapter = plugin.app.vault.adapter as unknown as { getBasePath?: () => string };
-  return adapter.getBasePath ? adapter.getBasePath() : process.cwd();
+  return adapter.getBasePath ? adapter.getBasePath() : env.cwd();
 }
 
 /** The machine facts the pickers offer (spec 2026-09-24-settings-pickers D7), read fresh on every render. */
@@ -34,9 +33,9 @@ function choiceEnv(plugin: AgenticOSPlugin): PluginChoiceEnv {
   try { shells = parseShells(fs.readFileSync("/etc/shells", "utf8")); } catch { /* no /etc/shells: system default only */ }
   return {
     vaultBase: basePath(plugin), agenticosVault: cfg?.vault ?? null,
-    envConfigDir: process.env.CLAUDE_CONFIG_DIR ?? null, agenticosConfigDir: cfg?.claudeConfigDir ?? null, defaultConfigDir: envClaudeConfigDir(),
-    home: os.homedir(), nodeCandidates: nodeCandidates({ homedir: () => os.homedir(), platform: process.platform, readdirSync: (p) => fs.readdirSync(p) }),
-    exists: (p) => { try { return fs.existsSync(p); } catch { return false; } }, shells, envShell: process.env.SHELL ?? null,
+    envConfigDir: env.get("CLAUDE_CONFIG_DIR") ?? null, agenticosConfigDir: cfg?.claudeConfigDir ?? null, defaultConfigDir: envClaudeConfigDir(),
+    home: env.homedir(), nodeCandidates: nodeCandidates({ homedir: () => env.homedir(), platform: env.platform() as NodeJS.Platform, readdirSync: (p) => fs.readdirSync(p) }),
+    exists: (p) => { try { return fs.existsSync(p); } catch { return false; } }, shells, envShell: env.get("SHELL") ?? null,
   };
 }
 
@@ -49,7 +48,7 @@ type Key = keyof AgenticOSSettings;
  * D9). `rerender` redraws the caller after a change that alters other rows.
  */
 export function renderPluginSettings(containerEl: HTMLElement, plugin: AgenticOSPlugin, rerender: () => void): PluginRowsHandle {
-  const env = choiceEnv(plugin);
+  const choices = choiceEnv(plugin);
   const save = async (key: Key, value: string | number, after?: () => void) => {
     (plugin.settings as unknown as Record<string, unknown>)[key] = value;
     await plugin.saveSettings();
@@ -60,7 +59,7 @@ export function renderPluginSettings(containerEl: HTMLElement, plugin: AgenticOS
   /** A picker for `key`, with − / + around it when the key is a number (D9). */
   const picker = (s: Setting, key: Key, onPick: (value: string | number) => void | Promise<void>) => {
     const current = plugin.settings[key] as string | number;
-    const opts = pluginChoices(key, current, env) ?? [];
+    const opts = pluginChoices(key, current, choices) ?? [];
     const step = (dir: -1 | 1) => (typeof current === "number" ? pluginStep(key, current, dir) : null);
     const stepper = (dir: -1 | 1) => s.addExtraButton((b) => {
       const next = step(dir);

@@ -7,8 +7,8 @@
 // so the old Mission Control view's handleSSE() (and any other subscriber) is source-agnostic.
 
 import type { Events } from "obsidian";
-import * as fs from "fs";
 import * as path from "path";
+import { fs, utf8 } from "../host";
 
 interface LiveHeader {
   id: string;
@@ -167,18 +167,12 @@ export class LiveRunsWatcher {
     const state = this.files.get(abs) ?? { cursor: 0, header: null };
     if (stat.size <= state.cursor) return;
 
-    let buf: Buffer;
-    try {
-      const fd = fs.openSync(abs, "r");
-      const len = stat.size - state.cursor;
-      buf = Buffer.alloc(len);
-      fs.readSync(fd, buf, 0, len, state.cursor);
-      fs.closeSync(fd);
-    } catch { return; }
+    let text: string;
+    try { text = utf8(fs.readBytesSync(abs, state.cursor, stat.size - state.cursor)); } catch { return; }
     state.cursor = stat.size;
     this.files.set(abs, state);
 
-    const lines = buf.toString("utf8").split("\n").filter((l) => l.trim());
+    const lines = text.split("\n").filter((l) => l.trim());
     for (const line of lines) {
       let obj: unknown;
       try { obj = JSON.parse(line); } catch { continue; }
@@ -203,17 +197,11 @@ export class LiveRunsWatcher {
     const stat = this.safeStat(this.summaryLog);
     if (stat.size <= this.summaryCursor) return;
 
-    let buf: Buffer;
-    try {
-      const fd = fs.openSync(this.summaryLog, "r");
-      const len = stat.size - this.summaryCursor;
-      buf = Buffer.alloc(len);
-      fs.readSync(fd, buf, 0, len, this.summaryCursor);
-      fs.closeSync(fd);
-    } catch { return; }
+    let text: string;
+    try { text = utf8(fs.readBytesSync(this.summaryLog, this.summaryCursor, stat.size - this.summaryCursor)); } catch { return; }
     this.summaryCursor = stat.size;
 
-    const lines = buf.toString("utf8").split("\n").filter((l) => l.trim());
+    const lines = text.split("\n").filter((l) => l.trim());
     for (const line of lines) {
       let summary: unknown;
       try { summary = JSON.parse(line); } catch { continue; }

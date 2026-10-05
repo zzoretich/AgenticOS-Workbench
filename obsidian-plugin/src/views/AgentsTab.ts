@@ -9,6 +9,7 @@ import {
   agentCounts, sourceLabel, statusChip, runCommand, asOf,
 } from "../data/agents";
 import { formatAgo } from "./RoutinesTab";
+import { shell } from "../host";
 
 const AOS_CLI = "brain/scripts/cli/aos.js";
 const HOST_LABEL: Record<SessionHost, string> = { claude: "Claude Code", codex: "Codex" };
@@ -88,7 +89,6 @@ export class AgentsTab {
   private open(file: string): void {
     try {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { shell } = require("electron");
       void shell.openPath(file).then((err: string) => { if (err) new Notice(`Cannot open ${file}: ${err}`); });
     } catch { new Notice(`Cannot open ${file}`); }
   }
