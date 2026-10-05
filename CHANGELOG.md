@@ -9,7 +9,7 @@ All notable changes to AgenticOS Workbench. Versions follow the tags. From the n
 - Open the AgenticOS Workbench app once, so `aos doctor` and the update check can see it. Once you use the app, you can remove the Obsidian-era plugin folder `.obsidian/plugins/agentic-os/` from your vault; `aos upgrade` says so once while it is there and never deletes it.
 
 ### Added
-- **The Workbench as a macOS app** (`app/`, in development for 1.0). The same HUD runs in its own Electron window instead of inside Obsidian, with a note editor, a menubar popover and the full test suite in CI. It is not released yet; Obsidian stays the way to run the HUD until 1.0 ships the app.
+- **The Workbench as a macOS app** (`app/`, in development for 1.0). The same HUD runs in its own Electron window instead of inside Obsidian, with a note editor, a menubar popover and the full test suite in CI. It is not released yet: until 1.0 ships it as a download, build it from app/ (app/README.md).
 - **A Files tab** in the Workbench: the vault as a tree, search across notes (or every text file), Open file… and Search vault…, and a new note, rename, move and delete to the Trash. In the app it is where you work with notes; in Obsidian it sits beside Obsidian's own file explorer.
 
 ### Changed
