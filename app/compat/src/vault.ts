@@ -93,6 +93,11 @@ export class DataAdapter {
     this.writable("rmdir", p);
     await fs.promises.rm(this.abs(p), { recursive, force: true });
   }
+  /** Moves a file or folder to the macOS Trash (Obsidian's `trash(file, true)`); the user can put it back from there. */
+  async trashSystem(p: string): Promise<void> {
+    this.writable("trash", p);
+    await (require("electron") as typeof import("electron")).shell.trashItem(this.abs(p));
+  }
   async rename(from: string, to: string): Promise<void> {
     this.writable("rename", from, to);
     await fs.promises.rename(this.abs(from), this.abs(to));
@@ -183,7 +188,11 @@ export class Vault extends Events {
   async append(file: TFile, data: string): Promise<void> { await this.adapter.append(file.path, data); }
   async process(file: TFile, fn: (data: string) => string): Promise<string> { return this.adapter.process(file.path, fn); }
   async delete(file: TAbstractFile): Promise<void> { await this.adapter.remove(file.path); }
-  async trash(file: TAbstractFile): Promise<void> { await this.adapter.remove(file.path); }
+  /** `system` true (what the HUD passes) moves it to the macOS Trash. false deletes it: Obsidian would use the vault's .trash folder, which the app does not keep. */
+  async trash(file: TAbstractFile, system = true): Promise<void> {
+    if (system) await this.adapter.trashSystem(file.path);
+    else await this.adapter.remove(file.path);
+  }
   async rename(file: TAbstractFile, to: string): Promise<void> { await this.adapter.rename(file.path, to); }
 
   // ── index and watcher ───────────────────────────────────────────────
