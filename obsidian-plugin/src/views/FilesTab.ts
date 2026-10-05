@@ -269,7 +269,7 @@ export class FilesTab {
   }
 
   newNote(folder: string): void {
-    this.form("NEW NOTE", [{ label: "folder", value: folder, list: ["", ...this.folders()] }, { label: "name", value: "" }], "create",
+    this.form("NEW NOTE", [{ label: "folder", value: folder, list: this.folders() }, { label: "name", value: "" }], "create",
       ([dir, name]) => newNotePath(dir, name, this.exists),
       async (path) => {
         const vault = this.plugin.app.vault;
@@ -290,7 +290,7 @@ export class FilesTab {
 
   private move(path: string): void {
     const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
-    this.form("MOVE", [{ label: `move ${path.split("/").pop()} to folder`, value: dir, list: ["", ...this.folders()] }], "move",
+    this.form("MOVE", [{ label: `move ${path.split("/").pop()} to folder`, value: dir, list: this.folders() }], "move",
       ([d]) => movePath(path, d, this.exists),
       async (to) => {
         const vault = this.plugin.app.vault;
