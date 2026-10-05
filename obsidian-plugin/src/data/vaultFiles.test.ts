@@ -1,0 +1,118 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import type { App } from "obsidian";
+import {
+  childEntries, cleanPath, isListed, isProtected, matchLines, movePath, newNotePath, quickOpenFiles, renamePath, searchVault, sortEntries,
+  SEARCH_MAX_MATCHES,
+} from "./vaultFiles";
+
+/** A vault index the way the HUD sees it: files with a path, an extension and a stat; folders with children. */
+function fakeApp(files: Record<string, string>): App & { reads: string[] } {
+  const reads: string[] = [];
+  const list = Object.entries(files).map(([path, text]) => ({
+    path, name: path.split("/").pop()!, extension: path.includes(".") ? path.slice(path.lastIndexOf(".") + 1) : "",
+    stat: { mtime: 1, size: Buffer.byteLength(text), ctime: 1 },
+  }));
+  const app = {
+    reads,
+    vault: {
+      getFiles: () => list,
+      cachedRead: async (f: { path: string }) => { reads.push(f.path); return files[f.path]; },
+    },
+  };
+  return app as unknown as App & { reads: string[] };
+}
+
+test("isListed skips graphify-out at any depth; isProtected covers the runtime's own folders", () => {
+  assert.equal(isListed("brain/memory/user/a.md"), true);
+  assert.equal(isListed("brain/graphify-out/cache/x.json"), false);
+  assert.equal(isListed("workspaces/app/graphify-out/graph.json"), false);
+  for (const p of ["brain/_index/BRAIN.md", "brain/scripts/statusline.js", ".obsidian/app.json", ".git/HEAD", "brain/_index"]) assert.equal(isProtected(p), true, p);
+  for (const p of ["brain/memory/user/a.md", "brain/indexer.md", "TODO.md", "brain/scripts-notes.md"]) assert.equal(isProtected(p), false, p);
+});
+
+test("sortEntries: folders first, then files, by name with numbers in order and case folded", () => {
+  const e = (name: string, folder = false) => ({ path: name, name, folder });
+  assert.deepEqual(sortEntries([e("b.md"), e("Zeta", true), e("a10.md"), e("alpha", true), e("a2.md"), e("B2.md")]).map((x) => x.name),
+    ["alpha", "Zeta", "a2.md", "a10.md", "b.md", "B2.md"]);
+});
+
+test("childEntries: folders by their children, listed entries only", () => {
+  const folder = { path: "brain/memory", name: "memory", children: [] };
+  const file = { path: "brain/notes.md", name: "notes.md", extension: "md" };
+  const skipped = { path: "brain/graphify-out", name: "graphify-out", children: [] };
+  assert.deepEqual(childEntries([file, folder, skipped] as never), [
+    { path: "brain/memory", name: "memory", folder: true },
+    { path: "brain/notes.md", name: "notes.md", folder: false },
+  ]);
+});
+
+test("quickOpenFiles: Markdown first, then other files, each by path; skipped folders left out", () => {
+  const app = fakeApp({ "z.md": "", "a.json": "", "b/c.md": "", "brain/graphify-out/g.md": "" });
+  assert.deepEqual(quickOpenFiles(app).map((f) => f.path), ["b/c.md", "z.md", "a.json"]);
+});
+
+test("matchLines: case folded, numbered from 1, the hit located, long lines clipped around it", () => {
+  assert.deepEqual(matchLines("one\nTwo tides\nthree tide", "TIDE"), [
+    { line: 2, text: "Two tides", start: 4, end: 8 },
+    { line: 3, text: "three tide", start: 6, end: 10 },
+  ]);
+  assert.deepEqual(matchLines("anything", "   "), []);
+  const long = `${"x".repeat(300)}needle${"y".repeat(300)}`;
+  const [m] = matchLines(long, "needle", 10, 40);
+  assert.ok(m.text.startsWith("…"));
+  assert.equal(m.text.slice(m.start, m.end), "needle");
+  assert.equal(matchLines("a\na\na", "a", 2).length, 2, "the limit holds");
+});
+
+test("searchVault: Markdown by default, every text type on request, contents cached by mtime", async () => {
+  const app = fakeApp({ "notes/tide.md": "High tide at noon", "data/tide.json": "{\"tide\": 1}", "img/tide.png": "tide", "x.md": "nothing" });
+  const md = await searchVault(app, "tide");
+  assert.deepEqual(md!.hits.map((h) => h.path), ["notes/tide.md"]);
+  assert.equal(md!.files, 2);
+  const all = await searchVault(app, "tide", { allText: true });
+  assert.deepEqual(all!.hits.map((h) => h.path).sort(), ["data/tide.json", "notes/tide.md"]);
+  // The second Markdown search reread nothing: the cache had both notes at the same mtime.
+  assert.equal(app.reads.filter((p) => p.endsWith(".md")).length, 2);
+  assert.deepEqual(await searchVault(app, ""), { hits: [], files: 0, matches: 0, truncated: false });
+  assert.equal(await searchVault(app, "tide", { isCancelled: () => true }), null);
+});
+
+test("searchVault stops at the match limit and says so", async () => {
+  const app = fakeApp({ "big.md": "hit\n".repeat(SEARCH_MAX_MATCHES + 50), "later.md": "hit" });
+  const r = await searchVault(app, "hit");
+  assert.equal(r!.matches, SEARCH_MAX_MATCHES);
+  assert.equal(r!.truncated, true);
+});
+
+test("cleanPath trims, normalises slashes and drops empty and . segments", () => {
+  assert.equal(cleanPath("  /notes//./a\\b.md/ "), "notes/a/b.md");
+  assert.equal(cleanPath(""), "");
+});
+
+test("newNotePath: .md added, folders kept, and every refusal says why", () => {
+  const exists = (p: string) => p === "notes/taken.md";
+  assert.deepEqual(newNotePath("notes", "Harbor plan", exists), { ok: true, path: "notes/Harbor plan.md" });
+  assert.deepEqual(newNotePath("", "inbox/idea", exists), { ok: true, path: "inbox/idea.md" });
+  assert.deepEqual(newNotePath("notes", "taken", exists), { ok: false, error: "notes/taken.md already exists" });
+  assert.deepEqual(newNotePath("notes", "data.json", exists), { ok: false, error: "a new note is a Markdown file (.md)" });
+  assert.deepEqual(newNotePath("notes", "", exists), { ok: false, error: "a name is required" });
+  assert.equal((newNotePath("notes", "../escape", exists) as { error: string }).error, "a path cannot climb out of the vault (..)");
+  assert.equal((newNotePath("", ".hidden", exists) as { error: string }).error, "names cannot start with a dot");
+  assert.equal((newNotePath("", "a:b", exists) as { error: string }).error, 'names cannot contain \\ : * ? " < > |');
+  assert.equal((newNotePath("brain/_index", "x", exists) as { error: string }).error, "brain/_index/ is written by AgenticOS itself");
+});
+
+test("renamePath keeps the folder and the extension; movePath keeps the name", () => {
+  const none = () => false;
+  assert.deepEqual(renamePath("notes/a.md", "b", none), { ok: true, path: "notes/b.md" });
+  assert.deepEqual(renamePath("a.png", "b.jpg", none), { ok: true, path: "b.jpg" });
+  assert.deepEqual(renamePath("notes/a.md", "a", none), { ok: false, error: "that is its name already" });
+  assert.deepEqual(renamePath("notes/a.md", "x/b", none), { ok: false, error: "a name cannot contain / (use Move to change the folder)" });
+  assert.deepEqual(renamePath("brain/_index/BRAIN.md", "x", none), { ok: false, error: "brain/_index/BRAIN.md is written by AgenticOS itself" });
+  assert.deepEqual(movePath("notes/a.md", "archive/2026", none), { ok: true, path: "archive/2026/a.md" });
+  assert.deepEqual(movePath("notes/a.md", "", none), { ok: true, path: "a.md" });
+  assert.deepEqual(movePath("notes/a.md", "notes/", none), { ok: false, error: "it is in that folder already" });
+  assert.deepEqual(movePath("notes/a.md", "brain/scripts", none), { ok: false, error: "brain/scripts/ is written by AgenticOS itself" });
+  assert.deepEqual(movePath("notes/a.md", "x", (p) => p === "x/a.md"), { ok: false, error: "x/a.md already exists" });
+});
