@@ -4,6 +4,13 @@ All notable changes to AgenticOS Workbench. Versions follow the tags. From the n
 
 ## [Unreleased]
 
+### Changed
+- The Workbench's settings no longer mention Obsidian: the plugin section is "WORKBENCH — THIS APP", and the status bar, sidebar, vault root and terminal settings speak of the app.
+
+### Removed
+- The Term tab's **Install terminal support** and **Rebuild for this Electron** buttons, left from the Obsidian plugin. In the app they could only appear when a terminal failed to start, and led nowhere: the app carries its terminal.
+- Two runtime scripts nothing ran: `graph-snapshot.js` (`aos graph status` prints the same) and `feedback-conflict-check.js` (the feedback-review skill checks for conflicts itself). A vault upgraded from an earlier release keeps its old copies, unused.
+
 ## [1.0.0] — 2026-10-06
 
 **AgenticOS no longer uses Obsidian: the Workbench is a macOS app, AgenticOS Workbench, attached to this release.** Coming from 0.x with the Workbench in Obsidian? The [migration guide](https://github.com/zzoretich/AgenticOS-Workbench/blob/main/docs/migrating-to-1.0.md) walks through it.
