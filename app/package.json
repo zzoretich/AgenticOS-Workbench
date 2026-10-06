@@ -13,7 +13,7 @@
     "build": "node scripts/build.mjs",
     "start": "node scripts/build.mjs && electron .",
     "check:compat": "node scripts/check-compat.mjs",
-    "spike:screens": "node scripts/build.mjs && node scripts/spike-screens.mjs",
+    "screens": "node scripts/build.mjs && AOS_E2E_FIXTURE=${AOS_E2E_FIXTURE:-/tmp/agenticos-demo} playwright test -c playwright.screens.config.ts",
     "typecheck": "tsc --noEmit -p .",
     "test:e2e": "node scripts/build.mjs && playwright test",
     "test:unit": "node scripts/test-unit.mjs",

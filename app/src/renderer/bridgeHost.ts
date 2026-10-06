@@ -124,7 +124,6 @@ export function createBridgeHost(aos: AosBridge, info: BootInfo): BridgeHost {
     writeFileSync: (p, data) => unwrapWrite(aos.fs.writeText(p, data, "hud"), `fs.writeFile ${p}`),
     appendFileSync: (p, data) => unwrapWrite(aos.fs.appendText(p, data), `fs.appendFile ${p}`),
     mkdirSync: (p, opts) => unwrapWrite(aos.fs.mkdir(p, !!opts?.recursive), `fs.mkdir ${p}`),
-    chmodSync: (p) => { throw refuse("write", `fs.chmod ${p}`); },
     watch: (p, listener) => {
       const rel = vaultRoot ? path.relative(path.resolve(vaultRoot), path.resolve(p)) : "";
       if (!vaultRoot || !rel || rel.startsWith("..")) throw refuse("read", `watch ${p}`);
@@ -166,7 +165,6 @@ export function createBridgeHost(aos: AosBridge, info: BootInfo): BridgeHost {
   let ptySub: (() => void) | null = null;
   const pty: HostPty = {
     loadError: () => { const r = aos.pty.available(); return r.ok ? null : r.error; },
-    setPluginDir: () => { /* the app brings its own node-pty, in main */ },
     spawn: (file, args, opts): HostPtyProcess => {
       ptySub ??= aos.pty.onEvent((ev: PtyEvent) => {
         const t = terminals.get(ev.id);
@@ -212,7 +210,6 @@ export function createBridgeHost(aos: AosBridge, info: BootInfo): BridgeHost {
       homedir: () => info.home,
       platform: () => info.platform,
       cwd: () => vaultRoot ?? info.home,
-      electron: () => info.electron,
     },
   };
   return { host, onVaultChanges };

@@ -1,4 +1,4 @@
-// To-Do with its write surface on (AOS_APP_WRITE=todo), the phase 2 rows of app-smoke: To-Do. Quick-add, tick and
+// To-Do with its write surface on (AOS_APP_WRITE=todo), the rows of app-smoke: To-Do. Quick-add, tick and
 // untick, edit, priority, due date and delete write TODO.md byte for byte as the HUD's model says; a missing TODO.md is
 // created from the template; the stale-write guard keeps two HUDs honest; every other surface stays refused.
 

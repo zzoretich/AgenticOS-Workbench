@@ -13,7 +13,7 @@
 import * as path from "path";
 
 export const DIFFERING_VAULT_NOTICE =
-  "Pulse/Runs/Memory/Spaces render this Obsidian vault; the Vault root governs spawns, the live-runs watcher, brain/config.json and provider-state.json.";
+  "Pulse/Runs/Memory/Spaces render the vault the app opened; the Vault root governs spawns, the live-runs watcher, brain/config.json and provider-state.json.";
 export const DIFFERING_VAULT_NOTICE_MS = 10000;
 
 export interface VaultRootInput {

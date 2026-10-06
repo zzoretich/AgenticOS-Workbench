@@ -1,4 +1,4 @@
-// Routines with its write surface on (AOS_APP_WRITE=routines), the phase 2 rows of app-smoke: Routines. The drawer's
+// Routines with its write surface on (AOS_APP_WRITE=routines), the rows of app-smoke: Routines. The drawer's
 // create, save and delete, the on/off link, "Write anyway" on a guarded duty, ▶ run now, and apply schedules. Each
 // write is compared byte for byte with what the HUD's own serializer (data/routines.ts) produces. After every write the
 // tab runs `aos routines sync` by itself: the tests follow it through the fixture's plist folder, the stubbed

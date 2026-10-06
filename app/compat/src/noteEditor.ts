@@ -235,7 +235,7 @@ export class NoteEditor {
   }
 
   /**
-   * The HUD's terminal focuses itself on every re-render (TerminalPanel, finding 11 in docs/phase-2.md). With a note
+   * The HUD's terminal focuses itself on every re-render (TerminalPanel). With a note
    * being edited beside a visible Term, that would send the keys meant for the note into a live shell. Focus that
    * moves from this editor into a terminal goes back to the editor, unless the user moved it: a click in that
    * terminal, or a ⌘/Ctrl shortcut the editor did not handle itself (⌘9 opening the Term tab, say) just before.

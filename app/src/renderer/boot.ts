@@ -15,12 +15,12 @@ import { attachUi } from "./setup/attach";
 import { runSetup } from "./setup/wizard";
 import { openPopover } from "./popover";
 import { CommandPalette } from "./palette";
-import * as path from "./shims/path";
 
 /**
  * The HUD as a plugin, the manifest Obsidian read from its plugin folder. The id keys the HUD's settings
  * (<userData>/plugins/agentic-os.json, first copied from an Obsidian-era <vault>/.obsidian/plugins/agentic-os/data.json),
- * its command ids and its CSS class, so it never changes; the name is its tab in the settings window.
+ * its command ids and its CSS class, so it never changes; the name is its tab in the settings window. No `dir`: the HUD
+ * keeps no files of its own beside its settings, which main stores.
  */
 const HUD: PluginManifest = { id: "agentic-os", name: "Agentic OS", version: hudVersion };
 
@@ -74,10 +74,7 @@ async function boot(): Promise<void> {
   });
   setMarkdownHost(app);
 
-  // The HUD keeps its own files (Obsidian's plugin folder) under <vault>/<manifest.dir>: the app's data folder instead.
-  const pluginDir = path.join(info.userData, "plugins", HUD.id);
-  const manifest: PluginManifest = { ...HUD, dir: path.relative(info.vaultRoot, pluginDir) };
-  const plugin = new AgenticOSPlugin(app, manifest);
+  const plugin = new AgenticOSPlugin(app, HUD);
   await plugin.load();
   app.workspace.markLayoutReady();
 
@@ -86,7 +83,7 @@ async function boot(): Promise<void> {
   // Workbench's Settings tab.
   app.setting.addSettingTab(new AppSettingTab(app, {
     vaultRoot: info.vaultRoot, vaultSource: info.vaultSource, userData: info.userData, appVersion: info.appVersion,
-    hudVersion: manifest.version, electron: info.electron, policy: () => policy, writeSource: () => info.writeSource, aos,
+    hudVersion: HUD.version, electron: info.electron, policy: () => policy, writeSource: () => info.writeSource, aos,
   }));
   const openSettings = (): void => { if (!app.setting.isOpen) app.setting.open(); };
   app.commands.add({ id: HOST_COMMANDS.settings, name: "Open app settings", callback: openSettings });
@@ -152,7 +149,7 @@ async function boot(): Promise<void> {
 
   // A handle for the Playwright suites and for poking at the host from DevTools.
   (window as unknown as { aosHost: unknown }).aosHost = { app, plugin, info, guard: guardState(), runCommand, routeLink };
-  console.info(`[host] AgenticOS HUD ${manifest.version} loaded on Electron ${info.electron}; writes ${policy.ids.join(",") || "none"} (${info.writeSource}); main watcher ${info.mainWatcher}`);
+  console.info(`[host] AgenticOS HUD ${HUD.version} loaded on Electron ${info.electron}; writes ${policy.ids.join(",") || "none"} (${info.writeSource}); main watcher ${info.mainWatcher}`);
 }
 
 boot().catch((err: unknown) => {

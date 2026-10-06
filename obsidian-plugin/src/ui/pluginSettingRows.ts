@@ -79,7 +79,7 @@ export function renderPluginSettings(containerEl: HTMLElement, plugin: AgenticOS
 
   new Setting(containerEl)
     .setName("Status bar enabled")
-    .setDesc("Show live agent/run telemetry in the Obsidian status bar. Consumed by Plugin.rebuildStatusBar(), which reruns immediately when this changes.")
+    .setDesc("Show live agent/run telemetry in the status bar. Consumed by Plugin.rebuildStatusBar(), which reruns immediately when this changes.")
     .addToggle((t) =>
       t.setValue(plugin.settings.statusBarEnabled).onChange(async (v) => {
         plugin.settings.statusBarEnabled = v;
@@ -90,7 +90,7 @@ export function renderPluginSettings(containerEl: HTMLElement, plugin: AgenticOS
 
   new Setting(containerEl)
     .setName("Auto-open sidebar on start")
-    .setDesc("Open the compact HUD in the right sidebar whenever Obsidian launches. Checked once in Plugin.onload() on workspace layout-ready — takes effect on the next restart, not immediately.")
+    .setDesc("Open the compact HUD in the right sidebar whenever the app starts. Checked once in Plugin.onload() on workspace layout-ready — takes effect on the next restart, not immediately.")
     .addToggle((t) =>
       t.setValue(plugin.settings.autoOpenSidebarOnStart).onChange(async (v) => {
         plugin.settings.autoOpenSidebarOnStart = v;
@@ -107,7 +107,7 @@ export function renderPluginSettings(containerEl: HTMLElement, plugin: AgenticOS
 
   picker(new Setting(containerEl)
     .setName("Vault root")
-    .setDesc("The vault used for spawns, the live-runs watcher and orphan sweep, brain/config.json, provider-state.json and persona/IDENTITY.md. Pulse/Runs/Memory/Spaces and the status bar always render this Obsidian vault, regardless of this setting. Consumed by Plugin.vaultRoot() on every read/spawn, from the moment it is picked."),
+    .setDesc("The vault used for spawns, the live-runs watcher and orphan sweep, brain/config.json, provider-state.json and persona/IDENTITY.md. Pulse/Runs/Memory/Spaces and the status bar always render the vault the app opened, regardless of this setting. Consumed by Plugin.vaultRoot() on every read/spawn, from the moment it is picked."),
   "vaultRoot", async (v) => {
     // decideVaultRoot still vets the pick (a vault that has since moved is refused, a different vault explains itself).
     const d = decideVaultRoot({ typed: String(v), saved: plugin.settings.vaultRoot, basePath: basePath(plugin), isDirectory });
@@ -156,12 +156,12 @@ export function renderPluginSettings(containerEl: HTMLElement, plugin: AgenticOS
 
   picker(new Setting(containerEl)
     .setName("Shell")
-    .setDesc("Default shell for new terminal sessions; system default is $SHELL. Read once by Plugin.onload() to build the shared TerminalPool — applies after an Obsidian restart or plugin reload."),
+    .setDesc("Default shell for new terminal sessions; system default is $SHELL. Read once by Plugin.onload() to build the shared TerminalPool — applies after the app restarts."),
   "terminalShell", (v) => save("terminalShell", v));
 
   picker(new Setting(containerEl)
     .setName("Working directory")
-    .setDesc("Default working directory for new terminal sessions. Read once by Plugin.onload() to build the shared TerminalPool — applies after an Obsidian restart or plugin reload."),
+    .setDesc("Default working directory for new terminal sessions. Read once by Plugin.onload() to build the shared TerminalPool — applies after the app restarts."),
   "terminalCwd", (v) => save("terminalCwd", v));
 
   picker(new Setting(containerEl)

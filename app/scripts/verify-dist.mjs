@@ -1,4 +1,4 @@
-// Phase 3's exit criterion for a build (PLAN.md §7): the app and the DMG in dist/ are signed with a Developer ID under
+// `npm run dist:verify`, what a release build must be: the app and the DMG in dist/ are signed with a Developer ID under
 // the hardened runtime, notarized and stapled, carry exactly the entitlements and fuses electron-builder.yml asks for,
 // and ship nothing they should not (source maps, other platforms' prebuilds, a home folder's path). Phase 4: the release
 // refuses to start with a debugging switch, so nothing can drive it from outside (src/main/policy/debug.ts). Phase 5: the

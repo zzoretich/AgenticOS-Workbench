@@ -1,6 +1,6 @@
 # Install
 
-AgenticOS Workbench runs on **macOS** with Node 20+, Claude Code and/or Codex CLI (logged in), Ollama, python3 3.9+, and uv. All five are checked before `aos init` writes anything. The Workbench itself is the **AgenticOS Workbench** app, a macOS app for Apple silicon that reads the vault the installer records; Obsidian is not needed (the vault stays plain Markdown, so any editor still opens it). Coming from a release before 1.0, where the Workbench ran in Obsidian? See [migrating-to-1.0.md](migrating-to-1.0.md). The runtime's Linux code (cron schedules) is still there but untested and unsupported; Windows is not supported.
+AgenticOS Workbench runs on **macOS** with Node 20+, Claude Code and/or Codex CLI (logged in), Ollama, python3 3.9+, and uv. All five are checked before `aos init` writes anything. The Workbench itself is the **AgenticOS Workbench** app, a macOS app for Apple silicon (macOS 13 or later) that reads the vault the installer records; Obsidian is not needed (the vault stays plain Markdown, so any editor still opens it). Coming from a release before 1.0, where the Workbench ran in Obsidian? See [migrating-to-1.0.md](migrating-to-1.0.md). The runtime's Linux code (cron schedules) is still there but untested and unsupported; Windows is not supported.
 
 ## From the app
 

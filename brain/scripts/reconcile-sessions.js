@@ -17,7 +17,7 @@
  * reconcile opens a new header, closed later as its own segment (segment 2, run id sess-<id>-s2).
  * auto-wrap's per-session offset (lib/wrap-offsets.js) keeps any later wrap of it to the new part;
  * auto-cost costs the whole session each time it runs (spec 2026-09-24-no-duplicate-sessions D5).
- * The Obsidian plugin runs this script on load instead of a sweep of its own. At most one sweep per 5 minutes
+ * The Workbench runs this script on load instead of a sweep of its own. At most one sweep per 5 minutes
  * (an mtime stamp, brain/_index/agent-runs/.reconcile); --force ignores the stamp, --dry-run lists
  * what would be reconciled and changes nothing. Exits 0 with empty stdout on every failure path.
  */

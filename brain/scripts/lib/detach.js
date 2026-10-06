@@ -8,7 +8,7 @@
  *   … real work runs here (inline, or in the child with AOS_DETACHED=1) …
  *
  * Hook detection (lib/host.js isHookInvocation): Claude Code exports CLAUDE_PROJECT_DIR only
- * to hook commands (not to the Bash tool, not to Obsidian-plugin spawns), and the Codex hook
+ * to hook commands (not to the Bash tool, not to the Workbench's spawns), and the Codex hook
  * entries set AOS_HOST explicitly, so manual and plugin runs stay inline and print their
  * output. Installers/tests that must run a hook script inline from a hook-like environment
  * set AOS_DETACHED=1.

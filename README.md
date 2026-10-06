@@ -53,9 +53,14 @@ It works with **Claude Code alone**, with **Codex CLI alone**, or with both shar
 <a name="quick-start"></a>
 ## <img src="docs/assets/icon-quickstart.svg" width="36" align="top" alt="" /> Quick start
 
-1. Download **AgenticOS Workbench** from the [latest release](https://github.com/zzoretich/AgenticOS-Workbench/releases/latest) (`AgenticOS-Workbench-<version>-arm64.dmg`, for Macs with Apple silicon), open it and drag the app to Applications.
+1. Download **AgenticOS Workbench** from the [latest release](https://github.com/zzoretich/AgenticOS-Workbench/releases/latest) (`AgenticOS-Workbench-<version>-arm64.dmg`, for Macs with Apple silicon on macOS 13 or later), open it and drag the app to Applications.
 2. Open the app. Its setup wizard checks what AgenticOS needs and fixes what is missing, asks which hosts and which vault folder, asks your Chief of Staff's questions, installs, and opens the Workbench. No terminal needed.
 3. Start a `claude` or `codex` session: the first prompt already carries your brain context.
+
+<p align="center">
+  <img src="docs/assets/screens/wizard.png" width="720" alt="The setup wizard's checks: each prerequisite with a check mark, and a fix button for a missing one" />
+  <br /><sub><b>The setup wizard.</b> Each prerequisite is checked, and a missing one gets a button that fixes it (here: install uv, log in to Codex).</sub>
+</p>
 
 Prefer a terminal? The same install runs from a clone:
 
@@ -73,7 +78,7 @@ Then add the one line the installer prints to `~/.claude/CLAUDE.md` (Claude Code
 
 | | Required? | What the app's wizard and the installer check |
 |---|---|---|
-| **macOS** | required | AgenticOS supports macOS only: the Workbench is a macOS app, built for Apple silicon, and schedules run through launchd. The runtime's Linux code paths (cron) are still there, but untested and unsupported; Windows is not supported. |
+| **macOS** | required | AgenticOS supports macOS only: the Workbench is a macOS app, built for Apple silicon and macOS 13 or later, and schedules run through launchd. The runtime's Linux code paths (cron) are still there, but untested and unsupported; Windows is not supported. |
 | **Node.js 20 or newer** | required | `node -v` prints `v20` or later. CI runs on 20 and 22. |
 | **git** | required | On macOS it arrives with the Command Line Tools; accept the install dialog if one appears. |
 | **Claude Code and/or Codex CLI, logged in** | one required | `claude auth status` reports a login, or `codex login status` does (or both). `aos init` wires every host it finds; `--host claude\|codex\|both` picks. Background work runs through the same CLI, so there is nothing else to configure. |
@@ -175,33 +180,60 @@ Open the **AgenticOS Workbench** app ([download](https://github.com/zzoretich/Ag
 <a name="screenshots"></a>
 ## <img src="docs/assets/icon-screens.svg" width="36" align="top" alt="" /> Screenshots
 
-The HUD on a demo vault: a user called Casey, an agent called Atlas, two workspaces, a handful of memories, and a local Ollama as the provider.
+The AgenticOS Workbench app on a demo vault. Everything in these pictures is made up: an agent called Nimbus, two workspaces, a small agent team, a few memories, to-dos and notifications. `npm run screens` in `app/` takes them again.
 
 <p align="center">
-  <img src="docs/assets/screens/pulse.png" width="960" alt="Pulse: eight pipeline LEDs, the command deck, the agent's latest flag, cost and health, the fix queue, and the memories promoted this week" />
-  <br /><sub><b>Pulse.</b> Eight pipeline LEDs, the command deck, Atlas's latest flag, month-to-date cost, the fix queue, and what got promoted to memory this week.</sub>
+  <img src="docs/assets/screens/pulse.png" width="960" alt="Pulse: the pipeline LEDs, the command deck, the agent's latest note, cost and health, the fix queue, recent memories and a terminal" />
+  <br /><sub><b>Pulse.</b> The pipeline LEDs, the command deck, your agent's latest note, month-to-date cost and health, the fix queue, what got promoted to memory, and a terminal.</sub>
 </p>
 
 <table>
   <tr>
     <td width="50%" valign="top">
-      <img src="docs/assets/screens/spaces.png" width="100%" alt="Spaces: the vault's workspaces with status, objectives, key documents and a generated insight" />
-      <br /><sub><b>Spaces.</b> Every workspace in the vault with its status, objectives, key documents and a generated insight.</sub>
+      <img src="docs/assets/screens/files.png" width="100%" alt="Files: the vault as a tree, with search across notes" />
+      <br /><sub><b>Files.</b> The vault as a tree, search across every note, Open file… (⌘O), and new, rename, move and delete to the Trash.</sub>
     </td>
     <td width="50%" valign="top">
-      <img src="docs/assets/screens/memory.png" width="100%" alt="Memory: every memory by type and date, with review badges" />
-      <br /><sub><b>Memory.</b> Every memory by type and date, searchable, with review badges for what the wrap wrote on its own.</sub>
+      <img src="docs/assets/screens/todo.png" width="100%" alt="To-Do: TODO.md grouped into overdue, today, upcoming and someday" />
+      <br /><sub><b>To-Do.</b> Your <code>TODO.md</code> in Tasks syntax, grouped by due date, with quick-add, tags and priorities.</sub>
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <img src="docs/assets/screens/runs.png" width="100%" alt="Runs: every Claude Code session with duration, cost and age" />
-      <br /><sub><b>Runs.</b> Every Claude Code session, with duration, cost and age; click one for its tool timeline.</sub>
+      <img src="docs/assets/screens/agent-teams.png" width="100%" alt="Agent Teams: gates waiting on you, then a team's work board" />
+      <br /><sub><b>Agent Teams.</b> The gates waiting on you, with the lead's case and a budget, then each team's board, roster and channel.</sub>
     </td>
     <td width="50%" valign="top">
-      <img src="docs/assets/screens/chat.png" width="100%" alt="Chat: ask the brain a question and get an answer from your own notes" />
-      <br /><sub><b>Chat.</b> Ask the brain a question; it answers from your own notes through whichever provider is live.</sub>
+      <img src="docs/assets/screens/notifications.png" width="100%" alt="Notifications: an edition from an agent, with its sections and buttons" />
+      <br /><sub><b>Notifications.</b> What agents, routines and duties post: editions, alerts and breaking news, with ask buttons per section.</sub>
     </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/assets/screens/proposals.png" width="100%" alt="Proposals: pending proposals, the backlog and the decision history" />
+      <br /><sub><b>Proposals.</b> Your Chief of Staff's pending proposals, the backlog and every decision, with approval rates.</sub>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/assets/screens/routines.png" width="100%" alt="Routines: every routine with its cadence, next fire, last run and health" />
+      <br /><sub><b>Routines.</b> Every routine file with its cadence, next fire, last run and health, plus the schedules your hosts own.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/assets/screens/skills.png" width="100%" alt="Skills: every Claude Code and Codex skill, runnable on either host" />
+      <br /><sub><b>Skills.</b> Every Claude Code and Codex skill, yours and your plugins', with what is shared between the hosts.</sub>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/assets/screens/settings.png" width="100%" alt="Settings: every setting of the system as toggles and pickers" />
+      <br /><sub><b>Settings.</b> The whole system in one panel: master switches, models, spend caps, all toggles and pickers.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/assets/screens/spaces.png" width="100%" alt="Spaces: the vault's workspaces with summary, key documents and next step" />
+      <br /><sub><b>Spaces.</b> Every workspace in the vault with its summary, key documents and what is next, and the sessions that ran there.</sub>
+    </td>
+    <td width="50%" valign="top"></td>
   </tr>
 </table>
 
@@ -512,6 +544,7 @@ sh cli/rehearsal/first-run.sh              # a complete install in a temp HOME w
 sh cli/rehearsal/codex-host.sh             # a Codex-only machine: direct wiring, then the upgrade to the Codex plugin; hooks and MCP run for real
 npm run build:codex-plugin                 # regenerate codex-plugin/ after changing plugin/ (the tests fail until you do)
 (cd app && npm ci && npm run test:e2e)     # the app: see app/README.md (macOS)
+(cd app && npm run screens)                # retake the README screenshots on a demo vault
 node tools/brand-assets.js                 # regenerate the brand assets under docs/assets
 ```
 
@@ -525,6 +558,8 @@ aos uninstall --keep-vault     # remove both plugins (or the direct Codex wiring
 aos uninstall                  # additionally delete the vault, after you type its path back
 aos uninstall --host codex     # unwire only the Codex host (its plugin and marketplace, or the direct wiring); keep everything else
 ```
+
+To remove the app too, quit it and drag **AgenticOS Workbench** from Applications to the Trash; its own settings are in `~/Library/Application Support/AgenticOS Workbench`.
 
 `~/.claude` and `~/.codex` are left exactly as they were (a `hooks.json` that held only our entries is removed; one with your own entries keeps them). The vault is never deleted when it is your home directory or a Claude config directory.
 

@@ -131,7 +131,7 @@ test('a non-empty seam that points at a missing path counts as absent (D3)', () 
 // and --terminal are still accepted (a script written for an older release keeps working) and do nothing.
 test('init needs no Obsidian, installs no HUD into the vault, and accepts --no-obsidian and --terminal as no-ops', () => {
   const sb = sandbox();
-  const r = aos(sb, ['init', '--vault', sb.vault, '--no-obsidian', '--terminal', '--provider', 'none', '--yes'], { AOS_OBSIDIAN_APP: '' });
+  const r = aos(sb, ['init', '--vault', sb.vault, '--no-obsidian', '--terminal', '--provider', 'none', '--yes']);
   assert.equal(r.status, 0, r.stderr + r.stdout);
   assert.match(r.stdout, /^preflight: ollama .* · python3 \d+\.\d+ · uv /m);
   assert.doesNotMatch(r.stdout, /preflight: obsidian|Obsidian plugin bundle|Community plugins/);

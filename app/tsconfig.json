@@ -30,7 +30,9 @@
     "src/**/*.ts",
     "compat/src/**/*.ts",
     "tests/unit/**/*.ts",
-    "tests/e2e/**/*.ts"
+    "tests/e2e/**/*.ts",
+    "tests/screens/**/*.ts",
+    "playwright.screens.config.ts"
   ],
   "exclude": [
     "node_modules",

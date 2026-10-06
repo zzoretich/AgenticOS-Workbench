@@ -1,4 +1,4 @@
-// The tray popover: the SidebarHUD, in a small window main shows under the menubar icon (PLAN.md D5). It is not a
+// The tray popover: the SidebarHUD, in a small window main shows under the menubar icon. It is not a
 // second HUD. This renderer opens the window (window.open, same origin, the one main allows) and mounts the plugin's
 // own SidebarHUD view in it, so the view runs on the one plugin instance, as Obsidian's pop-out windows do. Elements
 // are created by this document and adopted into the popover's, so they keep the Obsidian DOM helpers the HUD uses.

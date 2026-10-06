@@ -13,8 +13,8 @@
  *
  * The session_id is the run key — the live ndjson file's existence is the state,
  * so no separate state store is needed. Runs that never get a SessionEnd are finished
- * by reconcile-sessions.js (SessionStart and Stop of both hosts, and the Obsidian
- * plugin on load). Best-effort throughout: never throws, never blocks the session.
+ * by reconcile-sessions.js (SessionStart and Stop of both hosts, and the Workbench
+ * on load). Best-effort throughout: never throws, never blocks the session.
  *
  * Redaction (tool name + input length only) is ON by default: config telemetry.redact
  * (default true) or BRAIN_AGENT_REDACT=1. telemetry.enabled=false → the hook writes nothing.

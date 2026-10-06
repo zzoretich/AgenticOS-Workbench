@@ -308,7 +308,7 @@ function writeSessionSections(extraction) {
  */
 function writePendingDraftsSection(count) {
   const body = count > 0
-    ? `- ${count} draft feedback rule${count === 1 ? '' : 's'} pending review — say "review feedback drafts" to batch-approve (feedback-autoloop skill).`
+    ? `- ${count} draft feedback rule${count === 1 ? '' : 's'} pending review — say "review feedback drafts" to batch-approve (the feedback-review skill).`
     : '';
   updateSession((content) => (content == null ? null : upsertSection(content, '## Pending Feedback Drafts', body)));
 }

@@ -9,7 +9,6 @@ import type { RunsTab } from "./src/views/RunsTab";
 import type { FilesTab } from "./src/views/FilesTab";
 import { QuickOpenModal } from "./src/ui/QuickOpenModal";
 import { TerminalPool } from "./src/data/terminalPool";
-import { setPluginDir as setTerminalPluginDir } from "./src/data/terminalSession";
 import { AgenticOSSettings, AgenticOSSettingTab, DEFAULT_SETTINGS } from "./src/settings";
 import { loadSnapshot, SNAPSHOT_PATH } from "./src/data/snapshot";
 import { loadRuns, RUNS_PATH, touchesRuns, formatRelative } from "./src/data/runs";
@@ -22,7 +21,6 @@ import { COMMAND_REGISTRY, executeCommand, setSpawnContext } from "./src/data/co
 import { resolveNodeBinary } from "./src/data/nodeResolver";
 import { readAgenticosJson, readVaultConfig, readProviderState, claudeConfigDir as defaultClaudeConfigDir } from "./src/data/aosConfig";
 import { resolveClaudeBin } from "./src/data/claudeAsk";
-import { installTerminalSupport, rebuildPty, electronVersion, hasBundle, NO_PACKAGE_JSON } from "./src/data/terminalInstall";
 import { DEAD_SETTINGS_KEYS } from "./src/settingsDefaults";
 import { runAos, runAosJson } from "./src/data/aosRun";
 import type { AosResult, AosJsonResult } from "./src/data/aosRun";
@@ -59,7 +57,6 @@ export default class AgenticOSPlugin extends Plugin {
   liveRuns: LiveRunsWatcher | null = null;
   bus: Events = new Events();    // intra-plugin event bus for live-run fan-out
   terminalPool!: TerminalPool;
-  private terminalWorkBusy = false;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -77,9 +74,6 @@ export default class AgenticOSPlugin extends Plugin {
     const vaultPath = adapter.getBasePath ? adapter.getBasePath() : env.cwd();
     const defaultShell = this.settings.terminalShell || env.get("SHELL") || (env.platform() === "win32" ? "cmd.exe" : "/bin/zsh");
     const defaultCwd = this.settings.terminalCwd || vaultPath;
-    // tell the terminal session loader where to find node_modules/node-pty
-    const pluginPath = this.pluginDir();
-    setTerminalPluginDir(pluginPath);
     this.terminalPool = new TerminalPool({ shell: defaultShell, cwd: defaultCwd });
 
     // views
@@ -262,60 +256,6 @@ export default class AgenticOSPlugin extends Plugin {
   claudeBin(): string {
     const configDir = this.claudeConfigDir();
     return resolveClaudeBin(this.vaultRoot(), { readAgenticosJson: () => readAgenticosJson(configDir) });
-  }
-
-  /** Absolute plugin folder (where node_modules/node-pty must live); Obsidian supplies manifest.dir. */
-  pluginDir(): string {
-    const adapter = this.app.vault.adapter as unknown as { getBasePath?: () => string };
-    const base = adapter.getBasePath ? adapter.getBasePath() : env.cwd();
-    return path.join(base, this.manifest.dir ?? path.join(".obsidian", "plugins", this.manifest.id));
-  }
-
-  /** "Install terminal support": npm install --omit=dev in the plugin dir + chmod of node-pty's prebuilt spawn-helper. */
-  async installTerminalSupport(): Promise<void> {
-    if (this.terminalWorkBusy) { new Notice("Terminal support: an install or rebuild is already running — wait for it to finish"); return; }
-    const dir = this.pluginDir();
-    // A release-asset / BRAT install has only main.js, manifest.json and styles.css; `npm
-    // install` there would exit 0 having done nothing. `aos init` / `aos upgrade` also write
-    // package.json, which is the precondition cli/aos.js:550 checks (Ruling A13).
-    if (!hasBundle(dir)) {
-      new Notice(`Terminal support needs the aos bundle: ${NO_PACKAGE_JSON}`, 10000);
-      return;
-    }
-    this.terminalWorkBusy = true;
-    try {
-      new Notice("Installing terminal support (npm install --omit=dev)…");
-      const r = await installTerminalSupport({ pluginDir: dir, nodeBin: this.nodeBin() });
-      console.log("[agentic-os] terminal install:", r.output.slice(-2000));
-      new Notice(r.ok
-        ? `Terminal support installed (${r.chmodded.length} spawn-helper(s) made executable). Reload Obsidian to enable the Term tab.`
-        : `Terminal install failed (exit ${r.code}): ${r.output.trim().split("\n").pop() ?? ""} — see the console`, 8000);
-    } finally {
-      this.terminalWorkBusy = false;
-    }
-  }
-
-  /** "Rebuild for this Electron": npx @electron/rebuild -v <the host's Electron version> … */
-  async rebuildTerminalSupport(): Promise<void> {
-    if (this.terminalWorkBusy) { new Notice("Terminal support: an install or rebuild is already running — wait for it to finish"); return; }
-    const dir = this.pluginDir();
-    // Same precondition as installTerminalSupport(): a release-asset / BRAT install has only
-    // main.js, manifest.json and styles.css, so @electron/rebuild would have nothing to rebuild.
-    if (!hasBundle(dir)) {
-      new Notice(`Terminal support needs the aos bundle: ${NO_PACKAGE_JSON}`, 10000);
-      return;
-    }
-    const electron = electronVersion();
-    if (!electron) { new Notice("Electron version unavailable — run `npx @electron/rebuild -v <version> -m . -w node-pty` in the plugin folder"); return; }
-    this.terminalWorkBusy = true;
-    try {
-      new Notice(`Rebuilding node-pty for Electron ${electron}…`);
-      const r = await rebuildPty({ pluginDir: dir, nodeBin: this.nodeBin(), electron });
-      console.log("[agentic-os] rebuild-pty:", r.output.slice(-2000));
-      new Notice(r.ok ? "node-pty rebuilt. Reload Obsidian to enable the Term tab." : `Rebuild failed (exit ${r.code}) — see the console`, 8000);
-    } finally {
-      this.terminalWorkBusy = false;
-    }
   }
 
   // ── activate any view by type ────────────────────────────────────────

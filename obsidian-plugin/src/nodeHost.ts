@@ -1,10 +1,9 @@
-// nodeHost.ts — the HudHost over Node (host.ts): what the HUD has in Obsidian, whose renderer has Node, and under
-// node:test. The only HUD file that imports Node's I/O modules, node-pty or electron. The AgenticOS Workbench app never
-// loads it: its build answers this module with one that refuses, and installs its own host first.
+// nodeHost.ts — the HudHost over plain Node (host.ts): the default under node:test. The only HUD file that imports
+// Node's I/O modules or node-pty. The AgenticOS Workbench app never loads it: its build answers this module with one
+// that refuses, and installs its own host first.
 import * as childProcess from "child_process";
 import * as nodeFs from "fs";
 import * as os from "os";
-import * as path from "path";
 import type { HostChild, HostFs, HostPty, HostPtyProcess, HostSpawnOptions, HudHost } from "./host";
 
 function readBytesSync(p: string, position: number, length: number): Uint8Array {
@@ -28,7 +27,6 @@ const hostFs: HostFs = {
   writeFileSync: (p, data) => nodeFs.writeFileSync(p, data),
   appendFileSync: (p, data) => nodeFs.appendFileSync(p, data),
   mkdirSync: (p, opts) => { nodeFs.mkdirSync(p, opts); },
-  chmodSync: (p, mode) => nodeFs.chmodSync(p, mode),
   watch: (p, listener) => {
     const w = nodeFs.watch(p, { persistent: false }, () => listener());
     w.on("error", () => { /* the file went; the caller re-reads on its next event */ });
@@ -69,47 +67,23 @@ type PtyLib = { spawn: (file: string, args: string[], options: Record<string, un
 
 let ptyLib: PtyLib | null = null;
 let ptyLoadError: string | null = null;
-// Obsidian's renderer require() cannot resolve "node-pty" by bare name and __dirname is not reliable there: main.ts
-// names the plugin folder, where "Install terminal support" puts it.
-let pluginDir: string | null = null;
 
 function loadPty(): PtyLib {
   if (ptyLib) return ptyLib;
   if (ptyLoadError) throw new Error(`node-pty failed to load: ${ptyLoadError}`);
-  const candidates: string[] = [];
-  if (pluginDir) {
-    candidates.push(path.join(pluginDir, "node_modules", "node-pty"));
-    candidates.push(path.join(pluginDir, "node_modules", "node-pty", "lib", "index.js"));
+  try {
+    ptyLib = require("node-pty") as PtyLib;
+    return ptyLib;
+  } catch (e) {
+    ptyLoadError = e instanceof Error ? e.message.split("\n")[0] : String(e);
+    throw new Error(`node-pty failed to load: ${ptyLoadError}`);
   }
-  // last-ditch: bare name in case Electron's resolver finds it
-  candidates.push("node-pty");
-  const attempts: Array<{ where: string; err: string }> = [];
-  for (const c of candidates) {
-    try {
-      ptyLib = require(c) as PtyLib;
-      return ptyLib;
-    } catch (e) {
-      attempts.push({ where: c, err: e instanceof Error ? e.message : String(e) });
-    }
-  }
-  ptyLoadError = `tried ${attempts.length} paths:\n${attempts.map((a) => `  • ${a.where} → ${a.err.split("\n")[0]}`).join("\n")}`;
-  throw new Error(`node-pty failed to load: ${ptyLoadError}`);
 }
 
 const pty: HostPty = {
   spawn: (file, args, opts) => loadPty().spawn(file, args, { ...opts, env: childEnv(opts.env) }),
   loadError: () => { try { loadPty(); return null; } catch { return ptyLoadError; } },
-  setPluginDir: (dir) => { pluginDir = dir; },
 };
-
-// ── the OS shell: Electron's, where there is one ────────────────────
-
-function electronShell(): { openPath(p: string): Promise<string>; openExternal(u: string): Promise<void>; showItemInFolder(p: string): void } | null {
-  try {
-    const mod = require("electron") as { shell?: { openPath?: unknown } };
-    return typeof mod?.shell?.openPath === "function" ? mod.shell as never : null;
-  } catch { return null; }
-}
 
 export function createNodeHost(): HudHost {
   return {
@@ -117,17 +91,17 @@ export function createNodeHost(): HudHost {
     spawn,
     execFileSync: (file, args, opts) => childProcess.execFileSync(file, args, opts),
     pty,
+    // Plain Node has no OS shell to hand a file or a link to.
     shell: {
-      openPath: async (p) => electronShell()?.openPath(p) ?? "no OS shell outside Electron",
-      openExternal: async (url) => { await electronShell()?.openExternal(url); },
-      showItemInFolder: (p) => { electronShell()?.showItemInFolder(p); },
+      openPath: async () => "no OS shell outside the app",
+      openExternal: async () => { /* nothing to open it with */ },
+      showItemInFolder: () => { /* nothing to show it in */ },
     },
     env: {
       get: (name) => process.env[name],
       homedir: () => os.homedir(),
       platform: () => process.platform,
       cwd: () => process.cwd(),
-      electron: () => (process.versions as Record<string, string | undefined>).electron ?? null,
     },
   };
 }

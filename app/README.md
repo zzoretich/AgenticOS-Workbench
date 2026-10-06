@@ -87,7 +87,7 @@ tests/           unit tests, and the end-to-end suite with its coverage map (tes
 | `npm run check:compat` | fail if the HUD uses an Obsidian API, DOM helper or icon `compat/` lacks |
 | `npm run test:e2e` | build, generate the synthetic fixture vault, run the Playwright `_electron` suite |
 | `npm run fixture` | generate the fixture vault alone (`tests/.fixture/`) |
-| `npm run spike:screens` | drive the app on your real vault; screenshots and a report in `spike-output/` (never commit it) |
+| `npm run screens` | the README's screenshots: the app on a synthetic demo vault (the e2e fixture, its test-only error cases taken out), into `../docs/assets/screens/` |
 | `npm run dist` | build, then package, sign and (with `APPLE_KEYCHAIN_PROFILE`) notarize the app and its DMG into `dist/` |
 | `npm run dist:verify` | check the build's signature, entitlements, fuses, contents, notarization and DMG, and that it refuses a debugger |
 | `npm run dist:test` | the smoke build in `dist-test/`: packaged like `dist`, ad-hoc signed, the one build that accepts the DevTools port |

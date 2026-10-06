@@ -1,4 +1,4 @@
-// Phase 3: runs the packaged app and checks what only a packaged build can get wrong. It starts from its archive with
+// `npm run smoke:packaged`: runs the packaged app and checks what only a packaged build can get wrong. It starts from its archive with
 // the fuses on; every tab draws without an error; node-pty loads from app.asar.unpacked and a shell runs in the Term
 // tab; the tray popover draws with its styles; and quitting leaves no process behind. The page comes from app://hud
 // (src/main/app-scheme.ts), which main reads out of app.asar, and runs sandboxed (phase 4). Phase 5: the bundle carries
@@ -35,7 +35,7 @@ const LIVE = argv.includes("--live");
 const KEEP = argv.includes("--keep");
 const EXE = path.join(APP, "Contents", "MacOS", path.basename(APP, ".app"));
 const VERSION = JSON.parse(fs.readFileSync(path.join(repo, "package.json"), "utf8")).version;
-const TABS = ["pulse", "todo", "proposals", "notifications", "spaces", "memory", "runs", "routines", "skills", "agents", "agent-teams", "chat", "term", "settings"];
+const TABS = ["pulse", "files", "todo", "proposals", "notifications", "spaces", "memory", "runs", "routines", "skills", "agents", "agent-teams", "chat", "term", "settings"];
 
 if (!fs.existsSync(EXE)) { console.error(`no packaged app at ${APP}: run \`npm run dist:test\``); process.exit(2); }
 
@@ -162,7 +162,7 @@ check("it writes with every verified surface by default (no READ-ONLY)",
 
 for (const id of TABS) {
   const btn = page.locator(`.aos-wb-railbtn[data-tab="${id}"]`);
-  // Chat hides itself when no model provider is on record, as under the fixture's `none` (docs/phase-2.md, Chat).
+  // Chat hides itself when no model provider is on record, as under the fixture's `none`.
   if (!(await btn.count())) { check(`tab ${id}`, id === "chat" && !LIVE, "not in the rail"); continue; }
   const before = errors.length;
   await btn.click();

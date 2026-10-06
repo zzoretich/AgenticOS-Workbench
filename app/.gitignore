@@ -6,8 +6,6 @@ dist-test/
 .home/
 *.log
 .DS_Store
-# screenshots and logs from the spike hold vault content; they never go in git
-spike-output/
 test-results/
 playwright-report/
 out-test/
