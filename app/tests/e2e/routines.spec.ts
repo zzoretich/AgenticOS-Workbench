@@ -1,4 +1,4 @@
-// Routines (plugin-smoke: Routines): every brain/routines/*.md with cadence, next fire, last run and health after
+// Routines (app-smoke: Routines): every brain/routines/*.md with cadence, next fire, last run and health after
 // `aos routines sync` (launchctl stubbed) and two manual runs; guarded duties; the read-only rows outside the runtime
 // (a launchd label from routines.externalLabels and the imported Claude Code cloud routines); the editor drawer's
 // cron preview; with the Routines surface off, on/off, ▶ and apply schedules are refused. The writes themselves (create,

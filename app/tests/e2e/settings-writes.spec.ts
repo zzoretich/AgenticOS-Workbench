@@ -1,4 +1,4 @@
-// ⚙ Settings with its write surface on (AOS_APP_WRITE=settings), the phase 2 rows of plugin-smoke: Settings and
+// ⚙ Settings with its write surface on (AOS_APP_WRITE=settings), the phase 2 rows of app-smoke: Settings and
 // Install paths. Every change is `aos config set|unset <key> … --json`, run by the vault's own runtime, which writes the
 // file that wins (agenticos.json for this machine, brain/config.json for this vault) and applies the key's side effects;
 // a follow-up it prints becomes a button that runs it. The tests read both files after each change.

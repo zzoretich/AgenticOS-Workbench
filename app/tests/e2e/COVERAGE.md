@@ -1,35 +1,34 @@
-# e2e coverage of `docs/plugin-smoke.md`
+# e2e coverage of `docs/app-smoke.md`
 
-The per-tab checklist is `../docs/plugin-smoke.md` in this repo. Every checkbox item in it
+The per-tab checklist is `../docs/app-smoke.md` in this repo. Every checkbox item in it
 is listed below with the spec that covers it, or why it is not covered here.
 
 - **covered**: every read-only part of the item is asserted.
 - **covered in part**: the read-only half is asserted; the rest writes (phase 2) or needs something named in the reason.
 - **phase 2 (writes)**: the item is a write, a spawn started by a click, or a model call; the app refuses those until
   the write surface that covers it is enabled and tested (`src/shared/surfaces.ts`, docs/phase-2.md).
-- **N/A in the app**: the item is about the runtime CLI, a host session (Claude Code or Codex), Obsidian itself, or a
-  step the app replaces.
+- **N/A in the app**: the item is about the runtime CLI or a host session (Claude Code or Codex).
 - **not covered**: read-only, but not automated yet, with the reason.
 
 Specs live in `tests/e2e/`; a reference is `file › test` (titles shortened). Run the suite with `npm run test:e2e`
 (builds the app, generates the fixture with `scripts/make-fixture-vault.mjs`, runs every spec). The "Release procedure"
-list at the top of plugin-smoke.md is the upstream repo's release process, not app behaviour: it is not counted.
+list at the top of app-smoke.md is the release process, not app behaviour: it is not counted.
 
 ## Totals
 
 | Status | Items |
 |---|---|
-| covered | 80 |
-| covered in part | 12 |
+| covered | 91 |
+| covered in part | 15 |
 | phase 2 (writes) | 0 |
-| N/A in the app | 43 |
+| N/A in the app | 39 |
 | not covered | 4 |
-| **total** | **139** |
+| **total** | **149** |
 
-Of the 96 items about the HUD (139 minus the 43 N/A), 92 are asserted (80 fully, 12 in part); the other 4 are not
+Of the 110 items about the app (149 minus the 39 N/A), 106 are asserted (91 fully, 15 in part); the other 4 are not
 covered, for the reasons below. Every write surface is enabled and tested, so no item waits on phase 2 any more. The
 "in part" rows need something the fixture or the app lacks (a dispatched seat, a Codex database, the clipboard, the
-OS-level `agenticos://` scheme). Phase 2, each surface on through `AOS_APP_WRITE`:
+OS handing over an `agenticos://` link, a published update). Phase 2, each surface on through `AOS_APP_WRITE`:
 - To-Do (T1, T2, T4, T5, T7) in `todo-writes.spec.ts`;
 - Notifications (N4, N5, N6) in `notifications-writes.spec.ts`;
 - Capture (P7, P8) in `capture-writes.spec.ts`;
@@ -40,9 +39,9 @@ OS-level `agenticos://` scheme). Phase 2, each surface on through `AOS_APP_WRITE
 - Spaces' map now, ↻ and regen (beyond the checklist) in `spaces-writes.spec.ts`;
 - Agent Teams (AT1, AT3, AT5's budget, AT7, AT8) in `teams-writes.spec.ts`, and the seed in `variants.spec.ts`;
 - Chat (CH1, CH3, CH4) in `chat-writes.spec.ts`, against stub `claude` and `codex` CLIs and a stub Ollama server;
-- the note editor, the app's own Notes surface (beyond the checklist: in Obsidian the editor is Obsidian's), in
-  `notes-writes.spec.ts`;
-- the settings window (Obsidian's settings pane: I3, S1, S11) in `settings-window.spec.ts`.
+- Files (F5, F6, F7) in `files-writes.spec.ts`;
+- the note editor, the app's own Notes surface (beyond the checklist), in `notes-writes.spec.ts`;
+- the settings window (I3, S1, S11) in `settings-window.spec.ts`.
 
 The 4 not covered: the To-Do midnight roll-over (needs a controllable clock), a duty run recorded outside the runtime
 (needs a real duty run), a killed dispatcher (needs a dispatched seat), and the vault-root picker's Notices (need a
@@ -67,7 +66,7 @@ bullet, another HUD's turns read back, and Codex answering under a "local ask.js
 refused on both routes with the surface off (`variants`), the note editor's autosave, ⌘S, undo back to the original,
 outside changes, the conflict strip, a deleted note, save on close, read-only runtime files and the terminal-focus
 guard (`notes-writes`), Edit disabled with Notes off (`sidebar-omni-notes`), the tray popover with the SidebarHUD
-(`shell`), Obsidian's plugin settings read at first start and never written (`variants`), a full-tour no-error check, user content unchanged
+(`shell`), a full-tour no-error check, user content unchanged
 after the tour, note view and link following, ⌘K results and dispatch, the sidebar HUD's tiles and ticker, inspector
 pop-outs into the split pane, external links routed to the OS, and one `test.fixme` documenting a compat gap (⧉ copy,
 see below).
@@ -76,15 +75,38 @@ see below).
 
 | # | Item | Status | Covered by / reason |
 |---|---|---|---|
-| I1 | Release assets in the plugin folder; loads with no console errors, `[agentic-os] loaded` | covered | `shell › boots the Workbench…` (the HUD 0.21.0 loaded), `shell › a tour … raises no renderer or main-process error`. The copy step itself is N/A: the app compiles the HUD in. |
+| I1 | The app opens the vault on Pulse with no error; a dev run logs `[host] AgenticOS HUD <version> loaded` | covered | `shell › boots the Workbench…` (the HUD's version loaded), `shell › a tour … raises no renderer or main-process error`. |
 | I2 | Paths section as pickers (this vault / auto / auto with nodes listed); Probe picks a path | covered | `settings › WORKBENCH section…` (the three pickers and the Probe button), `settings-writes › Probe resolves node again and saves it in the app's own settings` |
-| I3 | Provider row reflects `provider-state.json` (name + reason); refresh re-reads it | covered | `settings-window › the plugin's tab…` in the app's settings window (Obsidian's pane): `none (forced) — checked …` and its refresh button; `settings › WORKBENCH section…` renders the same tab directly. |
+| I3 | Provider row reflects `provider-state.json` (name + reason); refresh re-reads it | covered | `settings-window › the plugin's tab…` in the app's settings window: `none (forced) — checked …` and its refresh button; `settings › WORKBENCH section…` renders the same tab directly. |
+
+## The app
+
+| # | Item | Status | Covered by / reason |
+|---|---|---|---|
+| APP1 | No install: the wizard's checks; a fix-it runs in its terminal, then the checks run again | covered | `setup › with no install, the wizard checks what aos init needs, on the login PATH`, `› a fix-it runs its fixed command in the wizard's terminal…` (stand-in CLIs and `brew`). |
+| APP2 | Choose, Your agent, Install, Finish (the `CLAUDE.md` diff, the Codex `/hooks` step), Open the Workbench | covered in part | `setup › hosts offer only what is ready…`, `› the persona form checks the name…`, `› Install runs the payload's aos init…`, `› the CLAUDE.md line is shown as a diff…`, `› Open the Workbench attaches the vault without a relaunch…`. The Codex `/hooks` section is not asserted. |
+| APP3 | An existing install: What changed once per vault; the runtime offer, Update now and Later | covered | `attach › the What changed note shows the first time…`, `› a runtime older than the app's offers aos upgrade, and runs it only when asked` |
+| APP4 | Obsidian-era settings in effect on first start, and copied into the app's data before any change | covered | `variants › a vault whose HUD ran in Obsidian first › the app starts with Obsidian's plugin settings…` |
+| APP5 | Check for Updates… (greyed out with the reason when off); Restart to update once downloaded | covered in part | `attach › the app's own update: off in a dev run, and Restart to update asks main…`. A real update needs a published release: the acceptance run's §8. |
+| APP6 | The menubar popover; closing hides the window, ⌘Q quits; doctor's `workbench app` row | covered in part | `shell › tray popover…`, `shell › the app records itself in the vault…` (what the doctor row reads). Closing and quitting are the OS's; the row itself is the runtime's. |
+
+## Files
+
+| # | Item | Status | Covered by / reason |
+|---|---|---|---|
+| F1 | Files second on the rail; the top level, folders first, without dot-folders, node_modules or graphify-out | covered | `files › Files sits second on the rail…` |
+| F2 | A folder opens and closes in place; a click on a note opens it | covered | `files › a folder opens and closes in place…` |
+| F3 | Search across notes with the hit highlighted; all text files; a line opens its note; Escape clears | covered | `files › search finds lines across notes…` |
+| F4 | Open file… (⌘O) fuzzy, Markdown first; Search vault… (⌘⇧F) focuses the search box | covered | `files › Open file… matches paths fuzzily…`, `› Search vault… opens Files…` |
+| F5 | + note in the chosen folder (created if missing), opened; the form says why it refuses | covered | `files-writes › + note makes a Markdown note in a new folder…`, `› the new-note form says why it refuses…` |
+| F6 | Rename keeps the folder and extension; Move to another folder; both keep the bytes | covered | `files-writes › rename keeps the folder, the extension and the bytes`, `› move puts the file in another folder…` |
+| F7 | ✕ asks first; Move to Trash; brain/_index and brain/scripts files offer no actions | covered | `files-writes › ✕ asks first…`, `files › folders AgenticOS writes itself have no new-note action…` |
 
 ## Settings
 
 | # | Item | Status | Covered by / reason |
 |---|---|---|---|
-| S1 | ⚙ at the rail's foot, visible in a short pane, Enter / Space open it; palette and Obsidian-pane entries | covered | `shell › rail: … ⚙ Settings at the foot`, `shell › rail: ⚙ stays reachable…`, `shell › rail: Enter or Space…`, `shell › commands…`; `settings-window › the plugin's tab…`: Open Workbench settings in the settings window (Obsidian's pane) closes it and opens the Settings tab. |
+| S1 | ⚙ at the rail's foot, visible in a short pane, Enter / Space open it; palette and settings-window entries | covered | `shell › rail: … ⚙ Settings at the foot`, `shell › rail: ⚙ stays reachable…`, `shell › rail: Enter or Space…`, `shell › commands…`; `settings-window › the plugin's tab…`: Open Workbench settings in the settings window closes it and opens the Settings tab. |
 | S2 | "N changed from the defaults" matches `aos config list`; key, source pill (file on hover), when it applies; daily caps "today $x of $cap" | covered | `settings › head…`, `settings › every row…`, `settings › number rows…` |
 | S3 | Master switches write (Telemetry off; Background AI asks first) | covered | `settings › master switches…` (state), `settings-writes › master switches write; Chief of Staff pauses duties through persona/DISABLED…`, `› Background AI asks before paid calls…`, `› Telemetry off and on…` |
 | S4 | No text box; − / + on number rows; + on a cap asks first, − never asks; − / + disabled at the ends | covered | `settings › no text box…`, `settings › number rows…`, `settings › − is disabled at the lowest preset; + … asks first, and Cancel changes nothing`, `settings-writes › + on a spend cap asks first and Raise writes the next preset…` |
@@ -94,7 +116,7 @@ see below).
 | S8 | ↺ resets a row; hosts & install rows read-only; ❯_ aos doctor / aos upgrade open Term running them | covered | `settings › hosts & install…`, `settings › ❯_ aos doctor runs the vault's own doctor in a new Term session`, `settings-writes › ↺ goes back to the default…`. `aos upgrade` runs in Term, the user's shell, as doctor does. |
 | S9 | Claude-only: Codex rows dimmed with the hint, still editable; Codex-only: Claude rows dimmed; both: nothing dimmed | covered | `settings › Codex rows are dimmed…`, `variants › a Codex-only machine › Settings…`, `variants › both hosts › Settings: nothing is dimmed` |
 | S10 | A runtime before 0.17: "run aos upgrade" with a button; the WORKBENCH section works | covered | `variants › a runtime that predates aos config › Settings asks for aos upgrade…` |
-| S11 | WORKBENCH section and Obsidian's pane show the same rows; a change in one shows in the other | covered | `settings › WORKBENCH section…` (same rows, same renderer), `settings-window › the plugin's tab…` (the rows in the window), `settings-window › a change in the window shows in the WORKBENCH section…` (both ways; the plugin's settings live in the app's data folder). |
+| S11 | WORKBENCH section and the settings window's Agentic OS tab show the same rows; a change in one shows in the other | covered | `settings › WORKBENCH section…` (same rows, same renderer), `settings-window › the plugin's tab…` (the rows in the window), `settings-window › a change in the window shows in the WORKBENCH section…` (both ways; the plugin's settings live in the app's data folder). |
 | S12 | Vault root picker: a missing vault shows a Notice; a different vault the 10 s explanation | not covered | Picking saves only the plugin's own settings (userData, which no write surface gates); reaching either Notice needs a second vault in the picker's list, which the fixture does not have. |
 
 ## Config (both hosts)
@@ -196,8 +218,8 @@ see below).
 | SL3 | Claude Code: a replaced `statusLine` is reported and taken back | N/A in the app | Runtime CLI. |
 | SL4 | Codex: `[tui] status_line` in `config.toml` | N/A in the app | Host terminal. |
 | SL5 | `aos statusline uninstall` restores both files | N/A in the app | Runtime CLI. |
-| SL6 | The status bar: `⚡ live · ◆ gate…` with the Workbench closed; gate → Agent Teams; flag → STATE.md; "all clear"; idle dimmed | covered | `shell › status bar…` (three tests), `variants › an empty vault › badges … all clear` |
-| SL7 | `obsidian://agenticos?…&tab=notifications` opens that tab, also after a restart; `tab=nope` keeps the current one | covered in part | `shell › agenticos:// links…` calls the registered handler. The OS-level `agenticos://` scheme is not wired to the main process yet (phase-1 backlog); the app has no deferred leaves. |
+| SL6 | The app's status bar: `⚡ live · ◆ gate…` with the Workbench tab closed; gate → Agent Teams; flag → STATE.md; "all clear"; idle dimmed | covered | `shell › status bar…` (three tests), `variants › an empty vault › badges … all clear` |
+| SL7 | `agenticos://workbench?tab=notifications` from a browser opens that tab, also when the app was not running; `tab=nope` keeps the current one | covered in part | `shell › agenticos:// links…` calls the handler main runs for the OS's `open-url` (registered before `ready`, so a link that launched the app waits for the page). The browser-to-OS hand-off is the packaged app's registration, not something the suite can drive. |
 
 ## Spaces / Memory / Runs
 
@@ -277,23 +299,20 @@ see below).
 
 | # | Item | Status | Covered by / reason |
 |---|---|---|---|
-| TM1 | Fresh install: "Terminal unavailable" with Install / Rebuild | N/A in the app | node-pty is the app's own dependency (PLAN §3.4): `sidebar-omni-notes › Term: a live shell…` asserts a working shell and no install hint. |
-| TM2 | Without the bundle both buttons refuse | N/A in the app | No plugin-folder bundle in the app. |
-| TM3 | After `aos upgrade`: Install, reload, a shell opens | N/A in the app | The install step does not exist in the app; the shell itself is covered by `› Term: a live shell…`. |
-| TM4 | Rebuild runs `@electron/rebuild` | N/A in the app | The app ships node-pty built for its Electron. |
+| TM1 | A fresh install's Term tab opens a live shell at once, with no install or rebuild hint | covered | `sidebar-omni-notes › Term: a live shell…` (node-pty is the app's own dependency). |
 
 ## Telemetry switch
 
 | # | Item | Status | Covered by / reason |
 |---|---|---|---|
 | TS1 | `telemetry.enabled` false: no `agent-runs/live`, no reconcile on load; Runs still reads `runs.jsonl`; the hooks record nothing | covered in part | `variants › telemetry off…`. The hooks are the runtime's. |
-| TS2 | A 0.17 `data.json` loses `costEnabled` / `telemetryEnabled` on first load | covered | `variants › a data.json from 0.17 or earlier…` (in the app it lives in userData, not the vault). |
+| TS2 | Settings from 0.17 or earlier lose `costEnabled` / `telemetryEnabled` on first load | covered | `variants › a data.json from 0.17 or earlier…` (in the app they live in userData, not the vault). |
 
 ## Review readiness
 
 | # | Item | Status | Covered by / reason |
 |---|---|---|---|
-| RR1 | No default hotkey on Omnisearch | covered | `shell › commands…` |
+| RR1 | No default hotkey on Omnisearch (⌘K is the app's palette) | covered | `shell › commands…` |
 | RR2 | DISK donut and COST DETAIL sparkline render as SVG nodes | covered | `pulse › SYSTEM drawer…` |
 | RR3 | Clock and timestamps follow the OS locale | covered | `shell › the clock and the host chrome follow the OS locale` |
 

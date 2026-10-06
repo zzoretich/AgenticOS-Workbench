@@ -1,4 +1,4 @@
-// Agent Teams with its write surface on (AOS_APP_WRITE=teams), the phase 2 rows of plugin-smoke: Agent Teams tab. Every
+// Agent Teams with its write surface on (AOS_APP_WRITE=teams), the phase 2 rows of app-smoke: Agent Teams tab. Every
 // change is one `aos team` call (the vault's brain/scripts/team.js); the tab never writes persona/teams/ itself. The
 // tests read what team.js leaves: board.jsonl and channel.jsonl (append-only), TEAM.md (rewritten line by line) and the
 // DISABLED switch. A gate approval and a budget raise on a paused item open the lead in the Term, which in the fixture is

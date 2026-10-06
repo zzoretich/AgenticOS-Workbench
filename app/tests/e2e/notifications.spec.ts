@@ -1,4 +1,4 @@
-// Notifications (plugin-smoke: Notifications) with its write surface off: items posted through the runtime's
+// Notifications (app-smoke: Notifications) with its write surface off: items posted through the runtime's
 // lib/notifications.js, the unread badge (rose while a breaking item is unread), views, level and sender filters,
 // sections with their actions, the unreadable-file footer, a live post, and opening an unread item, whose attempt to
 // mark it read the guard refuses. The writes themselves (read, archive, votes) are in notifications-writes.spec.ts.

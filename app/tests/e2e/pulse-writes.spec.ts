@@ -1,6 +1,6 @@
 // Pulse with its write surface on (AOS_APP_WRITE=pulse): the promote trail's keep, edit and revert; the Fix Queue's
 // runtime re-runs (the uncosted-sessions backfill, the brain rebuild); the cost anchor; and the deck's /scan and
-// /reflect-week (plugin-smoke P5, P6). The trail's writes are compared byte for byte with what data/promoteTrail.ts
+// /reflect-week (app-smoke P5, P6). The trail's writes are compared byte for byte with what data/promoteTrail.ts
 // writes. The Fix Queue and the deck run runtime scripts; the tests check what those scripts leave behind.
 
 import { expect, test, type Page } from "@playwright/test";

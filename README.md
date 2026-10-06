@@ -53,6 +53,12 @@ It works with **Claude Code alone**, with **Codex CLI alone**, or with both shar
 <a name="quick-start"></a>
 ## <img src="docs/assets/icon-quickstart.svg" width="36" align="top" alt="" /> Quick start
 
+1. Download **AgenticOS Workbench** from the [latest release](https://github.com/zzoretich/AgenticOS-Workbench/releases/latest) (`AgenticOS-Workbench-<version>-arm64.dmg`, for Macs with Apple silicon), open it and drag the app to Applications.
+2. Open the app. Its setup wizard checks what AgenticOS needs and fixes what is missing, asks which hosts and which vault folder, asks your Chief of Staff's questions, installs, and opens the Workbench. No terminal needed.
+3. Start a `claude` or `codex` session: the first prompt already carries your brain context.
+
+Prefer a terminal? The same install runs from a clone:
+
 ```sh
 git clone https://github.com/zzoretich/AgenticOS-Workbench.git
 cd AgenticOS-Workbench
@@ -60,14 +66,14 @@ npm ci --ignore-scripts
 npm run setup                          # interactive installer (= node cli/aos.js init)
 ```
 
-Then add the one line the installer prints to `~/.claude/CLAUDE.md` (Claude Code) or trust the hook entries once under `/hooks` (Codex), open the AgenticOS Workbench app, and start a `claude` or `codex` session. The whole path takes under ten minutes; the details are in [Installation](#installation).
+Then add the one line the installer prints to `~/.claude/CLAUDE.md` (Claude Code) or trust the hook entries once under `/hooks` (Codex), and open the app. Either path takes under ten minutes; the details are in [Installation](#installation). Coming from a release before 1.0, where the Workbench ran in Obsidian? Read [docs/migrating-to-1.0.md](docs/migrating-to-1.0.md).
 
 <a name="prerequisites"></a>
 ## <img src="docs/assets/icon-prereq.svg" width="36" align="top" alt="" /> Prerequisites
 
-| | Required? | What the installer checks |
+| | Required? | What the app's wizard and the installer check |
 |---|---|---|
-| **macOS** | required | AgenticOS supports macOS only: the Workbench is a macOS app, and schedules run through launchd. The runtime's Linux code paths (cron) are still there, but untested and unsupported; Windows is not supported. |
+| **macOS** | required | AgenticOS supports macOS only: the Workbench is a macOS app, built for Apple silicon, and schedules run through launchd. The runtime's Linux code paths (cron) are still there, but untested and unsupported; Windows is not supported. |
 | **Node.js 20 or newer** | required | `node -v` prints `v20` or later. CI runs on 20 and 22. |
 | **git** | required | On macOS it arrives with the Command Line Tools; accept the install dialog if one appears. |
 | **Claude Code and/or Codex CLI, logged in** | one required | `claude auth status` reports a login, or `codex login status` does (or both). `aos init` wires every host it finds; `--host claude\|codex\|both` picks. Background work runs through the same CLI, so there is nothing else to configure. |
@@ -77,12 +83,30 @@ Then add the one line the installer prints to `~/.claude/CLAUDE.md` (Claude Code
 
 The installer refuses to use `~/.claude` as the vault, and refuses any directory that already holds a `settings.json`. The default vault is `~/AgenticOS`.
 
-Obsidian is not needed: the Workbench is the **AgenticOS Workbench** app, which reads the vault the installer records. The vault stays plain Markdown, so you can still open it in any editor you like. The app's download arrives with 1.0; until then, build it from `app/` in this checkout ([app/README.md](app/README.md)).
+The app's wizard offers a fix for each one that is missing (Homebrew's installer, `brew install …`, `npm install -g …` for a host CLI, the logins) and runs it in a terminal inside the wizard, so you see the command and can answer a password prompt.
+
+Obsidian is not needed: the Workbench is the **AgenticOS Workbench** app, which reads the vault the installer records. The vault stays plain Markdown, so you can still open it in any editor you like.
 
 <p align="center"><img src="docs/assets/divider.svg" width="960" alt="" /></p>
 
 <a name="installation"></a>
 ## <img src="docs/assets/icon-install.svg" width="36" align="top" alt="" /> Installation
+
+### With the app
+
+Download `AgenticOS-Workbench-<version>-arm64.dmg` from the [latest release](https://github.com/zzoretich/AgenticOS-Workbench/releases/latest), open it, drag **AgenticOS Workbench** to Applications and open it. The app is signed and notarized, and carries the AgenticOS runtime inside it. With no install on this Mac it opens a setup wizard:
+
+1. **Check** — Node, Claude Code and Codex and their logins, Ollama, python3 and uv, each with a fix-it for what is missing.
+2. **Choose** — which of Claude Code and Codex to wire (both, when both are ready) and the vault folder (default `~/AgenticOS`; files already there are kept).
+3. **Your agent** — the Chief of Staff's questions, as a form (or skip it and run `aos persona` later).
+4. **Install** — `aos init` from the runtime the app carries, with its output shown: the same nine steps as the terminal install below.
+5. **Finish** — for Claude Code, the `CLAUDE.md` line shown as a diff and added only if you say so; for Codex, the one step only you can take, trusting the hook entries under `/hooks`. Then the Workbench opens.
+
+Afterwards the app keeps itself current from GitHub Releases (AgenticOS Workbench ▸ Check for Updates…), and when it carries a newer runtime than your vault has, it offers to run `aos upgrade` from it. Put `aos` on your PATH as in [step 3](#3-put-aos-on-your-path-and-check-the-install) below to use the commands in a terminal.
+
+### From a terminal
+
+The same install from a clone of this repository, which is also how CI tests it.
 
 ### 1. Clone and install dependencies
 
@@ -144,7 +168,7 @@ A Codex CLI that predates plugins is wired directly instead (hook entries in `~/
 
 ### 5. Open the Workbench
 
-Open the **AgenticOS Workbench** app. It finds your vault through `~/.claude/agenticos.json` and opens on Pulse, with a row that stays gray or green; amber `stale` LEDs simply mean a stage has not run for a while. Each start records the app in the vault (`brain/_index/hud-host.json`), so `aos doctor` and the update check can see it. The app's download arrives with 1.0; until then, build and start it from `app/` in this checkout as [app/README.md](app/README.md) describes (macOS, Node 22.12 or newer).
+Open the **AgenticOS Workbench** app ([download](https://github.com/zzoretich/AgenticOS-Workbench/releases/latest)). It finds your vault through `~/.claude/agenticos.json`, skips its wizard, and opens on Pulse, with a row that stays gray or green; amber `stale` LEDs simply mean a stage has not run for a while. Each start records the app in the vault (`brain/_index/hud-host.json`), so `aos doctor` and the update check can see it. To run it from this checkout instead, see [app/README.md](app/README.md).
 
 <p align="center"><img src="docs/assets/divider.svg" width="960" alt="" /></p>
 
@@ -361,7 +385,7 @@ Skills answer to plain phrases: *sitrep* (or `/agenticos:persona-sitrep`), *revi
 
 ### Staying up to date
 
-`aos upgrade` pulls the newest version. What each version changed, and anything you need to do after upgrading (its **Upgrading** notes), is in [CHANGELOG.md](CHANGELOG.md) and on the release page. To be told when there is one, AgenticOS writes a one-line
+The app updates itself: it downloads a new version in the background and installs it when you quit, or at once from **Restart to Update** (the status bar, and AgenticOS Workbench ▸ Check for Updates…). It then offers to update the runtime in your vault; `aos upgrade` does the same from a terminal and pulls the newest plugins. What each version changed, and anything you need to do after upgrading (its **Upgrading** notes), is in [CHANGELOG.md](CHANGELOG.md) and on the release page. To be told when there is one, AgenticOS writes a one-line
 fragment that is either empty or the update notice, at `<vault>/brain/_index/update-line.txt`. With
 the default vault (`~/AgenticOS`, unless you passed `--vault` to `aos init`):
 
@@ -465,12 +489,12 @@ brain/scripts      the runtime that gets vendored into your vault (hooks, collec
 cli                the installer and the aos subcommands (persona, schedule, routines, cost, the Codex host) + two install rehearsals
 plugin             the Claude Code plugin: hooks.json, .mcp.json, bin/aos, 21 commands, 9 skills (also the source of codex-plugin)
 codex-plugin       the Codex plugin, generated from plugin/ by npm run build:codex-plugin: hooks.json, .mcp.json, bin/aos, 28 skills
-obsidian-plugin    the Workbench HUD's source (TypeScript, esbuild), which the app compiles
+obsidian-plugin    the Workbench HUD's source (TypeScript), which the app compiles (the folder keeps its old name)
 app                the Workbench as a macOS app: the HUD above in an Electron window (its own lockfile; see app/README.md)
 vault-template     the seed vault (AGENTICOS.md, MEMORY.md, brain/ incl. the three duty routines, persona templates incl. the heartbeat watchdog, hourly tick and nightly reflect routines)
 extras             the launchd schedule template, the cost analyzer, optional Ollama helpers
 tools              export-from-vault, the privacy gate, and the brand-asset generator behind docs/assets
-docs               install, chief of staff, cost, the Obsidian smoke checklist, the release acceptance runbook,
+docs               install, migrating to 1.0, chief of staff, cost, the app's smoke checklist, the release acceptance runbook,
                    and superpowers/ — the design spec and plan behind each shipped feature
 ```
 
@@ -487,12 +511,11 @@ cd extras/cost && python3 -m unittest      # the cost analyzer's tests
 sh cli/rehearsal/first-run.sh              # a complete install in a temp HOME with a fake claude (what CI runs)
 sh cli/rehearsal/codex-host.sh             # a Codex-only machine: direct wiring, then the upgrade to the Codex plugin; hooks and MCP run for real
 npm run build:codex-plugin                 # regenerate codex-plugin/ after changing plugin/ (the tests fail until you do)
-npm run build -w obsidian-plugin           # rebuild the HUD bundle
 (cd app && npm ci && npm run test:e2e)     # the app: see app/README.md (macOS)
 node tools/brand-assets.js                 # regenerate the brand assets under docs/assets
 ```
 
-The suites never see your shell's `AOS_*`, `BRAIN_*`, `CLAUDE*` or `CODEX_*` variables (`tools/test-env.js` clears them once per run), and CI runs them again in UTC+14 and UTC−11 with those variables exported, so a test that leans on your time zone or your setup fails there. `brain/scripts/test/live/` needs a running Ollama and is excluded from `npm test`. The Obsidian plugin's manual checklist is `docs/plugin-smoke.md`; the per-release acceptance runbook is `docs/acceptance.md`.
+The suites never see your shell's `AOS_*`, `BRAIN_*`, `CLAUDE*` or `CODEX_*` variables (`tools/test-env.js` clears them once per run), and CI runs them again in UTC+14 and UTC−11 with those variables exported, so a test that leans on your time zone or your setup fails there. `brain/scripts/test/live/` needs a running Ollama and is excluded from `npm test`. The Workbench's manual checklist is `docs/app-smoke.md`; the per-release acceptance runbook is `docs/acceptance.md`.
 
 <a name="uninstall"></a>
 ## <img src="docs/assets/icon-uninstall.svg" width="36" align="top" alt="" /> Uninstall
@@ -510,10 +533,12 @@ aos uninstall --host codex     # unwire only the Codex host (its plugin and mark
 
 | | |
 |---|---|
-| [docs/install.md](docs/install.md) | Every installer step and flag, providers and spend caps, the orphan sweep, daily-note layout. |
+| [docs/install.md](docs/install.md) | The app's setup wizard, every installer step and flag, providers and spend caps, the orphan sweep, daily-note layout. |
+| [docs/migrating-to-1.0.md](docs/migrating-to-1.0.md) | Moving an install from before 1.0 off Obsidian and onto the app. |
 | [docs/chief-of-staff.md](docs/chief-of-staff.md) | The interview, the persona layout, duties as routine files and their schedules, the heartbeat watchdog, proposals and their outcome ledger, the kill switch, caps. |
 | [docs/cost.md](docs/cost.md) | The cost module: enabling it, what it records, the budget, CI. |
-| [docs/plugin-smoke.md](docs/plugin-smoke.md) | The HUD's manual smoke checklist. |
+| [docs/app-smoke.md](docs/app-smoke.md) | The Workbench's manual smoke checklist, and the release procedure. |
+| [app/README.md](app/README.md) | Running, testing and building the app from a checkout. |
 | [docs/acceptance.md](docs/acceptance.md) | The release acceptance runbook, run on a fresh macOS account. |
 | [extras/ollama/README.md](extras/ollama/README.md) | Running Ollama as a supervised service, pulling the default models. |
 

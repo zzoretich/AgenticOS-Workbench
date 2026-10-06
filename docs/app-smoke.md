@@ -1,33 +1,44 @@
-# Obsidian plugin — manual smoke checklist
+# The Workbench app — manual smoke checklist
 
-Run before tagging a release, on a vault created by `aos init` (not the developer vault). Repeat the provider rows for each provider you can reach (`aos provider none|ollama|claude`; the scripts rewrite `brain/_index/provider-state.json` on the next hook run — start one `claude` session and exit, or run `aos scan-vault --quiet`).
+Run before tagging a release, in the AgenticOS Workbench app on a vault created by `aos init` or the app's wizard (not the developer vault). Most rows are also automated: the app's end-to-end suite asserts them on a synthetic vault (`app/tests/e2e/COVERAGE.md` maps every row to its spec), and `npm run dist:test && npm run smoke:packaged` runs the packaged app on a fresh install. This list is the pass by hand, against real hosts. Repeat the provider rows for each provider you can reach (`aos provider none|ollama|claude`; the scripts rewrite `brain/_index/provider-state.json` on the next hook run — start one `claude` session and exit, or run `aos scan-vault --quiet`).
 
 ## Release procedure
 
 1. `CHANGELOG.md`'s `## [Unreleased]` lists what the release changes, with an **Upgrading** subsection for anything a user must do after `aos upgrade` (re-trust hooks under `/hooks`, a new prerequisite, a re-clone).
-2. `npm run version:bump -- X.Y.Z && npm install --package-lock-only --ignore-scripts` (one product version: root `package.json`, `brain/scripts/package.json`, `obsidian-plugin/{manifest,package,versions}.json`, `plugin/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `codex-plugin/.codex-plugin/plugin.json`; the install refreshes `package-lock.json` — npm owns its format, and `--check` verifies it). The bump also rolls `[Unreleased]` into `## [X.Y.Z] — <date>` and fails when it is empty.
-3. `git commit -am "chore: release vX.Y.Z" && git tag vX.Y.Z`; push the tag only after in-chat confirmation.
-4. `release.yml`'s read-only `build` job verifies the bump and the CHANGELOG section, runs the gate, `tsc` and the plugin tests, and builds; its `publish` job (the only one with a write token) creates the release with that CHANGELOG section as the notes and attaches `main.js`, `manifest.json`, `styles.css`.
+2. `npm run version:bump -- X.Y.Z`, then `npm install --package-lock-only --ignore-scripts` at the root **and in `app/`** (one product version: root `package.json`, `brain/scripts/package.json`, `obsidian-plugin/package.json`, `plugin/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `codex-plugin/.codex-plugin/plugin.json`, `app/package.json`; the installs refresh both lockfiles — npm owns their format, and `--check` verifies them). The bump also rolls `[Unreleased]` into `## [X.Y.Z] — <date>` and fails when it is empty.
+3. `git commit -am "chore: X.Y.Z"`, then `git push origin main && git tag vX.Y.Z && git push origin vX.Y.Z` — the tag only after in-chat confirmation.
+4. `release.yml`'s read-only `build` job verifies the bump and the CHANGELOG section, and runs the gate and the HUD's `tsc` and tests; its `publish` job (the only one with a write token) creates the release with that CHANGELOG section as the notes. It attaches nothing: a re-run refreshes the notes only.
+5. In a clean checkout at the tag, on the maintainer's Mac: `cd app && APPLE_KEYCHAIN_PROFILE=<profile> npm run release:app` (`-- --dry-run` first). It builds the app with its bundled runtime, signs and notarizes it, staples and verifies the DMG, writes `latest-mac.yml` for the stapled DMG, and uploads the DMG, the zip, its blockmap and then the feed to the release. Until the feed is up, installed apps that check find no update and try again later.
+6. The acceptance run (`docs/acceptance.md`): the update from the previous release, and a fresh account from the DMG.
 
 ## Install paths
 
-- [ ] Copy the three release assets into `<vault>/.obsidian/plugins/agentic-os/`, enable the plugin: it loads with no console errors and `[agentic-os] loaded` is logged.
-- [ ] Settings → Agentic OS shows the Paths section as pickers: Vault root on "this vault (…)", Claude config dir on "auto (…)", Node binary on "auto" with the installed nodes listed; **Probe** picks a path and shows a notice.
+- [ ] Open the app on the vault: the Workbench draws on Pulse with no error, and a dev run (`npm start` in `app/`) logs `[host] AgenticOS HUD <version> loaded` in its developer tools.
+- [ ] The settings window's Agentic OS tab (⚙ at the ribbon's foot, or AgenticOS Workbench ▸ App Settings… ⌘⇧,) shows the Paths section as pickers: Vault root on "this vault (…)", Claude config dir on "auto (…)", Node binary on "auto" with the installed nodes listed; **Probe** picks a path and shows a notice.
 - [ ] Provider row reflects `provider-state.json` (name + reason); the refresh icon re-reads it.
+
+## The app
+
+- [ ] With no install (a fresh account, or no `agenticos.json`), the app opens its setup wizard: Check lists Node, Claude Code, Codex and their logins, Ollama, Python and uv, and a missing one's fix-it runs its command in the wizard's terminal, after which the checks run again.
+- [ ] Choose offers only the hosts that are ready; Your agent checks the name as `aos persona` does; Install runs `aos init` with its output live; Finish shows the `CLAUDE.md` line as a diff (**Add the line** adds it, nothing else does) and, with Codex, the `/hooks` step; **Open the Workbench** opens it without a relaunch.
+- [ ] Opened on an existing install, the app goes straight to the Workbench and shows **What changed** once per vault. When its runtime is newer than the vault's, **Update the runtime in your vault** follows (and the status bar's `⬆ Runtime <vault> → <app>` opens it again); **Update now** runs `aos upgrade` with its output, **Later** runs nothing.
+- [ ] The settings an Obsidian-era vault kept in `.obsidian/plugins/agentic-os/data.json` are in effect on first start, and `~/Library/Application Support/AgenticOS Workbench/plugins/agentic-os.json` holds them before you change anything.
+- [ ] AgenticOS Workbench ▸ Check for Updates… checks GitHub Releases (a release build only; greyed out with the reason when `updates.check` is false); a downloaded update shows **Restart to update** in the status bar and the menu.
+- [ ] The menubar icon opens the sidebar HUD in a popover; closing the window hides it and ⌘Q quits; `aos doctor`'s `workbench app` row names the app and its version.
 
 ## Settings
 
-- [ ] ⚙ Settings sits at the rail's foot (bottom-left) and stays visible in a pane too short for all thirteen tabs, which scroll above it; Enter or Space on a focused rail button opens it. "Open Workbench: Settings" in the command palette and "Open Workbench settings" in Obsidian's settings pane open the same tab.
+- [ ] ⚙ Settings sits at the rail's foot (bottom-left) and stays visible in a pane too short for all thirteen tabs, which scroll above it; Enter or Space on a focused rail button opens it. "Open Workbench: Settings" in the command palette (⌘K) and "Open Workbench settings" in the settings window open the same tab.
 - [ ] The head reads "N changed from the defaults" and matches the `*` rows of `aos config list`. Every row shows its key, a pill (`this machine` / `this vault` / `default`, the file path on hover) and when it applies; daily caps show "today $x of $cap".
 - [ ] Master switches: turning Telemetry off writes `telemetry.enabled` to `agenticos.json` (check with `aos config get telemetry.enabled`), shows the change as a Notice, and the chip follows; turning Background AI on from `none` asks first ("Turn on paid background calls?"), and Cancel leaves it off.
-- [ ] No text box anywhere in ⚙ Settings or Obsidian's pane (spec 2026-09-24-settings-pickers): toggles, pickers, chips and buttons only. Every number row has − / + around its picker; + on a daily cap raises it to the next preset and asks first, − never asks; − is disabled at the lowest preset and + at the highest.
+- [ ] No text box anywhere in ⚙ Settings or the settings window (spec 2026-09-24-settings-pickers): toggles, pickers, chips and buttons only. Every number row has − / + around its picker; + on a daily cap raises it to the next preset and asks first, − never asks; − is disabled at the lowest preset and + at the highest.
 - [ ] A value set outside the presets (e.g. `aos config set cost.monthlyBudget 175`) shows in its picker as "$175.00 (custom)" and is not changed by opening the tab; − / + from it go to $150 / $200.
 - [ ] `recallRoots` and `routines.tools` are chips; the last `routines.tools` chip cannot be turned off. `quickLinks`, the roster and external labels have an "Edit brain/config.json" button (opens the file); `skills.exclude` / `agents.exclude` have "Manage in Skills" / "Manage in Agents", which switch tabs. Hosts & install values are plain text.
 - [ ] Setting `claude.model` leaves a "⚠ 1 step left: aos routines sync" bar and a `1` on the ⚙ badge; clicking it runs the sync, the bar goes and the badge clears.
 - [ ] ↺ on a changed row puts it back to the default (`aos config unset`); Hosts & install rows are read-only and their "❯_ aos doctor" / "❯_ aos upgrade" buttons open the Term tab running them.
 - [ ] *Claude Code only* (`hosts.codex.enabled: false`): every Codex row (`codex.*`, `*.codexModel`) is dimmed with "Codex is off on this machine; `aos init --host both` turns it on", and still editable. *Codex only* (`hosts.claude.enabled: false`): the Claude rows are dimmed the same way. *Both*: nothing dimmed.
 - [ ] A vault whose runtime predates 0.17 (no `aos config`): the tab says to run `aos upgrade` with a "❯_ aos upgrade" button, and the WORKBENCH section below still works.
-- [ ] The WORKBENCH section and Obsidian's own settings pane show the same plugin rows; a change in one appears in the other on reopen.
+- [ ] The WORKBENCH section and the settings window's Agentic OS tab show the same plugin rows; a change in one appears in the other on reopen.
 - [ ] Vault root: the picker offers this vault and the agenticos.json vault; picking one that no longer exists shows a Notice once ("Vault root: … is not a directory — keeping …") and the picker returns to the saved value; picking a different vault shows the 10 s explanation once.
 
 ## Config (both hosts)
@@ -48,14 +59,14 @@ Run before tagging a release, on a vault created by `aos init` (not the develope
 - [ ] Command deck `/reflect-week` (a vault with daily notes this week) → `▶ /reflect-week`, then `✓ /reflect-week: [reflect] wrote brain/reflections/<YYYY-WW>.md` and the file exists. With `aos provider none` → `✗ /reflect-week: … no model provider …`, nothing written.
 - [ ] Command deck `/remember` → a one-field modal; `the deck works` lands in `brain/_index/SESSION.md` as `- the deck works #promote` under `## Things to Remember`, `updated:` is today; `feedback: keep it` lands under `## Promote to Memory on Close`. No file appears under `brain/memory/`.
 - [ ] Command deck `/pattern` → area, title and pattern; on an existing area it adds a `### <title>` subsection to `brain/patterns/<area>.md` and bumps `updated:`; on a new area (`testing`) it creates the file with `type: pattern` frontmatter and adds `- [Testing Patterns](brain/patterns/testing.md) — …` under `## Patterns` in `MEMORY.md`.
-- [ ] Listener leak: switch Pulse → Memory → Pulse → Term → Pulse five times, then in the developer console `app.plugins.plugins["agentic-os"].terminalPool._["session-add"].length` is 1 (the Pulse panel on screen), not one per visit. `_` is where Obsidian's `Events` keeps listeners in current builds; it is not public API.
+- [ ] Listener leak: switch Pulse → Memory → Pulse → Term → Pulse five times, then in a dev run's developer tools `aosHost.plugin.terminalPool._handlers.get("session-add").length` is at most 2 (the Pulse panel on screen, and the Term tab's kept for its next visit) and does not grow per visit.
 - [ ] Heartbeat pill: absent on a vault whose watchdog never ran; after `aos routines run heartbeat` a green `♥ <age>` pill sits next to the update pill and its tooltip lists each duty with status, last run and next fire. Backdate `checkedAt` in `brain/_index/persona-heartbeat.json` by 2 h → amber within a second (the file is watched); set one duty's `status` to `missed` → rose with `· 1 missed` in the label.
 
 ## Files
 - [ ] The rail shows Files second; the tree lists the vault's top level, folders first, without dot-folders, node_modules or graphify-out
 - [ ] A folder opens and closes in place; a click on a note opens it in a tab
 - [ ] Search finds lines across notes with the hit highlighted; "all text files" adds code and data files; a line opens its note; Escape clears it
-- [ ] Open file… (⌘O in the app) matches paths fuzzily, Markdown first; Search vault… (⌘⇧F in the app) opens Files with the cursor in the search box
+- [ ] Open file… (⌘O) matches paths fuzzily, Markdown first; Search vault… (⌘⇧F) opens Files with the cursor in the search box
 - [ ] + note makes a Markdown note in the chosen folder (created if missing) and opens it; the form says why it refuses (exists, brain/_index or brain/scripts, a climb out, no name)
 - [ ] Rename keeps the folder and the extension; Move puts the file in another folder; both keep the bytes
 - [ ] ✕ asks first; Move to Trash puts the file in the macOS Trash; brain/_index and brain/scripts files offer no actions
@@ -122,8 +133,8 @@ Run before tagging a release, on a vault created by `aos init` (not the develope
 - [ ] *Claude Code:* replace `statusLine` in `settings.json` by hand: `aos update-notice` (the SessionStart hook) prints `AgenticOS status line: replaced by …`, `aos doctor` shows `warn  status line  taken by …`, and `aos statusline install` takes it back and chains the replacement.
 - [ ] *Codex:* `aos statusline install` writes `[tui] status_line = [...]  # agenticos statusline` into `config.toml`; `codex` shows those footer items, and a new session starts with `AgenticOS: 1 gate needs you (demo-01 discuss)`. An existing `status_line` is refused without `--force`.
 - [ ] `aos statusline uninstall` restores `settings.json` and `config.toml` exactly (`diff` against the `.aos-statusline.bak` copies before running it) and removes the backups.
-- [ ] Obsidian status bar: `⚡ live · ◆ gate demo-01 · …` within a minute of the gate, **with the Workbench closed**; clicking the gate opens Agent Teams, a flag opens `persona/STATE.md`, and a quiet vault reads `all clear`. `idle` is dimmed.
-- [ ] Paste `obsidian://agenticos?vault=<vault name>&tab=notifications` into a browser: Obsidian opens the Workbench on Notifications, also right after a restart (a deferred leaf); `tab=nope` opens the Workbench on its current tab.
+- [ ] The app's status bar: `⚡ live · ◆ gate demo-01 · …` within a minute of the gate, **with the Workbench tab closed**; clicking the gate opens Agent Teams, a flag opens `persona/STATE.md`, and a quiet vault reads `all clear`. `idle` is dimmed.
+- [ ] Paste `agenticos://workbench?tab=notifications` into a browser: the app comes forward on Notifications, and starts on it when it was not running; `tab=nope` opens the Workbench on its current tab.
 
 ## Spaces / Memory / Runs
 
@@ -204,20 +215,15 @@ Run on a machine with the `codex` CLI logged in, after `aos init --host codex` (
 
 ## Term
 
-Precondition for both action rows: the plugin folder must be an `aos init` / `aos upgrade` bundle, i.e. `<vault>/.obsidian/plugins/agentic-os/package.json` exists. The three release assets copied by hand above do **not** include it.
-
-- [ ] Fresh install: Term tab shows "Terminal unavailable" with **Install terminal support** and **Rebuild for this Electron** buttons.
-- [ ] With only the three copied assets (no `package.json`), both **Install terminal support** and **Rebuild for this Electron** refuse with the notice "Terminal support needs the aos bundle: no package.json here — install the bundle with `aos upgrade` first" and spawn nothing.
-- [ ] After `aos upgrade`: Install → notice with the spawn-helper count → reload → a shell opens (macOS); Linux with build tools compiles and opens. Windows is not supported in v1.
-- [ ] Rebuild runs `npx --yes @electron/rebuild -v <process.versions.electron> -m <plugin dir> -w node-pty` (the version is visible in the console log line `[agentic-os] rebuild-pty:`).
+- [ ] On a fresh install the Term tab opens a live shell at once (the app carries the terminal), with no "Terminal unavailable", **Install terminal support** or **Rebuild for this Electron**.
 
 ## Telemetry switch
 
 - [ ] With `telemetry.enabled` false (⚙ Settings → Telemetry, or `aos config set telemetry.enabled false`): no `agent-runs/live/` is created on load and the plugin starts no `reconcile-sessions.js`; Runs tab still reads existing `runs.jsonl`; the hooks record nothing either — one key for `telemetry-hook.js` and the plugin.
-- [ ] A `data.json` from 0.17 or earlier that stored `costEnabled`/`telemetryEnabled` loses both keys on the first load (the console logs `pruned dead settings keys`).
+- [ ] Workbench settings from 0.17 or earlier (the Obsidian-era `data.json` the app copies, or its own) that stored `costEnabled`/`telemetryEnabled` lose both keys on the first load (the console logs `pruned dead settings keys`).
 
 ## Review readiness
 
-- [ ] No default hotkey on Omnisearch (Settings → Hotkeys shows it blank).
+- [ ] No default hotkey on Omnisearch (⌘K is the app's own palette).
 - [ ] DISK donut and COST DETAIL sparkline render (SVG nodes, no innerHTML) in the SYSTEM drawer.
 - [ ] Clock and timestamps follow the OS locale.
