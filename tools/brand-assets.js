@@ -13,8 +13,8 @@
  *     and motion uses SMIL <animate> rather than CSS.
  *   - READMEs render in both GitHub themes, so icons are transparent and
  *     stroked in mid-tone accents that carry on light and dark alike.
- *   - The HUD screenshots beside these assets are dark Obsidian captures and
- *     cannot be re-shot, so the palette stays in the Primer dark family.
+ *   - The app's screenshots beside these assets are dark (the Workbench's own theme;
+ *     `npm run screens` in app/ retakes them), so the palette stays in the Primer dark family.
  *
  * Invariants are pinned in brand-assets.test.js.
  */

@@ -366,7 +366,7 @@ if (!app.requestSingleInstanceLock()) {
   });
 }
 
-// For tests and the spike driver (reached through Playwright's electronApp.evaluate, never from the renderer).
+// For tests and the screenshot spec (reached through Playwright's electronApp.evaluate, never from the renderer).
 (globalThis as Record<string, unknown>).__aosMain = {
   openLink, runCommand, tray: () => tray?.state() ?? null,
   togglePopover: () => togglePopover({ x: 0, y: 0, width: 0, height: 0 }),
