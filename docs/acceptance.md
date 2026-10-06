@@ -24,9 +24,14 @@ Start a timer. Do not open Terminal until the box says so.
   once whether to open an app downloaded from the internet, and shows no "cannot be checked for malicious software"
   dialog (the app and the DMG are notarized).
 - [ ] The setup wizard opens on **Check**: Homebrew (optional; the fix-its use it), Node, Claude Code, Codex and their
-  logins, Ollama, Python and uv. Run the fix-it of each missing row (a login opens the browser; the row turns green
-  when its terminal exits). Record which ran: ______. **Continue** enables once every required row is green and at
-  least one host is logged in.
+  logins, Ollama, Ollama's models, Python and uv. Run the fix-it of each missing row (a login opens the browser; the row
+  turns green when its terminal exits). Record which ran: ______. **Continue** enables once every required row is green
+  and at least one host is logged in; the **Ollama's models** row never holds it up.
+- [ ] Ollama ends with its two models downloaded, about 7.2 GB together (`qwen3.5:9b` 6.6 GB, `qwen3-embedding:0.6b`
+  639 MB): **Install Ollama and its models** starts its service, waits for it to answer and pulls both. With no Ollama,
+  that fix runs the download too, so Continue waits for it; **Stop** after the brew install ends the job and leaves the
+  models to the **Download the models** row. With Ollama already installed, the **Ollama's models** row warns (`!`)
+  while one is missing, and **Download the models** pulls only that one. The row is green before you continue.
 - [ ] **Choose**: the ready hosts (both, when both are); the vault folder `~/AgenticOS`.
 - [ ] **Your agent**: name `Atlas`, address `boss`, voice `dry`, priorities `tests`, model and effort default, schedule
   `yes`.
@@ -53,7 +58,7 @@ Start a timer. Do not open Terminal until the box says so.
 
 ## 2. Ollama auto-switch (criterion 2)
 `aos status` only reads the cached `brain/_index/provider-state.json` and never probes; `aos scan-vault --quiet` resolves the provider and rewrites that file, so run it before every status check below.
-- [ ] Install Ollama (ollama.com), then pull the two default tags — `ollama pull qwen3.5:9b && ollama pull qwen3-embedding:0.6b` (workhorse, embedder; `brain/scripts/sdk/lib/models.js` is the source of truth if they change) — and keep `ollama serve` running. The reasoner is a Claude model and needs only the Claude login.
+- [ ] Ollama is installed with its two default tags, which the wizard downloaded in section 1. On a machine set up from a terminal, install Ollama (ollama.com) and pull them by hand — `ollama pull qwen3.5:9b && ollama pull qwen3-embedding:0.6b` (workhorse, embedder, about 7.2 GB together; `brain/scripts/sdk/lib/models.js` is the source of truth if they change) — and keep `ollama serve` running. The reasoner is a Claude model and needs only the Claude login.
 - [ ] Without editing any file: `aos scan-vault --quiet && aos status` shows provider `ollama`.
 - [ ] End a Claude Code session; within a minute `~/AgenticOS/brain/_index/pipelines.json` shows `auto-wrap` with `"provider": "ollama"` and status `ok`.
 - [ ] Stop Ollama; after 60 s, `aos scan-vault --quiet && aos status` shows `claude` (or `none` if not logged in).

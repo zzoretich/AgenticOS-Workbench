@@ -61,6 +61,7 @@ test("setup names a fix by id only, and refuses each step outside its state", as
   expect(await call((aos) => (aos.setup.fix as (id: string, c: number, r: number) => unknown)("rm -rf ~", 80, 24))).toMatchObject({ ok: false, code: "EINVAL" });
   // The checks and fix-its are the wizard's: with a vault attached, refused.
   expect(await call((aos) => aos.setup.fix("uv", 80, 24))).toMatchObject({ ok: false, code: "EROFS", error: "a vault is already attached" });
+  expect(await call((aos) => aos.setup.fix("ollama-models", 80, 24))).toMatchObject({ ok: false, code: "EROFS", error: "a vault is already attached" });
   expect(await call((aos) => aos.setup.preflight())).toMatchObject({ ok: false, code: "EROFS", error: "a vault is already attached" });
   // A vault is attached: no install, no second attach; no payload in a dev run: no upgrade.
   expect(await call((aos) => aos.setup.install({ host: "claude", vault: "~/Elsewhere", persona: null }))).toMatchObject({ ok: false, code: "EROFS", error: "a vault is already attached" });

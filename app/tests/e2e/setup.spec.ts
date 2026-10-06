@@ -1,8 +1,9 @@
 // Phase 5: the first-run wizard, end to end on stand-ins (harness installSetupStubs). With no agenticos.json the app
 // shows the wizard; it checks what `aos init` needs on the PATH main resolves ($AOS_SETUP_PATH here), runs a fix-it's
-// fixed command in its terminal, asks for hosts, folder and the Chief of Staff, runs the payload's `aos init` with
-// those answers, shows the CLAUDE.md line as a diff and adds it only when asked, then attaches the vault and draws the
-// Workbench without a relaunch, where the one-time "What changed" note follows.
+// fixed command in its terminal (Ollama's models are a warning with their own fix), asks for hosts, folder and the
+// Chief of Staff, runs the payload's `aos init` with those answers, shows the CLAUDE.md line as a diff and adds it only
+// when asked, then attaches the vault and draws the Workbench without a relaunch, where the one-time "What changed" note
+// follows.
 
 import { expect, test } from "@playwright/test";
 import * as fs from "node:fs";
@@ -42,6 +43,10 @@ test("with no install, the wizard checks what aos init needs, on the login PATH"
   // Codex is installed but not logged in: a Log in fix; Claude Code is ready, so Codex is not required.
   await expect(row("codex-login")).toHaveClass(/is-missing/);
   await expect(row("codex-login").locator(".aos-setup-fix")).toHaveText("Log in");
+  // Ollama answers without its models: a warning with a fix, never a requirement.
+  await expect(row("ollama-models")).toHaveClass(/is-warn/);
+  await expect(row("ollama-models").locator(".aos-setup-detail")).toHaveText("not downloaded: qwen3.5:9b, qwen3-embedding:0.6b");
+  await expect(row("ollama-models").locator(".aos-setup-fix")).toHaveText("Download the models");
   // uv is required: Continue waits for it.
   await expect(win.locator(".aos-setup-next")).toBeDisabled();
   await expect(row("uv").locator(".aos-setup-fix")).toHaveAttribute("title", "Runs: brew install uv");
@@ -57,6 +62,19 @@ test("a fix-it runs its fixed command in the wizard's terminal, then the checks 
   await expect(row("uv").locator(".aos-setup-detail")).toHaveText(path.join(SETUP.bin, "uv"));
   await expect(win.locator(".aos-setup-next")).toBeEnabled();
   await win.screenshot({ path: test.info().outputPath("wizard-fixed.png") });
+});
+
+test("Ollama's missing models do not hold up Continue, and their fix pulls them in the terminal", async () => {
+  const { win } = app();
+  await expect(row("ollama-models")).toHaveClass(/is-warn/);
+  await expect(win.locator(".aos-setup-next")).toBeEnabled();
+  await row("ollama-models").locator(".aos-setup-fix").click();
+  await expect.poll(log).toContain("$ if ! curl -q --noproxy 127.0.0.1 -fs -m 2 -o /dev/null http://127.0.0.1:11434/api/tags");
+  await expect.poll(log).toContain("Downloading qwen3.5:9b...");
+  await expect.poll(log).toContain("pulling qwen3-embedding:0.6b: 100%");
+  await expect(row("ollama-models")).toHaveClass(/is-ok/, { timeout: 15_000 });
+  await expect(row("ollama-models").locator(".aos-setup-detail")).toHaveText("qwen3.5:9b · qwen3-embedding:0.6b");
+  expect(fs.readFileSync(SETUP.models, "utf8")).toBe("qwen3.5:9b\nqwen3-embedding:0.6b\n");
 });
 
 test("hosts offer only what is ready; the folder is typed or picked", async () => {

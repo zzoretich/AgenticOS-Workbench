@@ -9,6 +9,7 @@ All notable changes to AgenticOS Workbench. Versions follow the tags. From the n
 - Agent Teams → Manage keeps the agent you picked in **Add a member** when the tab redraws before you click Add (its clock, a file change, the runtime's sweep). The pick came back empty, with Add disabled.
 
 ### Changed
+- The app's setup wizard now leaves Ollama with its two models downloaded (`qwen3.5:9b` and `qwen3-embedding:0.6b`, about 7.2 GB): its Ollama fix, now **Install Ollama and its models**, also starts it and pulls them, and with Ollama already installed a missing model is a warning with its own fix, **Download the models**, that does not hold up the install. Background work runs on Ollama as soon as it answers, so before this a wizard install could leave it with no model to run. By hand: `ollama pull qwen3.5:9b && ollama pull qwen3-embedding:0.6b`.
 - The Workbench's settings no longer mention Obsidian: the plugin section is "WORKBENCH — THIS APP", and the status bar, sidebar, vault root and terminal settings speak of the app.
 
 ### Removed

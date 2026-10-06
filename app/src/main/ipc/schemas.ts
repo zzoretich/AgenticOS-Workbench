@@ -77,7 +77,7 @@ export const ReadyInfoSchema: z.ZodType<ReadyInfo> = z.object({
 
 // ── setup (phase 5) ──────────────────────────────────────────────────
 
-const FIX_IDS = ["homebrew", "node", "python", "uv", "ollama", "claude", "codex", "claude-login", "codex-login"] as const satisfies readonly SetupFixId[];
+const FIX_IDS = ["homebrew", "node", "python", "uv", "ollama", "ollama-models", "claude", "codex", "claude-login", "codex-login"] as const satisfies readonly SetupFixId[];
 
 const Cols = z.number().int().min(1).max(2000);
 const Rows = z.number().int().min(1).max(1000);

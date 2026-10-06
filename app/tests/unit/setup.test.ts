@@ -9,11 +9,13 @@ import { PassThrough } from "node:stream";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { createRequire } from "node:module";
+import { spawnSync } from "node:child_process";
 import type { SetupEvent } from "../../src/shared/ipc";
 import { PATH_MARKER, findOnPath, installDirs, loginPath, mergePath, parseLoginPath } from "../../src/main/setup/env";
 import { cmpVersion, findPayload, readPayload } from "../../src/main/setup/payload";
-import { parseVersion, runPreflight, type PreflightDeps, type ProbeResult } from "../../src/main/setup/preflight";
-import { FIXES, FIX_IDS, fixBlocked, fixCommandLine, installArgs, personaJson, resolveVaultPath, stepRefusal, type SetupState } from "../../src/main/policy/setup";
+import { parseTags, parseVersion, runPreflight, type PreflightDeps, type ProbeResult } from "../../src/main/setup/preflight";
+import { FIXES, FIX_IDS, OLLAMA_MODELS, fixBlocked, fixCommandLine, installArgs, personaJson, resolveVaultPath, stepRefusal, type SetupState } from "../../src/main/policy/setup";
 import { applyClaudeMd, claudeMdLine, claudeMdPath, previewClaudeMd } from "../../src/main/setup/claude-md";
 import { attachInfo, hostsOf, markNoted } from "../../src/main/setup/attach";
 import { JobRunner } from "../../src/main/setup/jobs";
@@ -117,6 +119,8 @@ function machine(tools: Record<string, Partial<Record<string, ProbeResult>>>, ex
   };
 }
 const v = (out: string, code = 0): ProbeResult => ({ code, out });
+const TAGS = "-q --noproxy 127.0.0.1 -fs -m 3 http://127.0.0.1:11434/api/tags";
+const tags = (...names: string[]): ProbeResult => v(JSON.stringify({ models: names.map((name) => ({ name, model: name, size: 1 })) }));
 const ALL = {
   brew: {},
   node: { "--version": v("v22.12.0") },
@@ -125,6 +129,7 @@ const ALL = {
   ollama: {},
   python3: { "--version": v("Python 3.12.1") },
   uv: {},
+  curl: { [TAGS]: tags("llama3.2:latest", ...OLLAMA_MODELS) },
 };
 
 test("parseVersion reads the first x.y of a version line", () => {
@@ -139,7 +144,7 @@ test("everything there: ready, both hosts, and main learns the node to run", asy
   assert.deepEqual(report.hosts, { claude: true, codex: true });
   assert.equal(node, "/fake/bin/node");
   assert.ok(report.checks.every((c) => c.state === "ok" && c.fix === null));
-  assert.deepEqual(report.checks.map((c) => c.id), ["homebrew", "node", "claude", "claude-login", "codex", "codex-login", "ollama", "python", "uv"]);
+  assert.deepEqual(report.checks.map((c) => c.id), ["homebrew", "node", "claude", "claude-login", "codex", "codex-login", "ollama", "ollama-models", "python", "uv"]);
 });
 
 test("one host is enough; a missing login offers its fix; codex's 'Not logged in' does not count", async () => {
@@ -205,14 +210,144 @@ test("Ollama.app counts as Ollama, and uv in ~/.local/bin counts as uv", async (
   assert.equal(report.ready, true);
 });
 
+test("Ollama's models: asked over HTTP; one missing is a warning with its fix, and Continue does not wait for it", async () => {
+  const { report } = await runPreflight(machine({ ...ALL, curl: { [TAGS]: tags("qwen3-embedding:0.6b") } }));
+  const models = report.checks.find((c) => c.id === "ollama-models");
+  assert.equal(models?.state, "warn");
+  assert.equal(models?.required, false);
+  assert.equal(models?.detail, "not downloaded: qwen3.5:9b");
+  assert.equal(models?.fix, "ollama-models");
+  assert.equal(models?.fixBlocked, null);
+  assert.equal(report.ready, true);
+});
+
+test("Ollama's models: not answering, they cannot be checked; no Ollama, its own fix downloads them", async () => {
+  const down = (await runPreflight(machine({ ...ALL, curl: { [TAGS]: v("", 7) } }))).report.checks.find((c) => c.id === "ollama-models");
+  assert.equal(down?.state, "warn");
+  assert.match(down?.detail ?? "", /not running/);
+  assert.equal(down?.fix, "ollama-models");
+  const { ollama: _o, ...rest } = ALL;
+  const ran: string[] = [];
+  const deps = machine(rest);
+  const run = deps.run;
+  deps.run = async (file, args, t) => { ran.push(path.basename(file)); return run(file, args, t); };
+  const { report } = await runPreflight(deps);
+  const by = Object.fromEntries(report.checks.map((c) => [c.id, c]));
+  assert.ok(!ran.includes("curl"), "nothing to ask without Ollama");
+  assert.equal(by.ollama.state, "missing");
+  assert.equal(by["ollama-models"].state, "warn");
+  assert.equal(by["ollama-models"].fixBlocked, "needs Ollama first");
+  assert.match(by.ollama.fixCommand ?? "", /"\$O" pull qwen3\.5:9b.*"\$O" pull qwen3-embedding:0\.6b/);
+});
+
+test("parseTags reads the names in Ollama's answer, and nothing from a failed or garbled one", () => {
+  assert.deepEqual(parseTags(tags("qwen3.5:9b")), ["qwen3.5:9b", "qwen3.5:9b"]);
+  assert.equal(parseTags(v("", 7)), null);
+  assert.equal(parseTags(v("<html>")), null);
+  assert.equal(parseTags(null), null);
+});
+
+test("the app's Ollama models are models.js's workhorse and embedder", () => {
+  // The runtime's roles, loaded at run time from the repo (the tests run bundled from app/out-test/), without the env
+  // overrides a developer's shell may set.
+  const models = createRequire(__filename)(path.resolve(__dirname, "../../brain/scripts/sdk/lib/models.js")) as { role(name: string, cfg: object): { tag: string; provider: string } };
+  const saved = { BRAIN_MODEL: process.env.BRAIN_MODEL, BRAIN_EMBEDDER: process.env.BRAIN_EMBEDDER };
+  delete process.env.BRAIN_MODEL;
+  delete process.env.BRAIN_EMBEDDER;
+  try {
+    const roles = [models.role("workhorse", {}), models.role("embedder", {})];
+    assert.deepEqual([...OLLAMA_MODELS], roles.map((r) => r.tag));
+    assert.ok(roles.every((r) => r.provider === "ollama"));
+  } finally {
+    for (const [k, val] of Object.entries(saved)) if (val !== undefined) process.env[k] = val;
+  }
+});
+
 // ── policy ───────────────────────────────────────────────────────────
 
 test("every fix is a fixed command run by /bin/sh -c; the page cannot add one", () => {
-  assert.deepEqual(FIX_IDS.sort(), ["claude", "claude-login", "codex", "codex-login", "homebrew", "node", "ollama", "python", "uv"]);
+  assert.deepEqual(FIX_IDS.sort(), ["claude", "claude-login", "codex", "codex-login", "homebrew", "node", "ollama", "ollama-models", "python", "uv"]);
   assert.deepEqual(fixCommandLine("uv"), { file: "/bin/sh", args: ["-c", "brew install uv"] });
   assert.equal(FIXES["claude-login"].command, "claude auth login");
   assert.equal(fixBlocked("uv", new Set(["homebrew"])), null);
   assert.equal(fixBlocked("codex-login", new Set()), "needs the Codex CLI first");
+});
+
+/**
+ * Runs a fix-it's command with /bin/sh on stand-ins: curl answers once `up` exists, brew's service start creates it
+ * (unless `startFails`), brew lists the formula once `formula` exists, ollama knows what it pulled. With `appCli`,
+ * ollama is not on the PATH but inside ~/Applications/Ollama.app, as before Ollama.app first links it. Every call is
+ * logged.
+ */
+function runFix(id: "ollama" | "ollama-models", state: { up?: boolean; formula?: boolean; startFails?: boolean; appCli?: boolean; pulled?: string[] }): { code: number | null; out: string; calls: string[] } {
+  const dir = fs.mkdtempSync(path.join(ROOT, "fix-"));
+  const bin = path.join(dir, "bin");
+  const appBin = path.join(dir, "Applications", "Ollama.app", "Contents", "Resources");
+  fs.mkdirSync(bin);
+  fs.mkdirSync(appBin, { recursive: true });
+  const at = (f: string) => JSON.stringify(path.join(dir, f));
+  if (state.up) fs.writeFileSync(path.join(dir, "up"), "");
+  if (state.formula) fs.writeFileSync(path.join(dir, "formula"), "");
+  fs.writeFileSync(path.join(dir, "pulled"), (state.pulled ?? []).map((m) => `${m}\n`).join(""));
+  const sh = (name: string, body: string, where = bin) => fs.writeFileSync(path.join(where, name), `#!/bin/sh\necho "${name} $*" >> ${at("calls")}\n${body}\n`, { mode: 0o755 });
+  sh("curl", `[ -f ${at("up")} ]`);
+  sh("brew", `case "$1 $2" in
+  "install ollama") : > ${at("formula")};;
+  "services start") ${state.startFails ? ":" : `: > ${at("up")}`};;
+  "list --formula") [ -f ${at("formula")} ];;
+  *) exit 1;;
+esac`);
+  sh("ollama", `case "$1" in
+  show) grep -qx "$2" ${at("pulled")};;
+  pull) echo "pulling $2"; echo "$2" >> ${at("pulled")};;
+  *) exit 1;;
+esac`, state.appCli ? appBin : bin);
+  const r = spawnSync(fixCommandLine(id).file, fixCommandLine(id).args, { encoding: "utf8", env: { PATH: `${bin}:/usr/bin:/bin`, HOME: dir } });
+  const calls = fs.existsSync(path.join(dir, "calls")) ? fs.readFileSync(path.join(dir, "calls"), "utf8").trim().split("\n") : [];
+  return { code: r.status, out: r.stdout + r.stderr, calls };
+}
+
+test("Install Ollama and its models starts its service, waits until it answers, then pulls both models", () => {
+  const r = runFix("ollama", {});
+  assert.equal(r.code, 0, r.out);
+  assert.deepEqual(r.calls.filter((c) => !c.startsWith("ollama show")), [
+    "brew install ollama", "brew services start ollama",
+    "curl -q --noproxy 127.0.0.1 -fs --retry 30 --retry-delay 1 --retry-connrefused --retry-max-time 30 -m 2 -o /dev/null http://127.0.0.1:11434/api/tags",
+    "ollama pull qwen3.5:9b", "ollama pull qwen3-embedding:0.6b",
+  ]);
+  assert.match(r.out, /Waiting for Ollama to answer \(up to 30 s\)[\s\S]*Downloading qwen3\.5:9b[\s\S]*Downloading qwen3-embedding:0\.6b/);
+});
+
+test("Download the models pulls only the missing ones, starting brew's service only when Ollama is not answering", () => {
+  const answering = runFix("ollama-models", { up: true, pulled: ["qwen3.5:9b"] });
+  assert.equal(answering.code, 0, answering.out);
+  assert.ok(!answering.calls.some((c) => c.startsWith("brew")), "nothing to start");
+  assert.deepEqual(answering.calls.filter((c) => c.startsWith("ollama pull")), ["ollama pull qwen3-embedding:0.6b"]);
+  assert.match(answering.out, /qwen3\.5:9b is already downloaded/);
+
+  const brewed = runFix("ollama-models", { formula: true });
+  assert.equal(brewed.code, 0, brewed.out);
+  assert.ok(brewed.calls.includes("brew services start ollama"));
+  assert.deepEqual(brewed.calls.filter((c) => c.startsWith("ollama pull")), ["ollama pull qwen3.5:9b", "ollama pull qwen3-embedding:0.6b"]);
+
+  // Ollama.app, closed: it starts its own server once opened, so the fix says so and pulls nothing.
+  const app = runFix("ollama-models", {});
+  assert.equal(app.code, 1);
+  assert.match(app.out, /Ollama is not running: open Ollama/);
+  assert.ok(!app.calls.some((c) => c.startsWith("ollama")));
+
+  // Ollama.app, open, before it links its CLI onto the PATH: the app's own copy pulls.
+  const unlinked = runFix("ollama-models", { up: true, appCli: true });
+  assert.equal(unlinked.code, 0, unlinked.out);
+  assert.deepEqual(unlinked.calls.filter((c) => c.startsWith("ollama pull")), ["ollama pull qwen3.5:9b", "ollama pull qwen3-embedding:0.6b"]);
+});
+
+test("a service that never answers stops the fix with Homebrew's advice, before any pull", () => {
+  const r = runFix("ollama-models", { formula: true, startFails: true });
+  assert.equal(r.code, 1);
+  assert.match(r.out, /did not answer at http:\/\/127\.0\.0\.1:11434 within 30 s: run brew services restart ollama/);
+  assert.ok(r.calls.includes("brew services start ollama"));
+  assert.ok(!r.calls.some((c) => c.startsWith("ollama pull")));
 });
 
 test("a vault folder is absolute or ~/…, never home itself or a root", () => {
