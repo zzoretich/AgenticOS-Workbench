@@ -2,24 +2,27 @@
 
 Installed by default. Your vault gets a named agent — an identity that is injected into every
 Claude Code session, a small state file that bridges sessions, a playbook of your own commands,
-skills and agents, three scheduled duties, and a proposals protocol for changes that need your
+skills and agents, five scheduled duties (monitor, reflect, reflect-daily, sitrep, tick) watched by
+a heartbeat, and a proposals protocol for changes that need your
 sign-off. The machinery ships; the content is generated for you and never leaves your machine.
 
 ## The interview
 
-The `aos init` Chief of Staff interview (item 7 in `docs/install.md`), and `aos persona` at any time, ask in order:
+The `aos init` Chief of Staff interview (the **Chief of Staff interview** step in `docs/install.md`), and `aos persona` at any time, ask in order:
 
 1. Agent name (required; the prompt shows "Proton" as an example — pick your own).
 2. How the agent addresses you (a name or a title).
 3. Voice in one line.
 4. What it should watch most (comma-separated → `## Priorities` in STATE.md).
 5. Model for background duties (default: your configured Claude model).
-6. Effort for background duties (`low|medium|high`, default `medium`).
-7. Schedule daily duties? (default yes → launchd on macOS, crontab on Linux).
+6. On a Codex host only (`hosts.codex.enabled`): Codex model for background duties (blank: your Codex default; stored as `persona.codexModel` in `<vault>/brain/config.json`).
+7. Effort for background duties (`low|medium|high`, default `medium`).
+8. Schedule daily duties? (default yes → launchd on macOS, crontab on Linux).
 
 Non-interactive: `aos init --persona-json answers.json` or `aos persona --yes` (reuses the last
 answers). The answers file shape is
-`{ "name", "addressAs", "voice", "priorities", "dutyModel", "dutyEffort", "schedule" }`.
+`{ "name", "addressAs", "voice", "priorities", "dutyModel", "dutyCodexModel", "dutyEffort", "schedule" }`
+(`dutyCodexModel` is used only on a Codex host).
 Re-running the interview regenerates `IDENTITY.md` and `duties/*.md`; it keeps `STATE.md`,
 `PLAYBOOK.md`, `proposals/README.md` and `autoapply.json`.
 
@@ -207,7 +210,7 @@ any miss; the tooltip lists each duty with its status, last run and next fire.
 ## Commands and skills
 
 - `aos persona` — re-run the interview (prefilled). `aos persona rename <name>` re-renders
-  IDENTITY.md and the three duties from the templates with the new name, rewrites the PLAYBOOK's
+  IDENTITY.md and the five duty prompts (`duties/*.md`) from the templates with the new name, rewrites the PLAYBOOK's
   H1 and the name on STATE.md's non-heading lines, and re-renders installed schedules; the
   playbook's body is yours, so hand-written annotations that mention the old name survive a rename.
   `aos persona off` / `on` create / remove `persona/DISABLED` — the kill switch only; neither
@@ -224,7 +227,7 @@ change only through `persona/proposals/YYYY-MM-DD-<slug>.md` with a `recheck` re
 premise table; approval applies the change exactly as written and re-runs the recipe expecting
 the finding to be gone. See `persona/proposals/README.md` in your vault. The Workbench's Proposals tab
 shows the pending files, the backlog and the ledger history read-only; its **Review in Claude** button starts
-this review in the Term tab.
+this review in the Term tab (on a Codex-only setup, where Claude Code is not enabled, it reads **Review in Codex** and runs `codex '$agenticos:persona-flag-closer'`).
 
 Every proposal shares one format — frontmatter, a `# ` title, the link line
 `**[Open the proposal in browser](file:///…)**`, then What / Why / Risk / Premises — and exists as an HTML page.

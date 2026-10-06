@@ -309,7 +309,7 @@ see below).
 
 | # | Item | Status | Covered by / reason |
 |---|---|---|---|
-| RR1 | No default hotkey on Omnisearch (⌘K is the app's palette) | covered | `shell › commands…` |
+| RR1 | The HUD's Omnisearch command registers no default hotkey (the app binds ⌘K to it; ⌘P is the palette) | covered | `shell › commands…` |
 | RR2 | DISK donut and COST DETAIL sparkline render as SVG nodes | covered | `pulse › SYSTEM drawer…` |
 | RR3 | Clock and timestamps follow the OS locale | covered | `shell › the clock and the host chrome follow the OS locale` |
 

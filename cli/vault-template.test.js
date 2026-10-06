@@ -83,6 +83,12 @@ test('AGENTICOS.md sections; the vault is plain, with no editor settings seeded'
   assert.ok(!/Obsidian/.test(read('AGENTICOS.md').replace(/\.obsidian\//g, '')), 'AGENTICOS.md names no editor');
 });
 
+test('AGENTICOS.md fits the Codex conventions block uncut', () => {
+  // brain/scripts/inject-conventions.js cuts the file off past MAX_CHARS (9000) when it injects it into a Codex session.
+  const n = read('AGENTICOS.md').trim().length;
+  assert.ok(n <= 9000, `AGENTICOS.md is ${n} characters; a Codex session would see it cut off past 9000`);
+});
+
 test('TODO.md seeds an empty list with Open and Done', () => {
   const t = read('TODO.md');
   assert.match(t, /^# To-Do\n/);

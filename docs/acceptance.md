@@ -23,19 +23,22 @@ Start a timer. Do not open Terminal until the box says so.
   `AgenticOS-Workbench-<version>-arm64.dmg`; open it, drag the app to Applications, and open it from there. macOS asks
   once whether to open an app downloaded from the internet, and shows no "cannot be checked for malicious software"
   dialog (the app and the DMG are notarized).
-- [ ] The setup wizard opens on **Check**: Node, Claude Code, Codex and their logins, Ollama, Python and uv. Run the
-  fix-it of each missing row (a login opens the browser; the row turns green when its terminal exits). Record which ran:
-  ______. **Continue** enables once every required row is green and at least one host is logged in.
+- [ ] The setup wizard opens on **Check**: Homebrew (optional; the fix-its use it), Node, Claude Code, Codex and their
+  logins, Ollama, Python and uv. Run the fix-it of each missing row (a login opens the browser; the row turns green
+  when its terminal exits). Record which ran: ______. **Continue** enables once every required row is green and at
+  least one host is logged in.
 - [ ] **Choose**: the ready hosts (both, when both are); the vault folder `~/AgenticOS`.
 - [ ] **Your agent**: name `Atlas`, address `boss`, voice `dry`, priorities `tests`, model and effort default, schedule
   `yes`.
-- [ ] **Install** runs `aos init` with its output live and ends `Installed.`
+- [ ] **Install** runs `aos init` with its output live; when it exits 0 the wizard moves on to **Finish** ("Almost
+  there") by itself. If it stops with an error instead, the step reads `aos init stopped (exit N)` and the box fails.
 - [ ] **Finish**: with Claude Code, the `CLAUDE.md` diff; **Add the line** → `~/.claude/CLAUDE.md` ends with an
   `@…/AgenticOS/AGENTICOS.md` line carrying the **absolute** vault path (do not paste it anywhere). With Codex, the
   `/hooks` step is shown.
-- [ ] **Open the Workbench**: it opens on Pulse with no LED red, then shows **What changed** once. Gray "disabled" for
-  auto-cost and embeddings is correct, and amber `stale` is expected for any stage whose last run has aged out —
-  `scan-vault`, `build-brain-md` and the heartbeat go stale 45 minutes after they ran. Only red is a failure.
+- [ ] **Open the Workbench**: it opens on Pulse with no LED red, then shows the one-time note **AgenticOS Workbench is
+  an app now** once. Gray "disabled" for auto-cost and embeddings is correct, and amber `stale` is expected for any
+  stage whose last run has aged out — `scan-vault`, `build-brain-md` and the heartbeat go stale 45 minutes after they
+  ran. Only red is a failure.
 - [ ] Timer under 10:00 → record the time: ______
 - [ ] Now open Terminal: `export PATH="$HOME/.local/bin:$PATH"` (append the same line to `~/.zprofile`); `which aos`
   prints the `.local/bin/aos` symlink under your home; `aos doctor` exits 0, and its `workbench app` row reads
@@ -46,7 +49,7 @@ Start a timer. Do not open Terminal until the box says so.
 - [ ] `cd ~ && claude`, first prompt `what do you know about me?` → the reply shows it received `<persona>` (mentions Atlas) and `<brain-context>`.
 - [ ] `/wrap` in that session → `~/AgenticOS/brain/memory/` gains at least one file and `MEMORY.md` one line.
 - [ ] In a new session: `use the agenticos recall tool to search for "Atlas"` → the `recall` tool of the `agenticos` MCP server — exposed to Claude Code as `mcp__plugin_agenticos_agenticos__recall` (contract §0) — answers (hits or an empty result, no error).
-- [ ] ⌘Q the app and open it again: it goes straight to the Workbench (no wizard, no second What changed).
+- [ ] ⌘Q the app and open it again: it goes straight to the Workbench (no wizard, no second "AgenticOS Workbench is an app now" note).
 
 ## 2. Ollama auto-switch (criterion 2)
 `aos status` only reads the cached `brain/_index/provider-state.json` and never probes; `aos scan-vault --quiet` resolves the provider and rewrites that file, so run it before every status check below.

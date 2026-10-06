@@ -18,8 +18,12 @@ Ollama directly and does not consult the provider setting.
 Models the defaults expect on Ollama: `qwen3.5:9b` (workhorse) and `qwen3-embedding:0.6b`
 (embedder). Override with `BRAIN_MODEL` and `BRAIN_EMBEDDER`. Pull both with
 `sh extras/ollama/model-pull.sh`. The reasoner role (`/ask-brain --local`, `/reflect-week`,
-`/consolidate-memory`) is a Claude model (`reasoner.model`, default `claude-opus-5`) and runs
-through your Claude Code login, never through Ollama.
+`/consolidate-memory`, the Workbench's Chat tab) is a hosted model, not one of these Ollama tags.
+It runs on Claude (`reasoner.model`, default `claude-opus-5`) through your Claude Code login, or
+on Codex (`reasoner.codexModel`) when Codex is a host and logged in; Claude comes first unless
+`provider` is `codex`. Only when neither host is available, or the reasoner's daily cap is
+reached, and Ollama is up does the call fall back to the workhorse here. See docs/install.md,
+"The reasoner role".
 
 ## Keeping Ollama alive
 

@@ -1,5 +1,3 @@
-node_modules/
+# Leftovers of a pre-1.0 Obsidian build or install, kept out of git (and the privacy gate) in older checkouts.
 main.js
-*.map
-.DS_Store
 data.json
