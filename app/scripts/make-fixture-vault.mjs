@@ -247,8 +247,6 @@ stage("seed vault (aos init step 3)", () => {
   fs.writeFileSync(session, fs.readFileSync(session, "utf8").replace(/^updated: .*$/m, `updated: ${TODAY}`));
   const defaults = readJson(path.join(WB, "brain", "scripts", "config.default.json"));
   writeJson(v("brain/config.json"), defaults);
-  const layout = defaults.dailyNote.layout;
-  writeJson(v(".obsidian/daily-notes.json"), { folder: String(layout).split("/")[0].replace(/\{yyyy\}/g, String(NOW.getFullYear())), format: "YYYY-MM-DD" });
   // The Obsidian Git plugin's settings, with its backup timer on (Routines lists it under OUTSIDE THE RUNTIME).
   writeJson(v(".obsidian/plugins/obsidian-git/data.json"), { autoSaveInterval: 30, autoPushInterval: 0, autoPullInterval: 60, autoBackupAfterFileChange: true });
 });

@@ -32,7 +32,7 @@ function sources(dir) {
 const hudFiles = [path.join(hud, "main.ts"), ...sources(path.join(hud, "src"))];
 const hudText = hudFiles.map((f) => readFileSync(f, "utf8")).join("\n");
 
-// Names the HUD imports from "obsidian" (type-only imports included: phase 4 type-checks against the compat layer).
+// Names the HUD imports from "obsidian" (type-only imports included: the compat package must export each name).
 const imported = new Map();
 for (const f of hudFiles) {
   const text = readFileSync(f, "utf8");

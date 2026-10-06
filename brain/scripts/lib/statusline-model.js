@@ -3,7 +3,7 @@
  * statusline-model.js — what the AgenticOS status line shows (spec 2026-09-28-statusline-design): the gates, alerts
  * and flags that need the user, live team runs, the spend family nearest its cap, and health. Built from a vault and
  * written to <vault>/brain/_index/statusline.json (schema 1); the Claude Code status line, the Codex session-start line
- * and the Obsidian status bar only read that file (D3).
+ * and the Workbench's status bar only read that file (D3).
  *
  * Strictly read-only over the vault (D4): no team sweep, no process signal beyond kill(pid, 0), no write but the model
  * file itself. Every source is read on its own, so one unreadable file drops one field, never the model.

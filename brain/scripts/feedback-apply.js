@@ -2,7 +2,7 @@
 'use strict';
 /**
  * feedback-apply.js — approve/reject feedback drafts by slug. The thin CLI the
- * feedback-autoloop skill drives after its AskUserQuestion batch review.
+ * feedback-review skill drives after its AskUserQuestion batch review.
  *   node feedback-apply.js --list
  *   node feedback-apply.js --approve <slug>   # promotes via memory-writer.js
  *   node feedback-apply.js --reject <slug>    # deletes + remembers the rejection

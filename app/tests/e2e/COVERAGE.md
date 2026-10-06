@@ -4,9 +4,7 @@ The per-tab checklist is `../docs/app-smoke.md` in this repo. Every checkbox ite
 is listed below with the spec that covers it, or why it is not covered here.
 
 - **covered**: every read-only part of the item is asserted.
-- **covered in part**: the read-only half is asserted; the rest writes (phase 2) or needs something named in the reason.
-- **phase 2 (writes)**: the item is a write, a spawn started by a click, or a model call; the app refuses those until
-  the write surface that covers it is enabled and tested (`src/shared/surfaces.ts`, docs/phase-2.md).
+- **covered in part**: part of the item is asserted; the rest needs something named in the reason.
 - **N/A in the app**: the item is about the runtime CLI or a host session (Claude Code or Codex).
 - **not covered**: read-only, but not automated yet, with the reason.
 
@@ -20,15 +18,14 @@ list at the top of app-smoke.md is the release process, not app behaviour: it is
 |---|---|
 | covered | 91 |
 | covered in part | 15 |
-| phase 2 (writes) | 0 |
 | N/A in the app | 39 |
 | not covered | 4 |
 | **total** | **149** |
 
 Of the 110 items about the app (149 minus the 39 N/A), 106 are asserted (91 fully, 15 in part); the other 4 are not
-covered, for the reasons below. Every write surface is enabled and tested, so no item waits on phase 2 any more. The
+covered, for the reasons below. Every write surface is enabled and tested. The
 "in part" rows need something the fixture or the app lacks (a dispatched seat, a Codex database, the clipboard, the
-OS handing over an `agenticos://` link, a published update). Phase 2, each surface on through `AOS_APP_WRITE`:
+OS handing over an `agenticos://` link, a published update). The writes, each surface on through `AOS_APP_WRITE`:
 - To-Do (T1, T2, T4, T5, T7) in `todo-writes.spec.ts`;
 - Notifications (N4, N5, N6) in `notifications-writes.spec.ts`;
 - Capture (P7, P8) in `capture-writes.spec.ts`;
@@ -177,7 +174,7 @@ see below).
 | N1 | Rail after Proposals; no `brain/notifications`: badge hidden, "No notifications yet" with the hint | covered | `shell › rail…`, `variants › an empty vault › Notifications…` |
 | N2 | `aos notify post` shows an amber count within a second, with another tab active | covered | `notifications › a post from aos notify post…` (the fixture's edition carries the actions). |
 | N3 | A breaking post raises a desktop notification and turns the badge rose; `osAlert false` suppresses it | covered in part | `notifications › rail badge … rose…`. The desktop alert comes from the runtime's `aos notify`, not the app. |
-| N4 | Unread newest first; an edition expands to intro, sections and buttons; the row turns read; Mark all read | covered | `notifications › Unread lists…`, `› an edition expands…`, `› with the Notifications surface off, opening an unread item…` (refused), `notifications-writes › opening an unread item marks it read…`, `› Mark all read…`. In the Unread view the opened item leaves the list at once (upstream finding, docs/phase-2.md). |
+| N4 | Unread newest first; an edition expands to intro, sections and buttons; the row turns read; Mark all read | covered | `notifications › Unread lists…`, `› an edition expands…`, `› with the Notifications surface off, opening an unread item…` (refused), `notifications-writes › opening an unread item marks it read…`, `› Mark all read…`. In the Unread view the opened item leaves the list at once (upstream finding). |
 | N5 | Level chips and sender dropdown; All and Archived views; Archive / Unarchive / Mark unread / Open note | covered | `notifications › level chips…`, `› a read item expands…`, `› Open note…`, `notifications-writes › Mark unread, Archive and Unarchive…` |
 | N6 | More like this turns cyan and appends to `reactions.jsonl` | covered | A recorded vote renders chosen (`notifications › an edition expands…`); `notifications-writes › a vote appends one line to reactions.jsonl…` |
 | N7 | Deep dive ❯_ opens a Claude Code / Codex session running the skill; one button per host with both | covered | `notifications › Deep dive ❯_…`, `variants › a Codex-only machine › Notifications…`, `variants › both hosts › Notifications…` |

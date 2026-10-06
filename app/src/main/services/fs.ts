@@ -1,6 +1,6 @@
 // The page's file system, in main (phase 4, S2 and S3). Every read is checked against the read scope and every write
 // against the write policy before it reaches the disk; what is refused comes back as EROFS, and nothing is thrown at
-// the bridge. No Electron here, so the unit tests drive it directly (tests/unit/fs-service.test.ts).
+// the bridge. No Electron here, so the unit tests drive it directly (tests/unit/main-services.test.ts).
 
 import * as fs from "node:fs";
 import * as path from "node:path";

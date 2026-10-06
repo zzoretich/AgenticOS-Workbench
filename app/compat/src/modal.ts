@@ -17,7 +17,7 @@ export class Modal {
   private lastFocus: HTMLElement | null = null;
   // Keeps the keyboard in the topmost open modal. The HUD's embedded terminal focuses itself whenever it re-renders
   // (TerminalPanel, on the next animation frame), so without this the keys meant for a form here could reach a live
-  // shell. Obsidian does not do this; it is the host's safety net (docs/phase-2.md).
+  // shell. Obsidian does not do this; it is the host's safety net.
   private onFocusIn = (ev: FocusEvent): void => {
     const target = ev.target instanceof HTMLElement ? ev.target : null;
     if (target && this.containerEl.contains(target)) { this.lastFocus = target; return; }

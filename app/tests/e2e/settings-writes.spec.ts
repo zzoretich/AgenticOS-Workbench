@@ -1,4 +1,4 @@
-// ⚙ Settings with its write surface on (AOS_APP_WRITE=settings), the phase 2 rows of app-smoke: Settings and
+// ⚙ Settings with its write surface on (AOS_APP_WRITE=settings), the rows of app-smoke: Settings and
 // Install paths. Every change is `aos config set|unset <key> … --json`, run by the vault's own runtime, which writes the
 // file that wins (agenticos.json for this machine, brain/config.json for this vault) and applies the key's side effects;
 // a follow-up it prints becomes a button that runs it. The tests read both files after each change.
@@ -46,8 +46,7 @@ const lacksClass = (l: ReturnType<Page["locator"]>, re: RegExp) => async () => !
 const buttons = (win: Page, key: string) => row(win, key).locator(".setting-item-control > .extra-setting-button");
 /**
  * Waits until the tab has a list and no `aos config list` is in flight. SettingsTab.refresh() returns at once while one
- * runs, so a change made during the open-time refresh would render that refresh's stale list afterwards (upstream,
- * docs/phase-2.md). The tab's own `loading` flag is the only signal for it.
+ * runs, so a change made during the open-time refresh would render that refresh's stale list afterwards (upstream). The tab's own `loading` flag is the only signal for it.
  */
 async function loaded(win: Page): Promise<void> {
   await expect(C(win).locator(".aos-rt-count")).toHaveText(/changed from the defaults$/);

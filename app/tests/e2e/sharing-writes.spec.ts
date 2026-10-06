@@ -1,4 +1,4 @@
-// Skills and Agents sharing with its write surface on (AOS_APP_WRITE=sharing), the phase 2 rows of app-smoke: Skills
+// Skills and Agents sharing with its write surface on (AOS_APP_WRITE=sharing), the rows of app-smoke: Skills
 // and Agents, on a machine with both session hosts (sharing on). unshare and share run `aos skills|agents exclude|include
 // <id>`: the runtime rewrites brain/config.json's exclude list, then syncs, which removes the item's mirror in the other
 // host's folder or writes it again. The tests read the config, the mirror and the runtime's cache after each click.

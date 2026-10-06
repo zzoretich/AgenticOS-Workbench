@@ -1,5 +1,5 @@
 // The Workbench HUD as the app sees it. The build points these names at ../obsidian-plugin; tsc
-// sees only these shapes, so the vendor source is not type-checked against the compat layer until phase 4.
+// sees only these shapes. The HUD's own tsc (obsidian-plugin/tsconfig.json) checks it against the `obsidian` types.
 
 declare module "@workbench/hud" {
   import type { App, Plugin, PluginManifest } from "obsidian";

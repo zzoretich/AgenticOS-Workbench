@@ -9,8 +9,8 @@ directories:
   output: dist
   buildResources: build
 
-# esbuild bundles the app and the HUD into out/. The one runtime dependency is node-pty, which the HUD loads with
-# require() at run time: only its JavaScript and this Mac's prebuild ship.
+# esbuild bundles the app and the HUD into out/. The one runtime dependency is node-pty, which main loads with require()
+# for the Workbench's terminals: only its JavaScript and this Mac's prebuild ship.
 files:
   - out/**/*
   - "!out/**/*.map"
@@ -29,7 +29,7 @@ asarUnpack:
 extraResources:
   - from: payload
     to: payload
-# The N-API prebuild loads in this Electron as it is (docs/phase-0.md); a rebuild would compile it from source.
+# node-pty's N-API prebuild loads in this Electron as it is; a rebuild would compile it from source.
 npmRebuild: false
 
 mac:
@@ -44,7 +44,7 @@ mac:
   hardenedRuntime: true
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
-  # Notarizes the app when the keychain profile is set: APPLE_KEYCHAIN_PROFILE=aos-notary (docs/phase-3.md).
+  # Notarizes the app when the keychain profile is set: APPLE_KEYCHAIN_PROFILE=<a notarytool profile> (app/README.md).
   notarize: true
   # The HUD is dark; let the window's frame and native dialogs follow the system as the dev build does.
   darkModeSupport: true

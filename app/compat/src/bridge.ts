@@ -1,5 +1,5 @@
 // The compat layer's way to the disk and the OS: the preload's bridge to main (window.aos, src/preload/index.ts), which
-// checks every call. The unit tests install a bridge of their own (tests/unit/loopback-bridge.ts).
+// checks every call.
 
 import type { AosBridge, Result } from "../../src/shared/ipc";
 

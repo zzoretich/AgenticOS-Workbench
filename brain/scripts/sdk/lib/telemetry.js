@@ -149,7 +149,7 @@ function startRun({ script, prompt }) {
   };
   try {
     fs.writeFileSync(liveFile, JSON.stringify(header) + '\n');
-    // Surface the run id to spawning processes (e.g. the Obsidian plugin's
+    // Surface the run id to spawning processes (e.g. the Workbench's
     // askSpawner) so they can subscribe to this run's events live. Stderr
     // keeps stdout reserved for the script's actual output.
     process.stderr.write(`[telemetry] run_id=${id}\n`);

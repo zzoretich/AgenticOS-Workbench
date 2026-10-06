@@ -164,7 +164,7 @@ export class SettingsTab {
       }
     }
 
-    host.createDiv({ cls: "aos-rt-subhead aos-dim", text: "WORKBENCH — THIS OBSIDIAN PLUGIN" });
+    host.createDiv({ cls: "aos-rt-subhead aos-dim", text: "WORKBENCH — THIS APP" });
     this.pluginRows = renderPluginSettings(host.createDiv({ cls: "aos-st-section aos-st-plugin" }), this.plugin, () => this.render());
 
     if (this.list) this.renderHosts(host, this.list);

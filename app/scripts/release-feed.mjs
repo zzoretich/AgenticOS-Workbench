@@ -1,5 +1,5 @@
 // The pure parts of `npm run release:app` (scripts/release-app.mjs), apart so the unit tests can reach them
-// (tests/unit/release-feed.test.ts; types in release-feed.d.mts).
+// (tests/unit/updater.test.ts; types in release-feed.d.mts).
 
 import { createHash } from "node:crypto";
 
