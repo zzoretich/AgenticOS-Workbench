@@ -2,7 +2,7 @@
   "name": "agenticos-workbench-app",
   "productName": "AgenticOS Workbench",
   "private": true,
-  "version": "0.21.0",
+  "version": "1.0.0",
   "description": "AgenticOS Workbench as a macOS app: the Workbench HUD re-hosted on an Obsidian compatibility layer",
   "main": "out/main/index.js",
   "engines": {

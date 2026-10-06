@@ -4,6 +4,8 @@ All notable changes to AgenticOS Workbench. Versions follow the tags. From the n
 
 ## [Unreleased]
 
+## [1.0.0] — 2026-10-06
+
 **AgenticOS no longer uses Obsidian: the Workbench is a macOS app, AgenticOS Workbench, attached to this release.** Coming from 0.x with the Workbench in Obsidian? The [migration guide](https://github.com/zzoretich/AgenticOS-Workbench/blob/main/docs/migrating-to-1.0.md) walks through it.
 
 ### Upgrading
@@ -321,7 +323,8 @@ The first public release: an `aos` CLI, the AgenticOS runtime, a Claude Code plu
 - Update notifications: a GitHub release check surfaced as a session-start notice.
 - Docs: README, install guide, and a release acceptance runbook.
 
-[Unreleased]: https://github.com/zzoretich/AgenticOS-Workbench/compare/v0.21.0...HEAD
+[Unreleased]: https://github.com/zzoretich/AgenticOS-Workbench/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v1.0.0
 [0.21.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.21.0
 [0.20.3]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.20.3
 [0.20.2]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.20.2
