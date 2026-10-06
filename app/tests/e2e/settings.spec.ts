@@ -1,4 +1,4 @@
-// ⚙ Settings (plugin-smoke: Install paths, Settings) with its write surface off: the whole system's settings from
+// ⚙ Settings (app-smoke: Install paths, Settings) with its write surface off: the whole system's settings from
 // `aos config list --json`, master switches, source pills, dimmed Codex rows, pickers with − / +, daily-cap spend, the
 // edit / manage buttons, hosts & install rows, the plugin's own rows (the same renderer as Obsidian's settings pane),
 // and a change refused. The changes themselves (`aos config set|unset`) are in settings-writes.spec.ts.

@@ -1,4 +1,4 @@
-// End-to-end parity suite: the HUD checklist (../docs/plugin-smoke.md) as Playwright `_electron` specs against a synthetic
+// End-to-end parity suite: the HUD checklist (../docs/app-smoke.md) as Playwright `_electron` specs against a synthetic
 // vault. `npm run test:e2e` builds the app first. Electron windows appear on screen; one worker keeps them sequential.
 import { defineConfig } from "@playwright/test";
 

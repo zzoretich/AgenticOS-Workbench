@@ -1,4 +1,4 @@
-// Pulse (plugin-smoke: Pulse, Review readiness): pipeline LEDs from the runtime's ledger, the persona-named briefing,
+// Pulse (app-smoke: Pulse, Review readiness): pipeline LEDs from the runtime's ledger, the persona-named briefing,
 // COST and HEALTH rows, the Fix Queue, the command deck, auto-promoted memories, the SYSTEM drawer and the embedded
 // terminal. With the Pulse surface off, a trail keep and a Fix Queue run are refused. The writes themselves (keep /
 // edit / revert, the Fix Queue runs, re-anchor, /scan, /reflect-week) are in pulse-writes.spec.ts.

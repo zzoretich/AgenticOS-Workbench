@@ -75,7 +75,7 @@ const missingImports = [...imported.keys()].filter((n) => !exported.has(n));
 const usedHelpers = OBSIDIAN_DOM_HELPERS.filter((h) => new RegExp(`\\.${h}\\(`).test(hudText));
 const missingHelpers = usedHelpers.filter((h) => !installed.has(h));
 
-const hudVersion = JSON.parse(readFileSync(path.join(hud, "manifest.json"), "utf8")).version;
+const hudVersion = JSON.parse(readFileSync(path.join(hud, "package.json"), "utf8")).version;
 console.log(`Workbench HUD ${hudVersion}: ${imported.size} names imported from "obsidian", ${usedHelpers.length} Obsidian DOM helpers used`);
 console.log(`imports:  ${[...imported.keys()].sort().join(", ")}`);
 console.log(`helpers:  ${usedHelpers.join(", ")}`);

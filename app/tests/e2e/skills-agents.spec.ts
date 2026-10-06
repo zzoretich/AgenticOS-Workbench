@@ -1,4 +1,4 @@
-// Skills and Agents (plugin-smoke: Skills, Agents): the inventories `aos skills sync` / `aos agents sync` wrote for a
+// Skills and Agents (app-smoke: Skills, Agents): the inventories `aos skills sync` / `aos agents sync` wrote for a
 // Claude-Code-only machine (sharing off), host pills, source pills and chips, the filter, and the run / copy / open
 // actions (the stale-cache sync is checked by its notice, which the HUD raises whether the spawn is allowed or refused).
 // On a machine with both hosts and the sharing surface off, unshare is refused. share / unshare themselves, and sync

@@ -76,15 +76,11 @@ test('profile example, READMEs, daily-note template', () => {
   }
 });
 
-test('AGENTICOS.md sections and .obsidian seeds', () => {
+test('AGENTICOS.md sections; the vault is plain, with no editor settings seeded', () => {
   assert.deepEqual(h2s(read('AGENTICOS.md')), ['Memory System (3-file rule)', 'Capture vocabulary', 'Conventions', 'Providers', 'Routines']);
-  assert.deepEqual(JSON.parse(read('.obsidian/app.json')), {});
-  assert.deepEqual(JSON.parse(read('.obsidian/appearance.json')), { theme: 'obsidian' });
-  assert.deepEqual(JSON.parse(read('.obsidian/community-plugins.json')), ['agentic-os']);
-  const core = JSON.parse(read('.obsidian/core-plugins.json'));
-  assert.equal(core['daily-notes'], true);
-  assert.equal(core['file-explorer'], true);
-  assert.ok(!fs.existsSync(path.join(T, '.obsidian', 'daily-notes.json')), 'neither seeded nor written by the installer');
+  // The Workbench is the app (workbench-app D1); a vault opened in Obsidian anyway gets Obsidian's own defaults.
+  assert.ok(!fs.existsSync(path.join(T, '.obsidian')), 'no .obsidian/ in the template');
+  assert.ok(!/Obsidian/.test(read('AGENTICOS.md').replace(/\.obsidian\//g, '')), 'AGENTICOS.md names no editor');
 });
 
 test('TODO.md seeds an empty list with Open and Done', () => {

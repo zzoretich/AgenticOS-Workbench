@@ -1,4 +1,4 @@
-// Notifications with its write surface on (AOS_APP_WRITE=notifications), the phase 2 rows of plugin-smoke:
+// Notifications with its write surface on (AOS_APP_WRITE=notifications), the phase 2 rows of app-smoke:
 // Notifications. Opening an unread item marks it read; Mark all read, Mark unread, Archive and Unarchive write
 // brain/notifications/state.json in the shape lib/notifications.js writes; a vote appends one line to reactions.jsonl.
 // state.json has a second writer (`aos notify`), and a change it made underneath survives the tab's next write.

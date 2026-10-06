@@ -1,6 +1,6 @@
 # AgenticOS — memory conventions for Claude Code and Codex CLI
 
-> Under Claude Code this file is referenced from your CLAUDE.md as `@<vault>/AGENTICOS.md` (the installer prints the exact line); under Codex CLI a SessionStart hook injects it. This vault is both an Obsidian vault and the agent's second brain. Paths below are relative to the vault root; `aos <name>` is the launcher installed by `aos init` (fallback: `sh "${CLAUDE_PLUGIN_ROOT}/bin/aos" <name>` under Claude Code, `sh <vault>/brain/scripts/bin/aos <name>` anywhere).
+> Under Claude Code this file is referenced from your CLAUDE.md as `@<vault>/AGENTICOS.md` (the installer prints the exact line); under Codex CLI a SessionStart hook injects it. This vault is a folder of plain Markdown, the agent's second brain, and what the AgenticOS Workbench app shows. Paths below are relative to the vault root; `aos <name>` is the launcher installed by `aos init` (fallback: `sh "${CLAUDE_PLUGIN_ROOT}/bin/aos" <name>` under Claude Code, `sh <vault>/brain/scripts/bin/aos <name>` anywhere).
 
 ## Memory System (3-file rule)
 
@@ -41,14 +41,14 @@ Under Codex CLI every `/name` below is the plugin skill `$agenticos:name` (`$age
 - New memory → file in `brain/memory/<type>/` → one line in `MEMORY.md` → (only if session-relevant) a pointer in `BRAIN.md`. **Never duplicate** across the three.
 - Projects live in `workspaces/<slug>/` (kebab-case), each with a `CLAUDE.md` and an identical `AGENTS.md` so both hosts read the same instructions. Create one with `aos workspace new <name>`, bring an existing folder in with `aos workspace adopt <path>`; never create project directories elsewhere. Every scan pins each host's sessions to their workspace and lists the rest (`aos workspace list`).
 - `MEMORY.md` bullets are `- [Title](brain/memory/<type>/<slug>.md) — description` under the H2 for that type; the H2 names are fixed.
-- `[[wiki-links]]` in Obsidian-facing files (daily notes, memory, MOCs); markdown `[text](path)` in Claude-facing files (this file, `MEMORY.md`, skills).
+- `[[wiki-links]]` in notes (daily notes, memory, MOCs); markdown `[text](path)` in agent-facing files (this file, `MEMORY.md`, skills).
 - A proposal you write for the user to decide on — a change or an idea, asked for or offered — goes through `/propose`, never into a loose file elsewhere, so every proposal lives in the Proposals tab in one format with its HTML page. A plan for work you are already doing (plan mode, a workspace `PLAN.md`) is not a proposal.
 - `brain/_index/` is written only by scripts. In `BRAIN.md` the `## Last Session` block is the one hand-editable part; everything else is compiled from memory frontmatter (`pin: true`, `status/active`).
 - After any correction from the user: capture it with `/feedback` (include **Why** and **How to apply**). Rules surface through the `feedback_rules` tool; auto-drafted rules wait in `brain/memory/feedback/_drafts/` for the `feedback-review` skill.
 
 ## Providers
 
-`provider` in `agenticos.json` (`aos provider <mode>`): `auto` (default) picks `ollama` when `127.0.0.1:11434` answers, else `claude` (headless `claude -p --model haiku`, capped per call and per day, ledgered in `brain/_index/provider-spend.jsonl`), else `codex` when Codex is a wired host (headless `codex exec`, spend estimated from its token counts, same caps and ledger), else `none`. Under `none`, background summaries are heuristic, session-end extraction is skipped, and `/wrap` does the extraction in-session. The Obsidian plugin never calls a model. `aos status` shows the resolved provider, today's spend (hook calls against the resolved provider's cap, `claude.perDayUsd` or `codex.perDayUsd`; persona duties against `persona.perDayUsd`), and the pipeline ledger.
+`provider` in `agenticos.json` (`aos provider <mode>`): `auto` (default) picks `ollama` when `127.0.0.1:11434` answers, else `claude` (headless `claude -p --model haiku`, capped per call and per day, ledgered in `brain/_index/provider-spend.jsonl`), else `codex` when Codex is a wired host (headless `codex exec`, spend estimated from its token counts, same caps and ledger), else `none`. Under `none`, background summaries are heuristic, session-end extraction is skipped, and `/wrap` does the extraction in-session. The Workbench app never calls a model itself. `aos status` shows the resolved provider, today's spend (hook calls against the resolved provider's cap, `claude.perDayUsd` or `codex.perDayUsd`; persona duties against `persona.perDayUsd`), and the pipeline ledger.
 
 ## Routines
 

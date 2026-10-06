@@ -1,44 +1,38 @@
-# Agentic OS (Obsidian plugin)
+# The Workbench HUD (source)
 
-The Workbench HUD for an AgenticOS vault. Desktop-only, dark UI. It renders caches written by the brain scripts (`brain/_index/*`) and never calls a model itself.
+The Workbench's source: every tab, the sidebar HUD, the settings and the status bar items, in TypeScript. The
+**AgenticOS Workbench** app (`../app`) compiles it into its window. It renders the caches the runtime writes
+(`brain/_index/*`) and never calls a model itself.
 
-## Views
+The folder keeps its old name, and the HUD still imports `obsidian`: since 1.0 that name resolves to the app's
+compatibility package (`../app/compat`), not to Obsidian, and the HUD is no longer packaged or released as an Obsidian
+plugin. Moving it off Obsidian's API names is later, optional work (spec 2026-10-05-workbench-app-design D5).
 
-| View | Shows |
-|---|---|
-| Workbench (Pulse · Spaces · Memory · Runs · Chat · Term) | pipeline LEDs, fix queue, workspaces and file maps, memory browser and graph, agent runs, chat, embedded terminal |
-| Sidebar HUD | ambient ledger, run and roster summary |
-| Memory / Run Inspector | one memory or run, opened from the drawer or a command |
-| Quick Capture | writes a memory through the same writer the scripts use |
+## How the app runs it
+
+- `../app/scripts/build.mjs` bundles `main.ts` into the app's page, with `obsidian` aliased to the compat package and
+  `path` to a POSIX shim. The page is sandboxed with no Node.
+- Every file, process, terminal and OS call goes through `src/host.ts` (the `HudHost` seam). The app installs a host
+  over its bridge to the main process, which checks each call; `src/nodeHost.ts` is the plain-Node default the tests
+  use, and the only file here that imports Node's I/O modules, node-pty or electron (`path` is pure, and shimmed).
+- The app gives the HUD its id (`agentic-os`, which keys its settings) and its version, this package's `version`.
+- `npm run check:compat` in `../app` fails when the HUD uses an Obsidian API, DOM helper or icon the compat package
+  lacks: run it after a change here.
 
 ## Data contracts
 
-Every file under `brain/_index/` is read-only for the plugin; a script under `brain/scripts/` owns it. See the design spec for shapes and freshness windows.
+Every file under `brain/_index/` is read-only for the HUD; a script under `brain/scripts/` owns it. The specs under
+`../docs/superpowers/specs/` give each one's shape and freshness window.
 
 ## Dev loop
 
 ```
-npm install
-npm run dev     # gen:tokens, then esbuild watch
-npm run build   # gen:tokens, then production bundle (main.js)
-npm test        # check:hex gate, then node:test via tsx
+npm test             # check:hex, then node:test via tsx (also run by the root `npm test`)
+npm run typecheck    # tsc
+npm run gen:tokens   # regenerate src/ui/tokens.ts after changing the .aos-root block in styles.css
 ```
 
 - `src/ui/tokens.ts` is generated from the `.aos-root` block in `styles.css`; never hand-edit it.
 - `check:hex` fails on any hex color outside `tokens.ts`.
-- The embedded terminal needs `node-pty` installed next to `main.js`; without it the Term tab shows "Terminal unavailable" and everything else works.
-
-## Terminal support (opt-in)
-
-The plugin bundle never includes `node-pty` (native module). Enable the terminal once per install:
-
-This needs the plugin folder that `aos init` / `aos upgrade` writes, which includes `package.json`. If you installed the three release assets by hand (or through BRAT), run `aos upgrade` first: `npm install` in a folder without `package.json` exits successfully having installed nothing, and the button says so instead of pretending it worked.
-
-1. Open the Term tab and click **Install terminal support** — it runs `npm install --omit=dev` in the plugin folder using the same `node` the plugin resolved (Settings → AgenticOS → Node binary) and marks node-pty's prebuilt `spawn-helper` executable. Equivalent by hand: `cd <vault>/.obsidian/plugins/agentic-os && npm install --omit=dev && chmod +x node_modules/node-pty/prebuilds/*/spawn-helper`.
-2. Reload Obsidian.
-
-macOS (arm64 and x64) uses node-pty 1.1.0's shipped N-API prebuilds. Windows is not supported in v1. If the Term tab still reports an ABI error, click **Rebuild for this Electron** — it runs `npx --yes @electron/rebuild -v <process.versions.electron> -m . -w node-pty` in the plugin folder; the version is read at runtime, never pinned.
-
-### Terminal on Linux
-
-node-pty ships no Linux prebuild, so the same `npm install` compiles it: install `python3`, `make` and `g++` (Debian/Ubuntu: `sudo apt install python3 make g++`; Fedora: `sudo dnf install python3 make gcc-c++`) before clicking **Install terminal support**. If the compiled module then fails to load with a NODE_MODULE_VERSION mismatch, use **Rebuild for this Electron**, which needs the same toolchain.
+- To see a change, run the app from `../app` (`npm start`; see its README). The manual checklist is
+  `../docs/app-smoke.md`.

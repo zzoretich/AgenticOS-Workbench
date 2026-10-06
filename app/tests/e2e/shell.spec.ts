@@ -1,5 +1,5 @@
 // The Workbench shell: boot, the app's record in the vault, the rail, badges, keyboard, commands, the status bar,
-// agenticos:// links, and the read-only guard over a full tour (plugin-smoke: Install paths, Settings rail rows, Status
+// agenticos:// links, and the read-only guard over a full tour (app-smoke: Install paths, Settings rail rows, Status
 // line, Review readiness).
 
 import { expect, test } from "@playwright/test";

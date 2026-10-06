@@ -5,7 +5,7 @@
 
 import { App, Notice, guardState, setBridge, setIcon, setMarkdownHost, setWriteGuard, type PluginManifest } from "obsidian";
 import AgenticOSPlugin from "@workbench/hud";
-import hudManifest from "@workbench/hud-manifest";
+import { version as hudVersion } from "@workbench/hud-package";
 import { setHudHost } from "../../../obsidian-plugin/src/host";
 import { HOST_COMMANDS, type AosBridge, type ProtocolRequest, type ReadyInfo, type WriteSource } from "../shared/ipc";
 import { AppSettingTab } from "./appSettingTab";
@@ -16,6 +16,13 @@ import { runSetup } from "./setup/wizard";
 import { openPopover } from "./popover";
 import { CommandPalette } from "./palette";
 import * as path from "./shims/path";
+
+/**
+ * The HUD as a plugin, the manifest Obsidian read from its plugin folder. The id keys the HUD's settings
+ * (<userData>/plugins/agentic-os.json, first copied from an Obsidian-era <vault>/.obsidian/plugins/agentic-os/data.json),
+ * its command ids and its CSS class, so it never changes; the name is its tab in the settings window.
+ */
+const HUD: PluginManifest = { id: "agentic-os", name: "Agentic OS", version: hudVersion };
 
 /**
  * The status bar's first item, shown only while $AOS_APP_WRITE narrows the writes (tests, one-off runs): READ-ONLY, or
@@ -68,8 +75,8 @@ async function boot(): Promise<void> {
   setMarkdownHost(app);
 
   // The HUD keeps its own files (Obsidian's plugin folder) under <vault>/<manifest.dir>: the app's data folder instead.
-  const pluginDir = path.join(info.userData, "plugins", hudManifest.id);
-  const manifest: PluginManifest = { ...hudManifest, dir: path.relative(info.vaultRoot, pluginDir) };
+  const pluginDir = path.join(info.userData, "plugins", HUD.id);
+  const manifest: PluginManifest = { ...HUD, dir: path.relative(info.vaultRoot, pluginDir) };
   const plugin = new AgenticOSPlugin(app, manifest);
   await plugin.load();
   app.workspace.markLayoutReady();

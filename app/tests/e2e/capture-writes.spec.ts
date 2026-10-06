@@ -1,4 +1,4 @@
-// Capture, Remember and Pattern with their write surface on (AOS_APP_WRITE=capture): the phase 2 rows of plugin-smoke:
+// Capture, Remember and Pattern with their write surface on (AOS_APP_WRITE=capture): the phase 2 rows of app-smoke:
 // Pulse (the deck's /remember and /pattern), plus Quick Capture and the deck's /feedback and /project, which open the
 // same form. Each write is compared with what the HUD's model produces (sessionNotes, patternNotes and mdSections are
 // pure; the memory file is the frontmatter memoryWriter.ts writes). A typed slug cannot leave brain/memory.

@@ -356,6 +356,8 @@ test.describe("a vault whose HUD ran in Obsidian first", () => {
     const { win } = app();
     await expect(win.locator(".aos-host-right .aos-sb-status")).toBeVisible();
     const before = fs.readFileSync(obsidianData, "utf8");
+    // Copied at first start, before any setting changes, so the old plugin folder can go (docs/migrating-to-1.0.md).
+    expect(JSON.parse(fs.readFileSync(appData, "utf8"))).toMatchObject(saved);
     expect(await command(win, "host:settings")).toBe(true);
     const pane = win.locator(".modal.mod-settings .vertical-tab-content-container");
     const toggle = pane.locator(".setting-item", { has: win.locator(".setting-item-name", { hasText: /^Auto-open sidebar on start$/ }) }).locator(".checkbox-container");

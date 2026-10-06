@@ -1,34 +1,52 @@
 # Release acceptance (manual, per release)
 
-Run on a **fresh macOS user account** (System Settings → Users & Groups → Add Account; log in as
-that user). Nothing below may rely on the developer's own account. Tick every box and paste the
-filled list into the release PR — quote paths only in their `$HOME`-relative form, never the
-absolute home path the installer prints. Criteria are spec §1; each block names the one it proves.
+Two runs per release, after `release:app` has attached the app (`docs/app-smoke.md`, release procedure):
 
-## 0. Prerequisites (10 min)
-- [ ] Node 20+ from the nodejs.org installer: `node -v` prints `v20` or `v22`.
-- [ ] Claude Code installed and logged in: `claude --version`; `claude -p "Reply with the word ok." --tools "" --max-budget-usd 0.01` prints `ok`.
-- [ ] Obsidian installed (drag to Applications); opened once. `aos init` refuses to run without it.
-- [ ] Ollama installed (`ollama --version` prints a version). `aos init` refuses to run without it; it need not be serving.
-- [ ] `ls ~/.claude` shows no `agenticos.json`.
-- [ ] uv installed (`uv --version` prints a version) — `aos init` refuses to run without it; it installs the pinned graphify.
-- [ ] python3 present (`python3 --version` ≥ 3.9) — `aos init` refuses to run without it. `git` and `python3` come with the Command Line Tools; accept the install dialog if it appears.
+- §0–§7 on a **fresh macOS user account** on a Mac with Apple silicon (System Settings → Users & Groups → Add User;
+  log in as that user). Nothing in them may rely on the developer's own account.
+- §8 on the maintainer's Mac, whose installed app is the previous release.
 
-## 1. Install in under ten minutes (criterion 1)
-Start a timer.
-- [ ] `git clone https://github.com/zzoretich/AgenticOS-Workbench ~/AgenticOS-Workbench && cd ~/AgenticOS-Workbench`
-- [ ] `npm ci --ignore-scripts` finishes without error (the command `docs/install.md` and CI use; the terminal's native module is built only by `--terminal` / `aos terminal install`).
-- [ ] `npm run setup` — accept the default vault `~/AgenticOS`; answer the interview: name `Atlas`, address `boss`, voice `dry`, priorities `tests`, model default, effort default, schedule `yes`.
-- [ ] The final checklist lists every file written and prints an `@…/AgenticOS/AGENTICOS.md` line carrying the **absolute** vault path — that exact line is what goes into `~/.claude/CLAUDE.md` below; do not paste it into the release PR.
-- [ ] `export PATH="$HOME/.local/bin:$PATH"` (append the same line to `~/.zprofile`); `which aos` prints the `.local/bin/aos` symlink under your home; `aos doctor` exits 0.
+Tick every box. Quote paths only in their `$HOME`-relative form, never the absolute home path the installer prints,
+and record each run in the table at the end. Criteria are spec §1 and the app's design (2026-10-05-workbench-app);
+each block names the one it proves.
+
+## 0. Before you start
+- [ ] `ls ~/.claude 2>/dev/null` shows no `agenticos.json`, and `~/AgenticOS` does not exist.
+- [ ] Note what this account already finds. Homebrew belongs to the account that installed it (`/opt/homebrew`): this
+  account can run what it holds (node, python3, uv, ollama, a global `claude` or `codex`) and the wizard finds them, but
+  `brew install` from here fails on its permissions. On such a Mac the wizard's Homebrew fix-its are not exercised;
+  its login fix-its are. A Mac with no Homebrew exercises them all.
+
+## 1. Download → wizard → Workbench, with no terminal (criterion 1)
+Start a timer. Do not open Terminal until the box says so.
+- [ ] From `https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v<version>`, download
+  `AgenticOS-Workbench-<version>-arm64.dmg`; open it, drag the app to Applications, and open it from there. macOS asks
+  once whether to open an app downloaded from the internet, and shows no "cannot be checked for malicious software"
+  dialog (the app and the DMG are notarized).
+- [ ] The setup wizard opens on **Check**: Node, Claude Code, Codex and their logins, Ollama, Python and uv. Run the
+  fix-it of each missing row (a login opens the browser; the row turns green when its terminal exits). Record which ran:
+  ______. **Continue** enables once every required row is green and at least one host is logged in.
+- [ ] **Choose**: the ready hosts (both, when both are); the vault folder `~/AgenticOS`.
+- [ ] **Your agent**: name `Atlas`, address `boss`, voice `dry`, priorities `tests`, model and effort default, schedule
+  `yes`.
+- [ ] **Install** runs `aos init` with its output live and ends `Installed.`
+- [ ] **Finish**: with Claude Code, the `CLAUDE.md` diff; **Add the line** → `~/.claude/CLAUDE.md` ends with an
+  `@…/AgenticOS/AGENTICOS.md` line carrying the **absolute** vault path (do not paste it anywhere). With Codex, the
+  `/hooks` step is shown.
+- [ ] **Open the Workbench**: it opens on Pulse with no LED red, then shows **What changed** once. Gray "disabled" for
+  auto-cost and embeddings is correct, and amber `stale` is expected for any stage whose last run has aged out —
+  `scan-vault`, `build-brain-md` and the heartbeat go stale 45 minutes after they ran. Only red is a failure.
 - [ ] Timer under 10:00 → record the time: ______
+- [ ] Now open Terminal: `export PATH="$HOME/.local/bin:$PATH"` (append the same line to `~/.zprofile`); `which aos`
+  prints the `.local/bin/aos` symlink under your home; `aos doctor` exits 0, and its `workbench app` row reads
+  `AgenticOS Workbench <version>`.
+- [ ] `ls ~/AgenticOS` shows no `.obsidian`.
 - [ ] `ls ~/AgenticOS/persona` shows `IDENTITY.md STATE.md PLAYBOOK.md duties proposals journal answers.json autoapply.json` — and no `identity.template.md` or `STATE.template.md`; `grep -c Atlas ~/AgenticOS/persona/IDENTITY.md` ≥ 1.
 - [ ] `ls ~/Library/LaunchAgents | grep agenticos` lists the three plists; `launchctl list | grep com.agenticos` shows them loaded.
-- [ ] Add the printed `@…/AGENTICOS.md` line to `~/.claude/CLAUDE.md` (create the file if missing).
 - [ ] `cd ~ && claude`, first prompt `what do you know about me?` → the reply shows it received `<persona>` (mentions Atlas) and `<brain-context>`.
 - [ ] `/wrap` in that session → `~/AgenticOS/brain/memory/` gains at least one file and `MEMORY.md` one line.
 - [ ] In a new session: `use the agenticos recall tool to search for "Atlas"` → the `recall` tool of the `agenticos` MCP server — exposed to Claude Code as `mcp__plugin_agenticos_agenticos__recall` (contract §0) — answers (hits or an empty result, no error).
-- [ ] Open `~/AgenticOS` in Obsidian (File → Open vault → Open folder as vault); enable community plugins when asked; the Agentic OS HUD opens; no Pulse LED is red. Gray "disabled" for auto-cost and embeddings is correct, and amber `stale` is expected for any stage whose last run has aged out — `scan-vault`, `build-brain-md` and the heartbeat go stale 45 minutes after they ran, so any pause between §1 and this box turns them amber. Only red is a failure.
+- [ ] ⌘Q the app and open it again: it goes straight to the Workbench (no wizard, no second What changed).
 
 ## 2. Ollama auto-switch (criterion 2)
 `aos status` only reads the cached `brain/_index/provider-state.json` and never probes; `aos scan-vault --quiet` resolves the provider and rewrites that file, so run it before every status check below.
@@ -38,9 +56,10 @@ Start a timer.
 - [ ] Stop Ollama; after 60 s, `aos scan-vault --quiet && aos status` shows `claude` (or `none` if not logged in).
 
 ## 3. Privacy gate (criterion 3)
+The rest of the run needs a clone: `git clone https://github.com/zzoretich/AgenticOS-Workbench ~/AgenticOS-Workbench && cd ~/AgenticOS-Workbench && npm ci --ignore-scripts` (the command `docs/install.md` and CI use) finishes without error.
 - [ ] `cd ~/AgenticOS-Workbench && npm run gate` → `privacy-gate: 0 violation(s)`, and `node tools/privacy-gate.js --json` prints `[]`. This is the pass condition: the gate scans every tracked and untracked-not-ignored file for every term `tools/privacy-terms.js` loads (the public `tools/privacy-terms.json` plus the maintainer's private list; `npm run gate -- --require-private` fails when the private list is missing).
 - [ ] Cross-check the exception table: `cat tools/privacy-exceptions.json` shows exactly five rows — the three gate data files (term `*`) plus the two example-agent-name exceptions spec §8.3 allows, for `cli/aos.js` and `docs/chief-of-staff.md` — and nothing else; a sixth row blocks the release. (The launcher and the CLI probe `$HOME`-relative node paths, and the GitHub source `zzoretich/AgenticOS-Workbench` — in `plugin/.claude-plugin/plugin.json`, `cli/aos.js`, `cli/aos.test.js`, `docs/install.md` and this file — is not a term, so none of those needs a row.)
-- [ ] GitHub Actions: the `ci` run for the release commit (it runs on every push to `main` and every pull request, on Ubuntu and macOS) shows its gate step green on both OSes; the `release` run for the `v*` tag (Ubuntu only) shows its own gate step green in the `build` job, and the `publish` job created the release with the version's `CHANGELOG.md` section as its notes and the three plugin assets attached.
+- [ ] GitHub Actions: the `ci` run for the release commit (it runs on every push to `main` and every pull request, on Ubuntu and macOS) shows its gate step green on both OSes; the `release` run for the `v*` tag (Ubuntu only) shows its own gate step green in the `build` job, and the `publish` job created the release with the version's `CHANGELOG.md` section as its notes. The release's assets are what `release:app` uploaded: `AgenticOS-Workbench-<version>-arm64.dmg`, `AgenticOS-Workbench-<version>-arm64.zip` and its `.zip.blockmap`, and `latest-mac.yml`, and nothing else.
 
 ## 4. Test suites offline (criterion 4)
 - [ ] Turn Wi-Fi off. `npm test` → three aggregates, each `ℹ fail 0`: tools+cli, brain (`brain/scripts`), plugin (`obsidian-plugin`).
@@ -52,10 +71,11 @@ Start a timer.
 - [ ] `node ~/AgenticOS-Workbench/cli/aos.js uninstall --keep-vault` (no prompt — `--keep-vault` never asks; it prints `kept vault …`).
 - [ ] `ls ~/.claude` shows no `agenticos.json`; `plugins/` survives (Claude Code's own plugin cache — the plugin install created it, and uninstall removes the plugin through `claude` but never that directory); `claude plugin list` no longer lists `agenticos`; `ls ~/Library/LaunchAgents | grep agenticos` prints nothing; `launchctl list | grep com.agenticos` prints nothing. (Claude Code's own per-session folders — `session-env/`, `file-history/`, `projects/` — are not AgenticOS's and stay.)
 - [ ] `~/AgenticOS` is intact (memory, persona, notes present).
+- [ ] Open the app: with no `agenticos.json` it shows the setup wizard again. Quit it (⌘Q).
 - [ ] `cd ~/AgenticOS-Workbench && npm run setup -- --yes` (no prompts: with `--yes` the interview reuses the kept vault's `persona/answers.json`, so the persona — and its schedules — come back without questions), then `aos uninstall` **without** `--keep-vault`. The prompt reads `Type the vault path to DELETE it, anything else keeps it (<vault>): ` and shows the **absolute** path — type that back exactly as printed (typed at the prompt only — never pasted into the release PR), not the `~/AgenticOS` form used elsewhere in this runbook; anything else keeps the vault. Afterwards `~/AgenticOS` is gone.
 
 ## 6. Cost module and persona commands (spec §10–11)
-§5 removed the vault, so re-install first: `cd ~/AgenticOS-Workbench && npm run setup`, answering the interview exactly as in §1 (schedule `yes`); `aos doctor` exits 0.
+§5 removed the vault, so re-install first, this time from the terminal: `cd ~/AgenticOS-Workbench && npm run setup`, answering the interview exactly as in §1 (schedule `yes`), and add the `@…/AGENTICOS.md` line it prints to `~/.claude/CLAUDE.md` if it is not there; `aos doctor` exits 0. Open the app: it goes straight to the Workbench.
 - [ ] `aos cost enable --budget 100` → prints `cost: enabled (python3 <version>); analyzer installed at <vault>/brain/scripts/cost; monthly budget $100`; `ls ~/AgenticOS/brain/scripts/cost` shows exactly the three files `analyze_transcript.py pricing.json report-template.html`; `grep monthlyBudget ~/AgenticOS/brain/config.json` shows 100.
 - [ ] End a Claude Code session; `pipelines.json` shows `auto-cost` status `ok`; `node ~/AgenticOS/brain/scripts/cost-budget.js` prints a MONTH-TO-DATE line with `/ $100.00`.
 - [ ] `aos cost disable` → next session end shows `auto-cost` status `disabled`.
@@ -65,9 +85,27 @@ Start a timer.
 - [ ] `aos persona off` → a new Claude session shows no `<persona>` block; `aos persona on` restores it.
 - [ ] In Claude Code: say `sitrep` (the `persona-sitrep` skill — also reachable as `/agenticos:persona-sitrep`; there is no `/sitrep` command) → it renders the Output shape with one recommended action; `review persona flags` (the `persona-flag-closer` skill) either reports `Nothing pending — no proposals, no flags, no new failures.` or lists whatever the monitor duty flagged. Both pass: the live run in the box above rewrote `STATE.md`, so its `## Flags` may legitimately hold open items (a duty that failed leaves a FAILED flag there).
 
-## 7. Obsidian smoke under each provider
-- [ ] With Ollama running: Pulse, Spaces, Memory, Runs, Chat (answers), Term (shows "Terminal unavailable" unless `--terminal` was used) all render.
+## 7. The Workbench under each provider
+- [ ] With Ollama running: Pulse, Files, Spaces, Memory, Runs, Chat (answers) and Term (a live shell) all render.
 - [ ] With Claude logged in (Ollama running or not): Chat's header names the reasoner — `claude (claude-opus-5, capped)` — each answer shows a per-message cost, and `aos status` counts it on the `(reasoner)` line.
 - [ ] `aos provider none`: Chat tab hidden with the hint; nothing red.
 
+
+## 8. The update from the previous release (the maintainer's Mac)
+The installed app is the previous release's (or a signed local build of it with the zip target, so it carries
+`app-update.yml`), signed by the same team: the updater installs only an update signed like the running app.
+- [ ] AgenticOS Workbench ▸ About shows the previous version. AgenticOS Workbench ▸ Check for Updates… (or 30 s after
+  launch) finds `<version>` and downloads it; the status bar shows `⬆ Restart to update to <version>`.
+- [ ] **Restart to update**: the app quits, comes back, and About shows `<version>`.
+- [ ] **Update the runtime in your vault** follows on its own (the vault's runtime is the previous version): **Update
+  now** runs `aos upgrade` with its output and ends `Updated to <version>.`
+- [ ] `aos routines sync` when the release's **Upgrading** notes ask for it; `aos doctor` exits 0, its `workbench app` row
+  reads `AgenticOS Workbench <version>`, and every enabled host's block is green (Codex: re-trust under `/hooks` if
+  `codex hooks trusted` counts fewer than all).
+
 Result: ______ (pass / fail with the failing box numbers). Tester: ______ Date: ______
+
+## Recorded runs
+
+| Release | Date | §0–§7 fresh account | §8 update | Notes |
+|---|---|---|---|---|

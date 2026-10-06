@@ -78,7 +78,7 @@ does not — `agenticos.json` is merged last and `aos init` writes it there; see
 
 Raise `perDayUsd` if you schedule more duties or a bigger `perDutyUsd`; with the defaults three
 $2 runs fit in one day. `claude.perDayUsd` (0.5) is a separate cap for the background hook
-calls (session summary, wrap) and the Obsidian chat (its rows carry feature `chat`), and never
+calls (session summary, wrap) and the Workbench's Chat tab (its rows carry feature `chat`), and never
 blocks a duty. A duty must append a `## HH:MM — duty: <name>` entry to the journal; otherwise the
 runner records FAILED and adds a flag to `STATE.md`. A duty that runs past `PERSONA_TIMEOUT`
 (default 1800 s) is killed and journaled FAILED too; `claude -p` prints its cost only at the end,
@@ -199,7 +199,7 @@ records the beat after the contract check passes. The tick touches `STATE.md` in
 `tick:` line under `## Last Duty Runs`, and the `## Sitrep` block when it queued something. `tick.js
 status` prints its state (`brain/_index/persona-tick.json`: last beat, skips, the pending signature).
 
-In the Obsidian HUD the sidebar shows a heartbeat pill next to the update pill, read from
+In the Workbench the sidebar shows a heartbeat pill next to the update pill, read from
 `persona-heartbeat.json`: green while the last check is under an hour old and no duty is missed or
 failed, amber under three hours (or while a duty has never run, is stale or invalid), rose otherwise or on
 any miss; the tooltip lists each duty with its status, last run and next fire.

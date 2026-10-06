@@ -5,7 +5,11 @@ against an Obsidian compatibility package (`compat/`), so the same source is the
 the Claude Code and Codex plugins, the routines and the vault format are the ones in this repo.
 
 Design and roadmap: `docs/superpowers/specs/2026-10-05-workbench-app-design.md` and
-`docs/superpowers/plans/2026-10-05-workbench-app.md`. macOS only.
+`docs/superpowers/plans/2026-10-05-workbench-app.md`. macOS only, built for Apple silicon.
+
+To use it, download `AgenticOS-Workbench-<version>-arm64.dmg` from the
+[latest release](https://github.com/zzoretich/AgenticOS-Workbench/releases/latest). This file is for running, testing
+and building it from a checkout.
 
 ## Install and update (phase 5)
 

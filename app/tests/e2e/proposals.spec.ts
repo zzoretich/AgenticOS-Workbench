@@ -1,4 +1,4 @@
-// Proposals (plugin-smoke: Proposals): pending proposals with lint and confirmations, the expanded detail, rendered
+// Proposals (app-smoke: Proposals): pending proposals with lint and confirmations, the expanded detail, rendered
 // proposal pages, BACKLOG and HISTORY from the ledger, the live badge, and the Review button's terminal session.
 // Deciding a proposal is the flag-closer skill's job, never the tab's.
 

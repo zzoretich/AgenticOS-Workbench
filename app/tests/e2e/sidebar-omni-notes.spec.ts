@@ -1,5 +1,5 @@
 // The sidebar HUD, ⌘K omnisearch, the note view with link following, the heartbeat pill, Chat without a provider and
-// the Term tab (plugin-smoke: Pulse heartbeat pill, Chat `none`, Term, Review readiness; phase-0 surfaces).
+// the Term tab (app-smoke: Pulse heartbeat pill, Chat `none`, Term, Review readiness; phase-0 surfaces).
 
 import { expect, test } from "@playwright/test";
 import * as fs from "node:fs";

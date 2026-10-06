@@ -1,4 +1,4 @@
-// Agent Teams (plugin-smoke: Agent Teams tab): teams written by `aos team init / put / post` — the pending gates
+// Agent Teams (app-smoke: Agent Teams tab): teams written by `aos team init / put / post` — the pending gates
 // ("Needs you"), the team chips with a sub-team and a broken TEAM.md, the Work board, an item's detail, Roster, Interact
 // and the Approve dialog's cancel path; with the Agent Teams surface off, an approve and a seat pick are refused.
 // Approving, budgets, posting and Manage's changes themselves are in teams-writes.spec.ts. Redirect / Talk open a

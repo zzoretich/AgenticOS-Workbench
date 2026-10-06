@@ -1,4 +1,4 @@
-// Spaces, Memory and Runs (plugin-smoke: Spaces / Memory / Runs): workspaces from snapshot.json with their host
+// Spaces, Memory and Runs (app-smoke: Spaces / Memory / Runs): workspaces from snapshot.json with their host
 // session chips and the "outside workspaces" footer, the memory browser, drawer inspector, split pop-out and graph,
 // and the runs list, its drawer, pop-out, agents roster and live tail. With the Spaces surface off, ↻ regen and ↻
 // re-describe are refused; map now, ↻ and regen themselves are in spaces-writes.spec.ts.

@@ -1,4 +1,4 @@
-// To-Do (plugin-smoke: To-Do) with its write surface off: TODO.md in Tasks syntax grouped into Overdue / Today /
+// To-Do (app-smoke: To-Do) with its write surface off: TODO.md in Tasks syntax grouped into Overdue / Today /
 // Upcoming / Someday by priority, tag chips, done this week, the live badge, the edit box's cancel path, and a tick
 // refused. The writes themselves (quick-add, tick, edits, the stale-write guard) are in todo-writes.spec.ts.
 

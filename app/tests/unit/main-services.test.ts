@@ -174,6 +174,40 @@ test("a plugin's settings: the app's copy, else Obsidian's in the vault (read on
   assert.deepEqual(svc.loadPluginData("agentic-os"), { ok: true, data: { from: "app" } });
   assert.equal(fs.readFileSync(v(".obsidian/plugins/agentic-os/data.json"), "utf8"), "{\"from\":\"obsidian\"}");
   assert.equal(svc.savePluginData("agentic-os", "not json").ok, false);
+  assert.deepEqual(svc.loadPluginData("nothing-here"), { ok: true, data: null });
+  assert.ok(!fs.existsSync(path.join(USER_DATA, "plugins", "nothing-here.json")), "no copy of settings that do not exist");
+});
+
+test("Obsidian's settings are copied into the app's data on first read, so removing the old plugin folder loses nothing", () => {
+  reset([]);
+  const legacy = v(".obsidian/plugins/carry-over/data.json");
+  const own = path.join(USER_DATA, "plugins", "carry-over.json");
+  fs.mkdirSync(path.dirname(legacy), { recursive: true });
+  fs.writeFileSync(legacy, "{\"statusBarEnabled\":false}");
+  assert.deepEqual(svc.loadPluginData("carry-over"), { ok: true, data: { statusBarEnabled: false } });
+  assert.deepEqual(JSON.parse(fs.readFileSync(own, "utf8")), { statusBarEnabled: false });
+  assert.equal(fs.readFileSync(legacy, "utf8"), "{\"statusBarEnabled\":false}", "the vault's file is never written");
+  fs.rmSync(path.dirname(legacy), { recursive: true });
+  assert.deepEqual(svc.loadPluginData("carry-over"), { ok: true, data: { statusBarEnabled: false } });
+  // An unreadable legacy file is no settings at all, and copies nothing.
+  fs.mkdirSync(path.dirname(legacy), { recursive: true });
+  fs.writeFileSync(legacy, "{not json");
+  fs.rmSync(own);
+  assert.deepEqual(svc.loadPluginData("carry-over"), { ok: true, data: null });
+  assert.ok(!fs.existsSync(own));
+});
+
+test("a copy the app cannot write still returns Obsidian's settings, and is tried again on the next read", () => {
+  const data = path.join(ROOT, "readonly-userData");
+  fs.mkdirSync(data, { recursive: true });
+  fs.writeFileSync(path.join(data, "plugins"), "a file where the folder should be");
+  const ro = new FsService({ vaultRoot: VAULT, userData: data, scope: () => scope, policy: () => policy });
+  fs.mkdirSync(v(".obsidian/plugins/stuck"), { recursive: true });
+  fs.writeFileSync(v(".obsidian/plugins/stuck/data.json"), "{\"a\":1}");
+  assert.deepEqual(ro.loadPluginData("stuck"), { ok: true, data: { a: 1 } });
+  fs.rmSync(path.join(data, "plugins"));
+  assert.deepEqual(ro.loadPluginData("stuck"), { ok: true, data: { a: 1 } });
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(data, "plugins", "stuck.json"), "utf8")), { a: 1 });
 });
 
 // ── processes ────────────────────────────────────────────────────────

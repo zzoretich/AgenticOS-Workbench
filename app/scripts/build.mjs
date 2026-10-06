@@ -25,7 +25,8 @@ const redirects = {
   "node:path": r("src/renderer/shims/path.ts"),
   // The HUD, by name (tsc sees typed stubs for these; see src/types/workbench-hud.d.ts).
   "@workbench/hud": path.join(hud, "main.ts"),
-  "@workbench/hud-manifest": path.join(hud, "manifest.json"),
+  // The HUD's package.json, for its version (boot.ts imports `version` by name, so the bundle keeps only that).
+  "@workbench/hud-package": path.join(hud, "package.json"),
 };
 
 const NODE_ONLY = new Set([...builtinModules, ...builtinModules.map((m) => `node:${m}`), "electron", "node-pty"]);
@@ -34,7 +35,7 @@ NODE_ONLY.delete("path");
 const pageResolve = {
   name: "page-resolve",
   setup(build) {
-    build.onResolve({ filter: /^(obsidian|path|node:path|@workbench\/hud|@workbench\/hud-manifest)$/ }, (args) => ({ path: redirects[args.path] }));
+    build.onResolve({ filter: /^(obsidian|path|node:path|@workbench\/hud|@workbench\/hud-package)$/ }, (args) => ({ path: redirects[args.path] }));
     // The HUD's Node host never ships in the page: boot.ts installs the bridge host before the plugin loads.
     build.onResolve({ filter: /^\.\/nodeHost$/ }, (args) =>
       args.importer === path.join(hud, "src", "host.ts") ? { path: r("src/renderer/shims/no-node-host.ts") } : undefined);
