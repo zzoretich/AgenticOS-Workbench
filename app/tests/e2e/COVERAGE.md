@@ -299,7 +299,7 @@ see below).
 
 | # | Item | Status | Covered by / reason |
 |---|---|---|---|
-| TM1 | A fresh install's Term tab opens a live shell at once, with no install or rebuild hint | covered | `sidebar-omni-notes › Term: a live shell…` (node-pty is the app's own dependency). |
+| TM1 | A fresh install's Term tab opens a live shell at once, with no "Terminal unavailable" | covered | `sidebar-omni-notes › Term: a live shell…` (node-pty is the app's own dependency). |
 
 ## Telemetry switch
 

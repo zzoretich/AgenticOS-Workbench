@@ -215,7 +215,7 @@ Run on a machine with the `codex` CLI logged in, after `aos init --host codex` (
 
 ## Term
 
-- [ ] On a fresh install the Term tab opens a live shell at once (the app carries the terminal), with no "Terminal unavailable", **Install terminal support** or **Rebuild for this Electron**.
+- [ ] On a fresh install the Term tab opens a live shell at once (the app carries the terminal), with no "Terminal unavailable".
 
 ## Telemetry switch
 

@@ -22,9 +22,8 @@ jobs:
         with:
           node-version: 20
           cache: npm
-      # Plan 4 Global Constraints narrowing of contract §5's `npm ci --ignore-scripts`: only the
-      # plugin workspace is installed. tools/ (gate, bump-version, changelog) and cli/ are zero-dependency;
-      # --ignore-scripts keeps node-pty's native build out of CI.
+      # Only the HUD's workspace is installed (its typecheck and tests). tools/ (gate, bump-version, changelog) and cli/
+      # are zero-dependency, and nothing here needs an install script.
       - run: npm ci --ignore-scripts -w obsidian-plugin
       - name: Every version surface must equal the tag (enforced, not performed — see Plan 4 Global Constraints)
         run: node tools/bump-version.js "${GITHUB_REF_NAME#v}" --check

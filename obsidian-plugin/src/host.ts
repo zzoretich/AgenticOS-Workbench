@@ -1,7 +1,7 @@
 // host.ts — the HudHost seam (docs/superpowers/plans/2026-10-05-sandbox-renderer.md S1). Everything the HUD does
 // outside its own DOM goes through one HudHost: read or write a file, start a process or a terminal, hand a path or a
-// link to the OS, read the environment. Under node:test and in Obsidian that is the Node host (nodeHost.ts); in the
-// AgenticOS Workbench app it is the sandboxed page's bridge to the main process, which checks every call.
+// link to the OS, read the environment. Under node:test that is the Node host (nodeHost.ts); in the AgenticOS
+// Workbench app it is the sandboxed page's bridge to the main process, which checks every call.
 //
 // Modules import `fs`, `spawn`, `execFileSync`, `pty`, `shell` and `env` from here. Their names and signatures follow
 // Node's, so a call site reads as it did; only the types are narrower (the subset the HUD uses). nodeHost.ts is the one
@@ -36,7 +36,6 @@ export interface HostFs {
   writeFileSync(p: string, data: string): void;
   appendFileSync(p: string, data: string): void;
   mkdirSync(p: string, opts?: { recursive?: boolean }): void;
-  chmodSync(p: string, mode: number): void;
   /** Calls `listener` when the file at `p` may have changed; `close()` stops it. */
   watch(p: string, listener: () => void): { close(): void };
   promises: {
@@ -99,8 +98,6 @@ export interface HostPty {
   spawn(file: string, args: string[], opts: HostPtyOptions): HostPtyProcess;
   /** Why terminals are unavailable (loading node-pty failed), or null when they are. Loads it on first call. */
   loadError(): string | null;
-  /** Obsidian: the plugin's folder, where "Install terminal support" puts node-pty. Ignored by hosts that bring their own. */
-  setPluginDir(dir: string): void;
 }
 
 export interface HostShell {
@@ -117,8 +114,6 @@ export interface HostEnv {
   platform(): string;
   /** The working directory (the vault, in a host that has none of its own). */
   cwd(): string;
-  /** The Electron version the HUD runs in, or null outside Electron. */
-  electron(): string | null;
 }
 
 export interface HudHost {
@@ -135,7 +130,7 @@ let current: HudHost | null = null;
 /** Installs the host every HUD module uses from now on. The app calls this before it loads the plugin. */
 export function setHudHost(host: HudHost): void { current = host; }
 
-/** The installed host; the Node host when none was installed (node:test, Obsidian). */
+/** The installed host; the Node host when none was installed (node:test). */
 export function hudHost(): HudHost {
   current ??= createNodeHost();
   return current;
@@ -153,7 +148,6 @@ export const fs: HostFs = {
   writeFileSync: (p, data) => hudHost().fs.writeFileSync(p, data),
   appendFileSync: (p, data) => hudHost().fs.appendFileSync(p, data),
   mkdirSync: (p, opts) => hudHost().fs.mkdirSync(p, opts),
-  chmodSync: (p, mode) => hudHost().fs.chmodSync(p, mode),
   watch: (p, listener) => hudHost().fs.watch(p, listener),
   promises: {
     readFile: (p, encoding) => hudHost().fs.promises.readFile(p, encoding),
@@ -172,7 +166,6 @@ export function execFileSync(file: string, args: string[], opts: { encoding: "ut
 export const pty: HostPty = {
   spawn: (file, args, opts) => hudHost().pty.spawn(file, args, opts),
   loadError: () => hudHost().pty.loadError(),
-  setPluginDir: (dir) => hudHost().pty.setPluginDir(dir),
 };
 
 export const shell: HostShell = {
@@ -186,7 +179,6 @@ export const env: HostEnv = {
   homedir: () => hudHost().env.homedir(),
   platform: () => hudHost().env.platform(),
   cwd: () => hudHost().env.cwd(),
-  electron: () => hudHost().env.electron(),
 };
 
 /** UTF-8 bytes → text, and the byte length of a text, without Node's Buffer (the app's page has none). */

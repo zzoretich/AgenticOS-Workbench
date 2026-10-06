@@ -1,4 +1,4 @@
-// TerminalSession — wraps one terminal from the host (host.ts: node-pty in Obsidian; the app's main process in the app).
+// TerminalSession — wraps one terminal from the host (host.ts: the app's main process; node-pty under plain Node).
 // Holds a circular scrollback buffer so xterm instances can be (re)attached at will.
 // The host loads node-pty lazily, so a missing or broken install degrades to "terminals unavailable".
 import { pty as hostPty, type HostPtyProcess } from "../host";
@@ -14,9 +14,6 @@ export interface TerminalSessionOptions {
 
 type DataListener = (data: string) => void;
 type ExitListener = (info: { exitCode: number; signal?: number }) => void;
-
-/** Obsidian: the plugin folder, where "Install terminal support" puts node-pty (main.ts sets it at load). */
-export function setPluginDir(dir: string): void { hostPty.setPluginDir(dir); }
 
 const SCROLLBACK_CAP = 200_000;
 

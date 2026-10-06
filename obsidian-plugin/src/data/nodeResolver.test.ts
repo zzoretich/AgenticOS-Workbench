@@ -1,6 +1,6 @@
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { resolveNodeBinary, nodeCandidates, npmSiblingOf, resetProbeForTests, NodeResolverDeps } from "./nodeResolver";
+import { resolveNodeBinary, nodeCandidates, resetProbeForTests, NodeResolverDeps } from "./nodeResolver";
 import type { AgenticOSSettings } from "../settingsDefaults";
 
 function settings(nodePath = ""): AgenticOSSettings {
@@ -77,7 +77,3 @@ test("with nothing found the resolver falls back to the bare name and does not p
   assert.equal((d as NodeResolverDeps & { calls: string[][] }).calls.length, 1);
 });
 
-test("npmSiblingOf pairs npm with the resolved node", () => {
-  assert.equal(npmSiblingOf("/opt/homebrew/bin/node"), "/opt/homebrew/bin/npm");
-  assert.equal(npmSiblingOf("node"), "npm");
-});

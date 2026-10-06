@@ -1193,7 +1193,6 @@
   padding: 6px 10px;
   white-space: pre-wrap;
 }
-.aos-term-error-hint { font-size: 11px; line-height: 1.5; }
 
 .aos-term-collapsed {
   padding: 8px 12px;
@@ -1786,9 +1785,6 @@
 
 /* Task 8: the Chat tab's "no provider" hint (rendered instead of the composer) */
 .aos-asst-nohint { padding: 16px; display: flex; flex-direction: column; gap: 8px; }
-
-/* Task 9: the two recovery buttons in the Term tab's "Terminal unavailable" panel */
-.aos-term-error-actions { display: flex; gap: 6px; margin-top: 4px; }
 
 /* Task 12: folder-atlas scope tag in the DISK legend (config = Claude config dir, vault = the vault).
    .aos-disk-name is flex: 0 1 auto (it must not grow: flex-grow would swallow the free space before

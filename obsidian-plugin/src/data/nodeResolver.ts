@@ -78,9 +78,3 @@ export function resolveNodeBinary(settings: AgenticOSSettings, deps: Partial<Nod
   }
   return "node";
 }
-
-/** npm lives next to node in every install layout we probe (Homebrew, nvm, volta, fnm, installer). */
-export function npmSiblingOf(nodeBin: string): string {
-  if (!path.isAbsolute(nodeBin)) return "npm";
-  return path.join(path.dirname(nodeBin), "npm");
-}
