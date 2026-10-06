@@ -6,7 +6,7 @@ import { expect, test } from "@playwright/test";
 import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { BACKGROUND_SPAWNS, FX, RAIL_ORDER, REPO, badge, command, content, expected, expectNoErrors, noteBody, notePath, openTab, rail, readVaultJson, useApp } from "./harness";
+import { BACKGROUND_SPAWNS, FX, HUD_VERSION, RAIL_ORDER, REPO, badge, command, content, expected, expectNoErrors, noteBody, notePath, openTab, rail, readVaultJson, useApp } from "./harness";
 
 const app = useApp();
 
@@ -24,7 +24,7 @@ test("boots the Workbench on Pulse against the fixture vault, read-only", async 
     const p = (window as unknown as { aosHost: { plugin: { manifest: { id: string; version: string }; settings: object; _loaded: boolean } } }).aosHost.plugin;
     return { id: p.manifest.id, version: p.manifest.version, loaded: p._loaded, settings: !!p.settings };
   });
-  expect(plugin).toEqual({ id: "agentic-os", version: "0.21.0", loaded: true, settings: true });
+  expect(plugin).toEqual({ id: "agentic-os", version: HUD_VERSION, loaded: true, settings: true });
   await expect(rail(win, "pulse")).toHaveClass(/is-active/);
   await expect(win.locator(".aos-host-tab.is-active .aos-host-tab-title")).toHaveText("Workbench");
 });

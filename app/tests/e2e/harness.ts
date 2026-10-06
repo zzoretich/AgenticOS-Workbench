@@ -13,6 +13,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 export const REPO = path.resolve(__dirname, "..", "..");
+/** The HUD's version as the app reads it (boot.ts: ../obsidian-plugin/package.json), so a version bump needs no test edit. */
+export const HUD_VERSION = (JSON.parse(fs.readFileSync(path.join(REPO, "..", "obsidian-plugin", "package.json"), "utf8")) as { version: string }).version;
 const ROOT = process.env.AOS_E2E_FIXTURE ? path.resolve(process.env.AOS_E2E_FIXTURE) : path.join(REPO, "tests", ".fixture");
 
 export const FX = {

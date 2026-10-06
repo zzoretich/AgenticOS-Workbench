@@ -6,7 +6,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { FX, command, content, expectNoErrors, openTab, useApp } from "./harness";
+import { FX, HUD_VERSION, command, content, expectNoErrors, openTab, useApp } from "./harness";
 
 const app = useApp();
 
@@ -76,7 +76,7 @@ test("the App tab: the vault and the app's data folder (handed to Finder), write
   await expect(row(pane(win), "App data").locator(".aos-app-path")).toHaveText(USER_DATA);
   await expect(row(pane(win), "Write access").locator(".aos-app-writes")).toHaveText("Read-only");
   await expect(row(pane(win), "Write access").locator(".setting-item-description")).toHaveText("Set for this run by AOS_APP_WRITE.");
-  await expect(row(pane(win), "Versions").locator(".aos-app-versions")).toHaveText(/^app \S+ · HUD 0\.21\.0 · Electron \d+\.\d+\.\d+$/);
+  await expect(row(pane(win), "Versions").locator(".aos-app-versions")).toHaveText(new RegExp(`^app \\S+ · HUD ${HUD_VERSION.replace(/\./g, "\\.")} · Electron \\d+\\.\\d+\\.\\d+$`));
   await row(pane(win), "Vault").locator("button", { hasText: "Show in Finder" }).click();
   await row(pane(win), "App data").locator("button", { hasText: "Show in Finder" }).click();
   await expect.poll(async () => (await h.opened()).map((o) => `${o.fn} ${o.arg}`)).toEqual(expect.arrayContaining([
