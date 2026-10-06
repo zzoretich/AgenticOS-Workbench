@@ -112,11 +112,19 @@ function addMember(host: HTMLElement, ctx: TeamsCtx): void {
   const sel = row.createEl("select", { cls: "dropdown", attr: { "aria-label": "Agent to add" } });
   sel.createEl("option", { value: "", text: "pick one of your agents" });
   for (const a of free) sel.createEl("option", { value: a.id, text: a.description ? `${a.name}: ${a.description.slice(0, 60)}` : a.name });
+  // The pick survives a redraw (a file event, the tab's clock, the runtime's sweep) until it is added.
+  const picked = ctx.ui.addPick.get(t.id);
+  if (picked && free.some((a) => a.id === picked)) sel.value = picked;
   sel.disabled = busy;
   const add = row.createEl("button", { cls: "aos-ws-action aos-at-btn", text: busy ? "Adding…" : "Add" });
-  add.disabled = true;
-  sel.addEventListener("change", () => { add.disabled = busy || !sel.value; });
-  add.addEventListener("click", () => { if (sel.value) void ctx.act(key, addMemberArgs(t.id, sel.value)); });
+  add.disabled = busy || !sel.value;
+  sel.addEventListener("change", () => {
+    if (sel.value) ctx.ui.addPick.set(t.id, sel.value); else ctx.ui.addPick.delete(t.id);
+    add.disabled = busy || !sel.value;
+  });
+  add.addEventListener("click", () => {
+    if (sel.value) void ctx.act(key, addMemberArgs(t.id, sel.value)).then((ok) => { if (ok) ctx.ui.addPick.delete(t.id); });
+  });
   row.createSpan({ cls: "aos-dim aos-at-hint", text: "joins as a Member on every stage, on the host that has the agent; set its seat above" });
   leftOut();
   errorLine(host, ctx.error(key));

@@ -4,6 +4,9 @@ All notable changes to AgenticOS Workbench. Versions follow the tags. From the n
 
 ## [Unreleased]
 
+### Fixed
+- Agent Teams → Manage keeps the agent you picked in **Add a member** when the tab redraws before you click Add (its clock, a file change, the runtime's sweep). The pick came back empty, with Add disabled.
+
 ### Changed
 - The Workbench's settings no longer mention Obsidian: the plugin section is "WORKBENCH — THIS APP", and the status bar, sidebar, vault root and terminal settings speak of the app.
 

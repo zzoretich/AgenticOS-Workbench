@@ -204,6 +204,10 @@ test("Manage: Add puts an agent on the team; Remove asks first and takes its blo
   const { win } = app();
   await example(win, "Manage");
   await C(win).locator(".aos-at-add select").selectOption("field-researcher");
+  // A redraw before the click (the tab's clock, a sweep's re-read) keeps the pick: it once came back empty, Add disabled.
+  await win.evaluate(() => (window as unknown as { aosHost: { app: { workspace: { getLeavesOfType(t: string): Array<{ view: { getTab(id: string): { render(): void } } }> } } } })
+    .aosHost.app.workspace.getLeavesOfType("agentic-os-workbench")[0].view.getTab("agent-teams").render());
+  await expect(C(win).locator(".aos-at-add select")).toHaveValue("field-researcher");
   await C(win).locator(".aos-at-add button", { hasText: "Add" }).click();
   await expect(win.locator(".notice-container")).toContainText("added field-researcher (agent field-researcher) to example");
   await expect.poll(() => read("TEAM.md")).toContain("  - id: field-researcher\n    name: Field-researcher\n    role: Member\n    agent: field-researcher\n");

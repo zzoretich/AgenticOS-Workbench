@@ -41,7 +41,7 @@ export class AgentTeamsTab {
   private runtimeNote: string | null = null;
   private readError: string | null = null;
   private ui: TeamsUiState = {
-    team: null, view: "board", gateUsd: new Map(), budgetUsd: new Map(), openItem: null, showDone: new Set(), channelItem: null, drafts: new Map(),
+    team: null, view: "board", gateUsd: new Map(), budgetUsd: new Map(), openItem: null, showDone: new Set(), channelItem: null, drafts: new Map(), addPick: new Map(),
   };
   private busyKeys = new Set<string>();
   private errors = new Map<string, string>();
