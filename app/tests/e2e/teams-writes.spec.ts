@@ -45,21 +45,29 @@ const memberRow = (win: Page, name: string) => C(win).locator(".aos-at-pane-mana
 
 /**
  * Holds back what would redraw the tab from disk, so it keeps drawing what it last read (another writer's change has not
- * arrived): the vault's events, and the tab's own 30-second clock, which once redrew the card between the lead's write
- * and the click and let the approve through. Released, the tab is mounted again (its clock restarts and it re-reads).
+ * arrived): the vault's events, the tab's own 30-second clock, which once redrew the card between the lead's write and
+ * the click and let the approve through, and every re-read queued through its schedule(): a pending one is dropped, and
+ * the one the `aos team list` sweep asks for when it ends is held. That sweep starts when a test before this one mounts
+ * the tab, and on a slow runner it ended after the lead's write, so the card was redrawn and the approve went through
+ * (twice in CI). Released, the tab is mounted again (its clock restarts and it re-reads).
  */
 async function holdEvents(win: Page, hold: boolean): Promise<void> {
   await win.evaluate((on) => {
-    type Tab = { tick: number | null; host: HTMLElement; mount(h: HTMLElement): void; unmount(): void };
+    type Tab = {
+      tick: number | null; refreshDebounce: number | null; host: HTMLElement; schedule?: () => void;
+      mount(h: HTMLElement): void; unmount(): void;
+    };
     const host = (window as unknown as { aosHost: { app: { vault: Record<string, unknown>; workspace: { getLeavesOfType(t: string): Array<{ view: { getTab(id: string): Tab | null } }> } } } }).aosHost;
     const v = host.app.vault;
     const tab = host.app.workspace.getLeavesOfType("agentic-os-workbench")[0]?.view.getTab("agent-teams");
     if (on) {
       v.__trigger = v.trigger; v.trigger = () => undefined;
       if (tab?.tick != null) { window.clearInterval(tab.tick); tab.tick = null; }
+      if (tab?.refreshDebounce != null) { window.clearTimeout(tab.refreshDebounce); tab.refreshDebounce = null; }
+      if (tab) tab.schedule = () => undefined;   // shadows the class's method until released
     } else {
       v.trigger = v.__trigger; delete v.__trigger;
-      if (tab) { tab.unmount(); tab.mount(tab.host); }
+      if (tab) { delete tab.schedule; tab.unmount(); tab.mount(tab.host); }
     }
   }, hold);
 }
