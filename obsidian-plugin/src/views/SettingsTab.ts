@@ -38,6 +38,7 @@ export class SettingsTab {
   private pluginRows: PluginRowsHandle | null = null;
   private listenersRegistered = false;
   private refreshDebounce: number | null = null;
+  private refreshAgain = false;
 
   constructor(private plugin: AgenticOSPlugin, private view: WorkbenchView) {}
 
@@ -65,14 +66,19 @@ export class SettingsTab {
   }
 
   async refresh(): Promise<void> {
-    if (this.loading) return;
+    // A refresh asked for while one runs (a change's own, a file event's, ⟳) reads again when it ends: the one in flight
+    // may have read the files before the change, and its list alone would show the old value until the next ⟳.
+    if (this.loading) { this.refreshAgain = true; return; }
     this.loading = true;
     try {
-      this.hosts = sessionHosts(readAgenticosJson(this.plugin.claudeConfigDir()));
-      const r = await this.plugin.aosJson<unknown>(["config", "list", "--json"]);
-      const list = r.code === 0 ? parseConfigList(r.json) : null;
-      if (list) this.list = list;
-      this.failure = listFailure(r, !!list);
+      do {
+        this.refreshAgain = false;
+        this.hosts = sessionHosts(readAgenticosJson(this.plugin.claudeConfigDir()));
+        const r = await this.plugin.aosJson<unknown>(["config", "list", "--json"]);
+        const list = r.code === 0 ? parseConfigList(r.json) : null;
+        if (list) this.list = list;
+        this.failure = listFailure(r, !!list);
+      } while (this.refreshAgain);
     } finally {
       this.loading = false;
     }
