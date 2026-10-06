@@ -2,8 +2,9 @@
 
 Two runs per release, after `release:app` has attached the app (`docs/app-smoke.md`, release procedure):
 
-- §0–§7 on a **fresh macOS user account** on a Mac with Apple silicon (System Settings → Users & Groups → Add User;
-  log in as that user). Nothing in them may rely on the developer's own account.
+- §0–§7 on a Mac with Apple silicon, in a **macOS user account that has never had AgenticOS**: a fresh account on the
+  maintainer's Mac (System Settings → Users & Groups → Add User; log in as that user) or an account on another Mac.
+  Nothing in them may rely on the developer's own account.
 - §8 on the maintainer's Mac, whose installed app is the previous release.
 
 Tick every box. Quote paths only in their `$HOME`-relative form, never the absolute home path the installer prints,
@@ -117,3 +118,5 @@ Result: ______ (pass / fail with the failing box numbers). Tester: ______ Date: 
 
 | Release | Date | §0–§7 fresh account | §8 update | Notes |
 |---|---|---|---|---|
+| 1.0.0 | 2026-10-06 | pass, §0–§7 in full, on another Mac | pass: 0.21.0 → 1.0.0 (Restart to update, then **Update now** took the runtime to 1.0.0); the 12 Obsidian-era settings were copied; `aos routines sync` and `aos doctor` green | §1: every wizard row was green on **Check**, so no fix-it ran there. `release:app` threw at its feed step (electron-builder 26 lists only the zip); the four assets were uploaded by hand, and #73 fixed it |
+| 1.0.1 | 2026-10-06 | not run | pass: **Check for Updates…** found 1.0.1 and downloaded it in about 150 s (the staged zip's sha512 matched `latest-mac.yml`), Restart to update, the runtime upgrade; `aos doctor` all green (both plugins 1.0.1, Codex hooks 16 of 16) | `release:app` ran end to end (`verify-dist` 39/39). The wizard's Ollama models step (#77) is new in 1.0.1 and has had no fresh-account run yet |
