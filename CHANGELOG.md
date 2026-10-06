@@ -7,6 +7,7 @@ All notable changes to AgenticOS Workbench. Versions follow the tags. From the n
 ### Fixed
 - A new vault's `AGENTICOS.md` fits the 9,000 characters the conventions hook injects into a Codex session again; it had grown past the limit, so Codex saw it cut off near the end. A vault you already have keeps its own copy.
 - Agent Teams → Manage keeps the agent you picked in **Add a member** when the tab redraws before you click Add (its clock, a file change, the runtime's sweep). The pick came back empty, with Add disabled.
+- **Settings** shows a change you make there once it is written. When the tab was still reading the settings as you changed one, it could go on showing the old value (and its "this vault" or "this machine" source) until you pressed ⟳ reload.
 
 ### Changed
 - The app's setup wizard now leaves Ollama with its two models downloaded (`qwen3.5:9b` and `qwen3-embedding:0.6b`, about 7.2 GB): its Ollama fix, now **Install Ollama and its models**, also starts it and pulls them, and with Ollama already installed a missing model is a warning with its own fix, **Download the models**, that does not hold up the install. Background work runs on Ollama as soon as it answers, so before this a wizard install could leave it with no model to run. By hand: `ollama pull qwen3.5:9b && ollama pull qwen3-embedding:0.6b`.

@@ -22,38 +22,89 @@ const row = (win: Page, key: string) => C(win).locator(".aos-st-row", { has: win
 const sw = (win: Page, label: string) => C(win).locator(".aos-st-master .aos-st-switch", { hasText: label });
 const modal = (win: Page) => win.locator(".modal");
 
+/** The Settings tab, as the page holds it (the private members the tests read or wrap). */
+type SettingsTabView = { loading?: boolean; refresh(): Promise<void>; plugin: { aosJson(args: string[], ms?: number): Promise<unknown> } };
+type TabWindow = {
+  aosHost: { app: { workspace: { getLeavesOfType(t: string): Array<{ view: { getTab(id: string): SettingsTabView | null } }> } } };
+  aosHeld?: { read: boolean; asked: number; open(): void };
+};
+
 /** The tab's `loading` flag: true while an `aos config list` is in flight. */
-const loadingNow = (win: Page) => win.evaluate(() => {
-  const ws = (window as unknown as { aosHost: { app: { workspace: { getLeavesOfType(t: string): Array<{ view: { getTab(id: string): { loading?: boolean } | null } }> } } } }).aosHost.app.workspace;
-  return ws.getLeavesOfType("agentic-os-workbench")[0]?.view.getTab("settings")?.loading;
-});
+const loadingNow = (win: Page) => win.evaluate(() => (window as unknown as TabWindow).aosHost.app.workspace.getLeavesOfType("agentic-os-workbench")[0]?.view.getTab("settings")?.loading);
 
 /**
- * Waits until the tab shows `check`. The files are the truth and each test asserts them first; the tab can lag them,
- * because SettingsTab.refresh() drops a refresh asked for while another is in flight (upstream finding 10), e.g. a
- * debounced one started by the previous test's brain/config.json change. If the tab still shows the old state once
- * idle, ⟳ reload reads it again.
+ * Waits until the tab shows `check`. The files are the truth and each test asserts them first; the tab follows once a
+ * list read after the change has rendered. It has no ⟳ to fall back on: a click there once hid that a refresh asked for
+ * while another ran was dropped (S8), and waited out the toast that covers the button.
  */
-async function shows(win: Page, check: () => Promise<boolean>): Promise<void> {
-  await expect.poll(async () => {
-    if (await check()) return true;
-    if ((await loadingNow(win)) === false) await C(win).locator(".aos-rt-actions button", { hasText: "⟳ reload" }).click();
-    return check();
-  }, { timeout: 20_000, intervals: [250, 500, 1000] }).toBe(true);
+async function shows(check: () => Promise<boolean>): Promise<void> {
+  await expect.poll(check, { timeout: 20_000 }).toBe(true);
 }
 const hasClass = (l: ReturnType<Page["locator"]>, re: RegExp) => async () => re.test((await l.getAttribute("class")) ?? "");
 const lacksClass = (l: ReturnType<Page["locator"]>, re: RegExp) => async () => !re.test((await l.getAttribute("class")) ?? "");
 const buttons = (win: Page, key: string) => row(win, key).locator(".setting-item-control > .extra-setting-button");
 /**
- * Waits until the tab has a list and no `aos config list` is in flight. SettingsTab.refresh() returns at once while one
- * runs, so a change made during the open-time refresh would render that refresh's stale list afterwards (upstream). The tab's own `loading` flag is the only signal for it.
+ * Waits until the tab has a list and no `aos config list` is in flight: each refresh redraws every control when it lands.
+ * The tab's own `loading` flag is the only signal for it.
  */
 async function loaded(win: Page): Promise<void> {
   await expect(C(win).locator(".aos-rt-count")).toHaveText(/changed from the defaults$/);
+  await expect.poll(() => loadingNow(win)).toBe(false);
+}
+
+/**
+ * Starts a refresh whose `aos config list` reads the files now but renders only on release(), like a refresh still in
+ * flight when a change lands (a file event's, the open-time one). asked(n) waits until n more refreshes were asked for
+ * meanwhile. release() lets the held one finish, and from then on a refresh asked for starts nothing, so only what the
+ * tab queued itself can redraw it. restore() puts the tab's own methods back: call it in a `finally`, since a refresh
+ * left held keeps `loading` on and every later test would wait on it.
+ */
+async function holdRefresh(win: Page): Promise<{ asked(n: number): Promise<void>; release(): Promise<void>; restore(): Promise<void> }> {
   await expect.poll(() => win.evaluate(() => {
-    const ws = (window as unknown as { aosHost: { app: { workspace: { getLeavesOfType(t: string): Array<{ view: { getTab(id: string): { loading?: boolean } | null } }> } } } }).aosHost.app.workspace;
-    return ws.getLeavesOfType("agentic-os-workbench")[0]?.view.getTab("settings")?.loading;
-  })).toBe(false);
+    const w = window as unknown as TabWindow;
+    const tab = w.aosHost.app.workspace.getLeavesOfType("agentic-os-workbench")[0]?.view.getTab("settings");
+    if (!tab || tab.loading) return false;
+    let open = () => {};
+    const gate = new Promise<void>((r) => { open = r; });
+    const held = { read: false, asked: 0, open };
+    w.aosHeld = held;
+    const aosJson = tab.plugin.aosJson.bind(tab.plugin);
+    const refresh = tab.refresh.bind(tab);
+    tab.plugin.aosJson = async (args, ms) => {
+      const r = await aosJson(args, ms);
+      if (args[0] === "config" && args[1] === "list" && !held.read) { held.read = true; await gate; }
+      return r;
+    };
+    tab.refresh = () => { held.asked++; return refresh(); };
+    void refresh();
+    return true;
+  })).toBe(true);
+  await expect.poll(() => win.evaluate(() => (window as unknown as TabWindow).aosHeld?.read)).toBe(true);
+  return {
+    async asked(n: number) {
+      await expect.poll(() => win.evaluate(() => (window as unknown as TabWindow).aosHeld?.asked)).toBeGreaterThanOrEqual(n);
+    },
+    async release() {
+      await win.evaluate(() => {
+        const w = window as unknown as TabWindow;
+        const tab = w.aosHost.app.workspace.getLeavesOfType("agentic-os-workbench")[0]?.view.getTab("settings");
+        const held = w.aosHeld;
+        if (!tab || !held) return;
+        tab.refresh = async () => { held.asked++; };
+        held.open();
+      });
+    },
+    async restore() {
+      await win.evaluate(() => {
+        const w = window as unknown as TabWindow;
+        const tab = w.aosHost.app.workspace.getLeavesOfType("agentic-os-workbench")[0]?.view.getTab("settings") as { refresh?: unknown; plugin: { aosJson?: unknown } };
+        delete tab.refresh;
+        delete tab.plugin.aosJson;
+        w.aosHeld?.open();
+        delete w.aosHeld;
+      });
+    },
+  };
 }
 
 test.beforeEach(async () => {
@@ -84,8 +135,8 @@ test("a picker sets the key in the file that wins; its follow-up becomes a butto
   expect(next).toBeTruthy();
   await select.selectOption(next!);
   await expect.poll(() => at(MACHINE, "claude.model")).toBe(next);
-  await shows(win, async () => (await row(win, "claude.model").locator("select.dropdown").inputValue()) === next);
   await expect(win.locator(".notice-container")).toContainText("claude.model");
+  await shows(async () => (await row(win, "claude.model").locator("select.dropdown").inputValue()) === next);
   const follow = C(win).locator(".aos-st-follow");
   await expect(follow).toContainText("⚠ 1 step left:");
   await expect(follow.locator("button")).toHaveText(["aos routines sync"]);
@@ -107,10 +158,10 @@ test("+ on a spend cap asks first and Raise writes the next preset; − goes bac
   await expect(modal(win).locator("h3")).toHaveText(/^Raise /);
   await modal(win).locator("button.mod-cta", { hasText: "Raise" }).click();
   await expect.poll(() => at(VAULT_CFG, key)).toBe(raised);
-  await shows(win, async () => (await row(win, key).locator("select.dropdown").inputValue()) === String(raised));
+  await shows(async () => (await row(win, key).locator("select.dropdown").inputValue()) === String(raised));
   await buttons(win, key).nth(0).click();
   await expect.poll(() => at(VAULT_CFG, key)).toBe(0);
-  await shows(win, async () => (await row(win, key).locator("select.dropdown").inputValue()) === "0");
+  await shows(async () => (await row(win, key).locator("select.dropdown").inputValue()) === "0");
   await expect(modal(win)).toHaveCount(0);
 });
 
@@ -118,11 +169,21 @@ test("↺ goes back to the default: the key leaves the file and the pill says de
   const { win } = app();
   const key = "cost.monthlyBudget";
   expect(at(VAULT_CFG, key)).toBe(175);
-  await row(win, key).locator(".extra-setting-button[aria-label*='default'], .extra-setting-button[title*='default']").first().click();
-  await expect.poll(() => at(VAULT_CFG, key)).toBeUndefined();
-  expect(at(MACHINE, key)).toBeUndefined();
-  await shows(win, async () => (await row(win, key).locator(".aos-st-meta .aos-pill").textContent()) === "default");
-  await expect(win.locator(".notice-container")).toContainText("cost.monthlyBudget");
+  // A refresh in flight across the change read the file before it (held open here; on main's CI one ran late on its
+  // own). The change's own refresh was dropped meanwhile, so the pill said "this vault" until ⟳. Once the held one is
+  // released no new refresh starts, so only a read the tab queued itself can show the change.
+  const held = await holdRefresh(win);
+  try {
+    await row(win, key).locator(".extra-setting-button[aria-label*='default'], .extra-setting-button[title*='default']").first().click();
+    await expect.poll(() => at(VAULT_CFG, key)).toBeUndefined();
+    expect(at(MACHINE, key)).toBeUndefined();
+    await expect(win.locator(".notice-container")).toContainText("cost.monthlyBudget");
+    await held.asked(1);
+    await held.release();
+    await expect(row(win, key).locator(".aos-st-meta .aos-pill")).toHaveText("default");
+  } finally {
+    await held.restore();
+  }
 });
 
 test("master switches write; Chief of Staff pauses duties through persona/DISABLED and asks before turning back on (S3)", async () => {
@@ -133,7 +194,7 @@ test("master switches write; Chief of Staff pauses duties through persona/DISABL
   await expect.poll(() => at(MACHINE, "persona.enabled")).toBe(false);
   await expect.poll(() => fs.existsSync(disabled)).toBe(true);
   expect(fs.readFileSync(disabled, "utf8")).toMatch(/^disabled \S+ by aos config\n$/);
-  await shows(win, lacksClass(sw(win, "Chief of Staff"), /is-on/));
+  await shows(lacksClass(sw(win, "Chief of Staff"), /is-on/));
   // Turning an autonomy switch on asks first.
   await loaded(win);
   await sw(win, "Chief of Staff").locator("input").click();
@@ -141,7 +202,7 @@ test("master switches write; Chief of Staff pauses duties through persona/DISABL
   await modal(win).locator("button.mod-cta", { hasText: "Turn on" }).click();
   await expect.poll(() => at(MACHINE, "persona.enabled")).toBe(true);
   await expect.poll(() => fs.existsSync(disabled)).toBe(false);
-  await shows(win, hasClass(sw(win, "Chief of Staff"), /is-on/));
+  await shows(hasClass(sw(win, "Chief of Staff"), /is-on/));
 });
 
 test("Background AI asks before paid calls, and Cancel changes nothing (S3)", async () => {
@@ -159,7 +220,7 @@ test("Telemetry off and on: the live-runs watcher restarts and recreates its fol
   const live = FX.v("brain/_index/agent-runs/live");
   await sw(win, "Telemetry").locator("input").click();
   await expect.poll(() => at(MACHINE, "telemetry.enabled")).toBe(false);
-  await shows(win, lacksClass(sw(win, "Telemetry"), /is-on/));
+  await shows(lacksClass(sw(win, "Telemetry"), /is-on/));
   // Take the folder away while telemetry is off; turning it on makes the watcher create it again.
   const parked = path.join(FX.root, "live-runs-parked");
   if (fs.existsSync(live)) fs.renameSync(live, parked);
@@ -167,7 +228,7 @@ test("Telemetry off and on: the live-runs watcher restarts and recreates its fol
     await sw(win, "Telemetry").locator("input").click();
     await expect.poll(() => at(MACHINE, "telemetry.enabled")).toBe(true);
     await expect.poll(() => fs.existsSync(live)).toBe(true);
-    await shows(win, hasClass(sw(win, "Telemetry"), /is-on/));
+    await shows(hasClass(sw(win, "Telemetry"), /is-on/));
   } finally {
     if (fs.existsSync(parked)) { fs.rmSync(live, { recursive: true, force: true }); fs.renameSync(parked, live); }
   }
@@ -189,13 +250,13 @@ test("chips: a routine tool change asks first; switching all but one off locks t
     await expect.poll(() => at(VAULT_CFG, key)).toBe(left);
     await loaded(win);
   }
-  await shows(win, async () => (await row(win, key).locator(".aos-st-chip.is-on").allTextContents()).join() === "Read");
+  await shows(async () => (await row(win, key).locator(".aos-st-chip.is-on").allTextContents()).join() === "Read");
   await expect(chip("Read").locator("input")).toBeDisabled();
   // ↺ asks the same question.
   await row(win, key).locator(".extra-setting-button[aria-label*='default'], .extra-setting-button[title*='default']").first().click();
   await modal(win).locator("button.mod-cta", { hasText: "Change" }).click();
   await expect.poll(() => at(VAULT_CFG, key)).toBeUndefined();
-  await shows(win, async () => (await row(win, key).locator(".aos-st-chip.is-on").allTextContents()).join() === "Read,Glob,Grep");
+  await shows(async () => (await row(win, key).locator(".aos-st-chip.is-on").allTextContents()).join() === "Read,Glob,Grep");
 });
 
 test("Probe resolves node again and saves it in the app's own settings (I2)", async () => {
