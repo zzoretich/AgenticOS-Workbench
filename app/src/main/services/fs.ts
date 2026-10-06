@@ -162,14 +162,19 @@ export class FsService {
   /** Whether `p` may go to the Trash with everything in it (the IPC layer hands it to Electron's shell.trashItem). */
   canTrash(p: string): boolean { return this.o.policy().canMoveTree(p); }
 
-  /** A plugin's settings: the app's own copy, else what Obsidian kept in the vault (read, never written). */
+  /**
+   * A plugin's settings: the app's own copy, else what Obsidian kept in the vault (read, never written). Obsidian's is
+   * copied into the app's data the first time it is read, so the user can remove the old plugin folder (the migration
+   * guide says to) without losing their settings; a copy that cannot be written is tried again on the next read.
+   */
   loadPluginData(id: string): Result<unknown> {
-    const files = [path.join(this.o.userData, "plugins", `${id}.json`)];
-    if (this.o.vaultRoot) files.push(path.join(this.o.vaultRoot, ".obsidian", "plugins", id, "data.json"));
-    for (const f of files) {
-      try { return ok(JSON.parse(fs.readFileSync(f, "utf8")) as unknown); } catch { /* the next one */ }
-    }
-    return ok(null);
+    const own = path.join(this.o.userData, "plugins", `${id}.json`);
+    try { return ok(JSON.parse(fs.readFileSync(own, "utf8")) as unknown); } catch { /* none of its own yet */ }
+    if (!this.o.vaultRoot) return ok(null);
+    let data: unknown;
+    try { data = JSON.parse(fs.readFileSync(path.join(this.o.vaultRoot, ".obsidian", "plugins", id, "data.json"), "utf8")); } catch { return ok(null); }
+    this.savePluginData(id, `${JSON.stringify(data, null, 2)}\n`);
+    return ok(data);
   }
 
   savePluginData(id: string, json: string): Result<null> {
