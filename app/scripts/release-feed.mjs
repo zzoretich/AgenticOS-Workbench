@@ -21,6 +21,41 @@ export function uploadOrder(version) {
 export function sha512Base64(buf) { return createHash("sha512").update(buf).digest("base64"); }
 
 /**
+ * The `files:` entry latest-mac.yml has for `file` ({ sha512, size }), or null when it does not list it. electron-builder
+ * 26 lists only the zip, the file the updater downloads; the DMG is there only for people.
+ */
+export function feedEntry(yml, file) {
+  const lines = yml.split("\n");
+  const at = lines.findIndex((l) => l.trim() === `- url: ${file}`);
+  if (at < 0) return null;
+  const indent = lines[at].indexOf("-") + 2;
+  const entry = { sha512: null, size: null };
+  for (let i = at + 1; i < lines.length; i++) {
+    const l = lines[i];
+    if (!l.startsWith(" ".repeat(indent)) || l.trim().startsWith("- ")) break;
+    const m = /^\s*(sha512|size):\s*(\S+)/.exec(l);
+    if (m) entry[m[1]] = m[1] === "size" ? Number(m[2]) : m[2];
+  }
+  return entry;
+}
+
+/**
+ * The feed release:app uploads, from the one electron-builder wrote. A DMG the feed lists gets the stapled DMG's
+ * checksum and size (stapling changed both after the feed was written); a feed that lists only the zip has nothing to
+ * rewrite. Either way the zip's entry must match the zip on disk, which is what an updating app downloads and checks.
+ * `sums` holds each file's { sha512, size }. Throws when the feed does not list the zip or does not match it.
+ */
+export function settleFeed(yml, a, sums) {
+  const out = feedEntry(yml, a.dmg) ? rewriteFeed(yml, a.dmg, sums.dmg) : yml;
+  const zip = feedEntry(out, a.zip);
+  if (!zip) throw new Error(`${a.feed} does not list ${a.zip}`);
+  if (zip.sha512 !== sums.zip.sha512 || zip.size !== sums.zip.size) {
+    throw new Error(`${a.feed} does not match ${a.zip}: the feed says ${zip.size} bytes, the zip is ${sums.zip.size}${zip.sha512 === sums.zip.sha512 ? "" : ", and the checksums differ"}`);
+  }
+  return out;
+}
+
+/**
  * latest-mac.yml with one file's sha512 and size replaced (stapling the DMG after electron-builder wrote the feed
  * changes both). The top-level `path`/`sha512` pair is rewritten too when it names that file. Throws when the feed
  * does not list it.

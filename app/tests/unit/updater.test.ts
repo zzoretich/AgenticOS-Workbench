@@ -11,7 +11,7 @@ import * as path from "node:path";
 import type { UpdateState } from "../../src/shared/ipc";
 import { UpdateService, updatesConfig, updatesWanted, type UpdaterLike } from "../../src/main/updater";
 import { updateItem } from "../../src/main/menu";
-import { artifacts, releaseChecks, rewriteFeed, sha512Base64, uploadOrder } from "../../scripts/release-feed.mjs";
+import { artifacts, feedEntry, releaseChecks, rewriteFeed, settleFeed, sha512Base64, uploadOrder } from "../../scripts/release-feed.mjs";
 
 const ROOT = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "aos-updater-")));
 process.on("exit", () => fs.rmSync(ROOT, { recursive: true, force: true }));
@@ -133,6 +133,37 @@ test("the feed gets the stapled DMG's size and checksum; the zip's entry and the
   assert.match(rewriteFeed(FEED, a.zip, { sha512: "Z2", size: 101 }), /^path: AgenticOS-Workbench-1\.0\.1-arm64\.zip\nsha512: Z2$/m);
   assert.throws(() => rewriteFeed(FEED, "other.dmg", { sha512: "x", size: 1 }), /does not list other\.dmg/);
   assert.equal(sha512Base64(Buffer.from("abc")).length, 88);
+});
+
+// What electron-builder 26 writes for the dmg + zip targets (1.0.0's feed): the zip alone, which the updater downloads.
+const FEED_ZIP_ONLY = `version: 1.0.1
+files:
+  - url: AgenticOS-Workbench-1.0.1-arm64.zip
+    sha512: ZIPSHA
+    size: 100
+path: AgenticOS-Workbench-1.0.1-arm64.zip
+sha512: ZIPSHA
+releaseDate: '2026-10-06T04:44:08.962Z'
+`;
+
+test("feedEntry reads a listed file's checksum and size, and null for one the feed does not list", () => {
+  const a = artifacts("1.0.1");
+  assert.deepEqual(feedEntry(FEED, a.dmg), { sha512: "OLDDMG", size: 200 });
+  assert.deepEqual(feedEntry(FEED_ZIP_ONLY, a.zip), { sha512: "ZIPSHA", size: 100 });
+  assert.equal(feedEntry(FEED_ZIP_ONLY, a.dmg), null);
+});
+
+test("the feed release:app uploads: a zip-only feed is kept as written; a listed DMG is rewritten; the zip must match", () => {
+  const a = artifacts("1.0.1");
+  const sums = { dmg: { sha512: "NEWDMG", size: 250 }, zip: { sha512: "ZIPSHA", size: 100 } };
+  // electron-builder 26: nothing to rewrite (1.0.0's release:app stopped here, on rewriteFeed's throw).
+  assert.equal(settleFeed(FEED_ZIP_ONLY, a, sums), FEED_ZIP_ONLY);
+  // A feed that lists the DMG too gets the stapled DMG's checksum and size, as before.
+  assert.equal(settleFeed(FEED, a, sums), FEED.replace("sha512: OLDDMG\n    size: 200", "sha512: NEWDMG\n    size: 250"));
+  // A feed that does not match the zip on disk is never uploaded.
+  assert.throws(() => settleFeed(FEED_ZIP_ONLY, a, { ...sums, zip: { sha512: "ZIPSHA", size: 101 } }), /does not match AgenticOS-Workbench-1\.0\.1-arm64\.zip: the feed says 100 bytes, the zip is 101$/);
+  assert.throws(() => settleFeed(FEED_ZIP_ONLY, a, { ...sums, zip: { sha512: "OTHER", size: 100 } }), /and the checksums differ/);
+  assert.throws(() => settleFeed(FEED_ZIP_ONLY.replace(/-arm64\.zip/g, "-x64.zip"), a, sums), /does not list AgenticOS-Workbench-1\.0\.1-arm64\.zip/);
 });
 
 test("uploads go feed last, and the release waits on every precondition", () => {

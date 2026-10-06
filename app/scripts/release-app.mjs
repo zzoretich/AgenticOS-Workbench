@@ -10,7 +10,8 @@
 // 2. npm run dist: the payload, the app (signed with the hardened runtime and notarized by electron-builder), the DMG and
 //    the zip, and latest-mac.yml (the update feed; electron-builder never uploads: --publish never).
 // 3. verify-dist --notarize-dmg: notarizes and staples the DMG, then checks the app, the payload, the feed and the DMG.
-// 4. latest-mac.yml gets the stapled DMG's size and sha512 (stapling changed both after the feed was written).
+// 4. latest-mac.yml is checked against the zip the updater downloads (its sha512 and size), and a DMG it lists gets the
+//    stapled DMG's (stapling changed both after the feed was written; electron-builder 26 lists only the zip).
 // 5. gh release upload --clobber: the DMG, the zip, its blockmap, then latest-mac.yml, so a client that reads the new
 //    feed finds its files. Until this step a client checking for updates gets no feed and tries again later.
 
@@ -18,7 +19,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { REPO, artifacts, releaseChecks, rewriteFeed, sha512Base64, uploadOrder } from "./release-feed.mjs";
+import { REPO, artifacts, releaseChecks, settleFeed, sha512Base64, uploadOrder } from "./release-feed.mjs";
 
 const app = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const repo = path.resolve(app, "..");
@@ -56,13 +57,18 @@ if (failed.length && !DRY) { console.error(`\n${failed.length} check${failed.len
 step("build the payload and the app, signed and notarized (npm run dist)", "npm", ["run", "dist"]);
 step("notarize and staple the DMG, then verify everything (verify-dist --notarize-dmg)", process.execPath, ["scripts/verify-dist.mjs", "--notarize-dmg"]);
 
-// ── 4. the feed names the stapled DMG ────────────────────────────────
+// ── 4. the feed matches what is uploaded ─────────────────────────────
 
-console.log(`\n▸ rewrite ${a.feed} for the stapled ${a.dmg}${DRY ? " (dry run: not run)" : ""}`);
+console.log(`\n▸ check ${a.feed} against ${a.zip} (a DMG it lists gets the stapled checksum)${DRY ? " (dry run: not run)" : ""}`);
 if (!DRY) {
-  const dmg = fs.readFileSync(path.join(dist, a.dmg));
+  const sum = (f) => { const b = fs.readFileSync(path.join(dist, f)); return { sha512: sha512Base64(b), size: b.length }; };
   const feedFile = path.join(dist, a.feed);
-  fs.writeFileSync(feedFile, rewriteFeed(fs.readFileSync(feedFile, "utf8"), a.dmg, { sha512: sha512Base64(dmg), size: dmg.length }));
+  try {
+    fs.writeFileSync(feedFile, settleFeed(fs.readFileSync(feedFile, "utf8"), a, { dmg: sum(a.dmg), zip: sum(a.zip) }));
+  } catch (err) {
+    console.error(`\n${err instanceof Error ? err.message : String(err)}; nothing was uploaded`);
+    process.exit(1);
+  }
 }
 
 // ── 5. upload ────────────────────────────────────────────────────────
