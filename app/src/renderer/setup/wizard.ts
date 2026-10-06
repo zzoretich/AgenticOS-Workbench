@@ -159,12 +159,12 @@ export function runSetup(root: HTMLElement, aos: AosBridge, info: BootInfo): voi
     if (!setup?.payload) {
       el.createDiv({ cls: "aos-setup-callout is-warn", text: "This build of the app carries no runtime, so it cannot install. Install a release of the app, or run it with AOS_APP_PAYLOAD set to a release tree (`npm run payload` in app/)." });
     }
-    el.createEl("p", { cls: "aos-setup-hint", text: "Node, Ollama, Python and uv are required, and at least one of Claude Code or Codex, installed and logged in. A fix runs in the terminal below; it may ask for your password." });
+    el.createEl("p", { cls: "aos-setup-hint", text: "Node, Ollama, Python and uv are required, and at least one of Claude Code or Codex, installed and logged in. Ollama's two models (about 7.2 GB) are not required, but background work runs on Ollama once it answers, so download them too. A fix runs in the terminal below; it may ask for your password." });
     const list = el.createDiv({ cls: "aos-setup-checks" });
     if (!s.report) list.createDiv({ cls: "aos-setup-hint", text: s.checking ? "Checking…" : "" });
     for (const c of s.report?.checks ?? []) {
       const row = list.createDiv({ cls: `aos-setup-check is-${c.state}`, attr: { "data-check": c.id } });
-      row.createSpan({ cls: "aos-setup-mark", text: c.state === "ok" ? "✓" : c.required ? "✗" : "○" });
+      row.createSpan({ cls: "aos-setup-mark", text: c.state === "ok" ? "✓" : c.state === "warn" ? "!" : c.required ? "✗" : "○" });
       const what = row.createDiv({ cls: "aos-setup-what" });
       what.createDiv({ cls: "aos-setup-label", text: c.label });
       what.createDiv({ cls: "aos-setup-detail", text: c.detail });

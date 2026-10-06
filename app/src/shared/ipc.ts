@@ -137,13 +137,14 @@ export interface AttachInfo {
   hosts: { claude: boolean; codex: boolean };
 }
 
-export type SetupCheckId = "homebrew" | "node" | "claude" | "claude-login" | "codex" | "codex-login" | "ollama" | "python" | "uv";
-export type SetupFixId = "homebrew" | "node" | "python" | "uv" | "ollama" | "claude" | "codex" | "claude-login" | "codex-login";
+export type SetupCheckId = "homebrew" | "node" | "claude" | "claude-login" | "codex" | "codex-login" | "ollama" | "ollama-models" | "python" | "uv";
+export type SetupFixId = "homebrew" | "node" | "python" | "uv" | "ollama" | "ollama-models" | "claude" | "codex" | "claude-login" | "codex-login";
 
 export interface SetupCheck {
   id: SetupCheckId;
   label: string;
-  state: "ok" | "missing";
+  /** warn: something to fix that `aos init` does not need (Ollama's models), so it never holds up Continue. */
+  state: "ok" | "warn" | "missing";
   /** A version, a path, or what is wrong. */
   detail: string;
   /** Whether `aos init` needs it (the host rows count through `hosts`). */

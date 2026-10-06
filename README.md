@@ -82,13 +82,13 @@ Then add the one line the installer prints to `~/.claude/CLAUDE.md` (Claude Code
 | **Node.js 20 or newer** | required | `node -v` prints `v20` or later. CI runs on 20 and 22. |
 | **git** | required | Not checked by the wizard or `aos init`; the terminal path needs it for `git clone`. On macOS it arrives with the Command Line Tools; accept the install dialog if one appears. |
 | **Claude Code and/or Codex CLI, logged in** | one required | `claude auth status` reports a login, or `codex login status` does (or both). `aos init` wires every host it finds; `--host claude\|codex\|both` picks. Background work runs through the same CLI, so there is nothing else to configure. |
-| **Ollama** | required | `ollama` on PATH, or `Ollama.app` on macOS. Background summaries and embeddings run locally through it on `127.0.0.1:11434`; whether it is *answering* is reported, not required. Pull its two default models once: `ollama pull qwen3.5:9b` and `ollama pull qwen3-embedding:0.6b`. `auto` uses Ollama as soon as it answers, whether or not the models are there. |
+| **Ollama** | required | `ollama` on PATH, or `Ollama.app` on macOS. Background summaries and embeddings run locally through it on `127.0.0.1:11434`; whether it is *answering* is reported, not required. It runs two default models, about 7.2 GB together (`qwen3.5:9b` 6.6 GB, `qwen3-embedding:0.6b` 639 MB): the app's wizard downloads them, and from a terminal `ollama pull qwen3.5:9b` and `ollama pull qwen3-embedding:0.6b` do it. `auto` uses Ollama as soon as it answers, whether or not the models are there. |
 | **python3 3.9 or newer** | required | `python3 --version` prints 3.9 or later. Standard library only; the cost module runs on it. |
 | **uv** | required | `uv` on PATH, or in `~/.local/bin` or `~/.cargo/bin` ([install](https://docs.astral.sh/uv/)). It installs the pinned graphify with a Python of its own, so graphify never needs a newer system python. |
 
 The installer refuses to use `~/.claude` as the vault, and refuses any directory that already holds a `settings.json`. The default vault is `~/AgenticOS`.
 
-The app's wizard offers a fix for each one that is missing (Homebrew's installer, `brew install …`, `npm install -g …` for a host CLI, the logins) and runs it in a terminal inside the wizard, so you see the command and can answer a password prompt.
+The app's wizard offers a fix for each one that is missing (Homebrew's installer, `brew install …`, `npm install -g …` for a host CLI, the logins) and runs it in a terminal inside the wizard, so you see the command and can answer a password prompt. Installing Ollama there also starts it and downloads its two models; with Ollama already installed, a missing model is a warning with its own fix, **Download the models**, which does not hold up the install.
 
 Obsidian is not needed: the Workbench is the **AgenticOS Workbench** app, which reads the vault the installer records. The vault stays plain Markdown, so you can still open it in any editor you like.
 
@@ -101,7 +101,7 @@ Obsidian is not needed: the Workbench is the **AgenticOS Workbench** app, which 
 
 Download `AgenticOS-Workbench-<version>-arm64.dmg` from the [latest release](https://github.com/zzoretich/AgenticOS-Workbench/releases/latest), open it, drag **AgenticOS Workbench** to Applications and open it. The app is signed and notarized, and carries the AgenticOS runtime inside it. With no install on this Mac it opens a setup wizard:
 
-1. **Check** — Homebrew (optional; most of the fix-its use it), then Node, Claude Code and Codex and their logins, Ollama, python3 and uv, each with a fix-it for what is missing.
+1. **Check** — Homebrew (optional; most of the fix-its use it), then Node, Claude Code and Codex and their logins, Ollama and its two models, python3 and uv, each with a fix-it for what is missing. Ollama's fix-it, **Install Ollama and its models**, installs it, starts it and downloads the models (about 7.2 GB), so Continue waits for that download; with Ollama already installed, a missing model alone is a warning, not a requirement.
 2. **Choose** — which of Claude Code and Codex to wire (both, when both are ready) and the vault folder (default `~/AgenticOS`; files already there are kept).
 3. **Your agent** — the Chief of Staff's questions, as a form (or skip it and run `aos persona` later).
 4. **Install** — `aos init` from the runtime the app carries, with its output shown: the same nine steps as the terminal install below.

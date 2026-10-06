@@ -431,8 +431,10 @@ export const noteBar = (win: Page) => activeLeaf(win).locator(".aos-note-bar");
 
 export const SETUP = {
   root: path.join(ROOT, "setup"),
-  /** The wizard's whole PATH ($AOS_SETUP_PATH): stand-ins for brew, node, claude, codex, ollama, python3; uv appears when brew installs it. */
+  /** The wizard's whole PATH ($AOS_SETUP_PATH): stand-ins for brew, node, claude, codex, ollama, curl, python3; uv appears when brew installs it. */
   bin: path.join(ROOT, "setup", "bin"),
+  /** The models the ollama stand-in has pulled, one per line; curl's /api/tags answers with them. */
+  models: path.join(ROOT, "setup", "ollama-models.txt"),
   /** A release tree whose cli/aos.js records its calls and writes agenticos.json as `aos init` would. */
   payload: path.join(ROOT, "setup", "payload"),
   calls: path.join(ROOT, "setup", "aos-calls.jsonl"),
@@ -444,7 +446,8 @@ export const aosCalls = (): AosCall[] => jsonl<AosCall>(SETUP.calls);
 /**
  * Writes the stand-ins. The payload's `aos init` copies the pristine fixture's agenticos.json to $AOS_CONFIG with the
  * vault it was given, so the Workbench the wizard ends in is the fixture's; `aos upgrade` moves its version to the
- * payload's. `codex` is installed but not logged in; uv is missing until the brew stand-in installs it.
+ * payload's. `codex` is installed but not logged in; uv is missing until the brew stand-in installs it. Ollama answers
+ * (curl) with no models until the ollama stand-in pulls them.
  */
 export function installSetupStubs(version: string): void {
   fs.rmSync(SETUP.root, { recursive: true, force: true });
@@ -462,7 +465,16 @@ fi
 echo "brew stand-in: $*" >&2; exit 1`);
   sh("claude", `case "$1" in --version) echo "2.1.0 (Claude Code)";; auth) echo '{"loggedIn": true, "authMethod": "claude.ai"}';; *) exit 1;; esac`);
   sh("codex", `case "$1" in --version) echo "codex-cli 0.150.0";; login) echo "Not logged in"; exit 1;; *) exit 1;; esac`);
-  sh("ollama", `echo "ollama version is 0.12.0"`);
+  sh("ollama", `case "$1" in
+  show) [ -f "${SETUP.models}" ] && while read -r m; do [ "$m" = "$2" ] && exit 0; done < "${SETUP.models}"; exit 1;;
+  pull) echo "pulling manifest"; echo "pulling $2: 100%"; echo "$2" >> "${SETUP.models}"; echo "success";;
+  *) echo "ollama version is 0.12.0";;
+esac`);
+  // Only Ollama's /api/tags is asked for; a probe that throws its answer away (-o /dev/null) only learns it answers.
+  sh("curl", `case " $* " in *" -o /dev/null "*) exit 0;; esac
+printf '{"models":['; sep=
+[ -f "${SETUP.models}" ] && while read -r m; do printf '%s{"name":"%s"}' "$sep" "$m"; sep=,; done < "${SETUP.models}"
+printf ']}\\n'`);
   sh("python3", `echo "Python 3.12.1"`);
   fs.writeFileSync(path.join(SETUP.payload, "payload.json"), `${JSON.stringify({ schema: 1, version, commit: null, builtAt: new Date().toISOString(), runtimeDeps: false })}\n`);
   fs.writeFileSync(path.join(SETUP.payload, "package.json"), `${JSON.stringify({ name: "agenticos-workbench", version })}\n`);

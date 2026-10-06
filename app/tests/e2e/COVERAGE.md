@@ -80,7 +80,7 @@ see below).
 
 | # | Item | Status | Covered by / reason |
 |---|---|---|---|
-| APP1 | No install: the wizard's checks; a fix-it runs in its terminal, then the checks run again | covered | `setup › with no install, the wizard checks what aos init needs, on the login PATH`, `› a fix-it runs its fixed command in the wizard's terminal…` (stand-in CLIs and `brew`). |
+| APP1 | No install: the wizard's checks; a fix-it runs in its terminal, then the checks run again; Ollama's missing models are a warning whose fix pulls them | covered | `setup › with no install, the wizard checks what aos init needs, on the login PATH`, `› a fix-it runs its fixed command in the wizard's terminal…`, `› Ollama's missing models do not hold up Continue…` (stand-in CLIs, `brew`, `ollama` and `curl`). The Install Ollama and its models command itself is run on stand-ins in `tests/unit/setup.test.ts`. |
 | APP2 | Choose, Your agent, Install, Finish (the `CLAUDE.md` diff, the Codex `/hooks` step), Open the Workbench | covered in part | `setup › hosts offer only what is ready…`, `› the persona form checks the name…`, `› Install runs the payload's aos init…`, `› the CLAUDE.md line is shown as a diff…`, `› Open the Workbench attaches the vault without a relaunch…`. The Codex `/hooks` section is not asserted. |
 | APP3 | An existing install: What changed once per vault; the runtime offer, Update now and Later | covered | `attach › the What changed note shows the first time…`, `› a runtime older than the app's offers aos upgrade, and runs it only when asked` |
 | APP4 | Obsidian-era settings in effect on first start, and copied into the app's data before any change | covered | `variants › a vault whose HUD ran in Obsidian first › the app starts with Obsidian's plugin settings…` |
