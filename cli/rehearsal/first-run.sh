@@ -37,10 +37,8 @@ for f in MEMORY.md AGENTICOS.md TODO.md .gitignore brain/config.json brain/_inde
     brain/scripts/node_modules/@modelcontextprotocol/sdk/package.json .graphifyignore brain/graphify-out/graph.json; do
   [ -e "$VAULT/$f" ] || { echo "missing $f"; exit 1; }
 done
-# The Workbench is the app: init installs no HUD into the vault and writes no Obsidian setting.
-for f in .obsidian/plugins .obsidian/daily-notes.json; do
-  [ ! -e "$VAULT/$f" ] || { echo "unexpected $f"; exit 1; }
-done
+# The Workbench is the app: init installs no HUD into the vault and seeds no Obsidian settings.
+[ ! -e "$VAULT/.obsidian" ] || { echo "unexpected .obsidian"; exit 1; }
 [ -f "$CLAUDE_CONFIG_DIR/agenticos.json" ]
 grep -q '"provider": "none"' "$CLAUDE_CONFIG_DIR/agenticos.json"
 grep -q '^plugin install agenticos@agenticos-workbench$' "$FAKE_CLAUDE_LOG"

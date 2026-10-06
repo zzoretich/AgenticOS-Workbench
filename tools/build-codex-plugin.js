@@ -54,14 +54,14 @@ function manifest() {
     homepage: claude.homepage,
     repository: claude.homepage,
     license: pkg.license,
-    keywords: ['memory', 'second-brain', 'obsidian', 'recall', 'session-capture', 'telemetry'],
+    keywords: ['memory', 'second-brain', 'markdown', 'recall', 'session-capture', 'telemetry'],
     skills: './skills/',
     hooks: './hooks/hooks.json',
     mcpServers: './.mcp.json',
     interface: {
       displayName: 'AgenticOS Workbench',
       shortDescription: 'A second brain for Codex, shared with Claude Code',
-      longDescription: 'Persistent memory for Codex sessions in an Obsidian vault on your machine: brain context on every prompt, '
+      longDescription: 'Persistent memory for Codex sessions in a Markdown vault on your machine: brain context on every prompt, '
         + 'session capture into memory at the end, recall over the whole vault through the agenticos MCP server, and the same '
         + 'vocabulary as under Claude Code ($agenticos:wrap, $agenticos:remember, $agenticos:recall). Run `aos init` first; '
         + 'until then every hook and tool of this plugin exits quietly.',

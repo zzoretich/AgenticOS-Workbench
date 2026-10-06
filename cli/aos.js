@@ -36,6 +36,8 @@ const { spawn, spawnSync } = require('child_process');
 const REPO_SLUG = 'zzoretich/AgenticOS-Workbench';
 const MARKETPLACE = 'agenticos-workbench';
 const PLUGIN_ID = `agenticos@${MARKETPLACE}`;
+// Where the AgenticOS Workbench app is downloaded: the newest release carries its DMG (Apple silicon).
+const APP_DOWNLOAD = `https://github.com/${REPO_SLUG}/releases/latest`;
 // The folder an Obsidian-era install put the HUD in (<vault>/.obsidian/plugins/agentic-os/): upgrade only looks for it.
 const OBSIDIAN_PLUGIN_ID = 'agentic-os';
 const DEFAULT_VAULT = path.join(os.homedir(), 'AgenticOS');
@@ -893,7 +895,7 @@ function checklist(ctx) {
   // From the app's payload the app is already there (its wizard runs this); from a checkout it may not be.
   steps.push(ctx.repo && exists(path.join(ctx.repo, 'payload.json'))
     ? 'Open the AgenticOS Workbench app; it finds this vault through agenticos.json.'
-    : 'Open the AgenticOS Workbench app (macOS); it finds this vault through agenticos.json. Until its download arrives with 1.0, build it from app/ in the checkout (app/README.md).');
+    : `Open the AgenticOS Workbench app (macOS, Apple silicon; download it from ${APP_DOWNLOAD}); it finds this vault through agenticos.json.`);
   steps.push(`Put ${path.join(os.homedir(), '.local', 'bin')} on your PATH, then run: aos doctor`);
   if (hosts.claude) steps.push('Start a new `claude` session; the first prompt receives <brain-context>. Use /wrap at the end.');
   if (hosts.codex) steps.push(codexPlugin
@@ -1237,7 +1239,7 @@ async function upgrade(flags) {
   // An install from the Obsidian era still has the HUD in the vault: say once where the Workbench went, and leave the
   // folder alone (the user may still be running it until the app is installed).
   if (isDir(path.join(vault, '.obsidian', 'plugins', OBSIDIAN_PLUGIN_ID))) {
-    out.log(`The Workbench is now the AgenticOS Workbench app for macOS; once you use the app, you can remove the old Obsidian plugin folder ${path.join(vault, '.obsidian', 'plugins', OBSIDIAN_PLUGIN_ID)}.`);
+    out.log(`The Workbench is now the AgenticOS Workbench app for macOS (${APP_DOWNLOAD}); once you use the app, you can remove the old Obsidian plugin folder ${path.join(vault, '.obsidian', 'plugins', OBSIDIAN_PLUGIN_ID)}.`);
   }
   out.log(`upgraded to v${version}. Memory, notes and persona were not touched.`);
   return 0;
@@ -1445,7 +1447,7 @@ module.exports = {
   init, repoRoot, productVersion, upgradeReexecTarget, copyTree, assertVaultOk, buildUserConfig, linkLauncher, vendorRuntime, releaseTreeDeps, swapNodeModules,
   installPlugin, personaInterview, checklist, hudHost,
   upgrade, uninstall, removeSchedules, terminal, persona, cost, graph, routines, workspace, config, updateCheck, updateStatus, updateNotice,
-  PROVIDERS, HOST_CHOICES, PLUGIN_ID, MARKETPLACE, REPO_SLUG, OBSIDIAN_PLUGIN_ID, DEFAULT_VAULT, RUNTIME_SCRIPTS, USAGE,
+  PROVIDERS, HOST_CHOICES, PLUGIN_ID, MARKETPLACE, REPO_SLUG, APP_DOWNLOAD, OBSIDIAN_PLUGIN_ID, DEFAULT_VAULT, RUNTIME_SCRIPTS, USAGE,
   VALUE_FLAGS, BOOL_FLAGS, NEGATABLE_FLAGS,
   UsageError, CheckFailed, out,
 };

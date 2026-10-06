@@ -136,7 +136,8 @@ test('init needs no Obsidian, installs no HUD into the vault, and accepts --no-o
   assert.match(r.stdout, /^preflight: ollama .* · python3 \d+\.\d+ · uv /m);
   assert.doesNotMatch(r.stdout, /preflight: obsidian|Obsidian plugin bundle|Community plugins/);
   assert.match(r.stdout, /terminal: nothing to install — the AgenticOS Workbench app brings its own terminal/);
-  assert.match(r.stdout, /Open the AgenticOS Workbench app \(macOS\)/);
+  assert.match(r.stdout, /Open the AgenticOS Workbench app \(macOS, Apple silicon; download it from https:\/\/github\.com\/zzoretich\/AgenticOS-Workbench\/releases\/latest\)/);
+  assert.doesNotMatch(r.stdout, /arrives with 1\.0|build it from app\//, 'the download exists now');
   assert.ok(!fs.existsSync(path.join(sb.vault, '.obsidian', 'plugins')), 'no HUD bundle in the vault');
   assert.ok(!fs.existsSync(path.join(sb.vault, '.obsidian', 'daily-notes.json')), 'no Obsidian Daily Notes setting');
   assert.doesNotMatch(aos(sb, ['help']).stdout, /--no-obsidian|--terminal|terminal install/, 'the no-ops are not advertised');
@@ -288,13 +289,13 @@ test('init into a temp vault: seed set, vendored runtime, agenticos.json, plugin
     'brain/_index/MOC-reference.md', 'brain/_index/MOC-projects.md', 'brain/_index/MOC-patterns.md', 'brain/_index/scanner-config.json',
     'brain/memory/user/profile.md', 'brain/memory/feedback/README.md', 'brain/memory/projects/README.md', 'brain/memory/reference/README.md',
     'brain/patterns/README.md', 'templates/daily-note.md', 'templates/meeting-note.md', 'templates/decision-record.md', 'templates/project-note.md',
-    '.obsidian/app.json', '.obsidian/community-plugins.json',
     'brain/routines/README.md', 'brain/routines/monitor.md', 'brain/routines/reflect.md', 'brain/routines/sitrep.md',
     'brain/scripts/package.json', 'brain/scripts/config.default.json', 'brain/scripts/lib/paths.js', 'brain/scripts/sdk/mcp-server.js',
     'brain/scripts/cli/aos.js', 'brain/scripts/cli/routines.js', 'brain/scripts/routines/run-routine.js', 'brain/scripts/bin/aos', 'brain/scripts/node_modules']) {
     assert.ok(fs.existsSync(path.join(v, rel)), `missing ${rel}`);
   }
   assert.ok(!fs.existsSync(path.join(v, '_gitignore')));
+  assert.ok(!fs.existsSync(path.join(v, '.obsidian')), 'the vault is plain: no Obsidian settings seeded (workbench-app D1)');
   assert.ok(!fs.existsSync(path.join(v, 'persona', 'identity.template.md')), 'vault-template/persona/ is not seeded raw (A8)');
   assert.ok(!fs.existsSync(path.join(v, 'brain', 'scripts', 'test')), 'tests are not vendored');
   assert.ok(!fs.existsSync(path.join(v, 'brain', 'scripts', 'package-lock.json')), 'no lockfile is vendored (contract §4.3)');
@@ -621,7 +622,7 @@ test('upgrade installs no HUD, points an Obsidian-era install at the app, and re
   assert.equal(r.status, 0, r.stderr + r.stdout);
   const said = r.stdout.split('\n').filter((l) => /AgenticOS Workbench app/.test(l));
   assert.equal(said.length, 1, r.stdout);
-  assert.match(said[0], /^The Workbench is now the AgenticOS Workbench app for macOS; once you use the app, you can remove the old Obsidian plugin folder .*\.obsidian\/plugins\/agentic-os\.$/);
+  assert.match(said[0], /^The Workbench is now the AgenticOS Workbench app for macOS \(https:\/\/github\.com\/zzoretich\/AgenticOS-Workbench\/releases\/latest\); once you use the app, you can remove the old Obsidian plugin folder .*\.obsidian\/plugins\/agentic-os\.$/);
   assert.equal(fs.readFileSync(path.join(old, 'main.js'), 'utf8'), '// the Obsidian-era HUD\n', 'the old folder is left alone');
   assert.deepEqual(fs.readdirSync(old), ['main.js'], 'nothing new installed into it');
   assert.equal(readJson(cfgPath).node, require('./node-path.js').stableNode(process.execPath));
