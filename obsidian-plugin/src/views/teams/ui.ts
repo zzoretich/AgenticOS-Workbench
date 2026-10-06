@@ -22,6 +22,7 @@ export interface TeamsUiState {
   showDone: Set<string>;            // "<team>/<stage>" columns showing their done items
   channelItem: string | null;       // the Interact filter
   drafts: Map<string, string>;      // team id → its unsent message to the lead (never carried to another team)
+  addPick: Map<string, string>;     // team id → the agent picked in "Add a member", kept across redraws until it is added
 }
 
 export interface Confirm { title: string; message: string; cta: string }
