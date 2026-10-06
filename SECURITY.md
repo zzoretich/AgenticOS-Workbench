@@ -64,7 +64,7 @@ output. The design treats the page that shows them as untrusted (design D7,
 
 | Risk | Why it stays | What limits it |
 |---|---|---|
-| The Terminal tab is a shell | It is the feature: what you type runs as you. A compromised page could type into a terminal it opens | Nothing in the page can run code (CSP, sanitized Markdown, no remote content), so a page must first be compromised; the terminal starts only a listed shell |
+| The Term tab is a shell | It is the feature: what you type runs as you. A compromised page could type into a terminal it opens | Nothing in the page can run code (CSP, sanitized Markdown, no remote content), so a page must first be compromised; the terminal starts only a listed shell |
 | The page can do what the Workbench's buttons do | Routines run agent prompts, Settings changes settings, Agent Teams approves gates | Each is a named command with an argument rule; nothing outside the surfaces runs |
 | Links you made inside the vault are followed | Checks are on the vault's paths; a workspace linked to a code folder is read and written through the link, as you set it up | The page cannot create links |
 | An https link can carry data out | Notifications link to the web; the browser shows every link it opens | Opening is visible; the page has no network access of its own (`connect-src 'self'`) |
@@ -75,32 +75,33 @@ output. The design treats the page that shows them as untrusted (design D7,
 
 Done for phase 4 against Electron's security checklist (the Dev team's `dev-electron-hardening` audit and its
 `dev-electron-ipc` pattern), then by an independent reviewer with no part in building it, who attacked the bridge as a
-page with script running in it would. Evidence is from the branch that sandboxed the page; packaged checks ran on a
-release-configured build (`npm run dist:verify`) and the smoke build (`npm run smoke:packaged`).
+page with script running in it would. The Evidence column's line numbers were last rechecked against the tree after
+1.0.0; packaged checks ran on a release-configured build (`npm run dist:verify`) and the smoke build
+(`npm run smoke:packaged`).
 
 | # | Check | Status | Evidence |
 |---|---|---|---|
-| 1 | Only secure content | pass | `app/src/main/index.ts:231` loads `app://hud/index.html`; `app-scheme.ts` serves only `out/renderer` |
-| 2 | No Node integration | pass | `index.ts:193-194` `nodeIntegration: false`, `nodeIntegrationInSubFrames: false`; `sandbox.spec.ts` finds no `require`, `process`, `Buffer` |
-| 3 | Context isolation | pass | `index.ts:195` |
-| 4 | Sandbox | pass | `index.ts:196`; `sandbox.spec.ts` reads the page's live preferences |
-| 5 | Permission requests | pass | `index.ts:225` grants only `clipboard-sanitized-write` |
+| 1 | Only secure content | pass | `app/src/main/index.ts:342` loads `app://hud/index.html`; `app-scheme.ts` serves only `out/renderer` |
+| 2 | No Node integration | pass | `index.ts:304-305` `nodeIntegration: false`, `nodeIntegrationInSubFrames: false`; `sandbox.spec.ts` finds no `require`, `process`, `Buffer` |
+| 3 | Context isolation | pass | `index.ts:306` |
+| 4 | Sandbox | pass | `index.ts:307`; `sandbox.spec.ts` reads the page's live preferences |
+| 5 | Permission requests | pass | `index.ts:336` grants only `clipboard-sanitized-write` |
 | 6 | `webSecurity` | pass | on, set explicitly |
 | 7 | Content Security Policy | pass | built `out/renderer/index.html`: `script-src 'self'`, no inline script, no `unsafe-eval`, `object-src 'none'`, `connect-src 'self'` |
 | 8 | No insecure content | pass | `allowRunningInsecureContent: false` |
 | 9, 10 | No experimental or Blink features | pass | not set |
 | 11, 12 | `<webview>` | n.a. | `webviewTag: false` |
-| 13 | Navigation | pass | `index.ts:218, 223`: every navigation is prevented (an https link goes to the browser) |
-| 14 | New windows | pass | `index.ts:209-217`: only the blank tray popover; anything else is denied |
+| 13 | Navigation | pass | `index.ts:329, 334`: every navigation is prevented (an https link goes to the browser) |
+| 14 | New windows | pass | `index.ts:320-333`: only the blank tray popover; anything else is denied |
 | 15 | `openExternal` | pass | https only (`policy/shell.ts` `externalAllowed`); the menu's one fixed link |
 | 16 | A current Electron | pass | 44.5.1, the current release of the current major (phase 5) |
 | 17 | IPC sender and arguments | pass | every handler goes through `ipc/trust.ts:33-48`: main window, main frame, `app://hud`, then a zod schema (`ipc/schemas.ts`) |
 | 18 | Custom protocol | pass | `app-scheme.ts:39-44`, `protocol.handle` |
 | 19 | Fuses | pass | `dist:verify` reads them from the packaged app: `runAsNode` off, `NODE_OPTIONS` off, `--inspect` off, archive integrity on, only from the archive, no `file:` privileges |
-| 20 | No Electron APIs exposed | pass | `preload/index.ts:64` exposes named functions only; `sandbox.spec.ts` checks the shape |
+| 20 | No Electron APIs exposed | pass | `preload/index.ts:88` exposes named functions only; `sandbox.spec.ts` checks the shape |
 | | Secrets in code or history | pass | the repository's privacy gate on every commit and in CI |
 | | Injection sinks | pass | no `innerHTML`, `eval` or `new Function` in the page's code; Markdown with raw HTML off, then DOMPurify |
-| | Entitlements | pass | `allow-jit`, and `apple-events` with its reason (`electron-builder.yml:44`: a command in the terminal may control another app) |
+| | Entitlements | pass | `allow-jit`, and `apple-events` with its reason (`electron-builder.yml:52`: a command in the terminal may control another app) |
 | | Production dependencies | pass | `npm audit --omit=dev`: 0 vulnerabilities |
 | | Remote debugging of a release | pass | `policy/debug.ts`; `dist:verify` starts the release with `--remote-debugging-port`: it exits 1 before anything listens |
 

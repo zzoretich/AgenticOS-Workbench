@@ -5,6 +5,7 @@ All notable changes to AgenticOS Workbench. Versions follow the tags. From the n
 ## [Unreleased]
 
 ### Fixed
+- A new vault's `AGENTICOS.md` fits the 9,000 characters the conventions hook injects into a Codex session again; it had grown past the limit, so Codex saw it cut off near the end. A vault you already have keeps its own copy.
 - Agent Teams → Manage keeps the agent you picked in **Add a member** when the tab redraws before you click Add (its clock, a file change, the runtime's sweep). The pick came back empty, with Add disabled.
 
 ### Changed

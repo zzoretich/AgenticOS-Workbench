@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * auto-cost.js — costs sessions and patches their cost_usd into runs.jsonl so the
+ * auto-cost.js — costs sessions and records their cost in costs.jsonl (via cost-sync.js) so the
  * Mission Control Cost panel reflects real token usage without anyone running /cost.
  * Claude Code sessions go through the Python analyzer; Codex sessions (AOS_HOST=codex, the
  * hook host) are priced in-process from the rollout's token_count events (codex-pricing.js).
@@ -60,7 +60,7 @@ function findTranscript(sessionId, projectsRoot = PROJECTS) {
 }
 
 /**
- * Cost one transcript and patch runs.jsonl.
+ * Cost one transcript and record it in costs.jsonl.
  * Returns {status, detail} where status is one of:
  *   'ok'              — costed and synced
  *   'no-transcript'   — nothing on disk to cost. NOT a failure: sessions that
@@ -131,7 +131,7 @@ function hostForRun(sessionId, transcriptArg, env = process.env, runsFile = RUNS
 
 /**
  * Cost one Codex rollout in-process: the last token_count event is the session total, priced with
- * codex-pricing.js, written as a snapshot the same cost-sync path patches into runs.jsonl.
+ * codex-pricing.js, written as a snapshot the same cost-sync path records in costs.jsonl.
  * Statuses: 'ok' | 'no-transcript' | 'no-usage' (a rollout without a token_count event) | 'analyzer-failed'.
  */
 function costCodexRollout(transcript, sessionId, { model = null, snapshotsDir = SNAPSHOTS, syncFn } = {}) {

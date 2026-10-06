@@ -71,7 +71,7 @@ src/main/services/ the page's files, processes and terminals (node-pty), as main
 src/preload/     window.aos: the contextBridge of named functions, the page's only way into main
 src/renderer/    boot, the HUD's host over the bridge, the POSIX path shim, host chrome, the setup wizard (setup/)
 src/shared/      the IPC contract (no imports) and the write surfaces
-scripts/         build, payload, compat tripwire, fixture generator, unit-test runner, live-vault driver, packaged checks, release
+scripts/         build, payload, compat tripwire, fixture generator, icon, node-pty postinstall fix, unit-test runner, packaged checks and smoke, release
 build/           the packaged app's entitlements and icon (electron-builder.yml is beside this file)
 tests/           unit tests, and the end-to-end suite with its coverage map (tests/e2e/COVERAGE.md)
 ```
@@ -91,9 +91,9 @@ tests/           unit tests, and the end-to-end suite with its coverage map (tes
 | `npm run dist` | build, then package, sign and (with `APPLE_KEYCHAIN_PROFILE`) notarize the app and its DMG into `dist/` |
 | `npm run dist:verify` | check the build's signature, entitlements, fuses, contents, notarization and DMG, and that it refuses a debugger |
 | `npm run dist:test` | the smoke build in `dist-test/`: packaged like `dist`, ad-hoc signed, the one build that accepts the DevTools port |
-| `npm run smoke:packaged` | run the smoke build on a fresh synthetic install, then once with no install (the wizard) (`-- --live`: on your vault, read-only; `-- --app <path>`) |
+| `npm run smoke:packaged` | run the smoke build on a fresh synthetic install, then once with no install (the wizard) (`-- --live`: on your vault, with the app's usual write surfaces. It types nothing, but the app records itself in `brain/_index/hud-host.json`, and opening Skills or Agents with a stale cache runs `aos skills sync` / `aos agents sync`; `-- --app <path>`) |
 | `npm run payload` | build the runtime the app carries into `payload/` (the dist scripts run it first) |
 | `npm run release:app` | for a tagged release: build, sign, notarize, staple, verify, and upload the DMG, the zip and `latest-mac.yml` to the tag's GitHub release (`-- --dry-run` prints the checks and the plan) |
 
 `app/` has its own lockfile and is not an npm workspace, so the runtime's installs and the repo's other CI jobs never
-pull Electron or native modules. CI runs all of the above on macOS (`.github/workflows/ci.yml`, job `app`).
+pull Electron or native modules. CI (`.github/workflows/ci.yml`, job `app`) runs `typecheck`, `test:unit`, `check:compat` and `test:e2e` on macOS; `screens`, `payload`, the `dist` scripts, `smoke:packaged` and `release:app` run by hand on a Mac.

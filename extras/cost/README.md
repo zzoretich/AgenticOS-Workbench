@@ -13,8 +13,9 @@ the files stay.
 
 ## What runs
 
-- `auto-cost.js` (SessionEnd hook) costs each session that has a transcript and patches
-  `cost_usd` into `brain/_index/agent-runs/runs.jsonl` via `cost-sync.js`. Snapshots accumulate
+- `auto-cost.js` (SessionEnd hook) costs each session that has a transcript and, via
+  `cost-sync.js`, appends its cost to `brain/_index/agent-runs/costs.jsonl`; `runs.jsonl` is never
+  rewritten (readers lay the costs over the runs and count a session once). Snapshots accumulate
   in `<vault>/brain/_index/cost/snapshots/` (gitignored by the vault template). With cost
   disabled the `auto-cost` pipeline stage reports `disabled`, which the HUD renders gray.
 - `node brain/scripts/auto-cost.js --backfill` costs every past session that still has a transcript.
