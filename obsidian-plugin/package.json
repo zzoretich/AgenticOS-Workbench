@@ -1,18 +1,14 @@
 {
   "name": "agentic-os",
   "version": "0.21.0",
-  "description": "Agentic OS: Obsidian workbench for an AgenticOS vault",
+  "description": "The Workbench HUD's source, which the AgenticOS Workbench app (app/) compiles",
   "private": true,
   "engines": {
     "node": ">=20"
   },
-  "main": "main.js",
   "scripts": {
     "gen:tokens": "node scripts/gen-tokens.mjs",
     "check:hex": "sh -c \"! grep -rnE '#[0-9a-fA-F]{3,8}' main.ts src --include='*.ts' | grep -v 'src/ui/tokens.ts' | grep -v 'src/ui/tokens.test.ts' | grep .\"",
-    "build": "node scripts/gen-tokens.mjs && node esbuild.config.mjs production",
-    "dev": "node scripts/gen-tokens.mjs && node esbuild.config.mjs",
-    "rebuild-pty": "node scripts/rebuild-pty.mjs",
     "test": "npm run check:hex && node --require ../tools/test-env.js --import tsx --test $(find src -name '*.test.ts' | sort)",
     "typecheck": "tsc --noEmit -p ."
   },
@@ -23,10 +19,7 @@
     "node-pty": "^1.0.0"
   },
   "devDependencies": {
-    "@electron/rebuild": "^3.7.0",
     "@types/node": "^22.0.0",
-    "builtin-modules": "^4.0.0",
-    "esbuild": "^0.24.0",
     "obsidian": "1.13.1",
     "tsx": "^4.22.4",
     "typescript": "^5.6.0"

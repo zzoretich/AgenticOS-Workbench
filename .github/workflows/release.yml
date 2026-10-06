@@ -2,8 +2,11 @@ name: release
 on:
   push:
     tags: ["v*"]
-# Build, then publish (spec 2026-09-23-ci-safety-net-design D8): only the publish job holds a write token, and it runs
-# nothing from the repository; it attaches what the read-only build job produced. Actions are pinned to commit SHAs.
+# Check, then publish (spec 2026-09-23-ci-safety-net-design D8): only the publish job holds a write token, and it runs
+# nothing from the repository; it publishes the notes the read-only build job wrote. Actions are pinned to commit SHAs.
+# The release carries no build of its own: the app (its DMG, the zip and blockmap the updater installs from, and
+# latest-mac.yml) is signed, notarized and uploaded by `npm run release:app` on the maintainer's Mac (workbench-app D9),
+# which needs this release to exist. The Obsidian plugin bundle is no longer built or attached (1.0, phase 6 R2–R3).
 permissions:
   contents: read
 jobs:
@@ -30,17 +33,12 @@ jobs:
       - run: npm run gate
       - run: npm run typecheck -w obsidian-plugin
       - run: npm test -w obsidian-plugin
-      - run: npm run build -w obsidian-plugin
       - name: Release notes from CHANGELOG.md
         run: node tools/changelog.js notes "${GITHUB_REF_NAME#v}" > release-notes.md
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release
-          path: |
-            obsidian-plugin/main.js
-            obsidian-plugin/manifest.json
-            obsidian-plugin/styles.css
-            release-notes.md
+          path: release-notes.md
           if-no-files-found: error
           retention-days: 7
   publish:
@@ -53,17 +51,15 @@ jobs:
         with:
           name: release
           path: release
-      - name: Publish the GitHub release with the Obsidian plugin bundle
+      - name: Publish the GitHub release with its notes (release:app attaches the app)
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
           set -eu
-          files="release/obsidian-plugin/main.js release/obsidian-plugin/manifest.json release/obsidian-plugin/styles.css"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            # a re-run: refresh the notes and replace the assets
+            # a re-run: refresh the notes only, never the assets release:app uploaded
             gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file release/release-notes.md
-            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber $files
           else
-            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" --notes-file release/release-notes.md $files
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" --notes-file release/release-notes.md
           fi

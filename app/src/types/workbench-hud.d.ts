@@ -9,15 +9,7 @@ declare module "@workbench/hud" {
   }
 }
 
-declare module "@workbench/hud-manifest" {
-  const manifest: {
-    id: string;
-    name: string;
-    version: string;
-    minAppVersion?: string;
-    description?: string;
-    author?: string;
-    isDesktopOnly?: boolean;
-  };
-  export default manifest;
+// ../obsidian-plugin/package.json, read for its version only (a named import keeps the rest out of the bundle).
+declare module "@workbench/hud-package" {
+  export const version: string;
 }
