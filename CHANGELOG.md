@@ -4,6 +4,8 @@ All notable changes to AgenticOS Workbench. Versions follow the tags. From the n
 
 ## [Unreleased]
 
+## [1.0.1] — 2026-10-06
+
 ### Fixed
 - A new vault's `AGENTICOS.md` fits the 9,000 characters the conventions hook injects into a Codex session again; it had grown past the limit, so Codex saw it cut off near the end. A vault you already have keeps its own copy.
 - Agent Teams → Manage keeps the agent you picked in **Add a member** when the tab redraws before you click Add (its clock, a file change, the runtime's sweep). The pick came back empty, with Add disabled.
@@ -336,7 +338,8 @@ The first public release: an `aos` CLI, the AgenticOS runtime, a Claude Code plu
 - Update notifications: a GitHub release check surfaced as a session-start notice.
 - Docs: README, install guide, and a release acceptance runbook.
 
-[Unreleased]: https://github.com/zzoretich/AgenticOS-Workbench/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/zzoretich/AgenticOS-Workbench/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v1.0.1
 [1.0.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v1.0.0
 [0.21.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.21.0
 [0.20.3]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.20.3
