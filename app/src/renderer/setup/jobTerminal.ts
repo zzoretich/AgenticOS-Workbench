@@ -4,20 +4,20 @@
 
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-
-const THEME = { background: "#0d1219", foreground: "#c5d6e0", cursor: "#00d4ff", selectionBackground: "#1f3a4a", brightBlack: "#6b7d8c" };
+import { TERMINAL_FONT, currentTheme, onThemeChange, xtermTheme } from "../../../../obsidian-plugin/src/ui/theme";
 
 export class JobTerminal {
   readonly el: HTMLElement;
   private readonly term: Terminal;
   private readonly fit = new FitAddon();
   private text = "";
+  private readonly unwatchTheme: () => void;
 
   constructor(parent: HTMLElement, o: { input?: (data: string) => void; resize?: (cols: number, rows: number) => void; rows?: number } = {}) {
     this.el = parent.createDiv({ cls: "aos-setup-term" });
     this.term = new Terminal({
-      theme: THEME,
-      fontFamily: "'Berkeley Mono', 'JetBrains Mono', 'SF Mono', Menlo, monospace",
+      theme: xtermTheme(currentTheme(parent.ownerDocument)),
+      fontFamily: TERMINAL_FONT,
       fontSize: 12,
       rows: o.rows ?? 14,
       cols: 100,
@@ -30,6 +30,7 @@ export class JobTerminal {
     this.term.open(this.el);
     if (o.input) this.term.onData((d) => o.input?.(d));
     if (o.resize) this.term.onResize(({ cols, rows }) => o.resize?.(cols, rows));
+    this.unwatchTheme = onThemeChange((theme) => { this.term.options.theme = xtermTheme(theme); }, parent.ownerDocument);
     requestAnimationFrame(() => this.refit());
   }
 
@@ -61,6 +62,7 @@ export class JobTerminal {
   }
 
   dispose(): void {
+    this.unwatchTheme();
     this.term.dispose();
     this.el.remove();
   }

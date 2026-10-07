@@ -75,6 +75,12 @@ export const CH = {
   updateInstall: "update:install",
   /** main → page: the updater's state changed. */
   updateEvent: "update:event",
+
+  // Light and dark (UniDeX): the user's choice, and what it resolves to against macOS's appearance.
+  themeState: "theme:state",
+  themeSet: "theme:set",
+  /** main → page: the theme changed (the user's choice, or macOS's appearance while it is followed). */
+  themeEvent: "theme:event",
 } as const;
 
 /** Where the app's own pages come from (main/app-scheme.ts): the main window loads `${APP_ORIGIN}/index.html`. */
@@ -82,6 +88,12 @@ export const APP_ORIGIN = "app://hud";
 
 /** The tray popover's window name: the one window.open main allows (renderer/popover.ts opens it). */
 export const POPOVER = "aos-sidebar-popover";
+
+/** The user's theme choice: follow macOS, or always light or dark. */
+export type ThemeSource = "system" | "light" | "dark";
+
+/** The choice, and whether the app draws dark now. */
+export interface ThemeState { source: ThemeSource; dark: boolean }
 
 /** Who decided which write surfaces are on: the environment (tests, one-off runs) or the default (every verified one). */
 export type WriteSource = "AOS_APP_WRITE" | "default";
@@ -108,6 +120,8 @@ export interface BootInfo {
   /** With a vault: what attach mode shows. null when there is none. */
   attach: AttachInfo | null;
   update: UpdateState;
+  /** The theme to draw in before anything paints. */
+  theme: ThemeState;
 }
 
 // ── setup and updates (phase 5) ──────────────────────────────────────
@@ -230,6 +244,8 @@ export const HOST_COMMANDS = {
   closeTab: "host:close-tab",
   /** The settings window: the app's own tab and the plugin's (Obsidian's settings, in the app). */
   settings: "host:settings",
+  /** Switches between light and dark (an explicit choice; App settings can go back to following macOS). */
+  toggleTheme: "host:toggle-theme",
 } as const;
 
 // ── calls ─────────────────────────────────────────────────────────────
@@ -359,5 +375,11 @@ export interface AosBridge {
     /** Quits and installs a downloaded update. */
     install(): void;
     onState(cb: (s: UpdateState) => void): () => void;
+  };
+  /** Light and dark: the user's choice, saved in the app's data, and what it resolves to now. */
+  theme: {
+    state(): ThemeState;
+    set(source: ThemeSource): Result<ThemeState>;
+    onChange(cb: (s: ThemeState) => void): () => void;
   };
 }

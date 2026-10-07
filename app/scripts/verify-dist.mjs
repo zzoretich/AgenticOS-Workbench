@@ -122,8 +122,11 @@ check("fuse WasmTrapHandlers on (Electron's default)", wire[WASM_TRAP_HANDLERS] 
 
 const asar = path.join(RES, "app.asar");
 const files = listPackage(asar, { isPack: false }).map((f) => f.replace(/\\/g, "/"));
-const outFiles = files.filter((f) => f.startsWith("/out/") && /\.[a-z]+$/.test(f)).sort();
-const expectedOut = ["/out/main/index.js", "/out/preload/index.js", "/out/renderer/base.css", "/out/renderer/host.css", "/out/renderer/hud.css", "/out/renderer/hud.js", "/out/renderer/index.html"];
+const outFiles = files.filter((f) => f.startsWith("/out/") && /\.[a-z0-9]+$/.test(f)).sort();
+const FONTS = ["inter", "jetbrains-mono"].flatMap((stem) => [
+  `/out/renderer/fonts/${stem}-OFL.txt`, `/out/renderer/fonts/${stem}-latin-ext-wght-normal.woff2`, `/out/renderer/fonts/${stem}-latin-wght-normal.woff2`]);
+const expectedOut = ["/out/main/index.js", "/out/preload/index.js", "/out/renderer/base.css", "/out/renderer/host.css", "/out/renderer/hud.css",
+  "/out/renderer/hud.js", "/out/renderer/index.html", ...FONTS].sort();
 check("out/ holds the app and nothing else", JSON.stringify(outFiles) === JSON.stringify(expectedOut), outFiles.join(" "));
 check("no source maps", !files.some((f) => f.endsWith(".map")));
 check("only this Mac's node-pty prebuild", !files.some((f) => /prebuilds\/(darwin-x64|win32)/.test(f)) && fs.readdirSync(path.dirname(PTY)).join() === "darwin-arm64");

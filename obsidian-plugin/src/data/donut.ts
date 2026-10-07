@@ -1,15 +1,15 @@
 // donut.ts — SVG ring chart for the SYSTEM drawer's DISK panel. donutArcs() is pure
 // (testable); donutElement() builds real SVG nodes with createElementNS — no markup strings are ever assigned.
-import { TOKENS } from "../ui/tokens";
 
+/** The categorical chart tokens (styles.css --udx-chart-*): set through `style`, so the ring follows the theme live. */
 export const DONUT_COLORS = [
-  TOKENS.chart1, // cyan
-  TOKENS.chart2, // pink
-  TOKENS.chart3, // amber
-  TOKENS.chart4, // green
-  TOKENS.chart5, // violet
-  TOKENS.chart6, // orange
-  TOKENS.chart7, // slate (for "other")
+  "var(--udx-chart-1)", // blue
+  "var(--udx-chart-2)", // violet
+  "var(--udx-chart-3)", // green
+  "var(--udx-chart-4)", // amber
+  "var(--udx-chart-5)", // pink
+  "var(--udx-chart-6)", // teal
+  "var(--udx-chart-7)", // grey (for "other")
 ];
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -57,7 +57,7 @@ export function donutElement(segments: Segment[], total: number, size = 140): SV
   for (const a of donutArcs(segments, total, size)) {
     const p = document.createElementNS(SVG_NS, "path");
     p.setAttribute("d", a.d);
-    p.setAttribute("fill", a.fill);
+    p.style.fill = a.fill;
     p.setAttribute("opacity", a.opacity);
     svg.appendChild(p);
   }

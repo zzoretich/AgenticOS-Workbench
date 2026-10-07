@@ -42,27 +42,27 @@ const theme = EditorView.theme({
   ".cm-scroller": { fontFamily: "var(--compat-mono)", lineHeight: "1.6" },
   ".cm-content": { padding: "18px 28px 48px", maxWidth: "820px", caretColor: "var(--compat-accent)" },
   ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--compat-accent)" },
-  "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, ::selection": { backgroundColor: "#1d3b4f" },
-  ".cm-activeLine": { backgroundColor: "rgba(255, 255, 255, 0.03)" },
-  ".cm-selectionMatch": { backgroundColor: "rgba(0, 212, 255, 0.12)" },
+  "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, ::selection": { backgroundColor: "var(--udx-info-bg)" },
+  ".cm-activeLine": { backgroundColor: "var(--udx-surface)" },
+  ".cm-selectionMatch": { backgroundColor: "var(--udx-raised-2)" },
   ".cm-panels": { backgroundColor: "var(--compat-panel)", color: "var(--compat-text)", borderColor: "var(--compat-border)" },
-  ".cm-searchMatch": { backgroundColor: "rgba(255, 200, 0, 0.25)" },
-}, { dark: true });
+  ".cm-searchMatch": { backgroundColor: "var(--udx-warn-bg)" },
+});
 
 const highlight = HighlightStyle.define([
-  { tag: tags.heading, fontWeight: "700", color: "#e8f1f6" },
+  { tag: tags.heading, fontWeight: "700", color: "var(--udx-text)" },
   { tag: tags.strong, fontWeight: "700" },
   { tag: tags.emphasis, fontStyle: "italic" },
   { tag: tags.strikethrough, textDecoration: "line-through" },
   { tag: [tags.link, tags.url], color: "var(--compat-accent)" },
-  { tag: tags.monospace, color: "#9ad0a8" },
+  { tag: tags.monospace, color: "var(--udx-text-2)" },
   { tag: tags.quote, color: "var(--compat-dim)", fontStyle: "italic" },
   { tag: [tags.processingInstruction, tags.contentSeparator, tags.meta], color: "var(--compat-dim)" },
   { tag: tags.list, color: "var(--compat-text)" },
   // The frontmatter's YAML.
-  { tag: [tags.propertyName, tags.definition(tags.propertyName)], color: "#9fb4c2" },
+  { tag: [tags.propertyName, tags.definition(tags.propertyName)], color: "var(--udx-text-2)" },
   { tag: [tags.string, tags.content], color: "var(--compat-text)" },
-  { tag: [tags.number, tags.bool, tags.null, tags.atom], color: "#d7b67a" },
+  { tag: [tags.number, tags.bool, tags.null, tags.atom], color: "var(--udx-warn)" },
   { tag: [tags.punctuation, tags.separator, tags.squareBracket, tags.brace], color: "var(--compat-dim)" },
 ]);
 

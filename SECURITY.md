@@ -17,7 +17,8 @@ output. The design treats the page that shows them as untrusted (design D7,
 
 - **Nothing in the page can run code it was handed.** The page loads only the app's own files from `app://hud`, under a
   Content Security Policy that allows only those scripts (`script-src 'self'`, no inline script, no `eval`). Markdown is
-  rendered with raw HTML off and sanitized by DOMPurify.
+  rendered with raw HTML off and sanitized by DOMPurify. Its two typefaces (Inter and JetBrains Mono, OFL) are copied
+  into the app at build time from pinned packages, so the page fetches no fonts (`font-src 'self'`).
 - **The page has no access to your Mac.** It runs in Chromium's sandbox with context isolation and no Node. Its only way
   out is `window.aos`, a short list of named functions (`app/src/preload/index.ts`). Main answers only the main window's
   own page, checks every argument against a schema, and answers each call with a result rather than an error.
@@ -39,6 +40,8 @@ output. The design treats the page that shows them as untrusted (design D7,
     plus a few named variables with fixed or trusted values: never `NODE_OPTIONS`, `PATH` or `DYLD_*`, and a Claude
     or Codex folder only when it is one main trusts.
   - *Terminals:* a shell listed in `/etc/shells` (or your `$SHELL`), with no arguments.
+  - *Appearance:* the page may set the theme to `system`, `light` or `dark` and nothing else; main saves the choice in
+    the app's data (`app-settings.json`), never in the vault, and hands it to macOS's `nativeTheme`.
   - *Setup (phase 5):* the wizard names a fix by id; main runs that fix's fixed command (`app/src/main/policy/setup.ts`:
     Homebrew's installer, `brew install …`, `npm install -g` for the two CLIs, the two logins) with `/bin/sh -c` in a
     terminal the wizard shows, and only once its own checks say what it needs is there. `aos init` and `aos upgrade`

@@ -5,7 +5,7 @@
 
 .aos-host-ribbon { width: 40px; flex: none; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 0; background: var(--compat-bg); border-right: 1px solid var(--compat-border); }
 .aos-host-ribbon .clickable-icon { width: 28px; height: 28px; font-size: 15px; }
-.aos-host-ribbon .aos-host-settings { margin-top: auto; }
+.aos-host-ribbon .aos-host-theme { margin-top: auto; }
 .aos-app-path { margin-top: 4px; font: 11px var(--compat-mono); color: var(--compat-dim); word-break: break-all; }
 .aos-app-writes { font: 12px var(--compat-mono); color: var(--compat-dim); }
 .aos-app-writes.is-writing { color: var(--compat-accent); }
@@ -39,7 +39,7 @@
 
 .aos-host-status { height: 24px; flex: none; display: flex; justify-content: flex-end; align-items: center; gap: 14px; padding: 0 12px; border-top: 1px solid var(--compat-border); background: var(--compat-panel); font: 11px var(--compat-mono); color: var(--compat-dim); }
 .aos-host-status .status-bar-item { display: flex; align-items: center; gap: 6px; }
-.aos-host-mode { color: #ffb454; letter-spacing: .08em; margin-right: auto; }
+.aos-host-mode { color: var(--udx-warn); letter-spacing: .08em; margin-right: auto; }
 
 .aos-note { padding: 0; }
 .aos-note-bar { position: sticky; top: 0; display: flex; align-items: center; gap: 8px; padding: 8px 18px; background: var(--compat-panel); border-bottom: 1px solid var(--compat-border); font: 12px var(--compat-mono); color: var(--compat-dim); }
@@ -89,7 +89,7 @@ body.aos-popover { background: var(--compat-bg); }
 .aos-setup-check { display: flex; align-items: center; gap: 12px; padding: 8px 12px; background: var(--compat-panel); }
 .aos-setup-check + .aos-setup-check { border-top: 1px solid var(--compat-border); }
 .aos-setup-mark { width: 16px; text-align: center; font-weight: 600; }
-.aos-setup-check.is-ok .aos-setup-mark { color: #7fd962; }
+.aos-setup-check.is-ok .aos-setup-mark { color: var(--udx-ok); }
 .aos-setup-check.is-missing .aos-setup-mark, .aos-setup-check.is-warn .aos-setup-mark { color: var(--compat-warn); }
 .aos-setup-what { flex: 1; min-width: 0; }
 .aos-setup-label { font-size: 13px; }
@@ -117,10 +117,10 @@ body.aos-popover { background: var(--compat-bg); }
 .aos-setup-diff-path { padding: 4px 10px; border-bottom: 1px solid var(--compat-border); color: var(--compat-dim); }
 .aos-setup-diff-line { padding: 0 10px; white-space: pre; }
 .aos-setup-diff-line.is-context { color: var(--compat-dim); }
-.aos-setup-diff-line.is-add { color: #7fd962; background: rgba(127, 217, 98, 0.08); }
-.aos-setup-ok { color: #7fd962; font-size: 12px; }
+.aos-setup-diff-line.is-add { color: var(--udx-ok); background: var(--udx-ok-bg); }
+.aos-setup-ok { color: var(--udx-ok); font-size: 12px; }
 .aos-setup-termhost.is-hidden { display: none; }
-.aos-setup-term { height: 260px; padding: 6px; border: 1px solid var(--compat-border); border-radius: 8px; background: #0d1219; }
+.aos-setup-term { height: 260px; padding: 6px; border: 1px solid var(--compat-border); border-radius: 8px; background: var(--udx-term-background); }
 
 /* Attach mode (renderer/setup/attach.ts): the note, the runtime update, and the status bar items beside them. */
 .aos-attach-modal { width: min(640px, 90vw); }

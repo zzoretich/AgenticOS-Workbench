@@ -3,7 +3,7 @@
 // HUD sends and small enough that one call cannot exhaust main.
 
 import { z } from "zod";
-import type { ExecRequest, InstallRequest, PersonaAnswers, PtySpawnRequest, ReadyInfo, SetupFixId, SpawnRequest, WriteVia } from "../../shared/ipc";
+import type { ExecRequest, InstallRequest, PersonaAnswers, PtySpawnRequest, ReadyInfo, SetupFixId, SpawnRequest, ThemeSource, WriteVia } from "../../shared/ipc";
 
 const MB = 1024 * 1024;
 
@@ -27,6 +27,8 @@ export const AppendArgs = z.object({ p: AbsPath, data: z.string().max(64 * MB) }
 export const FolderArgs = z.object({ p: AbsPath, recursive: z.boolean() });
 export const TwoPathArgs = z.object({ from: AbsPath, to: AbsPath });
 export const NoArgs = z.object({}).strict();
+/** The theme choice: one of the three, nothing else. */
+export const ThemeSetArgs = z.object({ source: z.enum(["system", "light", "dark"]) satisfies z.ZodType<ThemeSource> }).strict();
 
 export const SpawnRequestSchema: z.ZodType<SpawnRequest> = z.object({
   id: Id,

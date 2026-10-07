@@ -7,7 +7,6 @@ import { loadRunDetail, RunDetail, formatEventLabel } from "../data/runDetail";
 import { setPendingRunId, VIEW_TYPE_RUN_INSPECTOR } from "./RunInspectorView";
 import { formatUSD } from "../data/cost";
 import { loadStaff, StaffAgent } from "../data/staff";
-import { TOKENS } from "../ui/tokens";
 
 export class RunsTab {
   private host: HTMLElement | null = null;
@@ -488,7 +487,7 @@ function formatOffsetMs(ms: number): string {
 
 // PORT of the old Staff Roster view's module-level colorFor (~149) — verbatim.
 function colorFor(name: string): string {
-  const palette = [TOKENS.cyan, TOKENS.amber, TOKENS.green, TOKENS.rose, TOKENS.text];
+  const palette = ["var(--udx-chart-1)", "var(--udx-chart-4)", "var(--udx-chart-3)", "var(--udx-chart-5)", "var(--udx-text)"];
   let h = 0;
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
   return palette[h % palette.length];

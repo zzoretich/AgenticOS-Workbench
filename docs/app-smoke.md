@@ -26,6 +26,8 @@ Run before tagging a release, in the AgenticOS Workbench app on a vault created 
 - [ ] The settings an Obsidian-era vault kept in `.obsidian/plugins/agentic-os/data.json` are in effect on first start, and `~/Library/Application Support/AgenticOS Workbench/plugins/agentic-os.json` holds them before you change anything.
 - [ ] AgenticOS Workbench ▸ Check for Updates… checks GitHub Releases (a release build only; greyed out with the reason when `updates.check` is false); a downloaded update shows **Restart to update** in the status bar and the menu.
 - [ ] The menubar icon opens the sidebar HUD in a popover; closing the window hides it and ⌘Q quits; `aos doctor`'s `workbench app` row names the app and its version.
+- [ ] Light and dark: the app draws in macOS's appearance and follows it when it changes (System Settings ▸ Appearance) while App settings ▸ **Appearance** is **Match macOS**; the ribbon's sun/moon toggle, the palette's **Toggle light and dark** and View ▸ **Appearance** switch it; the choice survives a restart; the window, the tray popover, the Term tab and the wizard's terminal switch with it.
+- [ ] Both themes read well: every tab in light and in dark has no text you cannot read, a status keeps its colour's meaning (green ok, amber a warning, red breaking or failed, blue live or running, violet waiting on you, grey off), and the type is Inter, with numbers and code in JetBrains Mono.
 
 ## Settings
 

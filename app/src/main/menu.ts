@@ -2,7 +2,7 @@
 // a tab or a command shows up here without a change to the app.
 
 import { Menu, shell, type MenuItemConstructorOptions } from "electron";
-import { HOST_COMMANDS, type CommandInfo, type UpdateState } from "../shared/ipc";
+import { HOST_COMMANDS, type CommandInfo, type ThemeSource, type UpdateState } from "../shared/ipc";
 
 const WORKBENCH = "agentic-os:open-workbench";
 /** ⌘1 opens the Workbench; ⌘2–⌘9 the first rail tabs, in rail order. */
@@ -35,7 +35,15 @@ export function updateItem(u: MenuUpdate): MenuItemConstructorOptions {
   return { label: "Check for Updates…", click: () => u.check() };
 }
 
-export function buildAppMenu(commands: CommandInfo[], run: (id: string) => void, opts: { dev: boolean; setup?: boolean; update?: MenuUpdate }): Menu {
+export interface MenuTheme { source: ThemeSource; set: (source: ThemeSource) => void }
+
+/** View ▸ Appearance: follow macOS, or always light or dark (UniDeX D6). */
+export function appearanceItem(t: MenuTheme): MenuItemConstructorOptions {
+  const choices: Array<[ThemeSource, string]> = [["system", "Match macOS"], ["light", "Light"], ["dark", "Dark"]];
+  return { label: "Appearance", submenu: choices.map(([source, label]) => ({ label, type: "radio", checked: t.source === source, click: () => t.set(source) })) };
+}
+
+export function buildAppMenu(commands: CommandInfo[], run: (id: string) => void, opts: { dev: boolean; setup?: boolean; update?: MenuUpdate; theme?: MenuTheme }): Menu {
   const item = (id: string, label?: string, accel?: string): MenuItemConstructorOptions => {
     const cmd = commands.find((c) => c.id === id);
     return { label: label ?? cmd?.name ?? id, accelerator: accel ?? (cmd ? accelerator(cmd) : undefined), enabled: !!cmd || id.startsWith("host:"), click: () => run(id) };
@@ -87,6 +95,7 @@ export function buildAppMenu(commands: CommandInfo[], run: (id: string) => void,
         { type: "separator" },
         ...(tabs.length ? tabs : [{ label: "Workbench", enabled: false } as MenuItemConstructorOptions]),
         { type: "separator" },
+        ...(opts.theme ? [appearanceItem(opts.theme), { type: "separator" } as MenuItemConstructorOptions] : []),
         { role: "resetZoom" },
         { role: "zoomIn" },
         { role: "zoomOut" },
