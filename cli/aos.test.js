@@ -136,7 +136,7 @@ test('init needs no Obsidian, installs no HUD into the vault, and accepts --no-o
   assert.match(r.stdout, /^preflight: ollama .* · python3 \d+\.\d+ · uv /m);
   assert.doesNotMatch(r.stdout, /preflight: obsidian|Obsidian plugin bundle|Community plugins/);
   assert.match(r.stdout, /terminal: nothing to install — the UniDeX app brings its own terminal/);
-  assert.match(r.stdout, /Open the UniDeX app \(macOS, Apple silicon; download it from https:\/\/github\.com\/zzoretich\/AgenticOS-Workbench\/releases\/latest\)/);
+  assert.match(r.stdout, /Open the UniDeX app \(macOS, Apple silicon; download it from https:\/\/github\.com\/zzoretich\/UniDeX-Agent-Harness\/releases\/latest\)/);
   assert.doesNotMatch(r.stdout, /arrives with 1\.0|build it from app\//, 'the download exists now');
   assert.ok(!fs.existsSync(path.join(sb.vault, '.obsidian', 'plugins')), 'no HUD bundle in the vault');
   assert.ok(!fs.existsSync(path.join(sb.vault, '.obsidian', 'daily-notes.json')), 'no Obsidian Daily Notes setting');
@@ -332,7 +332,7 @@ test('init into a temp vault: seed set, vendored runtime, agenticos.json, plugin
   const npmLog = sb.log('FAKE_NPM_LOG');
   assert.deepEqual(npmLog.trim().split('\n'), ['install --omit=dev --no-audit --no-fund'], 'one npm install, no ci/lockfile step');
   const claudeLog = sb.log('FAKE_CLAUDE_LOG');
-  assert.match(claudeLog, /^plugin marketplace add zzoretich\/AgenticOS-Workbench$/m);
+  assert.match(claudeLog, /^plugin marketplace add zzoretich\/UniDeX-Agent-Harness$/m);
   assert.match(claudeLog, /^plugin install agenticos@agenticos-workbench$/m);
   assert.equal(fs.readlinkSync(path.join(sb.home, '.local', 'bin', 'aos')), path.join(v, 'brain', 'scripts', 'bin', 'aos'));
   assert.ok(fs.existsSync(path.join(v, 'brain', '_index', 'recall-index.json')), 'recall --warm ran');
@@ -576,7 +576,7 @@ test('init from a release tree copies its runtime dependencies and never runs np
   assert.doesNotMatch(sb.log('FAKE_NPM_LOG'), /install/, 'npm was never called');
   assert.deepEqual(fs.readdirSync(path.join(sb.vault, 'brain', 'scripts')).filter((n) => n.startsWith('node_modules.')), [], 'no staging folder left behind');
   // The plugin still comes from GitHub, as the terminal install's does (I3): no --from-local, no marketplace in the bundle.
-  assert.match(sb.log('FAKE_CLAUDE_LOG'), /^plugin marketplace add zzoretich\/AgenticOS-Workbench$/m);
+  assert.match(sb.log('FAKE_CLAUDE_LOG'), /^plugin marketplace add zzoretich\/UniDeX-Agent-Harness$/m);
 });
 
 test('upgrade from a release tree swaps node_modules whole: what the old tree had and the new one lacks is gone', () => {
@@ -622,7 +622,7 @@ test('upgrade installs no HUD, points an Obsidian-era install at the app, and re
   assert.equal(r.status, 0, r.stderr + r.stdout);
   const said = r.stdout.split('\n').filter((l) => /UniDeX app/.test(l));
   assert.equal(said.length, 1, r.stdout);
-  assert.match(said[0], /^The Workbench is now the UniDeX app for macOS \(https:\/\/github\.com\/zzoretich\/AgenticOS-Workbench\/releases\/latest\); once you use the app, you can remove the old Obsidian plugin folder .*\.obsidian\/plugins\/agentic-os\.$/);
+  assert.match(said[0], /^The Workbench is now the UniDeX app for macOS \(https:\/\/github\.com\/zzoretich\/UniDeX-Agent-Harness\/releases\/latest\); once you use the app, you can remove the old Obsidian plugin folder .*\.obsidian\/plugins\/agentic-os\.$/);
   assert.equal(fs.readFileSync(path.join(old, 'main.js'), 'utf8'), '// the Obsidian-era HUD\n', 'the old folder is left alone');
   assert.deepEqual(fs.readdirSync(old), ['main.js'], 'nothing new installed into it');
   assert.equal(readJson(cfgPath).node, require('./node-path.js').stableNode(process.execPath));
@@ -1045,11 +1045,11 @@ test('plugin mode: init --host both installs the agenticos Codex plugin and writ
   assert.equal(r.status, 0, r.stderr + r.stdout);
   assert.match(r.stdout, /preflight: hosts claude\+codex .*\(plugin\)/);
   assert.match(r.stdout, /install the Codex plugin agenticos@agenticos-workbench from the agenticos-workbench marketplace/);
-  assert.match(r.stdout, /plugin agenticos@agenticos-workbench 0\.0\.0-fake installed from zzoretich\/AgenticOS-Workbench$/m);
+  assert.match(r.stdout, /plugin agenticos@agenticos-workbench 0\.0\.0-fake installed from zzoretich\/UniDeX-Agent-Harness$/m);
   assert.match(r.stdout, /trust the agenticos@agenticos-workbench entries once; they stay trusted across aos upgrade/);
   assert.match(r.stdout, /use \$agenticos:wrap at the end/);
   const log = sb.log('FAKE_CODEX_LOG');
-  assert.match(log, /^plugin marketplace add zzoretich\/AgenticOS-Workbench --json$/m);
+  assert.match(log, /^plugin marketplace add zzoretich\/UniDeX-Agent-Harness --json$/m);
   assert.match(log, /^plugin add agenticos@agenticos-workbench --json$/m);
   assert.doesNotMatch(log, /^mcp add /m, 'no direct MCP registration');
   assert.ok(!fs.existsSync(hooks), 'nothing written into ~/.codex/hooks.json');

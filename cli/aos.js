@@ -33,7 +33,7 @@ const http = require('http');
 const readline = require('readline');
 const { spawn, spawnSync } = require('child_process');
 
-const REPO_SLUG = 'zzoretich/AgenticOS-Workbench';
+const REPO_SLUG = 'zzoretich/UniDeX-Agent-Harness';
 const MARKETPLACE = 'agenticos-workbench';
 const PLUGIN_ID = `agenticos@${MARKETPLACE}`;
 // The macOS app's name as people see it (UniDeX spec D1; app/src/shared/brand.ts) and where it is downloaded: the

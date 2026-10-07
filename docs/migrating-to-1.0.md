@@ -26,7 +26,7 @@ opens your vault, it copies them from the old plugin folder into its own data
 ## Upgrade, step by step
 
 1. **Install the app.** Download `AgenticOS-Workbench-<version>-arm64.dmg` from the
-   [latest release](https://github.com/zzoretich/AgenticOS-Workbench/releases/latest), open it, and drag **AgenticOS
+   [latest release](https://github.com/zzoretich/UniDeX-Agent-Harness/releases/latest), open it, and drag **AgenticOS
    Workbench** to Applications. It is signed and notarized, so macOS asks only once whether to open an app downloaded
    from the internet. It needs a Mac with Apple silicon.
 2. **Open it.** It finds your install and opens the Workbench, with no setup wizard, and says once what changed. Your

@@ -8,7 +8,7 @@ Design and roadmap: `docs/superpowers/specs/2026-10-05-workbench-app-design.md` 
 `docs/superpowers/plans/2026-10-05-workbench-app.md`. macOS only, built for Apple silicon.
 
 To use it, download `AgenticOS-Workbench-<version>-arm64.dmg` from the
-[latest release](https://github.com/zzoretich/AgenticOS-Workbench/releases/latest). This file is for running, testing
+[latest release](https://github.com/zzoretich/UniDeX-Agent-Harness/releases/latest). This file is for running, testing
 and building it from a checkout.
 
 ## Install and update (phase 5)

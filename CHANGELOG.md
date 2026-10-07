@@ -4,6 +4,15 @@ All notable changes to UniDeX (AgenticOS Workbench before 1.1). Versions follow 
 
 ## [Unreleased]
 
+### Upgrading
+- The repository is now **zzoretich/UniDeX-Agent-Harness**. Links, clones and the plugin marketplaces still reach it through GitHub's redirect, and the app keeps updating itself. A runtime from 1.2.0 or earlier, though, stopped seeing new releases when the repository was renamed: its update check met GitHub's redirect and gave up. If you use the app, accept the runtime update it offers after it updates to this release. Without the app, run `aos upgrade` once.
+
+### Changed
+- The repository is **zzoretich/UniDeX-Agent-Harness** (it was zzoretich/AgenticOS-Workbench). The app's update feed, its **UniDeX on GitHub** menu item, the update notice's release link and every install command in the docs use the new name.
+
+### Fixed
+- The runtime's update check follows a redirect (https only, at most three), so a moved repository no longer leaves it unaware of new releases.
+
 ## [1.2.0] — 2026-10-07
 
 ### Upgrading
@@ -52,7 +61,7 @@ All notable changes to UniDeX (AgenticOS Workbench before 1.1). Versions follow 
 
 ## [1.0.0] — 2026-10-06
 
-**AgenticOS no longer uses Obsidian: the Workbench is a macOS app, AgenticOS Workbench, attached to this release.** Coming from 0.x with the Workbench in Obsidian? The [migration guide](https://github.com/zzoretich/AgenticOS-Workbench/blob/main/docs/migrating-to-1.0.md) walks through it.
+**AgenticOS no longer uses Obsidian: the Workbench is a macOS app, AgenticOS Workbench, attached to this release.** Coming from 0.x with the Workbench in Obsidian? The [migration guide](https://github.com/zzoretich/UniDeX-Agent-Harness/blob/main/docs/migrating-to-1.0.md) walks through it.
 
 ### Upgrading
 - Install the app: download `AgenticOS-Workbench-<version>-arm64.dmg` from this release (Macs with Apple silicon), drag it to Applications and open it. It finds your install through `agenticos.json`.
@@ -369,39 +378,39 @@ The first public release: an `aos` CLI, the AgenticOS runtime, a Claude Code plu
 - Update notifications: a GitHub release check surfaced as a session-start notice.
 - Docs: README, install guide, and a release acceptance runbook.
 
-[Unreleased]: https://github.com/zzoretich/AgenticOS-Workbench/compare/v1.2.0...HEAD
-[1.2.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v1.2.0
-[1.1.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v1.1.0
-[1.0.1]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v1.0.1
-[1.0.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v1.0.0
-[0.21.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.21.0
-[0.20.3]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.20.3
-[0.20.2]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.20.2
-[0.20.1]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.20.1
-[0.20.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.20.0
-[0.19.2]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.19.2
-[0.19.1]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.19.1
-[0.19.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.19.0
-[0.18.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.18.0
-[0.17.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.17.0
-[0.16.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.16.0
-[0.15.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.15.0
-[0.14.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.14.0
-[0.13.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.13.0
-[0.12.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.12.0
-[0.11.3]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.11.3
-[0.11.2]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.11.2
-[0.11.1]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.11.1
-[0.11.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.11.0
-[0.10.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.10.0
-[0.9.2]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.9.2
-[0.9.1]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.9.1
-[0.9.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.9.0
-[0.8.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.8.0
-[0.7.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.7.0
-[0.6.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.6.0
-[0.5.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.5.0
-[0.4.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.4.0
-[0.3.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.3.0
-[0.2.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.2.0
-[0.1.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.1.0
+[Unreleased]: https://github.com/zzoretich/UniDeX-Agent-Harness/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v1.2.0
+[1.1.0]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v1.1.0
+[1.0.1]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v1.0.1
+[1.0.0]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v1.0.0
+[0.21.0]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v0.21.0
+[0.20.3]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v0.20.3
+[0.20.2]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v0.20.2
+[0.20.1]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v0.20.1
+[0.20.0]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v0.20.0
+[0.19.2]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v0.19.2
+[0.19.1]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v0.19.1
+[0.19.0]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v0.19.0
+[0.18.0]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v0.18.0
+[0.17.0]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v0.17.0
+[0.16.0]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v0.16.0
+[0.15.0]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v0.15.0
+[0.14.0]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v0.14.0
+[0.13.0]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v0.13.0
+[0.12.0]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v0.12.0
+[0.11.3]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v0.11.3
+[0.11.2]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v0.11.2
+[0.11.1]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v0.11.1
+[0.11.0]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v0.11.0
+[0.10.0]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v0.10.0
+[0.9.2]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v0.9.2
+[0.9.1]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v0.9.1
+[0.9.0]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v0.9.0
+[0.8.0]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v0.8.0
+[0.7.0]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v0.7.0
+[0.6.0]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v0.6.0
+[0.5.0]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v0.5.0
+[0.4.0]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v0.4.0
+[0.3.0]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v0.3.0
+[0.2.0]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v0.2.0
+[0.1.0]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v0.1.0
