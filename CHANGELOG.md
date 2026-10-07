@@ -20,6 +20,7 @@ All notable changes to UniDeX (AgenticOS Workbench before 1.1). Versions follow 
 - The Claude Code and Codex plugins say UniDeX too: their descriptions, Codex's plugin and marketplace name, `/aos`'s description and a new vault's `AGENTICOS.md`. Only text changed, so the hooks you trusted stay trusted.
 
 ### Fixed
+- Proposals' list fits its pane: each row puts the name on its own line and its kind, age and confirmations below it, so names no longer break mid-word and the history no longer scrolls sideways.
 - A link in a note or a notification to a web page, PDF or image in the vault opens it with its default app, through the same rules as the Proposals tab's pages: an HTML page opens in the browser when it is under `brain/_index/` and is shown in Finder anywhere else. Before, the link opened the file as source text in a note, so a routine could not link a notification to the page it wrote.
 
 ## [1.0.1] — 2026-10-06
