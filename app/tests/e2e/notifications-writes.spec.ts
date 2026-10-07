@@ -24,7 +24,7 @@ const pristineItems = (): Items => (JSON.parse(pristine(STATE)) as { items: Item
 const N = (win: Page) => content(win);
 const idOf = (title: string): string => expected().notifications.items.find((n) => n.title === title)!.id;
 const item = (win: Page, title: string) => N(win).locator(".aos-nt-row", { has: win.locator(".aos-rt-name > div:first-child", { hasText: title }) });
-const detail = (win: Page, title: string) => item(win, title).locator("xpath=following-sibling::div[1][contains(@class, 'aos-nt-detail')]");
+const detail = (win: Page, title: string) => N(win).locator(".aos-nt-reader", { has: win.locator(".aos-nt-reader-title", { hasText: title }) }).locator(".aos-nt-detail");
 const chip = (win: Page, text: string) => N(win).locator(".aos-nt-filters .aos-nt-chip", { hasText: new RegExp(`^${text}$`) });
 const link = (win: Page, title: string, text: string) => detail(win, title).locator(".aos-nt-links a", { hasText: new RegExp(`^${text}$`) });
 
@@ -57,9 +57,9 @@ test("opening an unread item marks it read: state.json gains the flag, the dot g
   await expect(badge(win, "notifications")).toHaveText(String(e.unread - 1));
   await expect(badge(win, "notifications")).toHaveClass(/is-urgent/);
   await expect(N(win).locator(".aos-rt-count")).toHaveText(`${e.unread - 1} unread · ${e.total} total`);
-  // Read, it leaves the Unread view with its open detail; in All it is there without its dot.
+  // Read, it leaves the Unread list but stays open in the reading pane (UniDeX D4); in All it is there without its dot.
   await expect(item(win, "Disk usage above 80%")).toHaveCount(0);
-  await expect(N(win).locator(".aos-nt-detail")).toHaveCount(0);
+  await expect(detail(win, "Disk usage above 80%")).toHaveCount(1);
   await chip(win, "All").click();
   await expect(item(win, "Disk usage above 80%")).not.toHaveClass(/is-unread/);
   await expect(item(win, "Disk usage above 80%").locator(".aos-nt-dot")).toHaveText("");

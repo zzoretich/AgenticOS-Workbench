@@ -47,12 +47,12 @@ PR 1 merged first (#82), so PR 2 builds on `main`. It is split for review:
   - Lucide icons replace the Unicode glyphs (they must exist in compat `setIcon`). The mark at the top opens Home.
   - Add Quick Capture. Theme and settings go at the foot. The active tab is an inverted tile, and badges use tone colors.
   - Hide `.aos-host-ribbon` and remove `.aos-wb-topbar`.
-- [ ] **S2 Primitives.** In `obsidian-plugin/src/ui/`:
+- [ ] **S2 Primitives.** (2b ships the split layout `.aos-split`; the shared `ListPane` comes with S4.) In `obsidian-plugin/src/ui/`:
   - `ListPane.ts`: header, action, search, list, selection.
   - `PageHeader.ts`.
   - `Pill.ts`: tone and label, used everywhere.
   - Button roles: primary (inverted), secondary and quiet.
-- [ ] **S3 Notifications.** An inbox in the pane and the reading pane in the workspace, replacing inline expand. Arrow keys move through the list. Mark read/unread, archive, ▲▼ and Deep dive stay.
+- [x] **S3 Notifications.** An inbox in the pane and the reading pane in the workspace, replacing inline expand. Arrow keys move through the list. Mark read/unread, archive, ▲▼ and Deep dive stay.
 - [ ] **S4 Panes for the other list tabs.** Proposals, Runs (inspector in the workspace), Memory, Files (tree), Spaces (already split) and the Pulse sections.
 - [x] **S5 Chat as Home.**
   - The default tab becomes `chat`. The composer is at the bottom with host and workspace chips.

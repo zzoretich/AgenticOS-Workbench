@@ -11,8 +11,8 @@ import { FX, appEnv, badge, closeNotes, content, expected, guardWrites, noteBody
 const app = useApp();
 const N = () => content(app().win);
 const item = (title: string) => N().locator(".aos-nt-row", { has: app().win.locator(".aos-rt-name > div:first-child", { hasText: title }) });
-/** The expanded detail right under an item's row. */
-const detail = (title: string) => item(title).locator("xpath=following-sibling::div[1][contains(@class, 'aos-nt-detail')]");
+/** The open item's detail, in the reading pane beside the list (UniDeX D4). */
+const detail = (title: string) => N().locator(".aos-nt-reader", { has: app().win.locator(".aos-nt-reader-title", { hasText: title }) }).locator(".aos-nt-detail");
 const chip = (text: string) => N().locator(".aos-nt-filters .aos-nt-chip", { hasText: new RegExp(`^${text}$`) });
 
 test.beforeEach(async () => { await openTab(app().win, "notifications"); });

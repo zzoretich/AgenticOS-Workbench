@@ -27,7 +27,8 @@ export class NotificationsTab {
   private view: View = "unread";
   private level: Level | null = null;
   private from: string | null = null;
-  private expanded = new Set<string>();
+  /** The notification open in the reading pane (UniDeX D4), or none. */
+  private selected: string | null = null;
   private md: Component | null = null;
   private listenersRegistered = false;
   private refreshDebounce: number | null = null;
@@ -110,7 +111,9 @@ export class NotificationsTab {
     this.renderFilters(host);
 
     const shown = filterRows(this.rows, { view: this.view, level: this.level, from: this.from });
-    const table = host.createDiv({ cls: "aos-inv-table aos-rt-table" });
+    // The inbox and its reading pane (UniDeX D4): the list on the left, the selected notification on the right.
+    const split = host.createDiv({ cls: "aos-split" });
+    const table = split.createDiv({ cls: "aos-inv-table aos-rt-table aos-split-list" });
     if (!this.rows.length) {
       table.createDiv({
         cls: "aos-inv-row aos-dim",
@@ -120,6 +123,12 @@ export class NotificationsTab {
       table.createDiv({ cls: "aos-inv-row aos-dim", text: this.view === "unread" ? "All caught up." : "Nothing matches these filters." });
     }
     for (const r of shown) this.renderRow(table, r);
+    if (this.rows.length) {
+      const reader = split.createDiv({ cls: "aos-split-detail aos-nt-reader" });
+      const open = this.rows.find((r) => r.id === this.selected);
+      if (open) this.renderDetail(reader, open);
+      else reader.createDiv({ cls: "aos-nt-reader-empty", text: "Select a notification to read it." });
+    }
     if (this.unreadable) host.createDiv({ cls: "aos-dim aos-nt-foot", text: `${this.unreadable} unreadable file(s) in ${NOTIFICATIONS_DIR} skipped` });
   }
 
@@ -145,8 +154,8 @@ export class NotificationsTab {
   }
 
   private renderRow(table: HTMLElement, r: NotificationRow): void {
-    const open = this.expanded.has(r.id);
-    const row = table.createDiv({ cls: `aos-inv-row aos-inv-row-clickable aos-nt-row${r.read ? "" : " is-unread"}` });
+    const open = this.selected === r.id;
+    const row = table.createDiv({ cls: `aos-inv-row aos-inv-row-clickable aos-nt-row${r.read ? "" : " is-unread"}${open ? " is-selected" : ""}` });
     row.createSpan({ cls: "aos-nt-dot", text: r.read ? "" : "●" });
     row.createSpan({ cls: `aos-pill ${LEVEL_PILL[r.level]}`, text: r.level === "breaking" ? "BREAKING" : r.level });
     const name = row.createDiv({ cls: "aos-rt-name" });
@@ -154,13 +163,20 @@ export class NotificationsTab {
     name.createDiv({ cls: "aos-dim aos-rt-slug", text: r.from + (r.requestedLevel ? ` · sent as ${r.requestedLevel}, over the hourly limit` : "") });
     row.createSpan({ cls: "aos-dim aos-nt-age", text: ago(r.created, new Date()), attr: { title: r.created } });
     row.addEventListener("click", () => {
-      if (open) this.expanded.delete(r.id); else this.expanded.add(r.id);
+      this.selected = open ? null : r.id;
       if (!open && !r.read) void this.flag([r.id], "read", true);   // refresh re-renders
       else this.render();
     });
-    if (!open) return;
+  }
 
-    const d = table.createDiv({ cls: "aos-nt-detail" });
+  /** The reading pane: the notification's title, level and sender, then its sections, actions and links. */
+  private renderDetail(reader: HTMLElement, r: NotificationRow): void {
+    const head = reader.createDiv({ cls: "aos-nt-reader-head" });
+    head.createDiv({ cls: "aos-nt-reader-title", text: r.title });
+    const meta = head.createDiv({ cls: "aos-nt-reader-meta" });
+    meta.createSpan({ cls: `aos-pill ${LEVEL_PILL[r.level]}`, text: r.level === "breaking" ? "BREAKING" : r.level });
+    meta.createSpan({ text: `${r.from} · ${ago(r.created, new Date())}`, attr: { title: r.created } });
+    const d = reader.createDiv({ cls: "aos-nt-detail", attr: { "data-id": r.id } });
     const secs = splitSections(r.body);
     const anchors = secs.map((s) => s.anchor);
     for (const s of secs) {
