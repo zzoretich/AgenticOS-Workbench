@@ -19,6 +19,7 @@ All notable changes to UniDeX (AgenticOS Workbench before 1.1). Versions follow 
 - **The app is now UniDeX, the third UniDeX step.** The Dock, the menu bar, About, the window titles, the setup wizard, settings and the app's messages say UniDeX, and the icon is the UDX mark, white on black. The menubar item shows the mark too, as an image macOS tints for a light or dark menu bar, with its status beside it. The settings window's tabs are **App** and **Runtime**. The status line's update note reads `⬆ UniDeX <version>`, and `aos doctor` and `aos init` name the app UniDeX. The `aos` CLI, the `agenticos` plugins and MCP tools, `~/AgenticOS`, the app's data folder and the update feed keep their names, so nothing is reinstalled or re-trusted.
 
 ### Fixed
+- Proposals' list fits its pane: each row puts the name on its own line and its kind, age and confirmations below it, so names no longer break mid-word and the history no longer scrolls sideways.
 - A link in a note or a notification to a web page, PDF or image in the vault opens it with its default app, through the same rules as the Proposals tab's pages: an HTML page opens in the browser when it is under `brain/_index/` and is shown in Finder anywhere else. Before, the link opened the file as source text in a note, so a routine could not link a notification to the page it wrote.
 
 ## [1.0.1] — 2026-10-06

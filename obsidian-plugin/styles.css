@@ -1934,7 +1934,14 @@ body {
 .aos-pr-rates { font-size: 10.5px; margin: -2px 0 8px; }
 .aos-pr-grouphead { cursor: pointer; user-select: none; }
 .aos-pr-grouphead:hover { color: var(--aos-text); }
-.aos-pr-row { gap: 10px; }
+/* A proposal row (UniDeX D4): its name across the top and its kind, age and confirmations on a line below, so the row
+   fits the list pane without squeezing the name or scrolling sideways. The meta line starts under the name. */
+.aos-pr-row { flex-wrap: wrap; gap: 3px 10px; }
+.aos-pr-row .aos-rt-name { flex: 1 1 0; }
+.aos-pr-rowmeta { flex: 1 0 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding-left: 20px; box-sizing: border-box; }
+.aos-pr-history .aos-rt-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aos-pr-history .aos-pr-rowmeta { padding-left: 22px; }
+.aos-pr-rowmeta .aos-pr-event { flex: 0 0 auto; }
 .aos-pr-caret { flex: 0 0 10px; font-size: 10px; }
 .aos-pr-age { flex: 0 0 auto; font-family: var(--aos-mono); font-size: 10.5px; }
 .aos-pr-streak { font-family: var(--aos-mono); font-size: 10.5px; }

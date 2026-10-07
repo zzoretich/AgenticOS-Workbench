@@ -170,18 +170,19 @@ export class ProposalsTab {
     const name = row.createDiv({ cls: "aos-rt-name" });
     name.createDiv({ text: p.slug });
     name.createDiv({ cls: "aos-dim aos-rt-slug", text: p.target });
-    row.createSpan({ cls: `aos-pill ${KIND_PILL[p.kind] ?? "aos-pill-dim"}`, text: p.kind });
-    if (p.surface) row.createSpan({ cls: "aos-pill aos-pill-dim", text: p.surface });
+    const meta = row.createDiv({ cls: "aos-pr-rowmeta" });
+    meta.createSpan({ cls: `aos-pill ${KIND_PILL[p.kind] ?? "aos-pill-dim"}`, text: p.kind });
+    if (p.surface) meta.createSpan({ cls: "aos-pill aos-pill-dim", text: p.surface });
     const age = ageDays(p.filed, new Date());
-    row.createSpan({ cls: "aos-dim aos-pr-age", text: age === null ? p.filed : `${age}d`, attr: { title: `filed ${p.filed}` } });
+    meta.createSpan({ cls: "aos-dim aos-pr-age", text: age === null ? p.filed : `${age}d`, attr: { title: `filed ${p.filed}` } });
     const n = this.streak[p.slug] ?? 0;
     if (n > 0) {
-      row.createSpan({
+      meta.createSpan({
         cls: `aos-pr-streak ${n >= MIN_CONFIRMATIONS ? "aos-text-green" : "aos-dim"}`, text: `confirmed ${n}d`,
         attr: { title: `the recheck recipe still found the finding on ${n} consecutive day(s); auto-apply needs ${MIN_CONFIRMATIONS}+ and a whitelisted class` },
       });
     }
-    if (p.lint.length) row.createSpan({ cls: "aos-text-amber aos-pr-lint", text: `⚠ ${p.lint.length}`, attr: { title: p.lint.join("\n") } });
+    if (p.lint.length) meta.createSpan({ cls: "aos-text-amber aos-pr-lint", text: `⚠ ${p.lint.length}`, attr: { title: p.lint.join("\n") } });
     row.addEventListener("click", () => { this.toggle(key); });
   }
 
@@ -224,9 +225,10 @@ export class ProposalsTab {
     const name = row.createDiv({ cls: "aos-rt-name" });
     name.createDiv({ text: b.slug });
     if (b.target) name.createDiv({ cls: "aos-dim aos-rt-slug", text: b.target });
-    row.createSpan({ cls: `aos-pill ${KIND_PILL[b.kind] ?? "aos-pill-dim"}`, text: b.kind });
-    if (b.surface) row.createSpan({ cls: "aos-pill aos-pill-dim", text: b.surface });
-    row.createSpan({ cls: "aos-dim aos-pr-age", text: b.accepted ? `accepted ${b.accepted}` : `filed ${b.filed}` });
+    const meta = row.createDiv({ cls: "aos-pr-rowmeta" });
+    meta.createSpan({ cls: `aos-pill ${KIND_PILL[b.kind] ?? "aos-pill-dim"}`, text: b.kind });
+    if (b.surface) meta.createSpan({ cls: "aos-pill aos-pill-dim", text: b.surface });
+    meta.createSpan({ cls: "aos-dim aos-pr-age", text: b.accepted ? `accepted ${b.accepted}` : `filed ${b.filed}` });
     row.addEventListener("click", () => { this.toggle(key); });
   }
 
@@ -245,15 +247,16 @@ export class ProposalsTab {
   }
 
   private renderHistory(table: HTMLElement, r: LedgerRecord): void {
-    const row = table.createDiv({ cls: "aos-inv-row aos-pr-row" });
+    const row = table.createDiv({ cls: "aos-inv-row aos-pr-row aos-pr-history" });
     const [mark, cls] = EVENT_MARK[r.event] ?? ["·", "aos-dim"];
     row.createSpan({ cls: `aos-pr-mark ${cls}`, text: mark });
-    row.createSpan({ cls: `aos-pr-event ${cls}`, text: r.event });
-    row.createSpan({ cls: "aos-rt-name", text: r.slug });
-    row.createSpan({ cls: `aos-pill ${KIND_PILL[r.kind] ?? "aos-pill-dim"}`, text: r.kind });
-    row.createSpan({ cls: "aos-dim aos-pr-age", text: `${r.ts.slice(0, 10)}${r.by ? ` · ${r.by}` : ""}` });
+    row.createSpan({ cls: "aos-rt-name", text: r.slug, attr: { title: r.slug } });
+    const meta = row.createDiv({ cls: "aos-pr-rowmeta" });
+    meta.createSpan({ cls: `aos-pr-event ${cls}`, text: r.event });
+    meta.createSpan({ cls: `aos-pill ${KIND_PILL[r.kind] ?? "aos-pill-dim"}`, text: r.kind });
+    meta.createSpan({ cls: "aos-dim aos-pr-age", text: `${r.ts.slice(0, 10)}${r.by ? ` · ${r.by}` : ""}` });
     const page = pageForSlug(this.pages, r.slug);
-    if (page) this.pageLink(row, page, "page ↗").addClass("aos-pr-pagelink");
+    if (page) this.pageLink(meta, page, "page ↗").addClass("aos-pr-pagelink");
     if (r.note) row.setAttr("title", r.note);
   }
 
