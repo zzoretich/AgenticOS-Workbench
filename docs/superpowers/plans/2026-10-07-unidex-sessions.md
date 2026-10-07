@@ -36,7 +36,7 @@ Spec: `docs/superpowers/specs/2026-10-07-unidex-sessions-design.md` (approved 20
 
 - [x] **C1 `SessionsTab.ts`** replaces `ChatTab.ts`: threads per workspace (Vault first), the timeline, collapsed tool rows, the diff card with Review and Commit, the composer (host chip, model, workspace, **Allow commands**), Stop, and running dots. `ChatTab.ts` stays, as the Vault thread SessionsTab mounts in its reader; the rail tab keeps the id `chat`.
 - [x] **C2 e2e:** a full turn per host on fakes, Stop, the diff card, Commit, the day cap, and a Codex-only vault. Also app-smoke items, `COVERAGE.md` rows and the README section.
-- [ ] **C3 Live check** (it spends; ask first): one turn per host on a real workspace, then set `verified: true` on the surface. Release 1.2.0 follows.
+- [x] **C3 Live check** (it spends; ask first): one turn per host on a real workspace, then set `verified: true` on the surface. Release 1.2.0 follows.
 
 ## File structure
 

@@ -84,7 +84,7 @@ test("setup names a fix by id only, and refuses each step outside its state", as
   // The theme takes one of its three choices, nothing else.
   expect(await call((aos) => (aos.theme.set as (s: string) => unknown)("sepia"))).toMatchObject({ ok: false, code: "EINVAL" });
   expect(await call((aos) => aos.theme.state())).toMatchObject({ source: "system" });
-  // Sessions (spec 2026-10-07-unidex-sessions) are off until their live check: nothing starts, nothing in git is read.
+  // This run is read-only, Sessions included (spec 2026-10-07-unidex-sessions): nothing starts, nothing in git is read.
   type Sess = { start(r: unknown): Promise<unknown>; list(): Promise<unknown> };
   type Git = { status(w: string): Promise<unknown> };
   expect(await call((aos) => (aos.sessions as unknown as Sess).start({ workspace: "harbor-map", host: "claude", text: "hi" }))).toMatchObject({ ok: false, code: "EROFS" });
