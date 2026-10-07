@@ -11,6 +11,7 @@ import * as path from "node:path";
 import { isIgnored } from "../../compat/src/ignore";
 import { fuzzyScore } from "../../compat/src/modal";
 import { normalizePath } from "../../compat/src/files";
+import { opensOutside } from "../../compat/src/markdown";
 
 test("agenticos:// links parse into an action and safe params", () => {
   assert.deepEqual(parseAgenticosUrl("agenticos://workbench?tab=proposals"), { action: "workbench", params: { tab: "proposals" } });
@@ -71,6 +72,17 @@ test("fuzzy search matches in order and prefers runs", () => {
   const loose = fuzzyScore("work", "Open Worker Bench kit")!.score;
   assert.ok(tight >= loose);
   assert.ok(fuzzyScore("owb", "Open Workbench"));
+});
+
+test("a vault link to a page, PDF or image opens with its default app; notes and text open in a note", () => {
+  assert.equal(opensOutside("brain/_index/daily-brief/2026-10-06.html"), true);
+  assert.equal(opensOutside("brain/_index/proposals/x.HTM#top"), true, "case and a heading anchor");
+  assert.equal(opensOutside("docs/spec.pdf|the spec"), true, "a wiki-link alias");
+  assert.equal(opensOutside("assets/diagram.png"), true);
+  assert.equal(opensOutside("brain/memory/user/profile.md"), false);
+  assert.equal(opensOutside("brain/memory/user/profile"), false, "no extension is a note");
+  assert.equal(opensOutside("brain/_index/routines.json"), false, "text shows in a note");
+  assert.equal(opensOutside("notes/v1.2 plan"), false, "a dot inside a note name");
 });
 
 test("normalizePath matches Obsidian's", () => {
