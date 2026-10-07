@@ -27,7 +27,7 @@ The Obsidian status bar shows inventory counts (`12a · 21c · 80m · 40s`) rath
 | # | Decision | Rejected alternative |
 |---|---|---|
 | D1 | **The slot is taken only by an explicit `aos statusline install`.** `init` and `upgrade` never take it. This supersedes update-notification D1 for users who opt in. `uninstall` restores what was there, byte for byte when nothing else in the file changed. | Fragment only (users wire it themselves, and most never do). Taking the slot at `init` (the alternative that design rejected). |
-| D2 | **Chain instead of replacing.** The previous `statusLine` is recorded and run on every render with the same stdin, fire-and-forget, so its side effects keep working (GSD's `claude-ctx-<session>.json`). `--chain-output` shows its first line above ours. | Writing GSD's bridge file ourselves (ties the product to GSD internals). Dropping it (GSD's context warnings go silent). |
+| D2 | **Chain instead of replacing.** The previous `statusLine` is recorded and run on every render with the same stdin, fire-and-forget, so its side effects keep working (GSD's `claude-ctx-<session>.json`). `--chain-output` shows its first line above ours, or below with `statusline.chainPosition: "bottom"`. | Writing GSD's bridge file ourselves (ties the product to GSD internals). Dropping it (GSD's context warnings go silent). |
 | D3 | **One producer, one on-disk contract:** `brain/_index/statusline.json` (`schema: 1`), written by `aos statusline refresh`. The terminal and the HUD only read it. Refreshes are stale-while-revalidate: a render or a HUD tick that finds it older than 15 s spawns one detached refresh under an `fsx` lock. | Computing on every render (frontmatter reads and a board parse at 1 Hz). Pushing from each writer (six writers, and hand edits are missed). A TypeScript copy in the HUD (it drifts; notifications D7). |
 | D4 | **The producer is strictly read-only.** It never calls `team status`/`reapKilledRuns`, which kill processes and write rows. A live run is a marker from this host whose dispatcher answers `kill(pid, 0)`. Other markers are hidden, not reaped. | Reusing `aos team list --json`, which has side effects. |
 | D5 | **Flags count `- [ ]` and bare `- ` bullets under `## Flags`; `- [x]` is excluded.** Scripts write the first form and the persona writes the second. | `sitrep-state.parseFlags` as it is, which reads 0 on a vault whose persona wrote a bare bullet. |
@@ -133,6 +133,7 @@ L3  ◆ 2 gates · 1 alert · 1 flag │ ▶ woz execute devbar-01 │ duties $4
 |---|---|
 | `statusline.segments` | `["needs-you","runs","spend","health"]` |
 | `statusline.links` | `true` |
+| `statusline.chainPosition` | `"top"` (`"bottom"` puts the `--chain-output` line below ours) |
 | `statusline.subagents` | `true` |
 | `statusline.refreshSeconds` | `5` (used at install) |
 | `statusline.codexItems` | `["model-with-reasoning","task-progress","project-name","git-branch","context-used","five-hour-limit","weekly-limit"]` |

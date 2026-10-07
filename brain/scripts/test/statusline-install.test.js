@@ -268,6 +268,26 @@ test('render: --chain-output shows the previous first line; our own command is n
   assert.match(junk.out.replace(/\x1b\[[0-9;]*m/g, ''), /^Claude\n$/, 'bad stdin still renders the model line');
 });
 
+test('render: statusline.chainPosition puts the chained line below ours; top, a missing key or any other value keeps it above', async () => {
+  const m = machine();
+  I.install(m.ctx, { host: 'claude', chainOutput: true });
+  const spawnSyncFn = (cmd) => (cmd === GSD.command ? { status: 0, stdout: '\nGSD │ Phase 3\n' } : { status: 1, stdout: '' });
+  const lines = async (statusline) => (await run(m, ['render'], { stdin: async () => '{}', spawnSyncFn, cfg: { statusline } })).out.trimEnd().split('\n');
+  const bottom = await lines({ ...CFG.statusline, chainPosition: 'bottom' });
+  assert.equal(bottom[bottom.length - 1], 'GSD │ Phase 3');
+  assert.ok(bottom.length > 1 && !bottom.slice(0, -1).includes('GSD │ Phase 3'), 'our lines come first, the chained line once');
+  for (const chainPosition of ['top', undefined, 'middle', true]) {
+    const l = await lines({ ...CFG.statusline, chainPosition });
+    assert.equal(l[0], 'GSD │ Phase 3', `chainPosition ${JSON.stringify(chainPosition)} keeps the chained line first`);
+    assert.deepEqual(l.slice(1), bottom.slice(0, -1), 'the same lines of ours');
+  }
+  // Without --chain-output nothing is printed from the previous line, wherever it would go.
+  const plain = machine();
+  I.install(plain.ctx, { host: 'claude' });
+  const p = await run(plain, ['render'], { stdin: async () => '{}', spawnSyncFn, cfg: { statusline: { ...CFG.statusline, chainPosition: 'bottom' } } });
+  assert.ok(!p.out.includes('GSD'));
+});
+
 test('subagents: rows only once installed with subagent rows on', async () => {
   const m = machine();
   const input = JSON.stringify({ columns: 120, tasks: [{ id: 't', name: 'Explore', model: 'claude-haiku-4-5' }] });
@@ -402,6 +422,8 @@ test('SL-R06: an item Codex does not show is refused at config set and at instal
   assert.equal(S.validate(S.entry('statusline.codexItems'), ['model', 'git-branch']), null);
   assert.match(S.validate(S.entry('statusline.segments'), ['runs', 'weather']), /unknown item weather/);
   assert.equal(S.validate(S.entry('recallRoots'), ['my/own/root']), null, 'other lists stay open');
+  assert.equal(S.validate(S.entry('statusline.chainPosition'), 'bottom'), null);
+  assert.match(S.validate(S.entry('statusline.chainPosition'), 'middle'), /must be one of top \| bottom/);
   const m = machine();
   assert.throws(() => I.install({ ...m.ctx, cfg: { statusline: { codexItems: ['nope'] } } }, { host: 'codex' }), /does not show/);
   assert.equal(fs.readFileSync(m.tomlFile, 'utf8'), 'model = "gpt-5"\n');

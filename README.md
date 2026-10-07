@@ -475,15 +475,16 @@ Opus 5.5 (1M) ·high ·think │ Writing the spec │ my-project ⎇ feat/x* │
   each opens the Workbench tab that handles it (an `agenticos://` link the app registers). The app's status bar shows
   the same.
 - The status line you had keeps running: install records it and runs it with the same input on every refresh, so a
-  tool that writes files from its status line still works. `--chain-output` also shows its first line, and
-  `aos statusline uninstall` puts it back (byte for byte when nothing else in the file changed).
+  tool that writes files from its status line still works. `--chain-output` also shows its first line (above ours,
+  or below with `aos config set statusline.chainPosition bottom`), and `aos statusline uninstall` puts it back
+  (byte for byte when nothing else in the file changed).
 - If another installer takes the slot later, `aos doctor` and the next session start say so, and
   `aos statusline install` takes it back and chains the newcomer.
 - Claude Code subagents get their own rows: model, effort, context used, age.
 - Codex runs no status line command, so install writes a preset of its built-in items into `config.toml`
   (never over a `status_line` you set, unless you pass `--force`), and what needs you is printed at session start.
 - Settings (⚙ Settings → Status line, or `aos config set`): `statusline.segments`, `statusline.links`,
-  `statusline.subagents`, `statusline.refreshSeconds`, `statusline.codexItems`.
+  `statusline.chainPosition`, `statusline.subagents`, `statusline.refreshSeconds`, `statusline.codexItems`.
 
 <p align="center"><img src="docs/assets/divider.svg" width="960" alt="" /></p>
 

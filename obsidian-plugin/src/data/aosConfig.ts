@@ -64,7 +64,7 @@ export interface VaultConfig {
   // Universal agents (spec 2026-09-23-universal-agents D6): the Agents tab reads the runtime's cache, not these; mirrored likewise.
   agents: { sync: boolean; exclude: string[] };
   // The status line (spec 2026-09-28-statusline-design): the status bar reads the runtime's statusline.json, not these.
-  statusline: { segments: string[]; links: boolean; subagents: boolean; refreshSeconds: number; codexItems: string[] };
+  statusline: { segments: string[]; links: boolean; chainPosition: "top" | "bottom"; subagents: boolean; refreshSeconds: number; codexItems: string[] };
 }
 
 export interface ProviderState {
@@ -105,7 +105,7 @@ export const VAULT_CONFIG_DEFAULTS: VaultConfig = {
   skills: { sync: true, exclude: [] },
   agents: { sync: true, exclude: [] },
   statusline: {
-    segments: ["needs-you", "runs", "spend", "health"], links: true, subagents: true, refreshSeconds: 5,
+    segments: ["needs-you", "runs", "spend", "health"], links: true, chainPosition: "top", subagents: true, refreshSeconds: 5,
     codexItems: ["model-with-reasoning", "task-progress", "project-name", "git-branch", "context-used", "five-hour-limit", "weekly-limit"],
   },
 };
