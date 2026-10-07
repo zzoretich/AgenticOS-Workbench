@@ -4,6 +4,9 @@ All notable changes to UniDeX (AgenticOS Workbench before 1.1). Versions follow 
 
 ## [Unreleased]
 
+### Added
+- **Session caps, ahead of the Sessions tab.** Settings ▸ Spend limits has a **Session turn cap** (`sessions.perTurnUsd`, $1.00) and a **Sessions daily cap** (`sessions.perDayUsd`, $10.00), and `aos status` shows today's session spend against it. The runtime can now plan, gate and read one turn of a Claude Code or Codex session (`brain/scripts/lib/sessions.js`); the Sessions tab that uses it comes with the next steps of UniDeX phase 2.
+
 ## [1.1.0] — 2026-10-07
 
 ### Upgrading

@@ -1186,9 +1186,9 @@ test('spendByFamily (spec 2026-09-24-settings-tab D7): today\'s USD per family, 
   const row = (feature, usd, when = ts) => `${JSON.stringify({ ts: when, feature, provider: 'claude', usd })}\n`;
   fs.writeFileSync(path.join(vault, 'brain', '_index', 'provider-spend.jsonl'),
     row('session-summary', 0.01) + row('codex-extract', 0.02) + row('duty:monitor', 2) + row('reason:ask', 0.3) + row('routine:inbox', 0.4) +
-    row('graph:semantic', 0.5) + row('cross-review:review', 1.25) + row('team:dev:builder', 0.75) + row('session-summary', 9, '2020-01-01T00:00:00.000Z'));
-  assert.deepEqual(spendByFamily(vault), { hooks: 0.03, duties: 2, reasoner: 0.3, routines: 0.4, graph: 0.5, crossReview: 1.25, teams: 0.75 });
-  assert.deepEqual(spendByFamily(fs.mkdtempSync(path.join(os.tmpdir(), 'aos-spend-none-'))), { hooks: 0, duties: 0, reasoner: 0, routines: 0, graph: 0, crossReview: 0, teams: 0 });
+    row('graph:semantic', 0.5) + row('cross-review:review', 1.25) + row('team:dev:builder', 0.75) + row('session:codex', 0.6) + row('session-summary', 9, '2020-01-01T00:00:00.000Z'));
+  assert.deepEqual(spendByFamily(vault), { hooks: 0.03, duties: 2, reasoner: 0.3, routines: 0.4, graph: 0.5, crossReview: 1.25, sessions: 0.6, teams: 0.75 }, 'session-summary is a hook; session:<host> is a session turn');
+  assert.deepEqual(spendByFamily(fs.mkdtempSync(path.join(os.tmpdir(), 'aos-spend-none-'))), { hooks: 0, duties: 0, reasoner: 0, routines: 0, graph: 0, crossReview: 0, sessions: 0, teams: 0 });
 });
 
 test('output larger than a pipe buffer arrives whole: `aos config list --json` read through a pipe parses', () => {

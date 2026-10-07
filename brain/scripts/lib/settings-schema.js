@@ -87,6 +87,8 @@ const SETTINGS = [
   perDay('graph.semantic.perDayUsd', 'spend', 'Semantic graph daily cap', 'Most the semantic graph pass may spend per day, in USD.', { spend: 'graph' }),
   perCall('crossReview.perCallUsd', 'spend', 'Cross-review call cap', 'Most one cross-review call may spend, in USD.'),
   perDay('crossReview.perDayUsd', 'spend', 'Cross-review daily cap', 'Most cross-review calls may spend per day, in USD.', { spend: 'crossReview' }),
+  perCall('sessions.perTurnUsd', 'spend', 'Session turn cap', 'Most one turn of a session in the Sessions tab may spend, in USD (Claude stops at it; a Codex turn is estimated after it ends).'),
+  perDay('sessions.perDayUsd', 'spend', 'Sessions daily cap', 'Most the turns of every session may spend per day, in USD; a turn does not start once it is reached.', { spend: 'sessions' }),
   { key: 'cost.enabled', section: 'spend', label: 'Session costing', type: 'bool', applies: 'next-session',
     help: 'Cost every session at its end (needs python3; turning it on installs the analyzer).' },
   { key: 'cost.monthlyBudget', section: 'spend', label: 'Monthly budget', type: 'number', gt: 0, nullable: true, applies: 'next-session',
@@ -272,9 +274,9 @@ const PICKS = {
   'ollama.host': { choices: ['127.0.0.1', 'localhost'] }, 'ollama.port': { choices: [11434] },
   'claude.perCallUsd': usd(USD_CALL), 'codex.perCallUsd': usd(USD_CALL), 'reasoner.perCallUsd': usd(USD_CALL),
   'graph.semantic.perCallUsd': usd(USD_CALL), 'crossReview.perCallUsd': usd(USD_CALL),
-  'persona.perDutyUsd': usd(USD_RUN), 'routines.perRunUsd': usd(USD_RUN),
+  'persona.perDutyUsd': usd(USD_RUN), 'routines.perRunUsd': usd(USD_RUN), 'sessions.perTurnUsd': usd(USD_RUN),
   'claude.perDayUsd': usd(USD_DAY), 'codex.perDayUsd': usd(USD_DAY), 'reasoner.perDayUsd': usd(USD_DAY), 'persona.perDayUsd': usd(USD_DAY),
-  'routines.perDayUsd': usd(USD_DAY), 'graph.semantic.perDayUsd': usd(USD_DAY), 'crossReview.perDayUsd': usd(USD_DAY),
+  'routines.perDayUsd': usd(USD_DAY), 'graph.semantic.perDayUsd': usd(USD_DAY), 'crossReview.perDayUsd': usd(USD_DAY), 'sessions.perDayUsd': usd(USD_DAY),
   'cost.monthlyBudget': usd([10, 25, 50, 100, 150, 200, 300, 500, 1000]),
   'dailyNote.layout': { choices: ['{yyyy}/{yyyy}-{MM}-{MMMM}/{yyyy}-{MM}-{dd}.md', '{yyyy}/{yyyy}-{MM}-{dd}.md', 'Daily/{yyyy}-{MM}-{dd}.md', 'brain/sessions/{yyyy}-{MM}-{dd}.md', '{yyyy}-{MM}-{dd}.md'] },
   recallRoots: { pick: 'many', choices: ['brain/memory', 'brain/patterns', 'persona/journal', 'brain/notifications', 'brain/sessions', 'brain/reflections', 'workspaces'] },
@@ -307,7 +309,7 @@ const UNITS = ['usd', 'min', 'h', 'days', 's', 'files', 'notes', 'tokens'];
 
 const BY_KEY = new Map(SETTINGS.map((e) => [e.key, e]));
 /** The ledger families a daily cap can govern (D7); cli/aos.js sums today's spend per family for `list --json`. */
-const SPEND_FAMILIES = ['hooks', 'duties', 'reasoner', 'routines', 'graph', 'crossReview'];
+const SPEND_FAMILIES = ['hooks', 'duties', 'reasoner', 'routines', 'graph', 'crossReview', 'sessions'];
 
 function isPlainObject(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); }
 

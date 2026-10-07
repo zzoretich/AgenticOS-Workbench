@@ -23,7 +23,7 @@ const MAX_UNREAD_READS = 200;       // the Workbench badge's bound on unread fil
 const LEDGER_CHUNK = 256 * 1024;
 const FAMILY_OF = [                // cli/aos.js's feature families; every other row is a background hook call
   [/^duty:/, 'duties'], [/^reason:/, 'reasoner'], [/^routine:/, 'routines'], [/^graph:/, 'graph'],
-  [/^cross-review:/, 'crossReview'], [/^team:/, 'teams'],
+  [/^cross-review:/, 'crossReview'], [/^team:/, 'teams'], [/^session:/, 'sessions'],
 ];
 
 const modelPath = (vault) => path.join(vault, 'brain', '_index', 'statusline.json');

@@ -36,6 +36,13 @@
  *     the item's budget left, with the team folder added so the seat can post. codex: `exec -` in the workspace-write sandbox
  *     rooted at the worktree, the repository's git dir added so it can commit, network on for package installs, our hooks
  *     off, and the agent's instructions (`body`) inlined ahead of the prompt, since codex exec has no agent flag.
+ *   sessionArgs(host, { prompt, sessionId, resume, model, effort, budget, allowCommands })  →  { argv, stdin: null }
+ *     one turn of an app session (spec 2026-10-07-unidex-sessions S1, S5), run by the app with the workspace as cwd. The
+ *     prompt is the last argument, after `--`, so nothing reads stdin. claude: stream-json events, acceptEdits with no
+ *     one to answer a prompt (a tool not allowed is refused), Bash only when `allowCommands`; the first turn runs under
+ *     the app's own `sessionId`, later turns `--resume` it; capped at `budget`. codex: `exec --json` (later
+ *     `exec resume --json <resume>`) in the workspace-write sandbox without network whatever `allowCommands` says (it
+ *     cannot edit read-only with no one to approve), our hooks off, never asking for approval.
  *   codexMcpServers(home)  →  the names of the [mcp_servers.<name>] tables in <home>/config.toml ([] when unreadable).
  *   CLI: node lib/headless.js --resolve [--kind persona|routines]  prints `host<TAB>bin<TAB>model<TAB>codex home`,
  *        exit 3 (reason on stderr) when no runner resolves. run-duty.sh reads it.
@@ -235,10 +242,38 @@ function seatArgs(host, { agent, prompt = '', body = '', model, effort, budget, 
   return { argv, stdin: '' };
 }
 
-/** The child's env: headless, never CLAUDECODE, and the recorded Codex home unless the environment names one already. */
+/** { argv, stdin: null } for one turn of an app session on `host` (module comment). */
+function sessionArgs(host, { prompt = '', sessionId, resume, model, effort, budget, allowCommands = false } = {}) {
+  const set = (v) => v !== undefined && v !== null && v !== '' && v !== 'inherit';
+  if (!String(prompt).trim()) throw new Error('sessionArgs: a turn needs a prompt');
+  if (host === 'codex') {
+    const argv = set(resume) ? ['exec', 'resume'] : ['exec'];
+    argv.push('--json', '--skip-git-repo-check', '-c', 'sandbox_mode="workspace-write"', '-c', 'features.hooks=false', '-c', 'approval_policy="never"');
+    if (set(model)) argv.push('-m', String(model));
+    if (CODEX_EFFORTS.includes(effort)) argv.push('-c', `model_reasoning_effort="${effort}"`);
+    if (set(resume)) argv.push(String(resume));
+    argv.push('--', String(prompt));
+    return { argv, stdin: null };
+  }
+  if (host !== 'claude') throw new Error(`sessionArgs: no such host ${host}`);
+  if (!set(resume) && !set(sessionId)) throw new Error('sessionArgs: a first claude turn needs its sessionId');
+  const argv = ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'acceptEdits', '--permission-prompts', 'none'];
+  argv.push(...(set(resume) ? ['--resume', String(resume)] : ['--session-id', String(sessionId)]));
+  if (allowCommands) argv.push('--allowedTools', 'Bash');
+  if (set(budget)) argv.push('--max-budget-usd', Number(budget).toFixed(2));
+  if (set(model)) argv.push('--model', String(model));
+  if (CROSS_CLAUDE_EFFORTS.includes(effort)) argv.push('--effort', effort);
+  argv.push('--', String(prompt));
+  return { argv, stdin: null };
+}
+
+/** What a headless child never inherits: CLAUDECODE would tell claude it runs inside another session. */
+const HEADLESS_UNSET = ['CLAUDECODE'];
+
+/** The child's env: headless, never HEADLESS_UNSET, and the recorded Codex home unless the environment names one already. */
 function headlessEnv(base = process.env, { codexHome = null } = {}) {
   const env = { ...base, AOS_HEADLESS: '1' };
-  delete env.CLAUDECODE;
+  for (const k of HEADLESS_UNSET) delete env[k];
   if (codexHome && !env.CODEX_HOME) env.CODEX_HOME = codexHome;
   return env;
 }
@@ -255,4 +290,4 @@ function main(argv) {
 
 if (require.main === module) process.exit(main(process.argv.slice(2)));
 
-module.exports = { resolveRunner, graphRunner, resolveBin, runnerArgs, crossArgs, seatArgs, codexMcpServers, headlessEnv, hostEnabled, codexHomeOf, HOSTS, CODEX_EFFORTS, CLAUDE_EFFORTS, CROSS_CLAUDE_EFFORTS, CROSS_MODES, CODEX_OFF, SEAT_CODEX_TAIL };
+module.exports = { resolveRunner, graphRunner, resolveBin, runnerArgs, crossArgs, seatArgs, sessionArgs, codexMcpServers, headlessEnv, hostEnabled, codexHomeOf, HEADLESS_UNSET, HOSTS, CODEX_EFFORTS, CLAUDE_EFFORTS, CROSS_CLAUDE_EFFORTS, CROSS_MODES, CODEX_OFF, SEAT_CODEX_TAIL };
