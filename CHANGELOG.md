@@ -7,6 +7,9 @@ All notable changes to AgenticOS Workbench. Versions follow the tags. From the n
 ### Added
 - **`statusline.chainPosition`** puts the status line you had below AgenticOS's lines instead of above them. It applies to `aos statusline install --chain-output`, which shows that line's first line: `aos config set statusline.chainPosition bottom` (or Settings → Status line). `top` is the default, and the change shows on the next refresh, with no reinstall.
 
+### Fixed
+- A link in a note or a notification to a web page, PDF or image in the vault opens it with its default app, through the same rules as the Proposals tab's pages: an HTML page opens in the browser when it is under `brain/_index/` and is shown in Finder anywhere else. Before, the link opened the file as source text in a note, so a routine could not link a notification to the page it wrote.
+
 ## [1.0.1] — 2026-10-06
 
 ### Fixed

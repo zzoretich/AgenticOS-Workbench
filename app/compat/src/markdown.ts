@@ -3,9 +3,17 @@
 
 import MarkdownIt from "markdown-it";
 import DOMPurify from "dompurify";
+import { bridge } from "./bridge";
 import { Component } from "./events";
+import { Notice } from "./notice";
 
-interface LinkHost { workspace: { openLinkText(link: string, source: string, newLeaf?: boolean): Promise<void> } }
+interface LinkHost {
+  workspace: {
+    openLinkText(link: string, source: string, newLeaf?: boolean): Promise<void>;
+    resolveLink(link: string, source?: string): { path: string } | null;
+  };
+  vault: { adapter: { getFullPath(path: string): string } };
+}
 let host: LinkHost | null = null;
 /** The host app that internal links open through; set once at boot. */
 export function setMarkdownHost(app: LinkHost): void { host = app; }
@@ -71,6 +79,24 @@ function markVaultLinks(root: DocumentFragment): void {
   }
 }
 
+/** Vault files a note shows only as source: a web page, a PDF, an image. */
+const OPENS_OUTSIDE = new Set(["html", "htm", "pdf", "png", "jpg", "jpeg", "gif", "webp", "svg"]);
+
+/** Whether a vault link opens with the file's default app rather than in a note (`brain/_index/brief.html#top` → true). */
+export function opensOutside(linktext: string): boolean {
+  const target = linktext.split("|")[0].split("#")[0].trim();
+  const ext = /\.([a-z0-9]+)$/i.exec(target)?.[1].toLowerCase();
+  return ext !== undefined && OPENS_OUTSIDE.has(ext);
+}
+
+/** Main decides what may open (shell policy): a page only from brain/_index, anything it will not open is shown in Finder. */
+async function openOutside(app: LinkHost, linktext: string, sourcePath: string): Promise<void> {
+  const file = app.workspace.resolveLink(linktext, sourcePath);
+  if (!file) { new Notice(`Cannot find "${linktext}" in the vault`); return; }
+  const err = await bridge().shell.openPath(app.vault.adapter.getFullPath(file.path));
+  if (err) new Notice(`Cannot open ${file.path}: ${err}`);
+}
+
 function wireLinks(root: HTMLElement, sourcePath: string): void {
   root.addEventListener("click", (ev) => {
     const a = (ev.target as HTMLElement).closest("a");
@@ -78,6 +104,7 @@ function wireLinks(root: HTMLElement, sourcePath: string): void {
     ev.preventDefault();
     if (a.classList.contains("internal-link")) {
       const target = a.getAttribute("data-href") ?? "";
+      if (host && opensOutside(target)) { void openOutside(host, target, sourcePath); return; }
       void host?.workspace.openLinkText(target, sourcePath, ev.metaKey || ev.ctrlKey);
       return;
     }
