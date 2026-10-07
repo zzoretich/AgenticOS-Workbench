@@ -5,7 +5,11 @@ All notable changes to AgenticOS Workbench. Versions follow the tags. From the n
 ## [Unreleased]
 
 ### Added
+- **Light and dark.** The Workbench app now has a light theme as well as the dark one, and follows macOS's appearance as it changes. The sun and moon button at the foot of the ribbon, **Toggle light and dark** in the command palette and View ▸ **Appearance** switch it; App settings ▸ **Appearance** goes back to **Match macOS**. The choice is kept in the app's data and outlives a restart.
 - **`statusline.chainPosition`** puts the status line you had below AgenticOS's lines instead of above them. It applies to `aos statusline install --chain-output`, which shows that line's first line: `aos config set statusline.chainPosition bottom` (or Settings → Status line). `top` is the default, and the change shows on the next refresh, with no reinstall.
+
+### Changed
+- **A new look, the first of three steps toward UniDeX.** The Workbench is monochrome (white on black or black on white) with colour kept for state: green ok, amber a warning, red breaking or failed, blue live or running, violet waiting on you, grey off. Agent Teams' gates are violet now, not amber. The scanline and glows are gone. Text is set in Inter and numbers and code in JetBrains Mono, both bundled with the app. The terminal, the memory graph and the disk chart follow the theme.
 
 ### Fixed
 - A link in a note or a notification to a web page, PDF or image in the vault opens it with its default app, through the same rules as the Proposals tab's pages: an HTML page opens in the browser when it is under `brain/_index/` and is shown in Finder anywhere else. Before, the link opened the file as source text in a note, so a routine could not link a notification to the page it wrote.

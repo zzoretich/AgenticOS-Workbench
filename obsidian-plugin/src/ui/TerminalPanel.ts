@@ -3,37 +3,13 @@
 // inside a host element. Each session gets its own xterm; only the active one is visible.
 
 import { Notice } from "obsidian";
-import { Terminal, ITheme } from "@xterm/xterm";
+import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import type AgenticOSPlugin from "../../main";
 import { TerminalSession } from "../data/terminalSession";
 import { listen } from "../data/listen";
-import { TOKENS } from "./tokens";
-
-const HUD_THEME: ITheme = {
-  background: TOKENS.termBackground,
-  foreground: TOKENS.termForeground,
-  cursor: TOKENS.termCursor,
-  cursorAccent: TOKENS.termCursorAccent,
-  selectionBackground: TOKENS.termSelectionBackground,
-  black: TOKENS.termBlack,
-  red: TOKENS.termRed,
-  green: TOKENS.termGreen,
-  yellow: TOKENS.termYellow,
-  blue: TOKENS.termBlue,
-  magenta: TOKENS.termMagenta,
-  cyan: TOKENS.termCyan,
-  white: TOKENS.termWhite,
-  brightBlack: TOKENS.termBrightBlack,
-  brightRed: TOKENS.termBrightRed,
-  brightGreen: TOKENS.termBrightGreen,
-  brightYellow: TOKENS.termBrightYellow,
-  brightBlue: TOKENS.termBrightBlue,
-  brightMagenta: TOKENS.termBrightMagenta,
-  brightCyan: TOKENS.termBrightCyan,
-  brightWhite: TOKENS.termBrightWhite,
-};
+import { TERMINAL_FONT, currentTheme, onThemeChange, xtermTheme } from "./theme";
 
 interface XtermBinding {
   term: Terminal;
@@ -65,6 +41,7 @@ export class TerminalPanel {
   private activeId: string | null = null;
   private resizeObs: ResizeObserver | null = null;
   private disposePool: (() => void) | null = null;
+  private disposeTheme: (() => void) | null = null;
   private height: number;
 
   constructor(plugin: AgenticOSPlugin, opts: TerminalPanelOptions) {
@@ -129,6 +106,12 @@ export class TerminalPanel {
     this.resizeObs = new ResizeObserver(() => this.refit());
     this.resizeObs.observe(this.bodyEl);
 
+    // xterm paints a canvas from literal colours, so a theme switch repaints every open terminal
+    this.disposeTheme?.();
+    this.disposeTheme = onThemeChange((theme) => {
+      for (const b of this.bindings.values()) b.term.options.theme = xtermTheme(theme);
+    });
+
     // listen for pool changes: owned by this panel and removed in unmount(), not plugin.registerEvent(), which kept
     // three listeners per visit alive until the plugin unloaded (spec 2026-09-24-hud-deck-fixes D1)
     this.disposePool?.();
@@ -152,6 +135,8 @@ export class TerminalPanel {
   unmount(): void {
     this.disposePool?.();
     this.disposePool = null;
+    this.disposeTheme?.();
+    this.disposeTheme = null;
     // dispose xterm instances but DON'T touch PTYs in the pool
     for (const b of this.bindings.values()) {
       try { b.detachData(); } catch { /* ignore */ }
@@ -238,8 +223,8 @@ export class TerminalPanel {
   private createBinding(sess: TerminalSession): XtermBinding {
     const container = this.bodyEl.createDiv({ cls: "aos-term-xterm" });
     const term = new Terminal({
-      theme: HUD_THEME,
-      fontFamily: "'Berkeley Mono', 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace",
+      theme: xtermTheme(currentTheme(this.bodyEl.ownerDocument)),
+      fontFamily: TERMINAL_FONT,
       fontSize: this.plugin.settings.terminalFontSize || 13,
       cursorBlink: true,
       cursorStyle: "bar",

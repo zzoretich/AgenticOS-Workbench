@@ -2,8 +2,9 @@
 // writes by default; $AOS_APP_WRITE narrows that for a run (tests, one-off runs), and this tab says which applies.
 
 import { Setting, SettingTab, type App } from "obsidian";
-import type { AosBridge } from "../shared/ipc";
+import type { AosBridge, ThemeSource } from "../shared/ipc";
 import type { PagePolicy } from "./pagePolicy";
+import { THEME_LABELS, type PageTheme } from "./theme";
 
 export interface AppFacts {
   vaultRoot: string;
@@ -17,6 +18,8 @@ export interface AppFacts {
   writeSource: () => string;
   /** The bridge to main, for Show in Finder. */
   aos: AosBridge;
+  /** Light and dark, for the Appearance row. */
+  theme: PageTheme;
 }
 
 export class AppSettingTab extends SettingTab {
@@ -32,6 +35,11 @@ export class AppSettingTab extends SettingTab {
     el.empty();
     el.addClass("aos-app-settings");
     el.createEl("h2", { text: "AgenticOS app" });
+
+    new Setting(el)
+      .setName("Appearance")
+      .setDesc("Match macOS follows its light and dark setting as it changes. View ▸ Appearance and the ribbon's toggle switch it too.")
+      .addDropdown((d) => d.addOptions(THEME_LABELS).setValue(f.theme.state.source).onChange((v) => { f.theme.set(v as ThemeSource); }));
 
     const folder = (name: string, desc: string, p: string) => new Setting(el).setName(name).setDesc(desc)
       .addButton((b) => b.setButtonText("Show in Finder").onClick(() => { f.aos.shell.showItemInFolder(p); }))

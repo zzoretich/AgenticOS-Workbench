@@ -6,11 +6,11 @@
 // check it against the read scope, the write surfaces and the program rules (./policy). Main itself writes one file
 // outside its userData: the app's record in the vault's runtime cache (hud-host.ts). The app updates itself (./updater).
 
-import { app, BrowserWindow, dialog, Menu, screen, type Rectangle } from "electron";
+import { app, BrowserWindow, dialog, Menu, nativeTheme, screen, type Rectangle } from "electron";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { APP_ORIGIN, CH, POPOVER, type AttachInfo, type BootInfo, type CommandInfo, type ProtocolRequest, type ReadyInfo } from "../shared/ipc";
+import { APP_ORIGIN, CH, POPOVER, type AttachInfo, type BootInfo, type CommandInfo, type ProtocolRequest, type ReadyInfo, type ThemeSource, type ThemeState } from "../shared/ipc";
 import { registerAppScheme, serveAppScheme } from "./app-scheme";
 import { writeHudHostMarker } from "./hud-host";
 import { registerFsIpc } from "./ipc/fs";
@@ -18,6 +18,7 @@ import { registerHostIpc } from "./ipc/host";
 import { registerProcIpc } from "./ipc/proc";
 import { registerSetupIpc, registerUpdateIpc } from "./ipc/setup";
 import { openExternalSafe, registerShellIpc } from "./ipc/shell";
+import { registerThemeIpc } from "./ipc/theme";
 import { trustMainWindow } from "./ipc/trust";
 import { buildAppMenu } from "./menu";
 import { debugSwitches } from "./policy/debug";
@@ -31,6 +32,7 @@ import { PtyService, type PtyLib } from "./services/pty";
 import { attachInfo } from "./setup/attach";
 import { SetupController, type AgenticosJson } from "./setup/controller";
 import { findPayload } from "./setup/payload";
+import { loadThemeSource, saveThemeSource, windowBackground } from "./theme";
 import { STATUSLINE_PATH, StatusTray } from "./tray";
 import { UpdateService, updatesConfig, updatesWanted, type UpdaterLike } from "./updater";
 import { VaultWatcher } from "./watcher";
@@ -69,6 +71,8 @@ const dev = !app.isPackaged;
 app.setPath("userData", process.env.AOS_APP_USER_DATA || path.join(app.getPath("appData"), dev ? "AgenticOS Workbench (dev)" : "AgenticOS Workbench"));
 // The app's page comes from app://hud (app-scheme.ts), which must be registered before `ready`.
 registerAppScheme();
+// Light and dark (UniDeX D6): the saved choice, set before any window exists so the first frame is drawn in it.
+nativeTheme.themeSource = loadThemeSource(app.getPath("userData"));
 
 let vault = resolveVault();
 const writes = loadWriteSettings();
@@ -117,6 +121,7 @@ function bootInfo(): BootInfo {
     },
     attach: attached,
     update: updates.state,
+    theme: themeState(),
   };
 }
 
@@ -151,7 +156,7 @@ function send(channel: string, payload: unknown): void {
 const POPOVER_SIZE = { width: 380, height: 640 };
 const POPOVER_OPTIONS: Electron.BrowserWindowConstructorOptions = {
   ...POPOVER_SIZE, show: false, frame: false, resizable: false, movable: false, minimizable: false, maximizable: false,
-  fullscreenable: false, skipTaskbar: true, alwaysOnTop: true, backgroundColor: "#0a0e14", title: "AgenticOS",
+  fullscreenable: false, skipTaskbar: true, alwaysOnTop: true, title: "AgenticOS",
 };
 let popover: BrowserWindow | null = null;
 
@@ -192,7 +197,30 @@ function setMenu(): void {
   Menu.setApplicationMenu(buildAppMenu(commands, runCommand, {
     dev, setup: rendererReady && !vault.root,
     update: { state: updates.state, check: () => updates.check(), install: () => updates.install() },
+    theme: { source: nativeTheme.themeSource as ThemeSource, set: (source) => { setTheme(source); } },
   }));
+}
+
+// ── light and dark ───────────────────────────────────────────────────
+
+function themeState(): ThemeState {
+  return { source: nativeTheme.themeSource as ThemeSource, dark: nativeTheme.shouldUseDarkColors };
+}
+
+/** Tells the page, repaints the windows' backgrounds and re-checks the menu's Appearance item. */
+function broadcastTheme(): void {
+  const s = themeState();
+  for (const w of [win, popover]) if (w && !w.isDestroyed()) w.setBackgroundColor(windowBackground(s.dark));
+  send(CH.themeEvent, s);
+  setMenu();
+}
+
+/** Applies and saves the user's choice. nativeTheme says nothing when the colours stay the same, so this always tells. */
+function setTheme(source: ThemeSource): ThemeState {
+  nativeTheme.themeSource = source;
+  try { saveThemeSource(app.getPath("userData"), source); } catch (err) { console.error("[main] could not save the theme", err); }
+  broadcastTheme();
+  return themeState();
 }
 
 /**
@@ -278,6 +306,7 @@ registerUpdateIpc(trust, {
   check: () => updates.check(),
   install: () => { installRequests += 1; updates.install(); },
 });
+registerThemeIpc(trust, { state: () => themeState(), set: (source) => setTheme(source) });
 
 /** The page went (closed, crashed, reloaded, or quitting): its terminals go with it, and the children it was waiting on.
  *  A setup job (a fix-it's terminal, `aos init`, `aos upgrade`) is the page's too. */
@@ -294,7 +323,7 @@ function createWindow(): void {
     ...state.bounds,
     minWidth: 960,
     minHeight: 600,
-    backgroundColor: "#0a0e14",
+    backgroundColor: windowBackground(nativeTheme.shouldUseDarkColors),
     title: "AgenticOS",
     show: false,
     webPreferences: {
@@ -318,7 +347,9 @@ function createWindow(): void {
   // One child window is allowed: the tray popover, opened blank by the renderer, which fills it itself. Anything else
   // a page tries to open goes to the OS (https only) or nowhere.
   win.webContents.setWindowOpenHandler(({ url, frameName }) => {
-    if (frameName === POPOVER && url === "about:blank") return { action: "allow", overrideBrowserWindowOptions: POPOVER_OPTIONS };
+    if (frameName === POPOVER && url === "about:blank") {
+      return { action: "allow", overrideBrowserWindowOptions: { ...POPOVER_OPTIONS, backgroundColor: windowBackground(nativeTheme.shouldUseDarkColors) } };
+    }
     openExternalSafe(url);
     return { action: "deny" };
   });
@@ -357,6 +388,8 @@ if (!app.requestSingleInstanceLock()) {
     // Only a packaged, signed app claims the scheme; a dev run must not re-point the system's agenticos:// handler.
     if (app.isPackaged) app.setAsDefaultProtocolClient(SCHEME);
     serveAppScheme(path.join(__dirname, "../renderer"));
+    // macOS switched appearance (while the choice is "system"), or high contrast changed.
+    nativeTheme.on("updated", broadcastTheme);
     setMenu();
     createWindow();
     if (vault.root) attachVault(vault.root, vault.source);
@@ -375,4 +408,7 @@ if (!app.requestSingleInstanceLock()) {
   setUpdateState: (s: Parameters<UpdateService["set"]>[0]) => updates.set(s),
   installRequests: () => installRequests,
   vaultRoot: () => vault.root,
+  // Light and dark as the theme spec drives them (it cannot switch macOS's own appearance).
+  theme: () => themeState(),
+  setTheme: (source: ThemeSource) => setTheme(source),
 };

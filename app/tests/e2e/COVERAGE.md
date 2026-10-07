@@ -17,12 +17,12 @@ list at the top of app-smoke.md is the release process, not app behaviour: it is
 | Status | Items |
 |---|---|
 | covered | 91 |
-| covered in part | 15 |
+| covered in part | 17 |
 | N/A in the app | 39 |
 | not covered | 4 |
-| **total** | **149** |
+| **total** | **151** |
 
-Of the 110 items about the app (149 minus the 39 N/A), 106 are asserted (91 fully, 15 in part); the other 4 are not
+Of the 112 items about the app (151 minus the 39 N/A), 108 are asserted (91 fully, 17 in part); the other 4 are not
 covered, for the reasons below. Every write surface is enabled and tested. The
 "in part" rows need something the fixture or the app lacks (a dispatched seat, a Codex database, the clipboard, the
 OS handing over an `agenticos://` link, a published update). The writes, each surface on through `AOS_APP_WRITE`:
@@ -86,6 +86,8 @@ see below).
 | APP4 | Obsidian-era settings in effect on first start, and copied into the app's data before any change | covered | `variants › a vault whose HUD ran in Obsidian first › the app starts with Obsidian's plugin settings…` |
 | APP5 | Check for Updates… (greyed out with the reason when off); Restart to update once downloaded | covered in part | `attach › the app's own update: off in a dev run, and Restart to update asks main…`. A real update needs a published release: the acceptance run's §8. |
 | APP6 | The menubar popover; closing hides the window, ⌘Q quits; doctor's `workbench app` row | covered in part | `shell › tray popover…`, `shell › the app records itself in the vault…` (what the doctor row reads). Closing and quitting are the OS's; the row itself is the runtime's. |
+| APP7 | Light and dark: follows macOS under Match macOS; the toggle, the palette, View ▸ Appearance and App settings switch it; it survives a restart; the windows and terminals follow | covered in part | `theme › with no choice saved, the page draws in the appearance macOS reports`, `› the ribbon's toggle switches to the opposite…`, `› the palette's command flips it back, and the menu shows the choice`, `› App settings ▸ Appearance goes back to Match macOS`, `› the choice outlives a restart…`. A spec cannot switch macOS's own appearance, and the popover's and terminals' repaint is not asserted (`tests/unit/theme.test.ts` covers the terminal colours' source). |
+| APP8 | Both themes read well: no unreadable text, status colours keep their meaning, Inter and JetBrains Mono | covered in part | `obsidian-plugin/src/ui/tokens.test.ts` holds every text, status and terminal colour to 4.5:1 in both themes; `theme › the ribbon's toggle switches…` checks the tokens reach the page. Looking at each tab is by eye. |
 
 ## Files
 

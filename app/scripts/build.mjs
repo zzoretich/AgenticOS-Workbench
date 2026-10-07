@@ -108,5 +108,14 @@ cpSync(r("src/renderer/index.html"), path.join(out, "renderer/index.html"));
 cpSync(r("src/renderer/host.css"), path.join(out, "renderer/host.css"));
 cpSync(r("compat/src/base.css"), path.join(out, "renderer/base.css"));
 cpSync(path.join(hud, "styles.css"), path.join(out, "renderer/hud.css"));
+// The two typefaces (UniDeX D9), bundled because the page's CSP takes fonts only from the app: Inter and JetBrains Mono,
+// variable weight, Latin and Latin Extended (base.css's @font-face rules), each with its OFL licence.
+for (const [pkg, stem] of [["@fontsource-variable/inter", "inter"], ["@fontsource-variable/jetbrains-mono", "jetbrains-mono"]]) {
+  const dir = r("node_modules", pkg);
+  for (const subset of ["latin", "latin-ext"]) {
+    cpSync(path.join(dir, "files", `${stem}-${subset}-wght-normal.woff2`), path.join(out, "renderer/fonts", `${stem}-${subset}-wght-normal.woff2`));
+  }
+  cpSync(path.join(dir, "LICENSE"), path.join(out, "renderer/fonts", `${stem}-OFL.txt`));
+}
 
 console.log(`built out/main, out/preload and out/renderer${testBuild ? " (smoke build: debugging allowed)" : ""}`);

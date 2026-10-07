@@ -15,6 +15,7 @@ import { attachUi } from "./setup/attach";
 import { runSetup } from "./setup/wizard";
 import { openPopover } from "./popover";
 import { CommandPalette } from "./palette";
+import { PageTheme, THEME_LABELS, applyTheme, toggledSource } from "./theme";
 
 /**
  * The HUD as a plugin, the manifest Obsidian read from its plugin folder. The id keys the HUD's settings
@@ -46,6 +47,9 @@ async function boot(): Promise<void> {
   const info = aos.boot();
   const root = document.getElementById("app")!;
   if (!info) throw new Error("The main process did not answer the boot request.");
+  // Light or dark before anything is drawn, the wizard included; main says when it changes.
+  const theme = new PageTheme(aos, info.theme);
+  theme.track(document);
   // Before the plugin loads: the compat layer's and the HUD's every file, process and OS call go to main from here on.
   setBridge(aos);
   const bridgeHost = createBridgeHost(aos, info);
@@ -83,10 +87,23 @@ async function boot(): Promise<void> {
   // Workbench's Settings tab.
   app.setting.addSettingTab(new AppSettingTab(app, {
     vaultRoot: info.vaultRoot, vaultSource: info.vaultSource, userData: info.userData, appVersion: info.appVersion,
-    hudVersion: HUD.version, electron: info.electron, policy: () => policy, writeSource: () => info.writeSource, aos,
+    hudVersion: HUD.version, electron: info.electron, policy: () => policy, writeSource: () => info.writeSource, aos, theme,
   }));
   const openSettings = (): void => { if (!app.setting.isOpen) app.setting.open(); };
   app.commands.add({ id: HOST_COMMANDS.settings, name: "Open app settings", callback: openSettings });
+  // Light and dark: one click flips what shows now (App settings and View ▸ Appearance can go back to Match macOS).
+  app.commands.add({ id: HOST_COMMANDS.toggleTheme, name: "Toggle light and dark", callback: () => theme.toggle() });
+  const themeBtn = ribbonEl.createDiv({ cls: "side-dock-ribbon-action clickable-icon aos-host-theme", attr: { role: "button", tabindex: "0" } });
+  const showToggle = (): void => {
+    const next = THEME_LABELS[toggledSource(theme.state)];
+    setIcon(themeBtn, theme.state.dark ? "sun" : "moon");
+    themeBtn.setAttr("aria-label", `Switch to ${next.toLowerCase()}`);
+    themeBtn.setAttr("title", `Switch to ${next.toLowerCase()}`);
+  };
+  showToggle();
+  theme.onChange(showToggle);
+  themeBtn.addEventListener("click", () => theme.toggle());
+  themeBtn.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); theme.toggle(); } });
   const gear = ribbonEl.createDiv({ cls: "side-dock-ribbon-action clickable-icon aos-host-settings", attr: { "aria-label": "App settings", title: "App settings", role: "button", tabindex: "0" } });
   setIcon(gear, "settings");
   gear.addEventListener("click", openSettings);
@@ -145,7 +162,8 @@ async function boot(): Promise<void> {
   attachUi(app, aos, info.attach, statusBarEl);
 
   // The tray popover (hidden until the menubar icon is clicked): the plugin's SidebarHUD in a window of its own.
-  void openPopover(app).catch((err: unknown) => console.warn("[host] tray popover unavailable", err));
+  void openPopover(app).then((child) => { if (child) theme.track(child.document); })
+    .catch((err: unknown) => console.warn("[host] tray popover unavailable", err));
 
   // A handle for the Playwright suites and for poking at the host from DevTools.
   (window as unknown as { aosHost: unknown }).aosHost = { app, plugin, info, guard: guardState(), runCommand, routeLink };
@@ -154,6 +172,10 @@ async function boot(): Promise<void> {
 
 boot().catch((err: unknown) => {
   console.error("[host] boot failed", err);
+  // A boot that failed before main answered: draw the error in macOS's own appearance.
+  if (!/\btheme-(light|dark)\b/.test(document.body.className)) {
+    applyTheme(document, { source: "system", dark: window.matchMedia("(prefers-color-scheme: dark)").matches });
+  }
   const pre = document.body.createEl("pre", { cls: "aos-host-fatal" });
   pre.setText(err instanceof Error ? err.stack ?? err.message : String(err));
 });

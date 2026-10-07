@@ -7,15 +7,18 @@ import { dailyNoteLayout } from "../data/aosConfig";
 import { tick, settle } from "../data/forceSim";
 import { listMemories, parseMemoryMeta, filterMemories, MemoryMeta, MEMORY_ROOT } from "../data/memories";
 import { setPendingMemory, VIEW_TYPE_MEMORY_INSPECTOR } from "./MemoryInspectorView";
-import { TOKENS } from "../ui/tokens";
 
 // same palette the old Cortex view used for its filter chips + node fills
+// The categorical chart tokens, as CSS so the graph follows the theme (set through `style`: SVG attributes take no var()).
 const KIND_COLOR: Record<NodeKind, string> = {
-  memory:  TOKENS.cyan,
-  pattern: TOKENS.amber,
-  session: TOKENS.green,
-  agent:   TOKENS.rose,
+  memory:  "var(--udx-chart-1)",
+  pattern: "var(--udx-chart-4)",
+  session: "var(--udx-chart-3)",
+  agent:   "var(--udx-chart-5)",
 };
+const EDGE = "var(--udx-line-2)";
+const EDGE_NEAR = "var(--udx-text-2)";
+const EDGE_FAR = "var(--udx-line)";
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 const TYPE_OPTIONS: Array<{ label: string; value: string | null }> = [
@@ -353,7 +356,7 @@ export class MemoryTab {
       line.setAttribute("y1", String(a.y));
       line.setAttribute("x2", String(b.x));
       line.setAttribute("y2", String(b.y));
-      line.setAttribute("stroke", "rgba(0,212,255,0.18)");
+      line.style.stroke = EDGE;
       line.setAttribute("stroke-width", "0.8");
       line.dataset.from = a.id;
       line.dataset.to = b.id;
@@ -370,10 +373,9 @@ export class MemoryTab {
       const circle = document.createElementNS(SVG_NS, "circle");
       const r = 4 + Math.min(4, this.degreeOf(n.id) * 0.6);
       circle.setAttribute("r", String(r));
-      circle.setAttribute("fill", KIND_COLOR[n.kind]);
-      circle.setAttribute("stroke", "rgba(255,255,255,0.15)");
+      circle.style.fill = KIND_COLOR[n.kind];
+      circle.style.stroke = "var(--udx-bg)";
       circle.setAttribute("stroke-width", "0.5");
-      circle.style.filter = `drop-shadow(0 0 4px ${KIND_COLOR[n.kind]}55)`;
       g.appendChild(circle);
 
       g.addEventListener("mousedown", (e: MouseEvent) => {
@@ -414,7 +416,7 @@ export class MemoryTab {
         const text = document.createElementNS(SVG_NS, "text");
         text.setAttribute("x", String(n.x + r + 3));
         text.setAttribute("y", String(n.y + 3));
-        text.setAttribute("fill", `var(--aos-text, ${TOKENS.text})`);
+        text.style.fill = "var(--udx-text)";
         text.setAttribute("font-size", "9");
         text.setAttribute("pointer-events", "none");
         text.textContent = n.label;
@@ -463,7 +465,7 @@ export class MemoryTab {
     const hover = this.hoveredId;
     if (!hover || !this.graph) {
       this.gEdges.querySelectorAll<SVGLineElement>("line").forEach((l) => {
-        l.setAttribute("stroke", "rgba(0,212,255,0.18)");
+        l.style.stroke = EDGE;
         l.setAttribute("stroke-width", "0.8");
       });
       this.gNodes.querySelectorAll<SVGGElement>("g.aos-cortex-node").forEach((g) => {
@@ -478,7 +480,7 @@ export class MemoryTab {
     }
     this.gEdges.querySelectorAll<SVGLineElement>("line").forEach((l) => {
       const touches = l.dataset.from === hover || l.dataset.to === hover;
-      l.setAttribute("stroke", touches ? "rgba(0,212,255,0.6)" : "rgba(0,212,255,0.06)");
+      l.style.stroke = touches ? EDGE_NEAR : EDGE_FAR;
       l.setAttribute("stroke-width", touches ? "1.4" : "0.6");
     });
     this.gNodes.querySelectorAll<SVGGElement>("g.aos-cortex-node").forEach((g) => {

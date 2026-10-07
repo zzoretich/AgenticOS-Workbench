@@ -70,7 +70,7 @@ test("the App tab: the vault and the app's data folder (handed to Finder), write
   const { win } = h;
   expect(await command(win, "host:settings")).toBe(true);
   await nav(win, "App").click();
-  await expect(await names(pane(win))).toEqual(["Vault", "App data", "Write access", "Versions"]);
+  await expect(await names(pane(win))).toEqual(["Appearance", "Vault", "App data", "Write access", "Versions"]);
   await expect(row(pane(win), "Vault").locator(".aos-app-path")).toHaveText(FX.vault);
   await expect(row(pane(win), "Vault").locator(".setting-item-description")).toContainText("(AOS_APP_VAULT)");
   await expect(row(pane(win), "App data").locator(".aos-app-path")).toHaveText(USER_DATA);
