@@ -44,9 +44,10 @@ test("window.aos is named functions only: no channel, no ipcRenderer, no generic
     const keys = (o: Record<string, unknown>) => Object.keys(o).sort();
     return { top: keys(aos), fs: keys(aos.fs as Record<string, unknown>), proc: keys(aos.proc as Record<string, unknown>), pty: keys(aos.pty as Record<string, unknown>),
       shell: keys(aos.shell as Record<string, unknown>), plugin: keys(aos.plugin as Record<string, unknown>),
-      setup: keys(aos.setup as Record<string, unknown>), update: keys(aos.update as Record<string, unknown>), theme: keys(aos.theme as Record<string, unknown>) };
+      setup: keys(aos.setup as Record<string, unknown>), update: keys(aos.update as Record<string, unknown>), theme: keys(aos.theme as Record<string, unknown>),
+      sessions: keys(aos.sessions as Record<string, unknown>), git: keys(aos.git as Record<string, unknown>) };
   });
-  expect(shape.top).toEqual(["boot", "fs", "onCommand", "onProtocol", "onVaultChanges", "plugin", "proc", "pty", "ready", "setup", "shell", "theme", "update"]);
+  expect(shape.top).toEqual(["boot", "fs", "git", "onCommand", "onProtocol", "onVaultChanges", "plugin", "proc", "pty", "ready", "sessions", "setup", "shell", "theme", "update"]);
   expect(shape.fs).toEqual(["appendText", "copy", "exists", "mkdir", "readBytes", "readText", "readdir", "remove", "rename", "stat", "trash", "walk", "writeText"]);
   expect(shape.proc).toEqual(["execSync", "kill", "onEvent", "spawn"]);
   expect(shape.pty).toEqual(["available", "kill", "onEvent", "resize", "spawn", "write"]);
@@ -55,6 +56,8 @@ test("window.aos is named functions only: no channel, no ipcRenderer, no generic
   expect(shape.setup).toEqual(["applyClaudeMd", "cancel", "chooseVault", "claudeMd", "finish", "fix", "input", "install", "noted", "onEvent", "preflight", "resize", "upgrade"]);
   expect(shape.update).toEqual(["check", "install", "onState", "state"]);
   expect(shape.theme).toEqual(["onChange", "set", "state"]);
+  expect(shape.sessions).toEqual(["list", "onEvent", "read", "send", "start", "stop"]);
+  expect(shape.git).toEqual(["commit", "diff", "status"]);
 });
 
 test("setup names a fix by id only, and refuses each step outside its state", async () => {
@@ -81,6 +84,15 @@ test("setup names a fix by id only, and refuses each step outside its state", as
   // The theme takes one of its three choices, nothing else.
   expect(await call((aos) => (aos.theme.set as (s: string) => unknown)("sepia"))).toMatchObject({ ok: false, code: "EINVAL" });
   expect(await call((aos) => aos.theme.state())).toMatchObject({ source: "system" });
+  // Sessions (spec 2026-10-07-unidex-sessions) are off until their live check: nothing starts, nothing in git is read.
+  type Sess = { start(r: unknown): Promise<unknown>; list(): Promise<unknown> };
+  type Git = { status(w: string): Promise<unknown> };
+  expect(await call((aos) => (aos.sessions as unknown as Sess).start({ workspace: "harbor-map", host: "claude", text: "hi" }))).toMatchObject({ ok: false, code: "EROFS" });
+  expect(await call((aos) => (aos.sessions as unknown as Sess).list())).toMatchObject({ ok: false, code: "EROFS" });
+  expect(await call((aos) => (aos.git as unknown as Git).status("harbor-map"))).toMatchObject({ ok: false, code: "EROFS" });
+  // A workspace that could leave the folder, or a host that is not one, never reaches main's service.
+  expect(await call((aos) => (aos.sessions as unknown as Sess).start({ workspace: "../x", host: "claude", text: "hi" }))).toMatchObject({ ok: false, code: "EINVAL" });
+  expect(await call((aos) => (aos.sessions as unknown as Sess).start({ workspace: "harbor-map", host: "sh", text: "hi" }))).toMatchObject({ ok: false, code: "EINVAL" });
 });
 
 test("reads stay inside the vault and the hosts' folders, and never return a credential", async () => {

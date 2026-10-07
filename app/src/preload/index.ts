@@ -3,7 +3,7 @@
 // an event object. Main checks every call's sender and arguments; this file only carries them.
 
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
-import { CH, type AosBridge, type BootInfo, type ProcEvent, type ProtocolRequest, type PtyEvent, type Result, type SetupEvent, type ThemeState, type UpdateState } from "../shared/ipc";
+import { CH, type AosBridge, type BootInfo, type ProcEvent, type ProtocolRequest, type PtyEvent, type Result, type SessionEvent, type SetupEvent, type ThemeState, type UpdateState } from "../shared/ipc";
 
 /** What the page sees when main does not answer an update query: updates off. */
 const OFF: UpdateState = { status: "off", reason: "no answer from the app", version: null, percent: null, error: null };
@@ -90,6 +90,19 @@ const api: AosBridge = {
     state: () => { const r = sync<ThemeState>(CH.themeState, {}); return r.ok ? r.data : systemTheme(); },
     set: (source) => sync(CH.themeSet, { source }),
     onChange: (cb) => listen<ThemeState>(CH.themeEvent, cb),
+  },
+  sessions: {
+    start: (req) => invoke(CH.sessionStart, req),
+    send: (req) => invoke(CH.sessionSend, req),
+    stop: (thread) => ipcRenderer.send(CH.sessionStop, { thread }),
+    list: () => invoke(CH.sessionList, {}),
+    read: (thread) => invoke(CH.sessionRead, { thread }),
+    onEvent: (cb) => listen<SessionEvent>(CH.sessionEvent, cb),
+  },
+  git: {
+    status: (workspace) => invoke(CH.gitStatus, { workspace }),
+    diff: (workspace, file) => invoke(CH.gitDiff, file === undefined ? { workspace } : { workspace, file }),
+    commit: (workspace, message) => invoke(CH.gitCommit, { workspace, message }),
   },
 };
 

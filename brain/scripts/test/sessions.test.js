@@ -73,6 +73,15 @@ test('CLI: args prints the plan; record ledgers the turn as session:<host>; the 
   assert.equal(rec.status, 0, rec.stderr);
   const row = JSON.parse(fs.readFileSync(path.join(v, 'brain', '_index', 'provider-spend.jsonl'), 'utf8').trim());
   assert.deepEqual([row.feature, row.provider, row.usd], ['session:codex', 'codex', 0.6]);
+  const runs = () => fs.readFileSync(path.join(v, 'brain', '_index', 'agent-runs', 'runs.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  const run = runs()[0];
+  assert.deepEqual([run.script, run.status, run.cost_usd, run.turns, run.host, run.model], ['session:codex', 'ok', 0.6, 1, 'codex', 'gpt-5-mini'], 'the turn is a row the Runs tab lists (S8)');
+  assert.match(run.id, /^\d+-session-codex-[0-9a-f]{4}$/);
+  // A turn that failed before the host reported a cost: a run row, and nothing in the ledger.
+  assert.equal(cli(['record', JSON.stringify({ host: 'claude', usd: null, status: 'error', error: 'no binary', workspace: 'harbor-map', thread: 't1' })], env).status, 0);
+  const failed = runs()[1];
+  assert.deepEqual([failed.status, failed.cost_usd, failed.error, failed.workspace, failed.thread], ['error', null, 'no binary', 'harbor-map', 't1']);
+  assert.equal(fs.readFileSync(path.join(v, 'brain', '_index', 'provider-spend.jsonl'), 'utf8').trim().split('\n').length, 1, 'no ledger row for a turn that cost nothing');
   const capped = cli(['args', JSON.stringify({ host: 'codex', prompt: 'more' })], env);
   assert.equal(capped.status, 3);
   assert.match(JSON.parse(capped.stdout).reason, /reached the \$0\.5 daily cap/);
