@@ -4,6 +4,8 @@ All notable changes to UniDeX (AgenticOS Workbench before 1.1). Versions follow 
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-10-07
+
 ### Upgrading
 - The app is now called UniDeX. An updated install keeps its file name, `AgenticOS Workbench.app`; rename it in Finder if you like. Nothing depends on it.
 
@@ -357,7 +359,8 @@ The first public release: an `aos` CLI, the AgenticOS runtime, a Claude Code plu
 - Update notifications: a GitHub release check surfaced as a session-start notice.
 - Docs: README, install guide, and a release acceptance runbook.
 
-[Unreleased]: https://github.com/zzoretich/AgenticOS-Workbench/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/zzoretich/AgenticOS-Workbench/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v1.1.0
 [1.0.1]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v1.0.1
 [1.0.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v1.0.0
 [0.21.0]: https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.21.0
