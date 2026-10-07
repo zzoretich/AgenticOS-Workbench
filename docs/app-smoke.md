@@ -13,7 +13,7 @@ Run before tagging a release, in the UniDeX app on a vault created by `aos init`
 
 ## Install paths
 
-- [ ] Open the app on the vault: the Workbench draws on Home (Chat once a model provider is set up, else Pulse) with no error, and a dev run (`npm start` in `app/`) logs `[host] AgenticOS HUD <version> loaded` in its developer tools.
+- [ ] Open the app on the vault: the Workbench draws on Home (Sessions once a model provider is set up, else Pulse) with no error, and a dev run (`npm start` in `app/`) logs `[host] AgenticOS HUD <version> loaded` in its developer tools.
 - [ ] The settings window's Runtime tab (App settings at the Workbench rail's foot, or UniDeX ▸ App Settings… ⌘⇧,) shows the Paths section as pickers: Vault root on "this vault (…)", Claude config dir on "auto (…)", Node binary on "auto" with the installed nodes listed; **Probe** picks a path and shows a notice.
 - [ ] Provider row reflects `provider-state.json` (name + reason); the refresh icon re-reads it.
 
@@ -32,7 +32,7 @@ Run before tagging a release, in the UniDeX app on a vault created by `aos init`
 
 ## Settings
 
-- [ ] ⚙ Settings sits at the rail's foot (bottom-left) and stays visible in a pane too short for all fourteen tabs (thirteen without Chat), which scroll above it; Enter or Space on a focused rail button opens it. "Open Workbench: Settings" in the command palette (⌘P) and "Open Workbench settings" in the settings window open the same tab.
+- [ ] ⚙ Settings sits at the rail's foot (bottom-left) and stays visible in a pane too short for all fourteen tabs (thirteen without Sessions), which scroll above it; Enter or Space on a focused rail button opens it. "Open Workbench: Settings" in the command palette (⌘P) and "Open Workbench settings" in the settings window open the same tab.
 - [ ] The head reads "N changed from the defaults" and matches the `*` rows of `aos config list`. Every row shows its key, a pill (`this machine` / `this vault` / `default`, the file path on hover) and when it applies; daily caps show "today $x of $cap".
 - [ ] Master switches: turning Telemetry off writes `telemetry.enabled` to `agenticos.json` (check with `aos config get telemetry.enabled`), shows the change as a Notice, and the chip follows; turning Background AI on from `none` asks first ("Turn on paid background calls?"), and Cancel leaves it off.
 - [ ] No text box anywhere in ⚙ Settings or the settings window (spec 2026-09-24-settings-pickers): toggles, pickers, chips and buttons only. Every number row has − / + around its picker; + on a daily cap raises it to the next preset and asks first, − never asks; − is disabled at the lowest preset and + at the highest.
@@ -209,13 +209,27 @@ Run on a machine with the `codex` CLI logged in, after `aos init --host codex` (
 - [ ] With cost enabled, a Codex run missed at SessionEnd is costed by `aos auto-cost --backfill` (`cost_source: "codex-rollout"`), and `aos auto-cost --cost-one <codex session id>` works on a machine with both hosts; the Pulse Fix Queue counts such runs until they are costed. The System drawer shows a `codex: n skills · n prompts · n hooks` chip, and `node <vault>/brain/scripts/persona/scan-arsenal.js` lists Codex skills and prompts with `"host": "codex"`.
 - [ ] `aos uninstall --host codex` removes the plugin and the `agenticos-workbench` marketplace (`codex plugin list`, `codex plugin marketplace list`), `codex mcp list` no longer shows `agenticos`; *direct:* the entries leave `hooks.json` (the file itself only when nothing else was in it) and `~/.agents/skills/` keeps only skills you wrote yourself.
 
-## Chat (per provider)
+## Vault chat (per provider)
+
+The Sessions tab's first thread, Vault: the Chat tab as it was, inside the Sessions tab.
 
 - [ ] `codex` (a Codex-only vault, `hosts.claude.enabled: false`): header says `· codex via ask.js (reasoner caps)`; a question answers with prose; `brain/_index/provider-spend.jsonl` gains a `reason:*` row with `provider: "codex"`; `aos status` shows `reasoner model=<reasoner.codexModel or codex default> provider=codex`.
 
-- [ ] `none`: the Chat rail button is absent; `Open Workbench: Chat` command shows the "no provider — run `aos provider`" hint.
+- [ ] `none`: the Sessions rail button is absent; `Open Workbench: Sessions` command shows the "no provider — run `aos provider`" hint.
 - [ ] `ollama` with no Claude login on record: header says `· local ask.js`; a question answers with prose (never a `<<<AOS_CONTEXT feature=ask>>>` block — that would mean `--local` was dropped from the spawn); the answer comes from the workhorse (the script's stderr notes the reasoner fallback); a failing `ask.js` (stop Ollama) shows its last stderr line, not `exit 1`.
 - [ ] `claude`, or `ollama` with a Claude login on record (`brain/_index/provider-state.json` `claude.loggedIn: true`): header says `· claude (claude-opus-5, capped)` (or the configured `reasoner.model`); a question answers with `$0.xxxx` in the turn meta; `brain/_index/provider-spend.jsonl` gains a `feature:"reason:chat"` row with the reasoner model; `aos status` counts it on the reasoner line, not the hooks line; with `claude` logged out the error reads `Not logged in …`.
+
+## Sessions (per host; each turn spends)
+
+Off until its live check (plan 2026-10-07-unidex-sessions C3): run these with the `sessions` surface on (`AOS_APP_WRITE=sessions` with `npm start` in `app/`), in a workspace that is a git repository of its own.
+
+- [ ] Claude Code: **New session** with a workspace, the Claude Code chip and **Allow commands** on: the thread appears under its workspace with a running dot; the timeline shows your prompt as a bubble, the agent's text as Markdown, each tool as one line (`kind · name · file`) that opens to its input and result (failed ones in red), and a footer with the turn's cost; the dot goes out; `brain/_index/sessions/<workspace>/<thread>.jsonl` holds the thread, `agent-runs/runs.jsonl` a `session:claude` row and `provider-spend.jsonl` a `session:claude` row. A reply resumes the same session.
+- [ ] Codex: the same with the Codex chip: the composer says "Codex runs commands in its sandbox" instead of Allow commands; command rows read `bash · shell`, changed files show as "Changed N files"; the footer's cost says `estimated`; a reply runs `codex exec resume` on the same thread.
+- [ ] Stop, on each host: while a turn runs the header shows Stop; pressing it ends the turn within 10 s as `stopped` (the footer reads `did not finish`), the running dot goes out, and the thread takes a reply.
+- [ ] Review: after a turn that changed files, the card reads `N files changed` with the branch, each file with its change; Review shows that file's diff (a new file as all additions), Close hides it; a workspace that is not a repository of its own (a plain folder, or a folder inside the vault's repository) says it is not a git repository.
+- [ ] Commit: the message is prefilled from the thread's title and can be edited; Commit makes one commit with it in the workspace's repository (`git log`), the card then reads `No changes`; an empty message, a detached HEAD or a merge in progress is refused in the card; nothing is pushed.
+- [ ] The cap: with `sessions.perDayUsd` at 0 (⚙ Settings or `aos config set sessions.perDayUsd 0`), a new turn ends at once with "sessions.perDayUsd is 0, which turns sessions off" in the thread and no host runs.
+- [ ] A host that is off (a Codex-only vault, `hosts.claude.enabled: false`) is a disabled chip with "Claude Code is off on this machine"; with the surface off the list reads "Workspace sessions are unavailable: the Sessions surface is off.", Send shows the same refusal under the composer, and Vault still answers.
 
 ## Term
 

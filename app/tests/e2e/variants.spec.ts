@@ -121,7 +121,7 @@ test.describe("a provider on record", () => {
   // The chat stubs only prove that no CLI runs: Chat's surface is off here.
   const app = useApp({ prepare: () => { installChatStubs(); state("claude", true)(); } });
 
-  test("Chat heads the rail and is Home: the Workbench opens on it, and the mark returns to it", async () => {
+  test("Sessions (rail id chat) heads the rail and is Home: the Workbench opens on it, and the mark returns to it", async () => {
     const { win } = app();
     const ids = await win.locator(".aos-wb-railtabs .aos-wb-railbtn").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.tab));
     expect(ids[0]).toBe("chat");
@@ -132,10 +132,10 @@ test.describe("a provider on record", () => {
     await expect(rail(win, "chat")).toHaveClass(/is-active/);
   });
 
-  test("Chat under claude names the reasoner and its cap; a local provider reads local ask.js", async () => {
+  test("Vault chat under claude names the reasoner and its cap; a local provider reads local ask.js", async () => {
     const { win } = app();
     await openTab(win, "chat");
-    await expect(content(win).locator(".aos-asst-head .aos-title")).toHaveText("Chat");
+    await expect(content(win).locator(".aos-asst-head .aos-title")).toHaveText("Vault");
     await expect(content(win).locator(".aos-asst-mode")).toHaveText(" · claude (claude-opus-5, capped)");
     await expect(content(win).locator("textarea.aos-asst-input")).toHaveAttribute("placeholder", "ask the brain…");
     await expect(content(win).locator(".aos-asst-actions button")).toHaveText("Send (⌘↵)");

@@ -1,4 +1,4 @@
-// The sidebar HUD, ⌘K omnisearch, the note view with link following, the heartbeat pill, Chat without a provider and
+// The sidebar HUD, ⌘K omnisearch, the note view with link following, the heartbeat pill, Sessions without a provider and
 // the Term tab (app-smoke: Pulse heartbeat pill, Chat `none`, Term, Review readiness; phase-0 surfaces).
 
 import { expect, test } from "@playwright/test";
@@ -156,8 +156,8 @@ test.describe("note view", () => {
   });
 });
 
-test.describe("Chat and Term", () => {
-  test("no provider: the Chat rail button is absent and Open Workbench: Chat shows the hint", async () => {
+test.describe("Sessions and Term", () => {
+  test("no provider: the Sessions rail button is absent and Open Workbench: Sessions shows the hint", async () => {
     const { win } = app();
     await expect(rail(win, "chat")).toHaveCount(0);
     expect(await command(win, "agentic-os:open-workbench-chat")).toBe(true);

@@ -43,7 +43,7 @@ test("the app records itself in the vault for doctor and the update check (brain
   expect(fs.readdirSync(FX.v("brain/_index")).filter((n) => n.startsWith("hud-host.json."))).toEqual([]);
 });
 
-test("rail: the tabs in order, no Chat without a provider, ⚙ Settings at the foot", async () => {
+test("rail: the tabs in order, no Sessions without a provider, ⚙ Settings at the foot", async () => {
   const { win } = app();
   const ids = await win.locator(".aos-wb-railtabs .aos-wb-railbtn").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.tab));
   expect(ids).toEqual(RAIL_ORDER.filter((id) => id !== "chat"));
@@ -163,6 +163,8 @@ test("commands: the plugin registers its palette commands; each 'Open Workbench:
   }
   expect(cmds.find((c) => c.id === "agentic-os:open-workbench-agent-teams")?.name).toBe("Open Workbench: Agent Teams");
   expect(cmds.find((c) => c.id === "agentic-os:open-workbench-settings")?.name).toBe("Open Workbench: Settings");
+  // The Chat tab became Sessions; its id (and so its command's) stays "chat", so links and hotkeys keep working.
+  expect(cmds.find((c) => c.id === "agentic-os:open-workbench-chat")?.name).toBe("Open Workbench: Sessions");
   // Review readiness: Omnisearch has no default hotkey (⌘K is the host's own binding).
   expect(cmds.find((c) => c.id === "agentic-os:open-omnisearch")?.hotkeys).toEqual([]);
   for (const t of ["agent-teams", "settings", "routines"]) {

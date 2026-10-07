@@ -88,8 +88,10 @@ export class GitService {
   }
 
   private async statusOf(dir: string): Promise<GitStatus> {
-    const inside = await this.run(dir, ["rev-parse", "--is-inside-work-tree"]);
-    if (inside.code !== 0 || inside.stdout.trim() !== "true") return { repo: false, branch: null, detached: false, merging: false, files: [] };
+    // The workspace's own repository only: a folder inside another one (a vault kept in git) is not a repository here,
+    // or its status would be the vault's and Commit would add the whole vault.
+    const top = await this.run(dir, ["rev-parse", "--show-toplevel"]);
+    if (top.code !== 0 || !sameDir(top.stdout.trim(), dir)) return { repo: false, branch: null, detached: false, merging: false, files: [] };
     const s = await this.run(dir, ["status", "--porcelain=v2", "--branch", "--untracked-files=all"]);
     const mergeHead = await this.run(dir, ["rev-parse", "--git-path", "MERGE_HEAD"]);
     const merging = mergeHead.code === 0 && fs.existsSync(path.resolve(dir, mergeHead.stdout.trim()));
@@ -130,6 +132,12 @@ export class GitService {
     const head = await this.run(w.dir, ["rev-parse", "HEAD"]);
     return { ok: true, data: { commit: head.stdout.trim() } };
   }
+}
+
+/** Whether two paths are one folder, links resolved (git prints the top level's real path). */
+function sameDir(a: string, b: string): boolean {
+  if (!a) return false;
+  try { return fs.realpathSync(a) === fs.realpathSync(b); } catch { return false; }
 }
 
 function lastLine(s: string): string {

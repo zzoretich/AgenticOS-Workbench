@@ -103,5 +103,6 @@ export function createNodeHost(): HudHost {
       platform: () => process.platform,
       cwd: () => process.cwd(),
     },
+    // No `sessions` or `git`: only the app's main process runs agent sessions (the Sessions tab says so).
   };
 }

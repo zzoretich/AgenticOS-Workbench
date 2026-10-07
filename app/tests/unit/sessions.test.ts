@@ -171,3 +171,19 @@ test("parseStatus reads branch, detached HEAD, changed, renamed, unmerged and ne
     { status: ".M", path: "src/a b.js" }, { status: "R.", path: "new.js" }, { status: "UU", path: "conflict.js" }, { status: "??", path: "notes.md" },
   ] });
 });
+
+test("git: a workspace folder inside another repository (a vault kept in git) is not a repository of its own: nothing to read or commit", async () => {
+  const outer = fs.mkdtempSync(path.join(os.tmpdir(), "aos-sessions-outer-"));
+  const v = path.join(outer, "vault");
+  const plain = path.join(v, "workspaces", "plain");
+  fs.mkdirSync(plain, { recursive: true });
+  const g = (...a: string[]) => execFileSync("git", a, { cwd: v, stdio: "ignore" });
+  g("init", "-q", "-b", "main");
+  fs.writeFileSync(path.join(v, "note.md"), "a vault note\n");
+  fs.writeFileSync(path.join(plain, "a.txt"), "one\n");
+  const git = new GitService({ workspace: (n) => workspaceDir(v, n), enabled: () => true, env: process.env });
+  assert.deepEqual(await git.status("plain"), { ok: true, data: { repo: false, branch: null, detached: false, merging: false, files: [] } });
+  assert.deepEqual(await git.diff("plain", "a.txt"), { ok: false, error: "not a git repository", code: "EROFS" });
+  assert.deepEqual(await git.commit("plain", "Add a"), { ok: false, error: "not a git repository", code: "EROFS" });
+  fs.rmSync(outer, { recursive: true, force: true });
+});
