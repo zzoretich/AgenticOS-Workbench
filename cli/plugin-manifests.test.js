@@ -81,7 +81,7 @@ const CODEX_HOOK_RE = /^env AOS_HOST=codex sh "\$\{PLUGIN_ROOT\}\/bin\/aos" ([a-
 test('.agents/plugins/marketplace.json is the same marketplace, pointing Codex at ./codex-plugin', () => {
   const m = read('.agents/plugins/marketplace.json');
   assert.equal(m.name, read('.claude-plugin/marketplace.json').name);
-  assert.equal(m.interface.displayName, 'AgenticOS Workbench');
+  assert.equal(m.interface.displayName, 'UniDeX');
   assert.deepEqual(m.plugins, [{
     name: 'agenticos',
     source: { source: 'local', path: './codex-plugin' },

@@ -1,5 +1,5 @@
 ---
-description: AgenticOS Workbench maintenance — doctor, status, provider, persona, config (runs the aos launcher)
+description: UniDeX maintenance — doctor, status, provider, persona, config (runs the aos launcher)
 allowed-tools: Bash
 argument-hint: doctor | status | provider [auto|ollama|claude|codex|none] | persona [on|off|rename <name>] | config [list | get <key> | set <key> <value> | unset <key>] | statusline [install | uninstall | status | preview]
 ---
