@@ -25,7 +25,7 @@ const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const argv = process.argv.slice(2);
 const pkg = JSON.parse(fs.readFileSync(path.join(repo, "package.json"), "utf8"));
 const APP_ID = "com.zzoretich.agenticos-workbench";
-const NAME = "AgenticOS Workbench";
+const NAME = pkg.productName; // UniDeX (spec D2)
 const APP = path.join(repo, "dist", "mac-arm64", `${NAME}.app`);
 const DMG = path.join(repo, "dist", `AgenticOS-Workbench-${pkg.version}-arm64.dmg`);
 const RES = path.join(APP, "Contents", "Resources");
@@ -125,7 +125,8 @@ const files = listPackage(asar, { isPack: false }).map((f) => f.replace(/\\/g, "
 const outFiles = files.filter((f) => f.startsWith("/out/") && /\.[a-z0-9]+$/.test(f)).sort();
 const FONTS = ["inter", "jetbrains-mono"].flatMap((stem) => [
   `/out/renderer/fonts/${stem}-OFL.txt`, `/out/renderer/fonts/${stem}-latin-ext-wght-normal.woff2`, `/out/renderer/fonts/${stem}-latin-wght-normal.woff2`]);
-const expectedOut = ["/out/main/index.js", "/out/preload/index.js", "/out/renderer/base.css", "/out/renderer/host.css", "/out/renderer/hud.css",
+const TRAY = ["", "@2x"].map((scale) => `/out/main/trayTemplate${scale}.png`);
+const expectedOut = ["/out/main/index.js", ...TRAY, "/out/preload/index.js", "/out/renderer/base.css", "/out/renderer/host.css", "/out/renderer/hud.css",
   "/out/renderer/hud.js", "/out/renderer/index.html", ...FONTS].sort();
 check("out/ holds the app and nothing else", JSON.stringify(outFiles) === JSON.stringify(expectedOut), outFiles.join(" "));
 check("no source maps", !files.some((f) => f.endsWith(".map")));

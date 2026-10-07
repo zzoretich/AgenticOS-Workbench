@@ -14,8 +14,8 @@ test.describe("sidebar HUD", () => {
 
   test("opens in the right pane with LEDs, model and effort, the live pill and the heartbeat pill", async () => {
     await expect(side()).not.toHaveClass(/is-empty/);
-    await expect(side().locator(".aos-host-tab-title")).toHaveText("Agentic OS");
-    await expect(side().locator(".aos-sb-title")).toHaveText("AgenticOS");
+    await expect(side().locator(".aos-host-tab-title")).toHaveText("UniDeX");
+    await expect(side().locator(".aos-sb-title")).toHaveText("UniDeX");
     await expect(side().locator(".aos-sb-clock")).toHaveText(/^\d{2}:\d{2}:\d{2}$/);
     await expect(side().locator(".aos-hud-leds .aos-pulse-chip", { hasText: "EMBED off" })).toBeVisible();
     const pills = side().locator(".aos-sb-status .aos-pill");

@@ -5,6 +5,7 @@
 // and never sends a command or a CLAUDE.md path.
 
 import type { AosBridge, BootInfo, ClaudeMdPreview, InstallRequest, PersonaAnswers, PreflightReport, SetupCheck, SetupEvent, SetupFixId } from "../../shared/ipc";
+import { BRAND } from "../../shared/brand";
 import { JobTerminal } from "./jobTerminal";
 
 type Step = "check" | "choose" | "persona" | "install" | "finish";
@@ -50,10 +51,10 @@ export function runSetup(root: HTMLElement, aos: AosBridge, info: BootInfo): voi
 
   const shell = root.createDiv({ cls: "aos-setup" });
   const head = shell.createDiv({ cls: "aos-setup-head" });
-  head.createEl("h1", { text: "Set up AgenticOS" });
+  head.createEl("h1", { text: `Set up ${BRAND.name}` });
   head.createEl("p", {
     cls: "aos-setup-sub",
-    text: `AgenticOS Workbench ${info.appVersion}${setup?.payload ? ` · runtime ${setup.payload.version}` : ""}. Nothing is written until you choose Install.`,
+    text: `${BRAND.name} ${info.appVersion}${setup?.payload ? ` · runtime ${setup.payload.version}` : ""}. Nothing is written until you choose Install.`,
   });
   const nav = shell.createDiv({ cls: "aos-setup-steps" });
   const body = shell.createDiv({ cls: "aos-setup-body" });
@@ -150,7 +151,7 @@ export function runSetup(root: HTMLElement, aos: AosBridge, info: BootInfo): voi
   };
 
   function renderCheck(el: HTMLElement): void {
-    el.createEl("h2", { text: "What AgenticOS needs" });
+    el.createEl("h2", { text: `What ${BRAND.name} needs` });
     if (setup?.reason === "no-vault" && setup.configuredVault) {
       const box = el.createDiv({ cls: "aos-setup-callout" });
       box.createSpan({ text: `agenticos.json names ${setup.configuredVault}, which is not there. If it is on a disk that is not connected, connect it and open it; otherwise set up a vault below.` });
@@ -186,7 +187,7 @@ export function runSetup(root: HTMLElement, aos: AosBridge, info: BootInfo): voi
   function renderChoose(el: HTMLElement): void {
     const ready = s.report?.hosts ?? { claude: false, codex: false };
     el.createEl("h2", { text: "Hosts and folder" });
-    el.createEl("p", { cls: "aos-setup-hint", text: "AgenticOS works with Claude Code, Codex, or both. Only the ones that are installed and logged in can be chosen." });
+    el.createEl("p", { cls: "aos-setup-hint", text: `${BRAND.name} works with Claude Code, Codex, or both. Only the ones that are installed and logged in can be chosen.` });
     const hosts = el.createDiv({ cls: "aos-setup-hosts" });
     const options: Array<[Host, string, boolean]> = [["claude", "Claude Code", ready.claude], ["codex", "Codex", ready.codex], ["both", "Both", ready.claude && ready.codex]];
     for (const [id, label, ok] of options) {
@@ -212,7 +213,7 @@ export function runSetup(root: HTMLElement, aos: AosBridge, info: BootInfo): voi
 
   function renderPersona(el: HTMLElement): void {
     el.createEl("h2", { text: "Your Chief of Staff" });
-    el.createEl("p", { cls: "aos-setup-hint", text: "AgenticOS sets up an agent that keeps watch over your work, runs daily duties and files proposals for you to decide. Name it and say how it should work; `aos persona` changes this later." });
+    el.createEl("p", { cls: "aos-setup-hint", text: `${BRAND.name} sets up an agent that keeps watch over your work, runs daily duties and files proposals for you to decide. Name it and say how it should work; \`aos persona\` changes this later.` });
     const form = el.createDiv({ cls: "aos-setup-form" });
     const p = s.persona;
     const field = (label: string, key: "name" | "addressAs" | "voice" | "dutyModel" | "dutyCodexModel", placeholder: string): HTMLInputElement => {
@@ -280,7 +281,7 @@ export function runSetup(root: HTMLElement, aos: AosBridge, info: BootInfo): voi
     if (s.host !== "codex") {
       const sec = el.createDiv({ cls: "aos-setup-section", attr: { "data-section": "claude-md" } });
       sec.createEl("h3", { text: "Connect Claude Code" });
-      sec.createEl("p", { cls: "aos-setup-hint", text: "Claude Code reads AgenticOS's conventions through one line in your CLAUDE.md. AgenticOS adds it only if you say so." });
+      sec.createEl("p", { cls: "aos-setup-hint", text: `Claude Code reads the vault's conventions (AGENTICOS.md) through one line in your CLAUDE.md. ${BRAND.name} adds it only if you say so.` });
       const md = s.claudeMd;
       if (!md) sec.createDiv({ cls: "aos-setup-hint", text: "Your CLAUDE.md could not be read." });
       else {

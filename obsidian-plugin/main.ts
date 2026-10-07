@@ -1,5 +1,6 @@
 import { Plugin, WorkspaceLeaf, TAbstractFile, Events, Notice } from "obsidian";
 import { SidebarHUDView, VIEW_TYPE_SIDEBAR_HUD } from "./src/views/SidebarHUD";
+import { BRAND } from "./src/brand";
 import { MemoryInspectorView, VIEW_TYPE_MEMORY_INSPECTOR, consumePendingMemory } from "./src/views/MemoryInspectorView";
 import { RunInspectorView, VIEW_TYPE_RUN_INSPECTOR, consumePendingRunId } from "./src/views/RunInspectorView";
 import { WorkbenchView, VIEW_TYPE_WORKBENCH, WORKBENCH_TAB_IDS } from "./src/views/WorkbenchView";
@@ -316,7 +317,7 @@ export default class AgenticOSPlugin extends Plugin {
     if (!this.settings.statusBarEnabled) return;
     this.statusBarEl = this.addStatusBarItem();
     this.statusBarEl.addClass("aos-statusbar");
-    this.statusBarEl.setAttr("aria-label", "Agentic OS");
+    this.statusBarEl.setAttr("aria-label", BRAND.name);
     this.statusBarEl.addEventListener("click", () => { void this.activate(VIEW_TYPE_WORKBENCH); });
     void this.refreshStatusBar();
     this.statusBarTimer = window.setInterval(() => { void this.refreshStatusBar(); }, 30000);

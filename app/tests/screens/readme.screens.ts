@@ -39,6 +39,12 @@ function demoVault(): void {
 
 const shot = (win: Page, name: string) => win.screenshot({ path: path.join(OUT, `${name}.png`), scale: "css" });
 
+/** The pictures are light whatever this Mac's appearance (UniDeX D6); one Pulse is taken dark. */
+async function theme(h: AppHandle, source: "light" | "dark"): Promise<void> {
+  await h.app.evaluate((_e, s) => { (globalThis as unknown as { __aosMain: { setTheme(s: string): unknown } }).__aosMain.setTheme(s); }, source);
+  await expect(h.win.locator("body")).toHaveClass(new RegExp(`\\btheme-${source}\\b`));
+}
+
 test.describe.configure({ mode: "serial" });
 test.beforeAll(() => { fs.mkdirSync(OUT, { recursive: true }); });
 
@@ -48,6 +54,7 @@ test.describe("the Workbench", () => {
     restoreFixture();
     // The app's own default: every surface may write (to this throwaway vault), and no READ-ONLY marker shows.
     h = await launchApp({ prepare: demoVault, size: SIZE, env: { AOS_APP_WRITE: undefined } });
+    await theme(h, "light");
   });
   test.afterAll(async () => { await h?.close(); });
 
@@ -82,6 +89,14 @@ test.describe("the Workbench", () => {
     await h.win.waitForTimeout(800);
     await shot(h.win, "files");
   });
+
+  test("pulse, in the dark theme", async () => {
+    await theme(h, "dark");
+    await openTab(h.win, "pulse");
+    await h.win.waitForTimeout(1500);
+    await shot(h.win, "pulse-dark");
+    await theme(h, "light");
+  });
 });
 
 test.describe("the setup wizard, with no install", () => {
@@ -97,6 +112,7 @@ test.describe("the setup wizard, with no install", () => {
       prepare: () => { installSetupStubs(VERSION); fs.rmSync(path.join(FX.claude, "agenticos.json"), { force: true }); },
       env: { AOS_APP_VAULT: undefined, AOS_APP_PAYLOAD: SETUP.payload, AOS_SETUP_PATH: SETUP.bin },
     });
+    await theme(h, "light");
   });
   test.afterAll(async () => { await h?.close(); });
 

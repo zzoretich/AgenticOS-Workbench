@@ -19,7 +19,7 @@ test("the What changed note shows the first time a vault is opened, and not agai
   restoreFixture();
   h = await launchApp({ noted: false });
   const note = h.win.locator(".aos-attach-modal");
-  await expect(note.locator(".modal-title")).toHaveText("AgenticOS Workbench is an app now");
+  await expect(note.locator(".modal-title")).toHaveText("UniDeX is an app now");
   await expect(note.locator(".aos-attach-list li")).toHaveCount(4);
   await note.locator(".aos-attach-ok").click();
   await expect(note).toHaveCount(0);

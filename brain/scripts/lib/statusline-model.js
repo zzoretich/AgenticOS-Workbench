@@ -177,7 +177,8 @@ function ledgerToday(file, now, chunk = LEDGER_CHUNK) {
 function healthOf(vault, providerState) {
   const idx = path.join(vault, 'brain', '_index');
   const line = readText(path.join(idx, 'update-line.txt')) || '';
-  const m = /AgenticOS\s+(\d+\.\d+\.\d+\S*)/.exec(line);
+  // cli/update-check.js renderStatusline: `⬆ UniDeX <v>`; a line written before the rename (UniDeX spec D1) says AgenticOS.
+  const m = /(?:UniDeX|AgenticOS)\s+(\d+\.\d+\.\d+\S*)/.exec(line);
   const session = readText(path.join(idx, 'SESSION.md')) || '';
   let drafts = 0;
   try { drafts = fs.readdirSync(path.join(vault, 'brain', 'memory', 'feedback', '_drafts')).filter((n) => n.endsWith('.md')).length; } catch { /* none */ }

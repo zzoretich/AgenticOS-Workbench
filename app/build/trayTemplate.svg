@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="30" height="16" viewBox="0 0 30 16" fill="none">
+<!-- The menu bar's mark: the UniDeX Line mark (spec D10) as a macOS template image, black on clear, which macOS tints
+     for a light or dark menu bar. scripts/make-icon.cjs renders it to trayTemplate.png (30 × 16) and @2x (60 × 32);
+     scripts/build.mjs copies both beside main's bundle, where src/main/tray.ts loads them. -->
+<!-- The mark's 130 × 46 drawing at 0.215, about 9 px tall to sit on the menu bar's cap height, centred on the canvas. -->
+<g transform="translate(1.025 3.055) scale(0.215)" stroke="#000000" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" fill="none">
+<path d="M6 6V26a14 14 0 0 0 28 0V6 M48 6V40H60a17 17 0 0 0 0-34H48Z M92 6L124 40 M124 6L92 40"/>
+</g>
+</svg>

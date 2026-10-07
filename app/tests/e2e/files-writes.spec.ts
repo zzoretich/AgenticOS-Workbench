@@ -65,7 +65,7 @@ test("the new-note form says why it refuses, and create stays off", async () => 
     await expect(button(win, "create")).toBeDisabled();
   };
   await check("workspaces/harbor-map", "PLAN", "workspaces/harbor-map/PLAN.md already exists");
-  await check("brain/_index", "x", "brain/_index/ is written by AgenticOS itself");
+  await check("brain/_index", "x", "brain/_index/ is written by the runtime itself");
   await check("", "../outside", "a path cannot climb out of the vault (..)");
   await check("notes", "", "a name is required");
 });

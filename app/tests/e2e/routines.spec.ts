@@ -139,7 +139,7 @@ test("with the Routines surface off, on/off, ▶ and apply schedules are refused
   const before = fs.readFileSync(FX.v("brain/routines/weekly-digest.md"), "utf8");
   const syncedAt = readVaultJson<{ syncedAt: string | null }>("brain/_index/routines.json").syncedAt;
   await row("weekly-digest").locator(".aos-rt-rowactions a", { hasText: "off" }).click();
-  await expect(h.win.locator(".notice-container")).toContainText("toggle failed: AgenticOS app: write brain/routines/weekly-digest.md refused; no write surface that allows it is on");
+  await expect(h.win.locator(".notice-container")).toContainText("toggle failed: UniDeX: write brain/routines/weekly-digest.md refused; no write surface that allows it is on");
   expect(await guardWrites(h)).toEqual([...writes, "write brain/routines/weekly-digest.md"]);
   await row("nightly-scan").locator(".aos-rt-rowactions a", { hasText: "▶" }).click();
   await expect(h.win.locator(".notice-container")).toContainText("spawn failed: brain/scripts/routines/run-routine.js");

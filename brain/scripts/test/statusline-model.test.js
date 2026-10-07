@@ -47,7 +47,7 @@ function fixtureVault() {
     { ts: new Date(2026, 8, 27, 23, 0).toISOString(), feature: 'duty:reflect', usd: 5 },
     { ts: iso(11), feature: 'team:dev', usd: 40 },
   ]) + 'not json\n');
-  put(v, 'brain/_index/update-line.txt', '⬆ AgenticOS 0.21.0\n');
+  put(v, 'brain/_index/update-line.txt', '⬆ UniDeX 0.21.0\n');
   put(v, 'brain/_index/provider-state.json', JSON.stringify({ name: 'none', reason: 'claude-not-logged-in' }));
   put(v, 'brain/_index/SESSION.md', '# Session\n\n## Wrap Status\n- Session abc not wrapped (provider: none) — run /wrap.\n');
   put(v, 'brain/memory/feedback/_drafts/a.md', 'x');
@@ -69,6 +69,12 @@ test('build: gates longest-waiting first, live runs from this host only, unread 
   assert.equal(m.needs.flags, 2, 'a `- [ ]` flag and a bare bullet; `- [x]` is closed');
   assert.deepEqual(m.spend, { family: 'duties', usd: 4.2, cap: 6, ratio: 0.7 }, 'yesterday and teams (no cap) are left out');
   assert.deepEqual(m.health, { update: '0.21.0', provider: 'claude-not-logged-in', unwrapped: true, drafts: 2 });
+});
+
+test('health: an update line written before the UniDeX rename still names the version', () => {
+  const v = fs.mkdtempSync(path.join(os.tmpdir(), 'sl-update-'));
+  put(v, 'brain/_index/update-line.txt', '⬆ AgenticOS 0.21.0\n');
+  assert.equal(M.build(v, { now: NOW }).health.update, '0.21.0');
 });
 
 test('build: the vault only ever gains statusline.json (D4)', () => {

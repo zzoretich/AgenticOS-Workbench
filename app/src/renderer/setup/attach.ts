@@ -5,6 +5,7 @@
 
 import { Modal, type App } from "obsidian";
 import type { AosBridge, AttachInfo, UpdateState } from "../../shared/ipc";
+import { BRAND } from "../../shared/brand";
 import { JobTerminal } from "./jobTerminal";
 
 const CHANGES = [
@@ -19,7 +20,7 @@ class WhatChangedModal extends Modal {
 
   onOpen(): void {
     this.modalEl.addClass("aos-attach-modal");
-    this.titleEl.setText("AgenticOS Workbench is an app now");
+    this.titleEl.setText(`${BRAND.name} is an app now`);
     const ul = this.contentEl.createEl("ul", { cls: "aos-attach-list" });
     for (const c of CHANGES) ul.createEl("li", { text: c });
     const foot = this.contentEl.createDiv({ cls: "aos-setup-foot" });
@@ -41,7 +42,7 @@ class RuntimeModal extends Modal {
     this.modalEl.addClass("aos-attach-modal", "aos-runtime-modal");
     this.titleEl.setText("Update the runtime in your vault");
     this.contentEl.createEl("p", {
-      text: `Your vault runs AgenticOS ${this.info.runtimeVersion ?? "(unknown)"}; this app carries ${this.info.payloadVersion}. Updating re-vendors brain/scripts, refreshes the Claude Code and Codex plugins and re-renders your routine schedules. Notes, memory and persona are not touched.`,
+      text: `Your vault's runtime is ${this.info.runtimeVersion ?? "(unknown)"}; this app carries ${this.info.payloadVersion}. Updating re-vendors brain/scripts, refreshes the Claude Code and Codex plugins and re-renders your routine schedules. Notes, memory and persona are not touched.`,
     });
     const status = this.contentEl.createDiv({ cls: "aos-setup-status" });
     const foot = this.contentEl.createDiv({ cls: "aos-setup-foot" });

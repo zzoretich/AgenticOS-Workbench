@@ -42,7 +42,7 @@ export function refuse(kind: GuardEntry["kind"], what: string): Error {
   if (s.log.length > 500) s.log.shift();
   console.warn(`[guard] refused ${kind}: ${what}`);
   const why = kind === "read" ? "outside what the app reads" : "no write surface that allows it is on";
-  const err = new Error(`AgenticOS app: ${what} refused; ${why}`) as NodeJS.ErrnoException;
+  const err = new Error(`UniDeX: ${what} refused; ${why}`) as NodeJS.ErrnoException;
   err.code = "EROFS";
   return err;
 }

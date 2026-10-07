@@ -4,6 +4,7 @@
 import { Setting, SettingTab, type App } from "obsidian";
 import type { AosBridge, ThemeSource } from "../shared/ipc";
 import type { PagePolicy } from "./pagePolicy";
+import { BRAND } from "../shared/brand";
 import { THEME_LABELS, type PageTheme } from "./theme";
 
 export interface AppFacts {
@@ -34,7 +35,7 @@ export class AppSettingTab extends SettingTab {
     const f = this.facts;
     el.empty();
     el.addClass("aos-app-settings");
-    el.createEl("h2", { text: "AgenticOS app" });
+    el.createEl("h2", { text: BRAND.name });
 
     new Setting(el)
       .setName("Appearance")
@@ -44,7 +45,7 @@ export class AppSettingTab extends SettingTab {
     const folder = (name: string, desc: string, p: string) => new Setting(el).setName(name).setDesc(desc)
       .addButton((b) => b.setButtonText("Show in Finder").onClick(() => { f.aos.shell.showItemInFolder(p); }))
       .then((s) => { s.descEl.createDiv({ cls: "aos-app-path", text: p }); });
-    folder("Vault", `The AgenticOS vault this window shows (${f.vaultSource}).`, f.vaultRoot);
+    folder("Vault", `The vault this window shows (${f.vaultSource}).`, f.vaultRoot);
     folder("App data", "The app's own settings and the Workbench plugin's settings. Nothing here is in the vault.", f.userData);
 
     const policy = f.policy();
