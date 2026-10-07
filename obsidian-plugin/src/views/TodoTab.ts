@@ -102,7 +102,7 @@ export class TodoTab {
     const open = this.items.filter((t) => !t.done);
 
     const head = host.createDiv({ cls: "aos-rt-head" });
-    head.createSpan({ cls: "aos-rt-title", text: "TO-DO" });
+    head.createSpan({ cls: "aos-rt-title", text: "To-do" });
     head.createSpan({ cls: "aos-dim aos-rt-count", text: `${open.length} open · ${groups.overdue.length} overdue · ${groups.today.length} today` });
     const actions = head.createDiv({ cls: "aos-rt-actions" });
     const openFile = actions.createEl("button", { cls: "aos-ws-action", text: "open TODO.md" });

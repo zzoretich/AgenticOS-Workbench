@@ -103,7 +103,7 @@ export class ProposalsTab {
     this.md.load();
 
     const head = host.createDiv({ cls: "aos-rt-head" });
-    head.createSpan({ cls: "aos-rt-title", text: "PROPOSALS" });
+    head.createSpan({ cls: "aos-rt-title", text: "Proposals" });
     head.createSpan({ cls: "aos-dim aos-rt-count", text: `${this.proposals.length} pending · ${this.backlog.length} in backlog` });
     const actions = head.createDiv({ cls: "aos-rt-actions" });
     // The persona-flag-closer skill in the user's first host (Claude Code, else Codex): data/aosConfig.ts reviewCommand.

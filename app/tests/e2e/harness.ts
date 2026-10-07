@@ -336,7 +336,7 @@ export function useApp(opts: LaunchOptions = {}): () => AppHandle {
 
 // ── helpers the specs share ──────────────────────────────────────────
 
-export const RAIL_ORDER = ["pulse", "files", "todo", "proposals", "notifications", "spaces", "memory", "runs", "routines", "skills", "agents", "agent-teams", "chat", "term"];
+export const RAIL_ORDER = ["chat", "pulse", "files", "todo", "proposals", "notifications", "spaces", "memory", "runs", "routines", "skills", "agents", "agent-teams", "term"];
 
 export const rail = (win: Page, id: string) => win.locator(`.aos-wb-railbtn[data-tab="${id}"]`);
 export const badge = (win: Page, id: string) => rail(win, id).locator(".aos-wb-railbadge");

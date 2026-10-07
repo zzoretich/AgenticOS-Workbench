@@ -1,4 +1,4 @@
-// Light and dark (UniDeX D6): the page draws in what main resolves the choice to; the ribbon's toggle, the palette,
+// Light and dark (UniDeX D6): the page draws in what main resolves the choice to; the rail's toggle, the palette,
 // App settings and View ▸ Appearance change it; the windows' backgrounds and the tokens follow; and the choice outlives a
 // restart (<userData>/app-settings.json). A spec cannot switch macOS's own appearance, so "Match macOS" is checked as
 // agreeing with what nativeTheme reports.
@@ -52,11 +52,11 @@ test.describe.serial("light and dark", () => {
     expect(await appearance(app())).toEqual(["Match macOS ✓", "Light", "Dark"]);
   });
 
-  test("the ribbon's toggle switches to the opposite, saves it, and the tokens and window follow", async () => {
+  test("the rail's toggle switches to the opposite, saves it, and the tokens and window follow", async () => {
     const { win } = app();
     const before = await bodyTheme(win);
     const next = before === "dark" ? "light" : "dark";
-    const toggle = win.locator(".aos-host-ribbon .aos-host-theme");
+    const toggle = win.locator('.aos-wb-railfoot .aos-wb-railact[data-action="theme"]');
     await expect(toggle).toHaveAttribute("aria-label", `Switch to ${next}`);
     await toggle.click();
     await expect.poll(() => bodyTheme(win)).toBe(next);

@@ -15,7 +15,7 @@ test.describe("sidebar HUD", () => {
   test("opens in the right pane with LEDs, model and effort, the live pill and the heartbeat pill", async () => {
     await expect(side()).not.toHaveClass(/is-empty/);
     await expect(side().locator(".aos-host-tab-title")).toHaveText("Agentic OS");
-    await expect(side().locator(".aos-sb-title")).toHaveText("[ AGENTIC OS ]");
+    await expect(side().locator(".aos-sb-title")).toHaveText("AgenticOS");
     await expect(side().locator(".aos-sb-clock")).toHaveText(/^\d{2}:\d{2}:\d{2}$/);
     await expect(side().locator(".aos-hud-leds .aos-pulse-chip", { hasText: "EMBED off" })).toBeVisible();
     const pills = side().locator(".aos-sb-status .aos-pill");
@@ -75,7 +75,7 @@ test.describe("⌘K omnisearch", () => {
     await expect(prompt.locator(".prompt-input")).toHaveAttribute("placeholder", "Search files, memories, runs, agents, skills, actions…");
     await win.keyboard.press("Escape");
     await expect(win.locator(".modal.prompt")).toHaveCount(0);
-    await win.locator(".aos-wb-omnibtn").click();
+    await win.locator('.aos-wb-railact[data-action="search"]').click();
     await expect(win.locator(".modal.prompt .prompt-input")).toBeVisible();
     await win.keyboard.press("Escape");
   });
@@ -111,7 +111,7 @@ test.describe("⌘K omnisearch", () => {
     await win.locator(".modal.prompt .prompt-input").fill("reflect-week");
     await win.keyboard.press("Enter");
     await expect(rail(win, "runs")).toHaveClass(/is-active/);
-    await expect(win.locator(".aos-wb-drawer .aos-wb-drawertitle")).toHaveText("⌜ run -week-bbbb ⌝");
+    await expect(win.locator(".aos-wb-drawer .aos-wb-drawertitle")).toHaveText("run -week-bbbb");
     await win.locator(".aos-wb-drawer .aos-wb-draweractions a", { hasText: "✕" }).click();
   });
 });
@@ -168,7 +168,7 @@ test.describe("Chat and Term", () => {
   test("Term: a live shell in the vault; + new adds a session; typing runs in it", async () => {
     const { win } = app();
     await openTab(win, "term");
-    await expect(content(win).locator(".aos-term-title")).toHaveText("[ TERMINAL ]");
+    await expect(content(win).locator(".aos-term-title")).toHaveText("Terminal");
     await expect(content(win).locator(".aos-term-error")).toHaveCount(0);   // node-pty loads in the app: no install hint
     await expect.poll(() => terminalText(win), { timeout: 10_000 }).toContain("fixture %");
     const before = await content(win).locator(".aos-term-tab").count();

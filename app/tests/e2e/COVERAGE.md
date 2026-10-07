@@ -16,13 +16,13 @@ list at the top of app-smoke.md is the release process, not app behaviour: it is
 
 | Status | Items |
 |---|---|
-| covered | 91 |
+| covered | 90 |
 | covered in part | 17 |
 | N/A in the app | 39 |
-| not covered | 4 |
+| not covered | 5 |
 | **total** | **151** |
 
-Of the 112 items about the app (151 minus the 39 N/A), 108 are asserted (91 fully, 17 in part); the other 4 are not
+Of the 112 items about the app (151 minus the 39 N/A), 107 are asserted (90 fully, 17 in part); the other 5 are not
 covered, for the reasons below. Every write surface is enabled and tested. The
 "in part" rows need something the fixture or the app lacks (a dispatched seat, a Codex database, the clipboard, the
 OS handing over an `agenticos://` link, a published update). The writes, each surface on through `AOS_APP_WRITE`:
@@ -313,7 +313,7 @@ see below).
 |---|---|---|---|
 | RR1 | The HUD's Omnisearch command registers no default hotkey (the app binds ⌘K to it; ⌘P is the palette) | covered | `shell › commands…` |
 | RR2 | DISK donut and COST DETAIL sparkline render as SVG nodes | covered | `pulse › SYSTEM drawer…` |
-| RR3 | Clock and timestamps follow the OS locale | covered | `shell › the clock and the host chrome follow the OS locale` |
+| RR3 | Timestamps follow the OS locale | not covered | The clock it read went with the top bar (UniDeX D3); each tab formats its own timestamps, and the suite runs in one locale. |
 
 ## Compat gaps found
 

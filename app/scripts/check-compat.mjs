@@ -69,6 +69,8 @@ const lucideName = (id) => id.split("-").filter(Boolean).map((w) => w[0].toUpper
 const iconIds = new Set();
 for (const m of hudText.matchAll(/(?:addRibbonIcon|setIcon)\(([^)]*)\)/g)) for (const q of m[1].matchAll(/"([a-z0-9-]+)"/g)) iconIds.add(q[1]);
 for (const m of hudText.matchAll(/getIcon\(\)[^{]*\{\s*return\s+"([a-z0-9-]+)"/g)) iconIds.add(m[1]);
+// Tables of icons (the Workbench rail: `{ id, icon: "bell", label }`), which reach setIcon through a variable.
+for (const m of hudText.matchAll(/\bicon:\s*"([a-z0-9-]+)"/g)) iconIds.add(m[1]);
 const missingIcons = [...iconIds].filter((id) => !icons[lucideName(ICON_ALIASES[id] ?? id)]);
 
 const missingImports = [...imported.keys()].filter((n) => !exported.has(n));

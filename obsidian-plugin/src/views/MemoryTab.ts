@@ -176,7 +176,7 @@ export class MemoryTab {
     const container = parent.createDiv({ cls: "aos-mem-graphhost aos-cortex" });
 
     const header = container.createDiv({ cls: "aos-cortex-header" });
-    header.createSpan({ cls: "aos-title", text: "[ CORTEX // KNOWLEDGE GRAPH ]" });
+    header.createSpan({ cls: "aos-title", text: "Knowledge graph" });
     const chips = header.createDiv({ cls: "aos-cortex-chips" });
     (["memory", "pattern", "session", "agent"] as NodeKind[]).forEach((k) => {
       const chip = chips.createEl("button", { cls: "aos-cortex-chip", text: k });

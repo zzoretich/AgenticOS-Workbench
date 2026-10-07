@@ -14,7 +14,7 @@ Run before tagging a release, in the AgenticOS Workbench app on a vault created 
 ## Install paths
 
 - [ ] Open the app on the vault: the Workbench draws on Pulse with no error, and a dev run (`npm start` in `app/`) logs `[host] AgenticOS HUD <version> loaded` in its developer tools.
-- [ ] The settings window's Agentic OS tab (⚙ at the ribbon's foot, or AgenticOS Workbench ▸ App Settings… ⌘⇧,) shows the Paths section as pickers: Vault root on "this vault (…)", Claude config dir on "auto (…)", Node binary on "auto" with the installed nodes listed; **Probe** picks a path and shows a notice.
+- [ ] The settings window's Agentic OS tab (App settings at the Workbench rail's foot, or AgenticOS Workbench ▸ App Settings… ⌘⇧,) shows the Paths section as pickers: Vault root on "this vault (…)", Claude config dir on "auto (…)", Node binary on "auto" with the installed nodes listed; **Probe** picks a path and shows a notice.
 - [ ] Provider row reflects `provider-state.json` (name + reason); the refresh icon re-reads it.
 
 ## The app
@@ -26,7 +26,7 @@ Run before tagging a release, in the AgenticOS Workbench app on a vault created 
 - [ ] The settings an Obsidian-era vault kept in `.obsidian/plugins/agentic-os/data.json` are in effect on first start, and `~/Library/Application Support/AgenticOS Workbench/plugins/agentic-os.json` holds them before you change anything.
 - [ ] AgenticOS Workbench ▸ Check for Updates… checks GitHub Releases (a release build only; greyed out with the reason when `updates.check` is false); a downloaded update shows **Restart to update** in the status bar and the menu.
 - [ ] The menubar icon opens the sidebar HUD in a popover; closing the window hides it and ⌘Q quits; `aos doctor`'s `workbench app` row names the app and its version.
-- [ ] Light and dark: the app draws in macOS's appearance and follows it when it changes (System Settings ▸ Appearance) while App settings ▸ **Appearance** is **Match macOS**; the ribbon's sun/moon toggle, the palette's **Toggle light and dark** and View ▸ **Appearance** switch it; the choice survives a restart; the window, the tray popover, the Term tab and the wizard's terminal switch with it.
+- [ ] Light and dark: the app draws in macOS's appearance and follows it when it changes (System Settings ▸ Appearance) while App settings ▸ **Appearance** is **Match macOS**; the rail's sun/moon toggle, the palette's **Toggle light and dark** and View ▸ **Appearance** switch it; the choice survives a restart; the window, the tray popover, the Term tab and the wizard's terminal switch with it.
 - [ ] Both themes read well: every tab in light and in dark has no text you cannot read, a status keeps its colour's meaning (green ok, amber a warning, red breaking or failed, blue live or running, violet waiting on you, grey off), and the type is Inter, with numbers and code in JetBrains Mono.
 
 ## Settings
@@ -229,4 +229,4 @@ Run on a machine with the `codex` CLI logged in, after `aos init --host codex` (
 
 - [ ] The HUD's Omnisearch command registers no default hotkey; the app binds ⌘K to it (View ▸ Search…), and ⌘P opens the command palette.
 - [ ] DISK donut and COST DETAIL sparkline render (SVG nodes, no innerHTML) in the SYSTEM drawer.
-- [ ] Clock and timestamps follow the OS locale.
+- [ ] Timestamps follow the OS locale (the Workbench has no clock since UniDeX).

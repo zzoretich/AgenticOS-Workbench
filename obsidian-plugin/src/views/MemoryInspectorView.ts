@@ -44,7 +44,7 @@ export class MemoryInspectorView extends ItemView {
     root.addClass("aos-root", "aos-memscope");
 
     const header = root.createDiv({ cls: "aos-memscope-header" });
-    header.createSpan({ cls: "aos-title", text: "[ MEMORY INSPECTOR ]" });
+    header.createSpan({ cls: "aos-title", text: "Memory inspector" });
 
     if (!this.memoryPath) {
       root.createDiv({ cls: "aos-dim", text: "no memory selected" });

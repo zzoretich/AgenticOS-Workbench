@@ -202,7 +202,7 @@ export class RunsTab {
     const container = host.createDiv({ cls: "aos-staff" });
 
     const header = container.createDiv({ cls: "aos-staff-header" });
-    header.createSpan({ cls: "aos-title", text: "[ STAFF ROSTER ]" });
+    header.createSpan({ cls: "aos-title", text: "Staff roster" });
     header.createSpan({ cls: "aos-dim", text: `${this.staff.length} agents · live tail ${this.plugin.hb.getStatus().up ? "active" : "idle"}` });
 
     if (this.staff.length === 0) {

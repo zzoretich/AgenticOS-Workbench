@@ -111,7 +111,7 @@ export class RoutinesTab {
     this.rows = buildRows(this.routines, this.state, now, this.dutyLogs);
 
     const head = host.createDiv({ cls: "aos-rt-head" });
-    head.createSpan({ cls: "aos-rt-title", text: "ROUTINES" });
+    head.createSpan({ cls: "aos-rt-title", text: "Routines" });
     head.createSpan({ cls: "aos-dim aos-rt-count", text: `${this.rows.filter((r) => r.routine.enabled).length} on · ${this.rows.length} total` });
     const actions = head.createDiv({ cls: "aos-rt-actions" });
     const newBtn = actions.createEl("button", { cls: "aos-ws-action", text: "+ new" });
@@ -231,7 +231,7 @@ export class RoutinesTab {
     const draft: RoutineDraft = existing
       ? (() => { const { errors, ...rest } = existing; void errors; return { ...rest, body: existing.body } as RoutineDraft; })()
       : { slug: "", schema: 1, name: "", kind: "prompt", schedule: "0 9 * * 1-5", enabled: true, body: "" };
-    this.view.openDrawer(existing ? `EDIT ${existing.slug}` : "NEW ROUTINE", (host) => this.renderEditor(host, draft, existing));
+    this.view.openDrawer(existing ? `Edit ${existing.slug}` : "New routine", (host) => this.renderEditor(host, draft, existing));
   }
 
   private renderEditor(host: HTMLElement, draft: RoutineDraft, existing: Routine | null): void {

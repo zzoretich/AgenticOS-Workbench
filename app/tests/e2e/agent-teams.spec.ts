@@ -18,7 +18,7 @@ const view = (name: string) => C().locator(".aos-at-view", { hasText: name });
 
 test.beforeEach(async () => { await openTab(app().win, "agent-teams"); });
 
-test("rail: ⁂ right after Agents with an amber count of pending gates", async () => {
+test("rail: Agent Teams right after Agents with a count of pending gates", async () => {
   const { win } = app();
   await expect(rail(win, "agent-teams").locator(".aos-wb-raillabel")).toHaveText("Agent Teams");
   await expect(badge(win, "agent-teams")).toHaveText("2");

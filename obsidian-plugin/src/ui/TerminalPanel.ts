@@ -60,7 +60,7 @@ export class TerminalPanel {
     // header
     this.headerEl = host.createDiv({ cls: "aos-term-header" });
     const left = this.headerEl.createDiv({ cls: "aos-term-header-left" });
-    left.createSpan({ cls: "aos-term-title", text: "[ TERMINAL ]" });
+    left.createSpan({ cls: "aos-term-title", text: "Terminal" });
     this.tabsEl = this.headerEl.createDiv({ cls: "aos-term-tabs" });
 
     const right = this.headerEl.createDiv({ cls: "aos-term-header-right" });

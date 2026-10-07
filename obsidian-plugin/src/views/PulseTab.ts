@@ -268,12 +268,12 @@ export class PulseTab {
     const sysLink = sys.createEl("a", { cls: "aos-pulse-rowlabel aos-link", text: "SYSTEM ▸", href: "#" });
     sysLink.addEventListener("click", (e) => {
       e.preventDefault();
-      this.view.openDrawer("SYSTEM", (h) => { void renderSystemDrawer(this.plugin, h); });
+      this.view.openDrawer("System", (h) => { void renderSystemDrawer(this.plugin, h); });
     });
 
     // ── fix queue ──
     const fq = host.createDiv({ cls: "aos-pulse-fixq" });
-    fq.createDiv({ text: `⌜ FIX QUEUE (${this.queue.length}) ⌝`, cls: "aos-pulse-fixq-title" });
+    fq.createDiv({ text: `Fix queue (${this.queue.length})`, cls: "aos-pulse-fixq-title" });
     if (this.queue.length === 0) {
       fq.createDiv({ text: "nothing to fix — all pipelines reporting clean", cls: "aos-dim" });
     }
@@ -287,7 +287,7 @@ export class PulseTab {
 
     // ── recently auto-promoted ──
     const trail = host.createDiv({ cls: "aos-trail" });
-    trail.createDiv({ text: "⌜ RECENTLY AUTO-PROMOTED ⌝", cls: "aos-trail-title" });
+    trail.createDiv({ text: "Recently auto-promoted", cls: "aos-trail-title" });
     if (this.trailRows.length === 0) {
       trail.createDiv({ text: "nothing auto-promoted yet", cls: "aos-dim" });
     }
@@ -337,7 +337,7 @@ export class PulseTab {
   // call per click — no behavior change.
   private renderCommandDeck(parent: HTMLElement): void {
     const wrap = parent.createDiv({ cls: "aos-deck aos-pulse-deck" });
-    wrap.createSpan({ cls: "aos-deck-label", text: "[ COMMAND DECK ]" });
+    wrap.createSpan({ cls: "aos-deck-label", text: "Commands" });
     const list = wrap.createDiv({ cls: "aos-deck-list" });
     for (const cmd of COMMAND_REGISTRY) {
       const btn = list.createEl("button", { cls: "aos-deck-btn" });

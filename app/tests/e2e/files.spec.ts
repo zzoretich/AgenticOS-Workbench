@@ -40,7 +40,7 @@ test.beforeEach(async () => {
 test("Files sits second on the rail and lists the vault's top level, folders first", async () => {
   const { win } = app();
   await expect(rail(win, "files")).toHaveClass(/is-active/);
-  await expect(content(win).locator(".aos-rt-title")).toHaveText("FILES");
+  await expect(content(win).locator(".aos-rt-title")).toHaveText("Files");
   await expect(content(win).locator(".aos-rt-count")).toHaveText(/^\d+ files$/);
   expect(await names(win)).toEqual(topLevel());
 });
@@ -120,7 +120,7 @@ test("with the Files surface off, a new note is refused and a trash refused: not
   const before = (await h.guard()).length;
   await content(win).locator(".aos-rt-actions button", { hasText: "+ note" }).click();
   const d = drawer(win);
-  await expect(d.locator(".aos-wb-drawertitle")).toHaveText("⌜ NEW NOTE ⌝");
+  await expect(d.locator(".aos-wb-drawertitle")).toHaveText("New note");
   const [folder, name] = [d.locator(".aos-rt-input").nth(0), d.locator(".aos-rt-input").nth(1)];
   // The name first: the folder field has a suggestion list, and leaving it with the list open can commit a suggestion.
   await name.fill("first idea");

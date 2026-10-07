@@ -135,7 +135,7 @@ test.describe("Memory", () => {
     const { win } = app();
     await C().locator(".aos-mem-row", { hasText: "Tide API notes" }).click();
     const d = drawer(win);
-    await expect(d.locator(".aos-wb-drawertitle")).toHaveText("⌜ Tide API notes ⌝");
+    await expect(d.locator(".aos-wb-drawertitle")).toHaveText("Tide API notes");
     await expect(d.locator(".aos-mem-fmrow")).toHaveText([/^pathbrain\/memory\/reference\/tide-api-notes\.md$/, /^typereference$/, /^created\d{4}-\d{2}-\d{2}$/, /^updated\d{4}-\d{2}-\d{2}$/, /^reviewed—$/]);
     await expect(d.locator(".aos-memscope-body li")).toHaveText(["Rate limit: 60 requests a minute.", "Station ids are five digits."]);
     await expect(d.locator(".aos-memscope-backrow")).toContainText(["MEMORY.md"]);
@@ -162,7 +162,7 @@ test.describe("Memory", () => {
   test("graph: the Cortex renders nodes and edges; daily notes under dailyNote.layout are session nodes", async () => {
     const { win } = app();
     await C().locator(".aos-mem-chip", { hasText: "◈ graph" }).click();
-    await expect(C().locator(".aos-cortex-header .aos-title")).toHaveText("[ CORTEX // KNOWLEDGE GRAPH ]");
+    await expect(C().locator(".aos-cortex-header .aos-title")).toHaveText("Knowledge graph");
     await expect(C().locator(".aos-cortex-stats")).toHaveText(/^\d+ nodes · \d+ edges$/);
     await expect(C().locator(".aos-cortex-chips button")).toHaveText(["memory", "pattern", "session", "agent"]);
     const kinds = await win.evaluate(() => {
@@ -211,7 +211,7 @@ test.describe("Runs", () => {
     const { win } = app();
     await C().locator(".aos-runs-row", { hasText: "standup" }).click();
     const d = drawer(win);
-    await expect(d.locator(".aos-wb-drawertitle")).toHaveText("⌜ run andup-cccc ⌝");
+    await expect(d.locator(".aos-wb-drawertitle")).toHaveText("run andup-cccc");
     await expect(d.locator(".aos-ri-status")).toHaveText("error");
     await expect(d.locator(".aos-ri-status")).toHaveClass(/aos-text-rose/);
     await expect(d.locator(".aos-ri-stat-l")).toHaveText(["duration", "cost", "turns", "tools", "subagents"]);
@@ -239,7 +239,7 @@ test.describe("Runs", () => {
     await C().locator(".aos-runs-row", { hasText: "reflect-week" }).click();
     await drawer(win).locator(".aos-wb-draweractions a[aria-label='Open in split']").click();
     const leaf = win.locator(".aos-host-pane.is-split .workspace-leaf-content[data-type='agentic-os-run-inspector']");
-    await expect(leaf).toContainText("[ RUN INSPECTOR ]");
+    await expect(leaf).toContainText("Run inspector");
     await expect(leaf).toContainText("reflect-week");
     await expect(leaf).toContainText("TIMELINE · 3 events");
     await leaf.getByText("▸ REPLY").click();
@@ -250,7 +250,7 @@ test.describe("Runs", () => {
   test("⌬ agents: the staff roster from brain/agents heartbeats", async () => {
     await C().locator(".aos-runs-chip", { hasText: "⌬ agents" }).click();
     const staff = fs.readdirSync(FX.v("brain/agents")).filter((d) => fs.existsSync(FX.v(`brain/agents/${d}/heartbeat.json`))).sort();
-    await expect(C().locator(".aos-staff-header .aos-title")).toHaveText("[ STAFF ROSTER ]");
+    await expect(C().locator(".aos-staff-header .aos-title")).toHaveText("Staff roster");
     await expect(C().locator(".aos-staff-card .aos-staff-name")).toHaveText(staff);
     await expect(C().locator(".aos-staff-header .aos-dim")).toContainText(`${staff.length} agents · live tail`);
     await C().locator("input.aos-runs-filter").fill("team-");

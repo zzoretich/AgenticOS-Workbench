@@ -99,7 +99,7 @@ export class NotificationsTab {
 
     const badge = unreadBadge(this.rows);
     const head = host.createDiv({ cls: "aos-rt-head" });
-    head.createSpan({ cls: "aos-rt-title", text: "NOTIFICATIONS" });
+    head.createSpan({ cls: "aos-rt-title", text: "Notifications" });
     head.createSpan({ cls: "aos-dim aos-rt-count", text: `${badge.count} unread · ${this.rows.filter((r) => !r.archived).length} total` });
     const actions = head.createDiv({ cls: "aos-rt-actions" });
     if (badge.count) {

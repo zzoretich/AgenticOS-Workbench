@@ -220,7 +220,7 @@ test("save rewrites an edited routine and the sync moves its schedule; saving it
   const original = plistText("nightly-scan");
   let before = state().syncedAt;
   await act(win, "nightly-scan", "✎").click();
-  await expect(drawer(win).locator(".aos-wb-drawertitle")).toHaveText("⌜ EDIT nightly-scan ⌝");
+  await expect(drawer(win).locator(".aos-wb-drawertitle")).toHaveText("Edit nightly-scan");
   await expect(field(win, /^slug/).locator("input")).toBeDisabled();
   await field(win, /^schedule \(cron/).locator("input").fill("45 3 * * *");
   await field(win, /^timeout seconds/).locator("input").fill("600");
