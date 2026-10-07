@@ -10,7 +10,7 @@ All notable changes to UniDeX (AgenticOS Workbench before 1.1). Versions follow 
 ## [1.1.0] — 2026-10-07
 
 ### Upgrading
-- The app is now called UniDeX. An updated install keeps its file name, `AgenticOS Workbench.app`; rename it in Finder if you like. Nothing depends on it.
+- The app is now called UniDeX, and this update renames it in Applications to **UniDeX.app**. After this one update it does not reopen by itself: open **UniDeX** from Applications or Spotlight. Your settings, vault and runtime carry over, and later updates reopen it as before. *(Corrected after the release: these notes first said the file kept its old name.)*
 
 ### Added
 - **Light and dark.** The Workbench app now has a light theme as well as the dark one, and follows macOS's appearance as it changes. The sun and moon button at the foot of the ribbon, **Toggle light and dark** in the command palette and View ▸ **Appearance** switch it; App settings ▸ **Appearance** goes back to **Match macOS**. The choice is kept in the app's data and outlives a restart.
