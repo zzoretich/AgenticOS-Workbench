@@ -203,7 +203,8 @@ export class TodoTab {
         else if (e.key === "Escape") { e.preventDefault(); this.editing = null; this.render(); }
       });
       input.addEventListener("blur", () => { if (this.editing === t.raw) void save(); });
-      window.setTimeout(() => { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }, 0);
+      // The row is already in the tab, so focus now: a deferred caret move can land between a select-all and the typing.
+      input.focus(); input.setSelectionRange(input.value.length, input.value.length);
       return;
     }
 

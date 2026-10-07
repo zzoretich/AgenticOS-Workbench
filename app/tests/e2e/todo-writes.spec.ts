@@ -103,6 +103,7 @@ test("edit saves on Enter; the priority button cycles; the date picker sets 📅
   await row(win, "Draft the release notes").locator(".aos-td-text").dblclick();
   const edit = td(win).locator("input.aos-td-edit");
   await expect(edit).toHaveValue(`Draft the release notes 📅 ${day(1)} #harbor`);
+  await expect(edit).toBeFocused();
   await edit.fill(`Draft the release notes for 0.22 📅 ${day(1)} #harbor`);
   await edit.press("Enter");
   let want = pristine().replace(`- [ ] Draft the release notes 📅 ${day(1)} #harbor`, `- [ ] Draft the release notes for 0.22 📅 ${day(1)} #harbor`);
@@ -132,6 +133,45 @@ test("edit saves on Enter; the priority button cycles; the date picker sets 📅
   await win.locator(".modal button.mod-cta", { hasText: "Delete" }).click();
   await expect.poll(onDisk).toBe(want.replace(LAST_OPEN, ""));
   await expect(row(win, "Sort the old survey photos")).toHaveCount(0);
+});
+
+test("the inline editor defers nothing: typing over a select-all replaces the text, however late the page's timers run", async () => {
+  const { win } = app();
+  // fill() is a select-all and then the typing, two steps. Hold this page's zero-delay timers, as a loaded runner
+  // can, and run them in between: a caret move the editor deferred to one would collapse the selection, and the
+  // new text would be appended to the old.
+  await win.evaluate(() => {
+    const w = window as unknown as Record<string, unknown>;
+    const real = window.setTimeout.bind(window);
+    const held: (() => void)[] = [];
+    w.__held = held;
+    w.__setTimeout = window.setTimeout;
+    w.setTimeout = (fn: (...a: unknown[]) => void, ms?: number, ...args: unknown[]) => {
+      if (ms) return real(fn, ms, ...args);
+      held.push(() => fn(...args));
+      return 0;
+    };
+  });
+  const text = `Draft the release notes for 0.22 📅 ${day(1)} #harbor`;
+  try {
+    await row(win, "Draft the release notes").locator(".aos-td-text").dblclick();
+    const edit = td(win).locator("input.aos-td-edit");
+    await edit.selectText();
+    await win.evaluate(() => { for (const f of ((window as unknown as Record<string, unknown>).__held as (() => void)[]).splice(0)) f(); });
+    await win.keyboard.insertText(text);
+    await expect(edit).toHaveValue(text);
+  } finally {
+    await win.evaluate(() => {
+      const w = window as unknown as Record<string, unknown>;
+      w.setTimeout = w.__setTimeout;
+      for (const f of (w.__held as (() => void)[]).splice(0)) f();
+      delete w.__setTimeout;
+      delete w.__held;
+    });
+  }
+  await td(win).locator("input.aos-td-edit").press("Escape");
+  await expect(td(win).locator("input.aos-td-edit")).toHaveCount(0);
+  expect(onDisk()).toBe(pristine());
 });
 
 test("a tick made in the other HUD shows here while the tab is open, and the next edit applies to the new text", async () => {
