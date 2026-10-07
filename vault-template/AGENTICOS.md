@@ -1,6 +1,6 @@
 # AgenticOS — memory conventions for Claude Code and Codex CLI
 
-> Under Claude Code this file is referenced from your CLAUDE.md as `@<vault>/AGENTICOS.md` (the installer prints the exact line); under Codex CLI a SessionStart hook injects it. This vault is plain Markdown: the agent's second brain, shown by the AgenticOS Workbench app. Paths below are relative to the vault root; `aos <name>` is the launcher installed by `aos init` (fallback: `sh "${CLAUDE_PLUGIN_ROOT}/bin/aos" <name>` under Claude Code, `sh <vault>/brain/scripts/bin/aos <name>` anywhere).
+> Under Claude Code this file is referenced from your CLAUDE.md as `@<vault>/AGENTICOS.md` (the installer prints the exact line); under Codex CLI a SessionStart hook injects it. This vault is plain Markdown: the agent's second brain, shown by the UniDeX app. Paths below are relative to the vault root; `aos <name>` is the launcher installed by `aos init` (fallback: `sh "${CLAUDE_PLUGIN_ROOT}/bin/aos" <name>` under Claude Code, `sh <vault>/brain/scripts/bin/aos <name>` anywhere).
 
 ## Memory System (3-file rule)
 
@@ -49,7 +49,7 @@ Under Codex CLI every `/name` below is the plugin skill `$agenticos:name` (`$age
 
 ## Providers
 
-`provider` in `agenticos.json` (`aos provider <mode>`): `auto` (default) picks `ollama` when `127.0.0.1:11434` answers, else `claude` (headless `claude -p --model haiku`, capped per call and per day, ledgered in `brain/_index/provider-spend.jsonl`), else `codex` when Codex is a wired host (headless `codex exec`, spend estimated from its token counts, same caps and ledger), else `none`. Under `none`, background summaries are heuristic, session-end extraction is skipped, and `/wrap` does the extraction in-session. The Workbench app never calls a model itself. `aos status` shows the resolved provider, today's spend against each cap, and the pipeline ledger.
+`provider` in `agenticos.json` (`aos provider <mode>`): `auto` (default) picks `ollama` when `127.0.0.1:11434` answers, else `claude` (headless `claude -p --model haiku`, capped per call and per day, ledgered in `brain/_index/provider-spend.jsonl`), else `codex` when Codex is a wired host (headless `codex exec`, spend estimated from its token counts, same caps and ledger), else `none`. Under `none`, background summaries are heuristic, session-end extraction is skipped, and `/wrap` does the extraction in-session. The UniDeX app never calls a model itself. `aos status` shows the resolved provider, today's spend against each cap, and the pipeline ledger.
 
 ## Routines
 
