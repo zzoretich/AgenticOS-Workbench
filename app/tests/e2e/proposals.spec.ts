@@ -108,11 +108,13 @@ test("BACKLOG lists persona/backlog.md newest first and opens an entry's body", 
   await expect(table.locator(".aos-rt-name > div:first-child")).toHaveText([...e].reverse().map((b) => b.slug));
   await expect(table.locator(".aos-pr-age").first()).toHaveText(/^accepted \d{4}-\d{2}-\d{2} by user$/);
   await table.locator(".aos-pr-row").first().click();
-  await expect(table.locator(".aos-pr-md")).toContainText("A legend for chart symbols.");
+  // The entry opens in the reading pane beside the groups (UniDeX D4).
+  const reader = P().locator(".aos-pr-reader");
+  await expect(reader.locator(".aos-pr-md")).toContainText("A legend for chart symbols.");
   // Its proposal was filed, rendered and accepted: the page outlives the file, so the entry still links it.
-  const page = table.locator(".aos-rt-rowactions a", { hasText: "Open the proposal in browser" });
+  const page = reader.locator(".aos-rt-rowactions a", { hasText: "Open the proposal in browser" });
   await expect(page).toHaveAttribute("title", /brain\/_index\/proposals\/\d{4}-\d{2}-\d{2}-chart-legend\.html$/);
-  await table.locator("a", { hasText: "Open backlog" }).click();
+  await reader.locator("a", { hasText: "Open backlog" }).click();
   await expect(notePath(win)).toHaveText("persona/backlog.md");
   await closeNotes(win);
   await table.locator(".aos-pr-row").first().click();

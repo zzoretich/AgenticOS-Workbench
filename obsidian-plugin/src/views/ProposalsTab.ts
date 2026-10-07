@@ -38,7 +38,8 @@ export class ProposalsTab {
   private backlog: BacklogEntry[] = [];
   private streak: Record<string, number> = {};
   private pages: string[] = [];               // file names in PAGES_DIR (spec 2026-09-22-proposal-pages D7)
-  private expanded = new Set<string>();
+  /** The proposal or backlog idea open in the reading pane (UniDeX D4): `p:<file>` or `b:<slug>`, or none. */
+  private selected: string | null = null;
   private collapsed = new Set<Group>();
   private md: Component | null = null;
   private listenersRegistered = false;
@@ -124,22 +125,32 @@ export class ProposalsTab {
       });
     }
 
-    const pending = this.group(host, "pending", `PENDING (${this.proposals.length})`);
+    // The groups on the left, the selected proposal or idea in the reading pane on the right (UniDeX D4).
+    const split = host.createDiv({ cls: "aos-split" });
+    const list = split.createDiv({ cls: "aos-split-list" });
+    const pending = this.group(list, "pending", `PENDING (${this.proposals.length})`);
     if (pending) {
       if (!this.proposals.length) pending.createDiv({ cls: "aos-inv-row aos-dim", text: "Nothing pending — the Chief of Staff files proposals from its reflect duties." });
       for (const p of this.proposals) this.renderProposal(pending, p);
     }
-    const backlog = this.group(host, "backlog", `BACKLOG (${this.backlog.length})`);
+    const backlog = this.group(list, "backlog", `BACKLOG (${this.backlog.length})`);
     if (backlog) {
       if (!this.backlog.length) backlog.createDiv({ cls: "aos-inv-row aos-dim", text: "No accepted ideas yet — accepting a workflow or product proposal adds it here." });
       for (const b of this.backlog) this.renderBacklog(backlog, b);
     }
     const rows = historyRows(this.ledger);
-    const history = this.group(host, "history", "HISTORY");
+    const history = this.group(list, "history", "HISTORY");
     if (history) {
       if (!rows.length) history.createDiv({ cls: "aos-inv-row aos-dim", text: "No decisions recorded yet." });
       for (const r of rows) this.renderHistory(history, r);
     }
+    const reader = split.createDiv({ cls: "aos-split-detail aos-pr-reader" });
+    const sel = this.selected;
+    const openP = sel?.startsWith("p:") ? this.proposals.find((x) => `p:${x.name}` === sel) : undefined;
+    const openB = sel?.startsWith("b:") ? this.backlog.find((x) => `b:${x.slug}` === sel) : undefined;
+    if (openP) this.renderProposalDetail(reader, openP);
+    else if (openB) this.renderBacklogDetail(reader, openB);
+    else reader.createDiv({ cls: "aos-reader-empty", text: "Select a proposal or a backlog idea to read it." });
   }
 
   /** A collapsible group; returns its table, or null while collapsed. */
@@ -153,8 +164,8 @@ export class ProposalsTab {
 
   private renderProposal(table: HTMLElement, p: Proposal): void {
     const key = `p:${p.name}`;
-    const open = this.expanded.has(key);
-    const row = table.createDiv({ cls: "aos-inv-row aos-inv-row-clickable aos-pr-row" });
+    const open = this.selected === key;
+    const row = table.createDiv({ cls: `aos-inv-row aos-inv-row-clickable aos-pr-row${open ? " is-selected" : ""}` });
     row.createSpan({ cls: "aos-pr-caret aos-dim", text: open ? "▾" : "▸" });
     const name = row.createDiv({ cls: "aos-rt-name" });
     name.createDiv({ text: p.slug });
@@ -172,9 +183,14 @@ export class ProposalsTab {
     }
     if (p.lint.length) row.createSpan({ cls: "aos-text-amber aos-pr-lint", text: `⚠ ${p.lint.length}`, attr: { title: p.lint.join("\n") } });
     row.addEventListener("click", () => { this.toggle(key); });
-    if (!open) return;
+  }
 
-    const d = table.createDiv({ cls: "aos-pr-detail" });
+  /** The reading pane for a pending proposal: its page, what it needs, What / Why / Risk and the premises. */
+  private renderProposalDetail(reader: HTMLElement, p: Proposal): void {
+    const head = reader.createDiv({ cls: "aos-reader-head" });
+    head.createDiv({ cls: "aos-reader-title", text: p.slug });
+    head.createDiv({ cls: "aos-reader-meta", text: p.target });
+    const d = reader.createDiv({ cls: "aos-pr-detail" });
     const page = pageFor(p.name);
     if (this.pages.includes(page.slice(PAGES_DIR.length + 1))) this.pageLink(d.createDiv({ cls: "aos-pr-open" }), page, "Open the proposal in browser");
     else d.createDiv({ cls: "aos-pr-open aos-dim", text: "The proposal's HTML page appears after the next scan." });
@@ -202,8 +218,8 @@ export class ProposalsTab {
 
   private renderBacklog(table: HTMLElement, b: BacklogEntry): void {
     const key = `b:${b.slug}`;
-    const open = this.expanded.has(key);
-    const row = table.createDiv({ cls: "aos-inv-row aos-inv-row-clickable aos-pr-row" });
+    const open = this.selected === key;
+    const row = table.createDiv({ cls: `aos-inv-row aos-inv-row-clickable aos-pr-row${open ? " is-selected" : ""}` });
     row.createSpan({ cls: "aos-pr-caret aos-dim", text: open ? "▾" : "▸" });
     const name = row.createDiv({ cls: "aos-rt-name" });
     name.createDiv({ text: b.slug });
@@ -212,8 +228,14 @@ export class ProposalsTab {
     if (b.surface) row.createSpan({ cls: "aos-pill aos-pill-dim", text: b.surface });
     row.createSpan({ cls: "aos-dim aos-pr-age", text: b.accepted ? `accepted ${b.accepted}` : `filed ${b.filed}` });
     row.addEventListener("click", () => { this.toggle(key); });
-    if (!open) return;
-    const d = table.createDiv({ cls: "aos-pr-detail" });
+  }
+
+  /** The reading pane for a backlog idea: its notes, its page and the backlog file. */
+  private renderBacklogDetail(reader: HTMLElement, b: BacklogEntry): void {
+    const head = reader.createDiv({ cls: "aos-reader-head" });
+    head.createDiv({ cls: "aos-reader-title", text: b.slug });
+    if (b.target) head.createDiv({ cls: "aos-reader-meta", text: b.target });
+    const d = reader.createDiv({ cls: "aos-pr-detail" });
     if (b.body && this.md) void MarkdownRenderer.renderMarkdown(b.body, d.createDiv({ cls: "aos-pr-md" }), BACKLOG_PATH, this.md);
     const links = d.createDiv({ cls: "aos-rt-rowactions" });
     const page = pageForSlug(this.pages, b.slug);
@@ -236,7 +258,7 @@ export class ProposalsTab {
   }
 
   private toggle(key: string): void {
-    if (this.expanded.has(key)) this.expanded.delete(key); else this.expanded.add(key);
+    this.selected = this.selected === key ? null : key;
     this.render();
   }
 

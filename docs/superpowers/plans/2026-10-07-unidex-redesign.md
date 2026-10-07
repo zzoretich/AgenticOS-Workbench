@@ -53,7 +53,7 @@ PR 1 merged first (#82), so PR 2 builds on `main`. It is split for review:
   - `Pill.ts`: tone and label, used everywhere.
   - Button roles: primary (inverted), secondary and quiet.
 - [x] **S3 Notifications.** An inbox in the pane and the reading pane in the workspace, replacing inline expand. Arrow keys move through the list. Mark read/unread, archive, ▲▼ and Deep dive stay.
-- [ ] **S4 Panes for the other list tabs.** Proposals, Runs (inspector in the workspace), Memory, Files (tree), Spaces (already split) and the Pulse sections.
+- [x] **S4 Panes for the other list tabs.** (Proposals moves to `.aos-split`. Runs and Memory already open details in the right drawer, Files opens notes in tabs, and Spaces was already split: they keep that.) Proposals, Runs (inspector in the workspace), Memory, Files (tree), Spaces (already split) and the Pulse sections.
 - [x] **S5 Chat as Home.**
   - The default tab becomes `chat`. The composer is at the bottom with host and workspace chips.
   - Timeline rows become steps, and the status line sits under the composer. The provider `none` hint stays.
