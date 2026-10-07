@@ -129,7 +129,7 @@ test("a typed slug that climbs out of brain/memory is refused: nothing is writte
   await field(win, "Slug").locator("input").fill("../../../escaped");
   await modal(win).locator("textarea").fill("This should never leave brain/memory.");
   await modal(win).locator("button.mod-cta", { hasText: "Capture" }).click();
-  await expect(win.locator(".notice-container")).toContainText("Capture failed: AgenticOS app: write brain/memory/feedback/../../../escaped.md refused");
+  await expect(win.locator(".notice-container")).toContainText("Capture failed: UniDeX: write brain/memory/feedback/../../../escaped.md refused");
   expect(fs.existsSync(FX.v("escaped.md"))).toBe(false);
   expect(onDisk("MEMORY.md")()).toBe(pristine("MEMORY.md"));
   expect(await guardWrites(h)).toEqual(["write brain/memory/feedback/../../../escaped.md"]);

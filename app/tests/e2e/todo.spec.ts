@@ -123,7 +123,7 @@ test("with the To-Do surface off, a tick is refused: TODO.md is unchanged and th
   const before = fs.readFileSync(FX.v("TODO.md"), "utf8");
   const writes = await guardWrites(h);
   await td(win).locator(".aos-td-row", { hasText: "Call the chart vendor" }).locator(".aos-td-check").click();
-  await expect(win.locator(".notice-container")).toContainText("To-Do: AgenticOS app: write TODO.md refused; no write surface that allows it is on");
+  await expect(win.locator(".notice-container")).toContainText("To-Do: UniDeX: write TODO.md refused; no write surface that allows it is on");
   expect((await guardWrites(h)).slice(writes.length)).toEqual(["write TODO.md"]);
   expect(fs.readFileSync(FX.v("TODO.md"), "utf8")).toBe(before);
   // The HUD re-renders after a stale line but not after other failed writes, so the box keeps the click until the next

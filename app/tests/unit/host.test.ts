@@ -46,10 +46,13 @@ test("app://hud serves only the files under the renderer folder", () => {
 
 test("the tray title shows the two most important segments", () => {
   const seg = (text: string, tone: "violet" | "rose" | "amber" | "cyan" | "dim") => ({ text, tone, title: text });
-  assert.equal(trayTitle([]), "◉");
-  assert.equal(trayTitle([seg("◆ gate site-02", "violet"), seg("1 alert", "amber"), seg("▶ builder", "cyan")]), "◉ ◆ gate site-02 · 1 alert");
-  assert.equal(trayTitle([seg("14 drafts", "dim")]), "◉", "dim segments stay in the menu");
+  assert.equal(trayTitle([]), "", "the mark alone");
+  assert.equal(trayTitle([seg("◆ gate site-02", "violet"), seg("1 alert", "amber"), seg("▶ builder", "cyan")]), " ◆ gate site-02 · 1 alert");
+  assert.equal(trayTitle([seg("14 drafts", "dim")]), "", "dim segments stay in the menu");
   assert.equal(trayTitle([seg("◆ gate a-very-long-item-name-that-goes-on", "violet")]).length <= 30, true);
+  // A build without the mark's image: a glyph stands in for it.
+  assert.equal(trayTitle([], false), "◉");
+  assert.equal(trayTitle([seg("1 alert", "amber")], false), "◉ 1 alert");
 });
 
 test("Obsidian hotkeys become Electron accelerators", () => {

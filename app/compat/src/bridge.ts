@@ -9,7 +9,7 @@ export function setBridge(b: AosBridge | null): void { current = b; }
 
 export function bridge(): AosBridge {
   current ??= (globalThis as { aos?: AosBridge }).aos ?? null;
-  if (!current) throw new Error("AgenticOS app: no bridge to the main process");
+  if (!current) throw new Error("UniDeX: no bridge to the main process");
   return current;
 }
 

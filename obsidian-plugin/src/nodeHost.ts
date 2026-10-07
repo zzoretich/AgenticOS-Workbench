@@ -1,5 +1,5 @@
 // nodeHost.ts — the HudHost over plain Node (host.ts): the default under node:test. The only HUD file that imports
-// Node's I/O modules or node-pty. The AgenticOS Workbench app never loads it: its build answers this module with one
+// Node's I/O modules or node-pty. The UniDeX app never loads it: its build answers this module with one
 // that refuses, and installs its own host first.
 import * as childProcess from "child_process";
 import * as nodeFs from "fs";

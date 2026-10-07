@@ -2,8 +2,9 @@
 // brain/_index/statusline.json (schema 1, brain/scripts/lib/statusline-model.js); the status bar only reads it and asks
 // the runtime to refresh a stale one (D3). The same file feeds Claude Code's status line and the Codex session line, so
 // the three surfaces never disagree. Links into the Workbench arrive as agenticos://workbench?tab=<rail id> from the
-// AgenticOS Workbench app, or as obsidian://agenticos?tab=<rail id> from a status line written before it (D10).
+// UniDeX app, or as obsidian://agenticos?tab=<rail id> from a status line written before it (D10).
 import type { App } from "obsidian";
+import { BRAND } from "../brand";
 
 export const STATUSLINE_PATH = "brain/_index/statusline.json";
 /** D3: a model older than 15 s is rebuilt, the same threshold the terminal uses (the bar ticks every 30 s). */
@@ -89,7 +90,7 @@ export function barSegments(m: StatuslineModel): BarSegment[] {
     out.push({ text: `${FAMILY[s.family] ?? s.family} $${s.usd.toFixed(2)}/$${s.cap}`, tone: s.usd / s.cap >= 0.8 ? "rose" : "amber", tab: "settings", title: `Today's ${FAMILY[s.family] ?? s.family} spend against its daily cap` });
   }
   const h = m.health;
-  if (h.update) out.push({ text: `↑ ${h.update}`, tone: "amber", tab: "settings", title: `AgenticOS ${h.update} is available — run aos upgrade` });
+  if (h.update) out.push({ text: `↑ ${h.update}`, tone: "amber", tab: "settings", title: `${BRAND.name} ${h.update} is available — run aos upgrade` });
   if (h.provider) out.push({ text: "provider none", tone: "rose", tab: "settings", title: `Background provider is none (${h.provider})` });
   if (h.unwrapped) out.push({ text: "not wrapped", tone: "amber", title: "The last session was not wrapped" });
   if (h.drafts) out.push({ text: plural(h.drafts, "draft"), tone: "dim", title: "Feedback drafts waiting for review" });

@@ -100,7 +100,7 @@ test("newNotePath: .md added, folders kept, and every refusal says why", () => {
   assert.equal((newNotePath("notes", "../escape", exists) as { error: string }).error, "a path cannot climb out of the vault (..)");
   assert.equal((newNotePath("", ".hidden", exists) as { error: string }).error, "names cannot start with a dot");
   assert.equal((newNotePath("", "a:b", exists) as { error: string }).error, 'names cannot contain \\ : * ? " < > |');
-  assert.equal((newNotePath("brain/_index", "x", exists) as { error: string }).error, "brain/_index/ is written by AgenticOS itself");
+  assert.equal((newNotePath("brain/_index", "x", exists) as { error: string }).error, "brain/_index/ is written by the runtime itself");
 });
 
 test("renamePath keeps the folder and the extension; movePath keeps the name", () => {
@@ -109,10 +109,10 @@ test("renamePath keeps the folder and the extension; movePath keeps the name", (
   assert.deepEqual(renamePath("a.png", "b.jpg", none), { ok: true, path: "b.jpg" });
   assert.deepEqual(renamePath("notes/a.md", "a", none), { ok: false, error: "that is its name already" });
   assert.deepEqual(renamePath("notes/a.md", "x/b", none), { ok: false, error: "a name cannot contain / (use Move to change the folder)" });
-  assert.deepEqual(renamePath("brain/_index/BRAIN.md", "x", none), { ok: false, error: "brain/_index/BRAIN.md is written by AgenticOS itself" });
+  assert.deepEqual(renamePath("brain/_index/BRAIN.md", "x", none), { ok: false, error: "brain/_index/BRAIN.md is written by the runtime itself" });
   assert.deepEqual(movePath("notes/a.md", "archive/2026", none), { ok: true, path: "archive/2026/a.md" });
   assert.deepEqual(movePath("notes/a.md", "", none), { ok: true, path: "a.md" });
   assert.deepEqual(movePath("notes/a.md", "notes/", none), { ok: false, error: "it is in that folder already" });
-  assert.deepEqual(movePath("notes/a.md", "brain/scripts", none), { ok: false, error: "brain/scripts/ is written by AgenticOS itself" });
+  assert.deepEqual(movePath("notes/a.md", "brain/scripts", none), { ok: false, error: "brain/scripts/ is written by the runtime itself" });
   assert.deepEqual(movePath("notes/a.md", "x", (p) => p === "x/a.md"), { ok: false, error: "x/a.md already exists" });
 });

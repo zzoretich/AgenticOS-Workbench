@@ -2,6 +2,7 @@
 // a tab or a command shows up here without a change to the app.
 
 import { Menu, shell, type MenuItemConstructorOptions } from "electron";
+import { BRAND } from "../shared/brand";
 import { HOST_COMMANDS, type CommandInfo, type ThemeSource, type UpdateState } from "../shared/ipc";
 
 const WORKBENCH = "agentic-os:open-workbench";
@@ -56,7 +57,7 @@ export function buildAppMenu(commands: CommandInfo[], run: (id: string) => void,
 
   const template: MenuItemConstructorOptions[] = [
     {
-      label: "AgenticOS",
+      label: BRAND.name,
       submenu: [
         { role: "about" },
         ...(opts.update ? [updateItem(opts.update)] : []),
@@ -104,11 +105,11 @@ export function buildAppMenu(commands: CommandInfo[], run: (id: string) => void,
         ...(opts.dev ? [{ type: "separator" } as MenuItemConstructorOptions, { role: "reload" } as MenuItemConstructorOptions, { role: "toggleDevTools" } as MenuItemConstructorOptions] : []),
       ],
     },
-    { label: "Commands", submenu: others.length ? others : [{ label: opts.setup ? "Set up AgenticOS first" : "Loading…", enabled: false }] },
+    { label: "Commands", submenu: others.length ? others : [{ label: opts.setup ? `Set up ${BRAND.name} first` : "Loading…", enabled: false }] },
     { role: "windowMenu" },
     {
       role: "help",
-      submenu: [{ label: "AgenticOS Workbench on GitHub", click: () => void shell.openExternal("https://github.com/zzoretich/AgenticOS-Workbench") }],
+      submenu: [{ label: `${BRAND.name} on GitHub`, click: () => void shell.openExternal("https://github.com/zzoretich/AgenticOS-Workbench") }],
     },
   ];
   return Menu.buildFromTemplate(template);

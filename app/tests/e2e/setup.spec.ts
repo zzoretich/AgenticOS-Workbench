@@ -35,7 +35,7 @@ const log = () => app().win.evaluate(() => (window as unknown as { aosSetup: { l
 
 test("with no install, the wizard checks what aos init needs, on the login PATH", async () => {
   const { win } = app();
-  await expect(win.locator(".aos-setup h1")).toHaveText("Set up AgenticOS");
+  await expect(win.locator(".aos-setup h1")).toHaveText("Set up UniDeX");
   await expect(win.locator(".aos-setup-sub")).toContainText(`runtime ${VERSION}`);
   await expect(row("uv")).toHaveClass(/is-missing/);
   for (const id of ["homebrew", "node", "claude", "claude-login", "codex", "ollama", "python"]) await expect(row(id)).toHaveClass(/is-ok/);
@@ -147,7 +147,7 @@ test("Open the Workbench attaches the vault without a relaunch, and the one-time
   // D11: the app recorded itself in the vault it attached.
   expect(JSON.parse(fs.readFileSync(FX.v("brain/_index/hud-host.json"), "utf8"))).toMatchObject({ host: "app", version: VERSION });
   const note = win.locator(".aos-attach-modal");
-  await expect(note.locator(".modal-title")).toHaveText("AgenticOS Workbench is an app now");
+  await expect(note.locator(".modal-title")).toHaveText("UniDeX is an app now");
   await note.locator(".aos-attach-ok").click();
   await expect(note).toHaveCount(0);
   const rec = JSON.parse(fs.readFileSync(path.join(USER_DATA, "attach.json"), "utf8")) as { vaults: Record<string, { notedAt?: string }> };

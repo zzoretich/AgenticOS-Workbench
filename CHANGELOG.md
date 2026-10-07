@@ -1,8 +1,11 @@
 # Changelog
 
-All notable changes to AgenticOS Workbench. Versions follow the tags. From the next release on, each version's section is also its GitHub release notes, and an **Upgrading** subsection lists anything you need to do after `aos upgrade`.
+All notable changes to UniDeX (AgenticOS Workbench before 1.1). Versions follow the tags. From the next release on, each version's section is also its GitHub release notes, and an **Upgrading** subsection lists anything you need to do after `aos upgrade`.
 
 ## [Unreleased]
+
+### Upgrading
+- The app is now called UniDeX. An updated install keeps its file name, `AgenticOS Workbench.app`; rename it in Finder if you like. Nothing depends on it.
 
 ### Added
 - **Light and dark.** The Workbench app now has a light theme as well as the dark one, and follows macOS's appearance as it changes. The sun and moon button at the foot of the ribbon, **Toggle light and dark** in the command palette and View ▸ **Appearance** switch it; App settings ▸ **Appearance** goes back to **Match macOS**. The choice is kept in the app's data and outlives a restart.
@@ -13,6 +16,7 @@ All notable changes to AgenticOS Workbench. Versions follow the tags. From the n
 - **The Workbench's second UniDeX step: one rail.** The app's ribbon and the Workbench's top bar are gone. A single icon rail runs down the left: the UDX mark (Home), Search (⌘K) and Quick Capture at its head, every tab as an icon with its name on hover, and light and dark, App settings and Settings at its foot. Home is Chat when a provider is set up, else Pulse. Headings are sentence case without the `[ … ]` and `⌜ … ⌝` decorations; pills, cards and buttons are rounded; the fix queue marks each item with a dot in its colour; Agent Teams' gates have their own violet tone; Chat puts your messages in bubbles above a rounded composer. The clock went with the top bar.
 - **Notifications is an inbox with a reading pane.** The list sits on the left and the item you open reads on the right, with its title, level, sender, sections and buttons; it stays open after it turns read, even in the Unread view it has just left. Clicking it again closes it.
 - **Proposals reads the same way.** Pending, Backlog and History stay on the left; the proposal or backlog idea you open reads on the right, with its title and target above what it needs, What / Why / Risk and its premises. Runs and Memory keep their right-hand drawer, which does the same job.
+- **The app is now UniDeX, the third UniDeX step.** The Dock, the menu bar, About, the window titles, the setup wizard, settings and the app's messages say UniDeX, and the icon is the UDX mark, white on black. The menubar item shows the mark too, as an image macOS tints for a light or dark menu bar, with its status beside it. The settings window's tabs are **App** and **Runtime**. The status line's update note reads `⬆ UniDeX <version>`, and `aos doctor` and `aos init` name the app UniDeX. The `aos` CLI, the `agenticos` plugins and MCP tools, `~/AgenticOS`, the app's data folder and the update feed keep their names, so nothing is reinstalled or re-trusted.
 
 ### Fixed
 - A link in a note or a notification to a web page, PDF or image in the vault opens it with its default app, through the same rules as the Proposals tab's pages: an HTML page opens in the browser when it is under `brain/_index/` and is shown in Finder anywhere else. Before, the link opened the file as source text in a note, so a routine could not link a notification to the page it wrote.

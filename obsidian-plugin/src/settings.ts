@@ -26,11 +26,11 @@ export class AgenticOSSettingTab extends PluginSettingTab {
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl("h2", { text: "Agentic OS" });
+    containerEl.createEl("h2", { text: "Runtime" });
 
     new Setting(containerEl)
       .setName("Workbench settings")
-      .setDesc("Every AgenticOS setting in one place: provider and models, spend limits, the Chief of Staff, routines, the knowledge graph, cross-review, sharing, telemetry and updates.")
+      .setDesc("Every runtime setting in one place: provider and models, spend limits, the Chief of Staff, routines, the knowledge graph, cross-review, sharing, telemetry and updates.")
       .addButton((b) => b.setButtonText("Open Workbench settings").setCta().onClick(() => {
         // Obsidian has no public API to close its settings modal; the guarded call is a no-op if that ever changes.
         (this.app as unknown as { setting?: { close?: () => void } }).setting?.close?.();

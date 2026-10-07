@@ -30,7 +30,7 @@ import { fileURLToPath } from "node:url";
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const argv = process.argv.slice(2);
 const flag = (name, fallback) => { const i = argv.indexOf(name); return i >= 0 && argv[i + 1] ? argv[i + 1] : fallback; };
-const APP = path.resolve(flag("--app", path.join(repo, "dist-test", "mac-arm64", "AgenticOS Workbench.app")));
+const APP = path.resolve(flag("--app", path.join(repo, "dist-test", "mac-arm64", `${JSON.parse(fs.readFileSync(path.join(repo, "package.json"), "utf8")).productName}.app`)));
 const LIVE = argv.includes("--live");
 const KEEP = argv.includes("--keep");
 const EXE = path.join(APP, "Contents", "MacOS", path.basename(APP, ".app"));

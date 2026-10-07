@@ -16,6 +16,8 @@ const os = require('os');
 const path = require('path');
 const https = require('https');
 
+// What a release is called where people read it (UniDeX spec D1; app/src/shared/brand.ts).
+const PRODUCT = 'UniDeX';
 const REPO_SLUG = 'zzoretich/AgenticOS-Workbench';
 const LATEST_URL = `https://api.github.com/repos/${REPO_SLUG}/releases/latest`;
 const STORE_REL = path.join('brain', '_index', 'update-check.json');
@@ -101,7 +103,7 @@ function hudHost() {
 }
 
 /**
- * The Workbench's own version: the AgenticOS Workbench app's, from the marker it writes in the vault each time it starts
+ * The Workbench's own version: the UniDeX app's, from the marker it writes in the vault each time it starts
  * (<vault>/brain/_index/hud-host.json, spec 2026-10-05-workbench-app-design D11). An app left on an older release
  * keeps counting as behind until it is updated and opened. null when the app has not run against this vault, or the
  * marker carries no version the check can order: the install is then judged by the plugin and the vault alone.
@@ -165,7 +167,7 @@ function isStale(state, { intervalHours = DEFAULT_INTERVAL_HOURS, now = new Date
 
 function renderStatusline(state, now = new Date()) {
   if (!isBehind(state) || isSnoozed(state, now)) return '';
-  return `⬆ AgenticOS ${state.latest}`;
+  return `⬆ ${PRODUCT} ${state.latest}`;
 }
 
 function renderNotice(state, now = new Date()) {
@@ -178,9 +180,9 @@ function renderNotice(state, now = new Date()) {
   const behind = (v) => !!v && cmpSemver(v, latest) === -1;
   const app = behind(hudVersion);
   const runtime = behind(pluginVersion) || behind(vaultVersion);
-  const todo = app && !runtime ? 'update the AgenticOS Workbench app (AgenticOS ▸ Check for Updates…)'
+  const todo = app && !runtime ? `update the ${PRODUCT} app (Check for Updates… in its app menu)`
     : app ? 'run `aos upgrade` and update the app' : 'run `aos upgrade`';
-  return `AgenticOS Workbench ${latest} available (${have}) — ${todo}`;
+  return `${PRODUCT} ${latest} available (${have}) — ${todo}`;
 }
 
 /** Re-rendered by the producer on every check AND by update-notice at every session start, so

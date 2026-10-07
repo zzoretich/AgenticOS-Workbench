@@ -6,6 +6,7 @@
 // are injected so the tests can stand in for the machine.
 
 import * as path from "node:path";
+import { BRAND } from "../../shared/brand";
 import type { PreflightReport, SetupCheck, SetupCheckId } from "../../shared/ipc";
 import { FIXES, OLLAMA_CURL, OLLAMA_MODELS, OLLAMA_URL, fixBlocked } from "../policy/setup";
 import { findOnPath, isExecutable } from "./env";
@@ -90,7 +91,7 @@ export async function runPreflight(d: PreflightDeps): Promise<{ report: Prefligh
   const nv = nodeV ? parseVersion(nodeV.out) : null;
   found.node = !node ? { ok: false, detail: "not found" }
     : atLeast(nv, 20) ? { ok: true, detail: `${firstLine(nodeV?.out ?? "")} · ${node}` }
-    : { ok: false, detail: `${firstLine(nodeV?.out ?? "") || "no version"} at ${node}: AgenticOS needs 20 or newer` };
+    : { ok: false, detail: `${firstLine(nodeV?.out ?? "") || "no version"} at ${node}: ${BRAND.name} needs 20 or newer` };
 
   found.claude = claude ? { ok: true, detail: `${firstLine(claudeV?.out ?? "") || "installed"} · ${claude}` } : { ok: false, detail: "not installed" };
   let claudeIn = false;
@@ -112,7 +113,7 @@ export async function runPreflight(d: PreflightDeps): Promise<{ report: Prefligh
   const pv = pythonV ? parseVersion(pythonV.out) : null;
   found.python = !python ? { ok: false, detail: "not found" }
     : atLeast(pv, 3, 9) ? { ok: true, detail: `${firstLine(pythonV?.out ?? "")} · ${python}` }
-    : { ok: false, detail: `${firstLine(pythonV?.out ?? "") || "no version"} at ${python}: AgenticOS needs 3.9 or newer` };
+    : { ok: false, detail: `${firstLine(pythonV?.out ?? "") || "no version"} at ${python}: ${BRAND.name} needs 3.9 or newer` };
   found.uv = uv ? { ok: true, detail: uv } : { ok: false, detail: "not installed" };
 
   const hosts = { claude: !!found.claude?.ok && !!found["claude-login"]?.ok, codex: !!found.codex?.ok && !!found["codex-login"]?.ok };

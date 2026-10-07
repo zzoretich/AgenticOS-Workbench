@@ -127,7 +127,7 @@ function checkTarget(path: string, exists: (p: string) => boolean): PathCheck {
   if (!path) return { ok: false, error: "a name is required" };
   const shape = shapeError(path);
   if (shape) return { ok: false, error: shape };
-  if (isProtected(path)) return { ok: false, error: `${PROTECTED_PREFIXES.find((p) => path.startsWith(p)) ?? path} is written by AgenticOS itself` };
+  if (isProtected(path)) return { ok: false, error: `${PROTECTED_PREFIXES.find((p) => path.startsWith(p)) ?? path} is written by the runtime itself` };
   if (exists(path)) return { ok: false, error: `${path} already exists` };
   return { ok: true, path };
 }
@@ -146,7 +146,7 @@ export function newNotePath(folder: string, name: string, exists: (p: string) =>
 
 /** A rename in place: the new name keeps the old extension when the user leaves it off. */
 export function renamePath(from: string, name: string, exists: (p: string) => boolean): PathCheck {
-  if (isProtected(from)) return { ok: false, error: `${from} is written by AgenticOS itself` };
+  if (isProtected(from)) return { ok: false, error: `${from} is written by the runtime itself` };
   let n = cleanPath(name);
   if (n.includes("/")) return { ok: false, error: "a name cannot contain / (use Move to change the folder)" };
   const ext = from.includes(".") ? from.slice(from.lastIndexOf(".")) : "";
@@ -159,7 +159,7 @@ export function renamePath(from: string, name: string, exists: (p: string) => bo
 
 /** A move into another folder, keeping the name. `folder` is vault-relative ("" is the vault root). */
 export function movePath(from: string, folder: string, exists: (p: string) => boolean): PathCheck {
-  if (isProtected(from)) return { ok: false, error: `${from} is written by AgenticOS itself` };
+  if (isProtected(from)) return { ok: false, error: `${from} is written by the runtime itself` };
   const name = from.split("/").pop()!;
   const dir = cleanPath(folder);
   const to = dir ? `${dir}/${name}` : name;

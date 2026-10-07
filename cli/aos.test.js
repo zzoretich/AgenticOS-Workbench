@@ -135,8 +135,8 @@ test('init needs no Obsidian, installs no HUD into the vault, and accepts --no-o
   assert.equal(r.status, 0, r.stderr + r.stdout);
   assert.match(r.stdout, /^preflight: ollama .* · python3 \d+\.\d+ · uv /m);
   assert.doesNotMatch(r.stdout, /preflight: obsidian|Obsidian plugin bundle|Community plugins/);
-  assert.match(r.stdout, /terminal: nothing to install — the AgenticOS Workbench app brings its own terminal/);
-  assert.match(r.stdout, /Open the AgenticOS Workbench app \(macOS, Apple silicon; download it from https:\/\/github\.com\/zzoretich\/AgenticOS-Workbench\/releases\/latest\)/);
+  assert.match(r.stdout, /terminal: nothing to install — the UniDeX app brings its own terminal/);
+  assert.match(r.stdout, /Open the UniDeX app \(macOS, Apple silicon; download it from https:\/\/github\.com\/zzoretich\/AgenticOS-Workbench\/releases\/latest\)/);
   assert.doesNotMatch(r.stdout, /arrives with 1\.0|build it from app\//, 'the download exists now');
   assert.ok(!fs.existsSync(path.join(sb.vault, '.obsidian', 'plugins')), 'no HUD bundle in the vault');
   assert.ok(!fs.existsSync(path.join(sb.vault, '.obsidian', 'daily-notes.json')), 'no Obsidian Daily Notes setting');
@@ -407,7 +407,7 @@ test('doctor passes on an initialized vault when the plugin is installed (MCP pr
   assert.match(r.stdout, /ok\s+MCP server answers\s+serverInfo\.name=agenticos/);
   assert.match(r.stdout, new RegExp(`ok\\s+graphify ${reEsc(GRAPHIFY_PIN)}\\s+.*agenticos/graphify/bin/graphify`));
   assert.match(r.stdout, /ok\s+graph fresh\s+built \d+s ago · 5 nodes · 5 edges/);
-  assert.match(r.stdout, /warn\s+workbench app\s+not registered yet — open the AgenticOS Workbench app once$/m);
+  assert.match(r.stdout, /warn\s+workbench app\s+not registered yet — open the UniDeX app once$/m);
   assert.doesNotMatch(r.stdout, /^(?:ok|FAIL|warn|info)\s+obsidian/m);
   // cross-review spec D6: a Claude-only machine gets a warn row naming the same-provider fallback, never a failure.
   assert.match(r.stdout, /warn\s+cross-review\s+same-provider only: codex CLI not found — the skill offers a labelled same-provider review$/m);
@@ -620,9 +620,9 @@ test('upgrade installs no HUD, points an Obsidian-era install at the app, and re
   fs.writeFileSync(cfgPath, JSON.stringify({ ...readJson(cfgPath), node: '/somewhere/old/node' }, null, 2));
   const r = aos(sb, ['upgrade', '--no-obsidian', '--from-local', ROOT]);
   assert.equal(r.status, 0, r.stderr + r.stdout);
-  const said = r.stdout.split('\n').filter((l) => /AgenticOS Workbench app/.test(l));
+  const said = r.stdout.split('\n').filter((l) => /UniDeX app/.test(l));
   assert.equal(said.length, 1, r.stdout);
-  assert.match(said[0], /^The Workbench is now the AgenticOS Workbench app for macOS \(https:\/\/github\.com\/zzoretich\/AgenticOS-Workbench\/releases\/latest\); once you use the app, you can remove the old Obsidian plugin folder .*\.obsidian\/plugins\/agentic-os\.$/);
+  assert.match(said[0], /^The Workbench is now the UniDeX app for macOS \(https:\/\/github\.com\/zzoretich\/AgenticOS-Workbench\/releases\/latest\); once you use the app, you can remove the old Obsidian plugin folder .*\.obsidian\/plugins\/agentic-os\.$/);
   assert.equal(fs.readFileSync(path.join(old, 'main.js'), 'utf8'), '// the Obsidian-era HUD\n', 'the old folder is left alone');
   assert.deepEqual(fs.readdirSync(old), ['main.js'], 'nothing new installed into it');
   assert.equal(readJson(cfgPath).node, require('./node-path.js').stableNode(process.execPath));
@@ -872,7 +872,7 @@ test('persona on/off toggle the kill switch; persona and cost subcommands are wi
   assert.equal(aos(sb, ['terminal']).status, 2);
   const term = aos(sb, ['terminal', 'install']);
   assert.equal(term.status, 0, term.stderr);
-  assert.match(term.stdout, /nothing to install — the AgenticOS Workbench app brings its own terminal/);
+  assert.match(term.stdout, /nothing to install — the UniDeX app brings its own terminal/);
 });
 
 test('uninstall warns when the claude CLI cannot remove the plugin, and refuses to delete a structurally invalid vault', () => {

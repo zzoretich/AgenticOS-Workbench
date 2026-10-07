@@ -13,8 +13,10 @@
  *     and motion uses SMIL <animate> rather than CSS.
  *   - READMEs render in both GitHub themes, so icons are transparent and
  *     stroked in mid-tone accents that carry on light and dark alike.
- *   - The app's screenshots beside these assets are dark (the Workbench's own theme;
- *     `npm run screens` in app/ retakes them), so the palette stays in the Primer dark family.
+ *   - The banner and divider are dark cards of their own, so they read the
+ *     same on either theme, and the palette stays in the Primer dark family.
+ *     The app's screenshots beside them (`npm run screens` in app/) come in
+ *     light and dark.
  *
  * Invariants are pinned in brand-assets.test.js.
  */
@@ -270,6 +272,9 @@ const BANNER_LEDS = [
   ['STAFF', C.green],
 ];
 
+// The Line mark's 130 × 46 drawing (UniDeX spec D10).
+const MARK_PATH = 'M6 6V26a14 14 0 0 0 28 0V6 M48 6V40H60a17 17 0 0 0 0-34H48Z M92 6L124 40 M124 6L92 40';
+
 function buildBanner() {
   const body = [
     '<defs>',
@@ -277,29 +282,21 @@ function buildBanner() {
     `<stop offset="0" stop-color="${C.surface}"/>`,
     `<stop offset="1" stop-color="${C.bg}"/>`,
     '</linearGradient>',
-    '<linearGradient id="mark" x1="0" y1="0" x2="1" y2="1">',
-    `<stop offset="0" stop-color="${C.blue}"/>`,
-    `<stop offset="1" stop-color="${C.purple}"/>`,
-    '</linearGradient>',
     '</defs>',
     `<rect x="0.5" y="0.5" width="959" height="199" rx="12" fill="url(#card)" stroke="${C.border}"/>`,
 
-    // Mark: the same node triad as the memory icon, punched out of a
-    // gradient tile so the lockup and the body icons share one idea. Its
-    // centre sits on the wordmark/tagline pair, not on the whole text block —
-    // the attribution reads as a footer line and should not drag the mark down.
-    '<rect x="40" y="52" width="56" height="56" rx="14" fill="url(#mark)"/>',
-    `<g stroke="${C.bg}" stroke-width="2.6" stroke-linecap="round" fill="${C.bg}">`,
-    '<circle cx="57" cy="71" r="4.2"/>',
-    '<circle cx="79" cy="71" r="4.2"/>',
-    '<circle cx="68" cy="91" r="4.2"/>',
-    '<path d="M61.2 71 H74.8"/>',
-    '<path d="M59.4 74.8 L65.6 87.2"/>',
-    '<path d="M76.6 74.8 L70.4 87.2"/>',
+    // Mark: the UniDeX Line mark (U, D and X in one stroke weight with round
+    // ends; app/build/icon.svg and the app's rail draw the same path), dark on
+    // a light tile, as the app shows it in its dark theme. Its centre sits on
+    // the wordmark/tagline pair, not on the whole text block — the attribution
+    // reads as a footer line and should not drag the mark down.
+    `<rect x="40" y="52" width="56" height="56" rx="14" fill="${C.text}"/>`,
+    `<g transform="translate(49.8 73.56) scale(0.28)" stroke="${C.bg}" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" fill="none">`,
+    `<path d="${MARK_PATH}"/>`,
     '</g>',
 
-    `<text x="120" y="86" font-family="${SANS}" font-size="38" font-weight="600" letter-spacing="-0.5" fill="${C.text}">AgenticOS Workbench</text>`,
-    `<text x="122" y="112" font-family="${SANS}" font-size="16" fill="${C.muted}">A second brain for Claude Code</text>`,
+    `<text x="120" y="86" font-family="${SANS}" font-size="38" font-weight="600" letter-spacing="-0.5" fill="${C.text}">UniDeX</text>`,
+    `<text x="122" y="112" font-family="${SANS}" font-size="16" fill="${C.muted}">A second brain for Claude Code and Codex</text>`,
     `<rect x="122" y="126" width="160" height="1.5" rx="0.75" fill="${C.border}"/>`,
     `<text x="122" y="151" font-family="${SANS}" font-size="13" letter-spacing="0.3" fill="${C.dim}">Created by Zach Zoretich</text>`,
   ];
@@ -318,7 +315,7 @@ function buildBanner() {
 
   return doc(
     'width="960" height="200" viewBox="0 0 960 200" fill="none"',
-    'AgenticOS Workbench — a second brain for Claude Code. Created by Zach Zoretich.',
+    'UniDeX — a second brain for Claude Code and Codex. Created by Zach Zoretich.',
     body
   );
 }

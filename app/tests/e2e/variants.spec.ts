@@ -165,7 +165,7 @@ test.describe("a provider on record", () => {
     await openTab(h.win, "pulse");
     await openTab(h.win, "chat");
     await send("Refused on the Claude route?");
-    await expect(lastError()).toContainText("AgenticOS app: ");
+    await expect(lastError()).toContainText("UniDeX: ");
     await expect(lastError()).toContainText("claude -p");
     // The local route: ask.js is refused.
     state("ollama", false)();
@@ -320,7 +320,7 @@ test.describe("a runtime that predates aos config (before 0.17)", () => {
     const { win } = app();
     await openTab(win, "settings");
     const failure = content(win).locator(".aos-st-failure");
-    await expect(failure).toContainText("This vault's AgenticOS runtime has no `aos config` yet: run `aos upgrade` to control every setting from here.");
+    await expect(failure).toContainText("This vault's runtime has no `aos config` yet: run `aos upgrade` to control every setting from here.");
     await expect(failure.locator("button")).toHaveText("❯_ aos upgrade");
     await expect(content(win).locator(".aos-st-master")).toHaveCount(0);
     await expect(content(win).locator(".aos-st-plugin .setting-item-name", { hasText: "Vault root" })).toBeVisible();

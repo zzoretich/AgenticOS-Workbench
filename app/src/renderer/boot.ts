@@ -23,7 +23,7 @@ import { PageTheme, applyTheme } from "./theme";
  * its command ids and its CSS class, so it never changes; the name is its tab in the settings window. No `dir`: the HUD
  * keeps no files of its own beside its settings, which main stores.
  */
-const HUD: PluginManifest = { id: "agentic-os", name: "Agentic OS", version: hudVersion };
+const HUD: PluginManifest = { id: "agentic-os", name: "Runtime", version: hudVersion };
 
 /**
  * The status bar's first item, shown only while $AOS_APP_WRITE narrows the writes (tests, one-off runs): READ-ONLY, or
@@ -83,7 +83,7 @@ async function boot(): Promise<void> {
   app.workspace.markLayoutReady();
 
   // The settings window: the app's own tab beside the one the plugin registered. It opens from the Workbench rail's
-  // foot (App settings), AgenticOS Workbench ▸ App Settings… (⌘⇧,) and the palette; ⌘, stays the Workbench's Settings
+  // foot (App settings), UniDeX ▸ App Settings… (⌘⇧,) and the palette; ⌘, stays the Workbench's Settings
   // tab. The ribbon is hidden (UniDeX D3): the rail runs these two commands.
   app.setting.addSettingTab(new AppSettingTab(app, {
     vaultRoot: info.vaultRoot, vaultSource: info.vaultSource, userData: info.userData, appVersion: info.appVersion,

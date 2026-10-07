@@ -4,5 +4,5 @@
 import type { HudHost } from "../../../../obsidian-plugin/src/host";
 
 export function createNodeHost(): HudHost {
-  throw new Error("AgenticOS app: the HUD reached for its host before the app installed one (no Node in this page)");
+  throw new Error("UniDeX: the HUD reached for its host before the app installed one (no Node in this page)");
 }

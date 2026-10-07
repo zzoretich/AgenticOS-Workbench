@@ -12,6 +12,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { APP_ORIGIN, CH, POPOVER, type AttachInfo, type BootInfo, type CommandInfo, type ProtocolRequest, type ReadyInfo, type ThemeSource, type ThemeState } from "../shared/ipc";
 import { registerAppScheme, serveAppScheme } from "./app-scheme";
+import { BRAND } from "../shared/brand";
 import { writeHudHostMarker } from "./hud-host";
 import { registerFsIpc } from "./ipc/fs";
 import { registerHostIpc } from "./ipc/host";
@@ -66,7 +67,7 @@ function resolveVault(): { root: string | null; source: string; configured: stri
 }
 
 const dev = !app.isPackaged;
-// The app's name is package.json's productName (D9: AgenticOS Workbench). A dev run keeps its data apart from the
+// The app's name is package.json's productName (UniDeX spec D2: UniDeX); the data folder keeps its old name (D1). A dev run keeps its data apart from the
 // packaged app's, so the two can run side by side; tests point it at a temp folder.
 app.setPath("userData", process.env.AOS_APP_USER_DATA || path.join(app.getPath("appData"), dev ? "AgenticOS Workbench (dev)" : "AgenticOS Workbench"));
 // The app's page comes from app://hud (app-scheme.ts), which must be registered before `ready`.
@@ -156,7 +157,7 @@ function send(channel: string, payload: unknown): void {
 const POPOVER_SIZE = { width: 380, height: 640 };
 const POPOVER_OPTIONS: Electron.BrowserWindowConstructorOptions = {
   ...POPOVER_SIZE, show: false, frame: false, resizable: false, movable: false, minimizable: false, maximizable: false,
-  fullscreenable: false, skipTaskbar: true, alwaysOnTop: true, title: "AgenticOS",
+  fullscreenable: false, skipTaskbar: true, alwaysOnTop: true, title: BRAND.name,
 };
 let popover: BrowserWindow | null = null;
 
@@ -281,7 +282,7 @@ const setup = new SetupController({
     if (vault.root) attached = attachInfo(context.userData, vault.root, agenticos, payload?.version ?? null);
   },
   chooseFolder: async () => {
-    const opts: Electron.OpenDialogOptions = { title: "Choose the folder for your AgenticOS vault", buttonLabel: "Use This Folder", defaultPath: os.homedir(), properties: ["openDirectory", "createDirectory"] };
+    const opts: Electron.OpenDialogOptions = { title: "Choose the folder for your vault", buttonLabel: "Use This Folder", defaultPath: os.homedir(), properties: ["openDirectory", "createDirectory"] };
     const r = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts);
     return r.canceled || !r.filePaths[0] ? null : r.filePaths[0];
   },
@@ -324,7 +325,7 @@ function createWindow(): void {
     minWidth: 960,
     minHeight: 600,
     backgroundColor: windowBackground(nativeTheme.shouldUseDarkColors),
-    title: "AgenticOS",
+    title: BRAND.name,
     show: false,
     webPreferences: {
       // Phase 4 (D7): no Node in the page, an isolated preload, Chromium's sandbox. The page reaches the disk, processes

@@ -1,6 +1,6 @@
 {
   "name": "agenticos-workbench-app",
-  "productName": "AgenticOS Workbench",
+  "productName": "UniDeX",
   "private": true,
   "version": "1.0.1",
   "description": "AgenticOS Workbench as a macOS app: the Workbench HUD re-hosted on an Obsidian compatibility layer",

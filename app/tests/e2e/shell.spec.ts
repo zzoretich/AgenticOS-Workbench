@@ -213,7 +213,7 @@ test("a tour of every tab, the sidebar HUD and ⌘K raises no renderer or main-p
     await expect(content(win)).not.toBeEmpty();
   }
   await command(win, "agentic-os:open-sidebar-hud");
-  await expect(win.locator(".aos-host-right .aos-sb-title")).toHaveText("AgenticOS");
+  await expect(win.locator(".aos-host-right .aos-sb-title")).toHaveText("UniDeX");
   await command(win, "agentic-os:open-omnisearch");
   await expect(win.locator(".modal.prompt .prompt-input")).toBeVisible();
   await win.keyboard.press("Escape");
@@ -256,16 +256,18 @@ test("an open form keeps the keyboard: a terminal that focuses itself behind it 
 
 test("tray popover: the SidebarHUD in a window of its own, hidden until the menubar icon is clicked, from the one plugin", async () => {
   const h = app();
-  type Main = { __aosMain: { togglePopover(): boolean; popoverVisible(): boolean } };
+  type Main = { __aosMain: { togglePopover(): boolean; popoverVisible(): boolean; tray(): { mark: boolean } | null } };
   const main = <T>(fn: (m: Main["__aosMain"]) => T) => h.app.evaluate((_e, f) => (0, eval)(`(${f})`)((globalThis as unknown as Main).__aosMain), fn.toString()) as Promise<T>;
   // Opened blank by the renderer at boot, and filled by it: the only child window main allows.
   await expect.poll(() => h.app.windows().length).toBe(2);
+  // The menubar item is the Line mark, a template image from out/main (UniDeX D10), not a text glyph.
+  expect(await main((m) => m.tray()?.mark)).toBe(true);
   const pop = h.app.windows().find((w) => w !== h.win)!;
   expect(await main((m) => m.popoverVisible())).toBe(false);
   expect(await main((m) => m.togglePopover())).toBe(true);
   expect(await main((m) => m.popoverVisible())).toBe(true);
   await expect(pop.locator(".aos-popover-leaf .aos-sb-status")).toBeVisible();
-  await expect(pop.locator(".aos-popover-leaf")).toContainText("AgenticOS");
+  await expect(pop.locator(".aos-popover-leaf")).toContainText("UniDeX");
   // The same plugin draws it: no second HUD, so one status bar and one Workbench.
   expect(await h.win.evaluate(() => document.querySelectorAll(".aos-statusbar").length)).toBe(1);
   expect(await main((m) => m.togglePopover())).toBe(true);

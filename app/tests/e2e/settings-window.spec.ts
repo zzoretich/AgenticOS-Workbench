@@ -1,5 +1,5 @@
 // The settings window: Obsidian's settings, in the app (`app.setting`). The app's own App tab under Options, the tab
-// the Workbench plugin registers under Community plugins. Opened from App settings at the rail's foot, from AgenticOS Workbench ▸
+// the Workbench plugin registers under Community plugins. Opened from App settings at the rail's foot, from UniDeX ▸
 // App Settings… (the host:settings command) and from the palette. It runs read-only: a plugin row saves to the app's own
 // data folder, and the system switches, which run `aos config set`, are refused with the Settings surface off.
 
@@ -30,7 +30,7 @@ test.afterEach(async () => {
   expectNoErrors(h);
 });
 
-test("App settings at the rail's foot opens the window on the plugin's tab: Options ▸ App, Community plugins ▸ Agentic OS", async () => {
+test("App settings at the rail's foot opens the window on the plugin's tab: Options ▸ App, Community plugins ▸ Runtime", async () => {
   const { win } = app();
   const gear = win.locator('.aos-wb-railfoot .aos-wb-railact[data-action="app-settings"]');
   await expect(gear).toHaveAttribute("aria-label", "App settings");
@@ -39,9 +39,9 @@ test("App settings at the rail's foot opens the window on the plugin's tab: Opti
   await gear.click();
   await expect(modal(win)).toBeVisible();
   await expect(modal(win).locator(".vertical-tab-header-group-title")).toHaveText(["Options", "Community plugins"]);
-  await expect(modal(win).locator(".vertical-tab-nav-item")).toHaveText(["App", "Agentic OS"]);
-  await expect(nav(win, "Agentic OS")).toHaveClass(/is-active/);
-  await expect(pane(win).locator("h2")).toHaveText("Agentic OS");
+  await expect(modal(win).locator(".vertical-tab-nav-item")).toHaveText(["App", "Runtime"]);
+  await expect(nav(win, "Runtime")).toHaveClass(/is-active/);
+  await expect(pane(win).locator("h2")).toHaveText("Runtime");
   await win.keyboard.press("Escape");
   await expect(modal(win)).toHaveCount(0);
   // The keyboard reaches it too.
@@ -62,7 +62,7 @@ test("the palette's Open app settings opens it again on the tab last looked at",
   await win.keyboard.press("Enter");
   await expect(modal(win)).toBeVisible();
   await expect(nav(win, "App")).toHaveClass(/is-active/);
-  await expect(pane(win).locator("h2")).toHaveText("AgenticOS app");
+  await expect(pane(win).locator("h2")).toHaveText("UniDeX");
 });
 
 test("the App tab: the vault and the app's data folder (handed to Finder), write access, and the versions", async () => {
@@ -90,7 +90,7 @@ test("the plugin's tab: the WORKBENCH section's rows and the provider row (I3, S
   const workbench = await names(content(win).locator(".aos-st-plugin"));
   await openTab(win, "pulse");
   expect(await command(win, "host:settings")).toBe(true);
-  await nav(win, "Agentic OS").click();
+  await nav(win, "Runtime").click();
   const inWindow = await names(pane(win));
   expect(inWindow).toEqual(expect.arrayContaining(workbench));
   expect(inWindow.slice(0, 5)).toEqual(["Workbench settings", "System", "Provider", "Session costing", "Telemetry"]);
@@ -107,7 +107,7 @@ test("a change in the window shows in the WORKBENCH section, and one made there 
   // A row that takes effect only at the next start: the app's own setting, saved in its data folder.
   const toggle = (scope: ReturnType<Page["locator"]>) => row(scope, "Auto-open sidebar on start").locator(".checkbox-container");
   expect(await command(win, "host:settings")).toBe(true);
-  await nav(win, "Agentic OS").click();
+  await nav(win, "Runtime").click();
   await expect(toggle(pane(win))).not.toHaveClass(/is-enabled/);
   await toggle(pane(win)).click();
   await expect.poll(saved).toBe(true);
@@ -128,7 +128,7 @@ test("with the Settings surface off, the window's system switches are refused li
   const files = [path.join(FX.claude, "agenticos.json"), FX.v("brain/config.json")];
   const before = files.map((f) => fs.readFileSync(f, "utf8"));
   expect(await command(h.win, "host:settings")).toBe(true);
-  await nav(h.win, "Agentic OS").click();
+  await nav(h.win, "Runtime").click();
   await row(pane(h.win), "Telemetry").locator(".checkbox-container").click();
   await expect(h.win.locator(".notice-container")).toContainText(/refused; no write surface that allows it is on/);
   expect(files.map((f) => fs.readFileSync(f, "utf8"))).toEqual(before);

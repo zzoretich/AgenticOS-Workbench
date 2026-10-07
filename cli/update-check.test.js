@@ -146,7 +146,7 @@ test('isStale honours the interval, failure backoff and clock skew', () => {
 
 test('renderStatusline is the fragment or nothing', () => {
   const now = new Date('2026-09-16T00:00:00.000Z');
-  assert.equal(U.renderStatusline(behindState(), now), '⬆ AgenticOS 0.2.0');
+  assert.equal(U.renderStatusline(behindState(), now), '⬆ UniDeX 0.2.0');
   assert.equal(U.renderStatusline(behindState({ latest: '0.1.0' }), now), '');
   assert.equal(U.renderStatusline(null, now), '');
   assert.equal(U.renderStatusline(behindState({
@@ -158,10 +158,10 @@ test('renderNotice names the skew when the plugin and vault disagree', () => {
   const now = new Date('2026-09-16T00:00:00.000Z');
   assert.equal(
     U.renderNotice(behindState(), now),
-    'AgenticOS Workbench 0.2.0 available (you have 0.1.0) — run `aos upgrade`');
+    'UniDeX 0.2.0 available (you have 0.1.0) — run `aos upgrade`');
   assert.equal(
     U.renderNotice(behindState({ pluginVersion: '0.2.0', vaultVersion: '0.1.0', installed: '0.1.0' }), now),
-    'AgenticOS Workbench 0.2.0 available (plugin 0.2.0, vault 0.1.0) — run `aos upgrade`');
+    'UniDeX 0.2.0 available (plugin 0.2.0, vault 0.1.0) — run `aos upgrade`');
   assert.equal(U.renderNotice(behindState({ latest: '0.1.0' }), now), '');
   assert.equal(U.renderNotice(null, now), '');
 });
@@ -171,23 +171,23 @@ test('renderNotice sends a user whose app alone is behind to the app, and names 
   const now = new Date('2026-09-16T00:00:00.000Z');
   assert.equal(
     U.renderNotice(behindState({ pluginVersion: '0.2.0', vaultVersion: '0.2.0', hudVersion: '0.1.0', installed: '0.1.0' }), now),
-    'AgenticOS Workbench 0.2.0 available (plugin 0.2.0, vault 0.2.0, Workbench 0.1.0) — update the AgenticOS Workbench app (AgenticOS ▸ Check for Updates…)');
+    'UniDeX 0.2.0 available (plugin 0.2.0, vault 0.2.0, Workbench 0.1.0) — update the UniDeX app (Check for Updates… in its app menu)');
   assert.equal(
     U.renderNotice(behindState({ pluginVersion: '0.2.0', vaultVersion: '0.1.0', hudVersion: '0.1.0', installed: '0.1.0' }), now),
-    'AgenticOS Workbench 0.2.0 available (plugin 0.2.0, vault 0.1.0, Workbench 0.1.0) — run `aos upgrade` and update the app');
+    'UniDeX 0.2.0 available (plugin 0.2.0, vault 0.1.0, Workbench 0.1.0) — run `aos upgrade` and update the app');
   assert.equal(
     U.renderNotice(behindState({ hudVersion: '0.1.0' }), now),
-    'AgenticOS Workbench 0.2.0 available (you have 0.1.0) — run `aos upgrade` and update the app');
+    'UniDeX 0.2.0 available (you have 0.1.0) — run `aos upgrade` and update the app');
   assert.equal(
     U.renderNotice(behindState({ pluginVersion: '0.1.0', vaultVersion: '0.1.0', hudVersion: '0.2.0' }), now),
-    'AgenticOS Workbench 0.2.0 available (plugin 0.1.0, vault 0.1.0, Workbench 0.2.0) — run `aos upgrade`', 'an app on the latest is not named');
+    'UniDeX 0.2.0 available (plugin 0.1.0, vault 0.1.0, Workbench 0.2.0) — run `aos upgrade`', 'an app on the latest is not named');
 });
 
 test('writeFragment writes zero bytes when there is nothing to say', () => {
   const w = vaultWorld();
   const now = new Date('2026-09-16T00:00:00.000Z');
   U.writeFragment(w.vault, behindState(), now);
-  assert.equal(w.line(), '⬆ AgenticOS 0.2.0\n');
+  assert.equal(w.line(), '⬆ UniDeX 0.2.0\n');
   U.writeFragment(w.vault, behindState({ latest: '0.1.0' }), now);
   assert.equal(w.line(), '', 'exactly zero bytes, so a cat contributes nothing');
 });
@@ -249,7 +249,7 @@ test('runCheck records a newer release and never renders the release body', asyn
   assert.equal(s.url, 'https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.2.0');
   assert.equal(s.consecutiveFailures, 0);
   assert.equal(s.lastError, null);
-  assert.equal(w.line(), '⬆ AgenticOS 0.2.0\n');
+  assert.equal(w.line(), '⬆ UniDeX 0.2.0\n');
   assert.ok(!JSON.stringify(s).includes('CHANGELOG'), 'the release body never enters the store');
 });
 
@@ -345,7 +345,7 @@ test('update-status --statusline prints the fragment and nothing else', async ()
   const w = cmdWorld();
   U.writeState(w.vault, behindState());
   assert.equal(await U.cmdUpdateStatus({ vault: w.vault, configDir: w.configDir, flags: { statusline: true }, io: w.io, now: NOW }), 0);
-  assert.deepEqual(w.outs, ['⬆ AgenticOS 0.2.0']);
+  assert.deepEqual(w.outs, ['⬆ UniDeX 0.2.0']);
 });
 
 test('update-status --statusline prints nothing when current, and still exits 0', async () => {
@@ -380,7 +380,7 @@ test('update-status --off writes to agenticos.json and clears the fragment', asy
   const w = cmdWorld();
   U.writeState(w.vault, behindState());
   U.writeFragment(w.vault, behindState(), NOW());
-  assert.equal(w.line(), '⬆ AgenticOS 0.2.0\n', 'precondition: a fragment exists');
+  assert.equal(w.line(), '⬆ UniDeX 0.2.0\n', 'precondition: a fragment exists');
 
   assert.equal(await U.cmdUpdateStatus({ vault: w.vault, configDir: w.configDir, flags: { off: true }, io: w.io, now: NOW }), 0);
   const cfg = JSON.parse(fs.readFileSync(path.join(w.configDir, 'agenticos.json'), 'utf8'));
@@ -409,7 +409,7 @@ test('update-status with state present prints the full dump (default, no flags)'
   const text = w.outs.join('\n');
   assert.match(text, /installed 0\.1\.0 · latest 0\.2\.0/);
   assert.match(text, /checked 2026-09-15T00:00:00\.000Z/);
-  assert.match(text, /AgenticOS Workbench 0\.2\.0 available/);
+  assert.match(text, /UniDeX 0\.2\.0 available/);
 });
 
 test('update-status default dump falls back on a store with no checkedAt instead of printing "checked undefined"', async () => {
@@ -475,8 +475,8 @@ test('update-notice prints the notice and re-renders the fragment', async () => 
     spawnFn: (...a) => spawned.push(a),
   }), 0);
   assert.equal(w.outs.length, 1);
-  assert.match(w.outs[0], /^AgenticOS Workbench 0\.2\.0 available/);
-  assert.equal(w.line(), '⬆ AgenticOS 0.2.0\n');
+  assert.match(w.outs[0], /^UniDeX 0\.2\.0 available/);
+  assert.equal(w.line(), '⬆ UniDeX 0.2.0\n');
   assert.deepEqual(spawned, [], 'a fresh check is not re-spawned');
 });
 
@@ -559,7 +559,7 @@ test('aos.js dispatches the three update commands and rejects a bad flag', () =>
   U.writeState(w.vault, behindState());
   const line = aos(['update-status', '--statusline']);
   assert.equal(line.status, 0, line.stderr);
-  assert.equal(line.stdout.trim(), '⬆ AgenticOS 0.2.0');
+  assert.equal(line.stdout.trim(), '⬆ UniDeX 0.2.0');
 
   const notice = aos(['update-notice']);
   assert.equal(notice.status, 0, notice.stderr);
@@ -586,8 +586,8 @@ test('runCheck counts a Workbench left on an older version as behind, and the no
   hudManifest(w.vault, '0.1.0');
   const s = await check(w, { vaultVersion: '0.2.0', pluginVersion: '0.2.0', get: fakeGet({ body: release('v0.2.0') }) });
   assert.deepEqual([s.hudVersion, s.installed, s.behind], ['0.1.0', '0.1.0', true]);
-  assert.equal(w.line(), '⬆ AgenticOS 0.2.0\n');
-  assert.equal(U.renderNotice(s, NOW3()), 'AgenticOS Workbench 0.2.0 available (plugin 0.2.0, vault 0.2.0, Workbench 0.1.0) — update the AgenticOS Workbench app (AgenticOS ▸ Check for Updates…)');
+  assert.equal(w.line(), '⬆ UniDeX 0.2.0\n');
+  assert.equal(U.renderNotice(s, NOW3()), 'UniDeX 0.2.0 available (plugin 0.2.0, vault 0.2.0, Workbench 0.1.0) — update the UniDeX app (Check for Updates… in its app menu)');
   hudManifest(w.vault, '0.2.0');
   const t = await check(w, { vaultVersion: '0.2.0', pluginVersion: '0.2.0', get: fakeGet({ body: release('v0.2.0') }) });
   assert.deepEqual([t.hudVersion, t.installed, t.behind], ['0.2.0', '0.2.0', false], 'replaced: nothing pending');

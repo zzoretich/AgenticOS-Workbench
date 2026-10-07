@@ -36,7 +36,9 @@ const { spawn, spawnSync } = require('child_process');
 const REPO_SLUG = 'zzoretich/AgenticOS-Workbench';
 const MARKETPLACE = 'agenticos-workbench';
 const PLUGIN_ID = `agenticos@${MARKETPLACE}`;
-// Where the AgenticOS Workbench app is downloaded: the newest release carries its DMG (Apple silicon).
+// The macOS app's name as people see it (UniDeX spec D1; app/src/shared/brand.ts) and where it is downloaded: the
+// newest release carries its DMG (Apple silicon).
+const APP_NAME = 'UniDeX';
 const APP_DOWNLOAD = `https://github.com/${REPO_SLUG}/releases/latest`;
 // The folder an Obsidian-era install put the HUD in (<vault>/.obsidian/plugins/agentic-os/): upgrade only looks for it.
 const OBSIDIAN_PLUGIN_ID = 'agentic-os';
@@ -443,7 +445,7 @@ async function doctor() {
     // D11: the app records itself in the vault each time it starts; a warn, since the runtime works without it.
     const H = hudHost();
     const m = H && H.readMarker(vault);
-    add('workbench app', !!m, m ? `${m.name || 'AgenticOS Workbench'} ${m.version}` : 'not registered yet — open the AgenticOS Workbench app once', 'warn');
+    add('workbench app', !!m, m ? `${m.name || APP_NAME} ${m.version}` : `not registered yet — open the ${APP_NAME} app once`, 'warn');
   }
   // graphify spec §4.6: the pinned binary (fail when missing, warn on drift) and the graph's age (warn).
   if (cfg && vault) for (const row of graphCmd.doctorRows({ cfg, vault })) add(row.name, row.ok, row.detail, row.level);
@@ -871,7 +873,7 @@ function personaInterview(ctx) {
   }).catch((e) => out.warn(`persona interview failed: ${e.message}; run \`aos persona\` later`));   // execution amendment 2026-09-15 (A11): Plan 3's allowFail — init stays exit 0
 }
 
-const TERMINAL_NOTE = 'terminal: nothing to install — the AgenticOS Workbench app brings its own terminal';
+const TERMINAL_NOTE = `terminal: nothing to install — the ${APP_NAME} app brings its own terminal`;
 
 function checklist(ctx) {
   const { vault, written, dry } = ctx;
@@ -894,8 +896,8 @@ function checklist(ctx) {
   }
   // From the app's payload the app is already there (its wizard runs this); from a checkout it may not be.
   steps.push(ctx.repo && exists(path.join(ctx.repo, 'payload.json'))
-    ? 'Open the AgenticOS Workbench app; it finds this vault through agenticos.json.'
-    : `Open the AgenticOS Workbench app (macOS, Apple silicon; download it from ${APP_DOWNLOAD}); it finds this vault through agenticos.json.`);
+    ? `Open the ${APP_NAME} app; it finds this vault through agenticos.json.`
+    : `Open the ${APP_NAME} app (macOS, Apple silicon; download it from ${APP_DOWNLOAD}); it finds this vault through agenticos.json.`);
   steps.push(`Put ${path.join(os.homedir(), '.local', 'bin')} on your PATH, then run: aos doctor`);
   if (hosts.claude) steps.push('Start a new `claude` session; the first prompt receives <brain-context>. Use /wrap at the end.');
   if (hosts.codex) steps.push(codexPlugin
@@ -1239,7 +1241,7 @@ async function upgrade(flags) {
   // An install from the Obsidian era still has the HUD in the vault: say once where the Workbench went, and leave the
   // folder alone (the user may still be running it until the app is installed).
   if (isDir(path.join(vault, '.obsidian', 'plugins', OBSIDIAN_PLUGIN_ID))) {
-    out.log(`The Workbench is now the AgenticOS Workbench app for macOS (${APP_DOWNLOAD}); once you use the app, you can remove the old Obsidian plugin folder ${path.join(vault, '.obsidian', 'plugins', OBSIDIAN_PLUGIN_ID)}.`);
+    out.log(`The Workbench is now the ${APP_NAME} app for macOS (${APP_DOWNLOAD}); once you use the app, you can remove the old Obsidian plugin folder ${path.join(vault, '.obsidian', 'plugins', OBSIDIAN_PLUGIN_ID)}.`);
   }
   out.log(`upgraded to v${version}. Memory, notes and persona were not touched.`);
   return 0;

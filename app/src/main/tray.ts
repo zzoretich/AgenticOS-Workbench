@@ -4,6 +4,7 @@
 import { Menu, Tray, app, nativeImage, type MenuItemConstructorOptions } from "electron";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { BRAND } from "../shared/brand";
 import { STATUSLINE_PATH, barSegments, parseStatusline, type BarSegment } from "../../../obsidian-plugin/src/data/statusline";
 
 export { STATUSLINE_PATH };
@@ -19,22 +20,40 @@ export interface TrayActions {
 
 const MAX_SEGMENT = 26;
 
-/** The menubar title: a mark, then the two most important segments. Dim ones (drafts) stay in the menu. */
-export function trayTitle(segments: readonly BarSegment[]): string {
+/**
+ * The menubar title beside the mark: the two most important segments. Dim ones (drafts) stay in the menu. Without the
+ * mark's image (a build that lost it), a ◉ stands in for it.
+ */
+export function trayTitle(segments: readonly BarSegment[], hasMark = true): string {
   const top = segments.filter((s) => s.tone !== "dim").slice(0, 2)
     .map((s) => (s.text.length > MAX_SEGMENT ? `${s.text.slice(0, MAX_SEGMENT - 1)}…` : s.text));
-  return top.length ? `◉ ${top.join(" · ")}` : "◉";
+  const text = top.join(" · ");
+  if (hasMark) return text ? ` ${text}` : "";
+  return text ? `◉ ${text}` : "◉";
+}
+
+/**
+ * The Line mark (UniDeX D10) as a template image: black on clear, which macOS tints for a light or dark menu bar.
+ * scripts/build.mjs copies build/trayTemplate.png and its @2x beside this bundle; nativeImage picks the @2x on Retina.
+ */
+export function markImage(dir: string = __dirname): Electron.NativeImage {
+  const image = nativeImage.createFromPath(path.join(dir, "trayTemplate.png"));
+  if (!image.isEmpty()) image.setTemplateImage(true);
+  return image;
 }
 
 export class StatusTray {
   private readonly tray: Tray;
   private segments: BarSegment[] = [];
-  private title = "◉";
+  private title = "";
   private contextMenu: Menu | null = null;
+  private readonly hasMark: boolean;
 
   constructor(private readonly vaultRoot: string, private readonly actions: TrayActions) {
-    this.tray = new Tray(nativeImage.createEmpty());
-    this.tray.setToolTip("AgenticOS");
+    const mark = markImage();
+    this.hasMark = !mark.isEmpty();
+    this.tray = new Tray(mark);
+    this.tray.setToolTip(BRAND.name);
     // A click opens the SidebarHUD popover; a right-click (or a click before the popover exists) the menu. The menu is
     // popped up by hand: set as the context menu, macOS would open it on every click.
     this.tray.on("click", (_e, bounds) => { if (!this.actions.togglePopover?.(bounds)) this.popUpMenu(); });
@@ -49,14 +68,14 @@ export class StatusTray {
     try { raw = fs.readFileSync(path.join(this.vaultRoot, STATUSLINE_PATH), "utf8"); } catch { raw = null; }
     const model = parseStatusline(raw);
     this.segments = model ? barSegments(model) : [];
-    this.title = trayTitle(this.segments);
+    this.title = trayTitle(this.segments, this.hasMark);
     this.tray.setTitle(this.title, { fontType: "monospacedDigit" });
     this.contextMenu = Menu.buildFromTemplate(this.menu());
   }
 
   /** What the tray shows, for tests. */
-  state(): { title: string; segments: string[] } {
-    return { title: this.title, segments: this.segments.map((s) => s.text) };
+  state(): { title: string; segments: string[]; mark: boolean } {
+    return { title: this.title, segments: this.segments.map((s) => s.text), mark: this.hasMark };
   }
 
   destroy(): void { this.tray.destroy(); }
@@ -70,7 +89,7 @@ export class StatusTray {
         }))
       : [{ label: "All clear", enabled: false }];
     return [
-      { label: "AgenticOS", enabled: false },
+      { label: BRAND.name, enabled: false },
       ...items,
       { type: "separator" },
       { label: "Open Workbench", click: () => this.actions.command("agentic-os:open-workbench") },

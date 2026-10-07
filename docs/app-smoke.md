@@ -1,6 +1,6 @@
 # The Workbench app — manual smoke checklist
 
-Run before tagging a release, in the AgenticOS Workbench app on a vault created by `aos init` or the app's wizard (not the developer vault). Most rows are also automated: the app's end-to-end suite asserts them on a synthetic vault (`app/tests/e2e/COVERAGE.md` maps every row to its spec), and `npm run dist:test && npm run smoke:packaged` runs the packaged app on a fresh install. This list is the pass by hand, against real hosts. Repeat the provider rows for each provider you can reach (`aos provider none|ollama|claude`; the scripts rewrite `brain/_index/provider-state.json` on the next hook run — start one `claude` session and exit, or run `aos scan-vault --quiet`).
+Run before tagging a release, in the UniDeX app on a vault created by `aos init` or the app's wizard (not the developer vault). Most rows are also automated: the app's end-to-end suite asserts them on a synthetic vault (`app/tests/e2e/COVERAGE.md` maps every row to its spec), and `npm run dist:test && npm run smoke:packaged` runs the packaged app on a fresh install. This list is the pass by hand, against real hosts. Repeat the provider rows for each provider you can reach (`aos provider none|ollama|claude`; the scripts rewrite `brain/_index/provider-state.json` on the next hook run — start one `claude` session and exit, or run `aos scan-vault --quiet`).
 
 ## Release procedure
 
@@ -13,8 +13,8 @@ Run before tagging a release, in the AgenticOS Workbench app on a vault created 
 
 ## Install paths
 
-- [ ] Open the app on the vault: the Workbench draws on Pulse with no error, and a dev run (`npm start` in `app/`) logs `[host] AgenticOS HUD <version> loaded` in its developer tools.
-- [ ] The settings window's Agentic OS tab (App settings at the Workbench rail's foot, or AgenticOS Workbench ▸ App Settings… ⌘⇧,) shows the Paths section as pickers: Vault root on "this vault (…)", Claude config dir on "auto (…)", Node binary on "auto" with the installed nodes listed; **Probe** picks a path and shows a notice.
+- [ ] Open the app on the vault: the Workbench draws on Home (Chat once a model provider is set up, else Pulse) with no error, and a dev run (`npm start` in `app/`) logs `[host] AgenticOS HUD <version> loaded` in its developer tools.
+- [ ] The settings window's Runtime tab (App settings at the Workbench rail's foot, or UniDeX ▸ App Settings… ⌘⇧,) shows the Paths section as pickers: Vault root on "this vault (…)", Claude config dir on "auto (…)", Node binary on "auto" with the installed nodes listed; **Probe** picks a path and shows a notice.
 - [ ] Provider row reflects `provider-state.json` (name + reason); the refresh icon re-reads it.
 
 ## The app
@@ -22,12 +22,13 @@ Run before tagging a release, in the AgenticOS Workbench app on a vault created 
 - [ ] With no install (a fresh account, or no `agenticos.json`), the app opens its setup wizard: Check lists Homebrew (optional), Node, Claude Code, Codex and their logins, Ollama, Ollama's models, Python and uv, and a missing one's fix-it runs its command in the wizard's terminal, after which the checks run again.
 - [ ] The wizard leaves Ollama with its two models, about 7.2 GB together: **Install Ollama and its models** starts the service, waits for it to answer and pulls `qwen3.5:9b` and `qwen3-embedding:0.6b` with Ollama's progress (Continue waits for it); with Ollama installed and a model missing, **Ollama's models** is a warning (`!`, Continue stays enabled) whose **Download the models** pulls only the missing one, starting Homebrew's service first or asking you to open Ollama.app when it is not answering. By hand, from a terminal: `ollama pull qwen3.5:9b && ollama pull qwen3-embedding:0.6b`.
 - [ ] Choose offers only the hosts that are ready; Your agent checks the name as `aos persona` does; Install runs `aos init` with its output live; Finish shows the `CLAUDE.md` line as a diff (**Add the line** adds it, nothing else does) and, with Codex, the `/hooks` step; **Open the Workbench** opens it without a relaunch.
-- [ ] Opened on an existing install, the app goes straight to the Workbench and shows the one-time note **AgenticOS Workbench is an app now** (closed with **Got it**) once per vault. When its runtime is newer than the vault's, **Update the runtime in your vault** follows (and the status bar's `⬆ Runtime <vault> → <app>` opens it again); **Update now** runs `aos upgrade` with its output, **Later** runs nothing.
+- [ ] Opened on an existing install, the app goes straight to the Workbench and shows the one-time note **UniDeX is an app now** (closed with **Got it**) once per vault. When its runtime is newer than the vault's, **Update the runtime in your vault** follows (and the status bar's `⬆ Runtime <vault> → <app>` opens it again); **Update now** runs `aos upgrade` with its output, **Later** runs nothing.
 - [ ] The settings an Obsidian-era vault kept in `.obsidian/plugins/agentic-os/data.json` are in effect on first start, and `~/Library/Application Support/AgenticOS Workbench/plugins/agentic-os.json` holds them before you change anything.
-- [ ] AgenticOS Workbench ▸ Check for Updates… checks GitHub Releases (a release build only; greyed out with the reason when `updates.check` is false); a downloaded update shows **Restart to update** in the status bar and the menu.
+- [ ] UniDeX ▸ Check for Updates… checks GitHub Releases (a release build only; greyed out with the reason when `updates.check` is false); a downloaded update shows **Restart to update** in the status bar and the menu.
 - [ ] The menubar icon opens the sidebar HUD in a popover; closing the window hides it and ⌘Q quits; `aos doctor`'s `workbench app` row names the app and its version.
 - [ ] Light and dark: the app draws in macOS's appearance and follows it when it changes (System Settings ▸ Appearance) while App settings ▸ **Appearance** is **Match macOS**; the rail's sun/moon toggle, the palette's **Toggle light and dark** and View ▸ **Appearance** switch it; the choice survives a restart; the window, the tray popover, the Term tab and the wizard's terminal switch with it.
 - [ ] Both themes read well: every tab in light and in dark has no text you cannot read, a status keeps its colour's meaning (green ok, amber a warning, red breaking or failed, blue live or running, violet waiting on you, grey off), and the type is Inter, with numbers and code in JetBrains Mono.
+- [ ] The name and the mark: the Dock, the app menu, About, the window title and the menubar tooltip read UniDeX; the app icon is the white UDX on a black tile; the menubar item is the UDX mark, black on a light menu bar and white on a dark one, with its status beside it.
 
 ## Settings
 
@@ -41,7 +42,7 @@ Run before tagging a release, in the AgenticOS Workbench app on a vault created 
 - [ ] ↺ on a changed row puts it back to the default (`aos config unset`); Hosts & install rows are read-only and their "❯_ aos doctor" / "❯_ aos upgrade" buttons open the Term tab running them.
 - [ ] *Claude Code only* (`hosts.codex.enabled: false`): every Codex row (`codex.*`, `*.codexModel`) is dimmed with "Codex is off on this machine; `aos init --host both` turns it on", and still editable. *Codex only* (`hosts.claude.enabled: false`): the Claude rows are dimmed the same way. *Both*: nothing dimmed.
 - [ ] A vault whose runtime predates 0.17 (no `aos config`): the tab says to run `aos upgrade` with a "❯_ aos upgrade" button, and the WORKBENCH section below still works.
-- [ ] The WORKBENCH section and the settings window's Agentic OS tab show the same plugin rows; a change in one appears in the other on reopen.
+- [ ] The WORKBENCH section and the settings window's Runtime tab show the same plugin rows; a change in one appears in the other on reopen.
 - [ ] Vault root: the picker offers this vault and the agenticos.json vault; picking one that no longer exists shows a Notice once ("Vault root: … is not a directory — keeping …") and the picker returns to the saved value; picking a different vault shows the 10 s explanation once.
 
 ## Config (both hosts)

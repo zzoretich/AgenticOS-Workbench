@@ -1,4 +1,5 @@
 import { ItemView, WorkspaceLeaf, TAbstractFile } from "obsidian";
+import { BRAND } from "../brand";
 import { loadSnapshot, Snapshot, SNAPSHOT_PATH, loadSnapshotHistory, DailySnapshot, seriesFromHistory } from "../data/snapshot";
 import { loadRuns, AgentRun, touchesRuns, formatDuration, formatRelative, formatClockTime } from "../data/runs";
 import { sparkline } from "../data/sparkline";
@@ -27,7 +28,7 @@ export class SidebarHUDView extends ItemView {
   }
 
   getViewType(): string { return VIEW_TYPE_SIDEBAR_HUD; }
-  getDisplayText(): string { return "Agentic OS"; }
+  getDisplayText(): string { return BRAND.name; }
   getIcon(): string { return "radio"; }
 
   async onOpen(): Promise<void> {
@@ -82,7 +83,7 @@ export class SidebarHUDView extends ItemView {
     root.addClass("aos-root", "aos-sidebar");
 
     const head = root.createDiv({ cls: "aos-sb-head" });
-    head.createDiv({ cls: "aos-sb-title", text: "AgenticOS" });
+    head.createDiv({ cls: "aos-sb-title", text: BRAND.name });
     head.createDiv({ cls: "aos-sb-clock aos-text-cyan", text: new Date().toLocaleTimeString(undefined, { hour12: false }) });
 
     // pipeline LEDs — first HUD section; same chip markup as PulseTab's strip

@@ -179,7 +179,7 @@ export class SettingsTab {
   private renderFailure(host: HTMLElement): void {
     const box = host.createDiv({ cls: "aos-st-failure" });
     box.createDiv({ text: this.failure!.upgrade
-      ? "This vault's AgenticOS runtime has no `aos config` yet: run `aos upgrade` to control every setting from here. The plugin's own settings below still work."
+      ? "This vault's runtime has no `aos config` yet: run `aos upgrade` to control every setting from here. The plugin's own settings below still work."
       : `Could not read the settings: ${this.failure!.text}` });
     if (this.failure!.upgrade) {
       const b = box.createEl("button", { cls: "aos-ws-action", text: "❯_ aos upgrade" });

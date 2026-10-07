@@ -103,6 +103,9 @@ const leftovers = readFileSync(path.join(out, "renderer/hud.js"), "utf8").split(
   .map((line) => line.trim().slice(0, 120));
 if (leftovers.length) throw new Error(`the page bundle still calls require:\n${leftovers.join("\n")}`);
 
+// The menu bar's mark (UniDeX D10), a template image and its @2x, beside main's bundle where tray.ts loads them.
+for (const scale of ["", "@2x"]) cpSync(r("build", `trayTemplate${scale}.png`), path.join(out, "main", `trayTemplate${scale}.png`));
+
 mkdirSync(path.join(out, "renderer"), { recursive: true });
 cpSync(r("src/renderer/index.html"), path.join(out, "renderer/index.html"));
 cpSync(r("src/renderer/host.css"), path.join(out, "renderer/host.css"));
