@@ -1,7 +1,7 @@
 {
   "name": "agenticos-workbench",
   "interface": {
-    "displayName": "AgenticOS Workbench"
+    "displayName": "UniDeX"
   },
   "plugins": [
     {

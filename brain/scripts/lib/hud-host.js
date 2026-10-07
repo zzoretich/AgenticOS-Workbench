@@ -3,7 +3,7 @@
  * hud-host.js — where the Workbench runs and how to link into it (spec 2026-10-05-workbench-app-design D11). Pure:
  * no writes, no network.
  *
- * The AgenticOS Workbench app records itself in <vault>/brain/_index/hud-host.json each time it starts, so doctor and
+ * The UniDeX app records itself in <vault>/brain/_index/hud-host.json each time it starts, so doctor and
  * the update check can see which app version the vault is used with without knowing where the app is installed.
  * Links into the Workbench are agenticos:// URLs, which the app registers: one helper builds them for the status
  * line and the proposal pages, so the two never disagree.

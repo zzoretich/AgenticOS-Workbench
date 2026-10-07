@@ -1,5 +1,5 @@
 {
-  "description": "AgenticOS Workbench: brain context injection, session capture, telemetry, and dashboard refresh. Every command runs through bin/aos, which exits 0 when the workbench has not been initialized, so a hook never fails a session.",
+  "description": "UniDeX: brain context injection, session capture, telemetry, and dashboard refresh. Every command runs through bin/aos, which exits 0 when the workbench has not been initialized, so a hook never fails a session.",
   "hooks": {
     "SessionStart": [
       {
