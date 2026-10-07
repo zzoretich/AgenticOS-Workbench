@@ -12,7 +12,9 @@
  *   node lib/sessions.js events --host claude|codex [--model <m>]
  *     stdin: the turn's raw stdout; stdout: one session-events.js event per line, as they arrive.
  *   node lib/sessions.js record '<json>'
- *     { host, model?, usd, inputTokens?, outputTokens?, ms? } → one ledger row, feature session:<host>.
+ *     { host, model?, usd, inputTokens?, outputTokens?, ms?, startedAt?, status?, prompt?, reply?, toolCount?, error?,
+ *       workspace?, thread? } → the turn's ledger row (feature session:<host>, when it cost anything) and its row in
+ *     agent-runs/runs.jsonl (script session:<host>), so the Runs tab lists it (S8).
  *
  *   plan({ cfg, req, env, spentToday, ... }) is `args` as a function, with the config and today's spend passed in.
  */
@@ -92,12 +94,24 @@ async function main(argv) {
   if (verb === 'record') {
     let r;
     try { r = JSON.parse(arg || (await readStdin())); } catch { process.stderr.write('sessions: record takes one JSON argument\n'); return 2; }
-    if (!H.HOSTS.includes(r.host) || typeof r.usd !== 'number' || !Number.isFinite(r.usd) || r.usd < 0) {
+    const usd = r && r.usd === null ? 0 : r && r.usd;
+    if (!r || !H.HOSTS.includes(r.host) || typeof usd !== 'number' || !Number.isFinite(usd) || usd < 0) {
       process.stderr.write('sessions: record needs { host, usd }\n');
       return 2;
     }
-    const { recordSpend } = require('../sdk/lib/spend-ledger.js');
-    recordSpend({ feature: `session:${r.host}`, provider: r.host, model: r.model || null, usd: r.usd, inputTokens: r.inputTokens, outputTokens: r.outputTokens, ms: r.ms });
+    if (usd > 0) {
+      const { recordSpend } = require('../sdk/lib/spend-ledger.js');
+      recordSpend({ feature: `session:${r.host}`, provider: r.host, model: r.model || null, usd, inputTokens: r.inputTokens, outputTokens: r.outputTokens, ms: r.ms });
+    }
+    const { appendRunSummary } = require('../sdk/lib/telemetry.js');
+    const ended = new Date();
+    const started = r.startedAt && !Number.isNaN(Date.parse(r.startedAt)) ? new Date(r.startedAt) : new Date(ended.getTime() - (Number(r.ms) || 0));
+    appendRunSummary({
+      script: `session:${r.host}`, startedAt: started, endedAt: ended, costUsd: r.usd === null ? null : usd, turns: 1,
+      status: ['ok', 'error', 'stopped'].includes(r.status) ? r.status : 'ok', prompt: r.prompt || null, reply: r.reply || null,
+      toolCount: Number.isInteger(r.toolCount) ? r.toolCount : 0, error: r.error ? String(r.error) : null,
+      extra: { host: r.host, model: r.model || null, workspace: r.workspace || null, thread: r.thread || null },
+    });
     return 0;
   }
   process.stderr.write('usage: sessions.js args <json> | events --host claude|codex [--model m] | record <json>\n');

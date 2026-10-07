@@ -81,6 +81,20 @@ export const CH = {
   themeSet: "theme:set",
   /** main → page: the theme changed (the user's choice, or macOS's appearance while it is followed). */
   themeEvent: "theme:event",
+
+  // Sessions (UniDeX phase 2, spec 2026-10-07-unidex-sessions): main runs each turn of an agent session in a workspace;
+  // the page names a workspace, a host and a prompt, and reads the thread back as events.
+  sessionStart: "session:start",
+  sessionSend: "session:send",
+  sessionStop: "session:stop",
+  sessionList: "session:list",
+  sessionRead: "session:read",
+  /** main → page: one event of a running turn. */
+  sessionEvent: "session:event",
+  // The workspace's repository: what changed, a file's diff, and the commit the user asks for.
+  gitStatus: "git:status",
+  gitDiff: "git:diff",
+  gitCommit: "git:commit",
 } as const;
 
 /** Where the app's own pages come from (main/app-scheme.ts): the main window loads `${APP_ORIGIN}/index.html`. */
@@ -256,6 +270,63 @@ export const HOST_COMMANDS = {
  */
 export type Result<T> = { ok: true; data: T } | { ok: false; error: string; code: string };
 
+/** The hosts a session runs on. */
+export type SessionHost = "claude" | "codex";
+
+/**
+ * One event of a thread: the runtime's lib/session-events.js shape (session, text, tool, tool_result, patch, usage,
+ * error, done), plus `prompt` (what the user sent) and `turn`, the turn it belongs to.
+ */
+export interface SessionEventRecord {
+  t: string;
+  kind: "prompt" | "session" | "text" | "tool" | "tool_result" | "patch" | "usage" | "error" | "done";
+  turn: number;
+  [field: string]: unknown;
+}
+
+/** A thread as the list shows it. */
+export interface SessionThread {
+  id: string;
+  workspace: string;
+  host: SessionHost;
+  model: string | null;
+  title: string;
+  created: string;
+  updated: string;
+  turns: number;
+  running: boolean;
+  /** What its turns cost so far (Codex's is an estimate). */
+  usd: number;
+}
+
+export interface SessionStartRequest {
+  /** The folder under <vault>/workspaces. */
+  workspace: string;
+  host: SessionHost;
+  text: string;
+  model?: string | null;
+  effort?: string | null;
+  /** Claude only: lets the turn run commands (Codex always runs them inside its sandbox). */
+  allowCommands?: boolean;
+}
+
+export interface SessionSendRequest { thread: string; text: string; allowCommands?: boolean }
+
+/** main → page: one event of a running turn of `thread`. */
+export interface SessionEvent { thread: string; event: SessionEventRecord }
+
+/** A workspace's repository: its branch and the files that differ from HEAD. */
+export interface GitStatus {
+  repo: boolean;
+  branch: string | null;
+  detached: boolean;
+  merging: boolean;
+  /** `git status --porcelain=v2` codes: "M." staged, ".M" changed, "??" untracked, … */
+  files: { path: string; status: string }[];
+}
+
+export interface GitDiff { stat: string; text: string; truncated: boolean }
+
 export interface StatInfo { size: number; mtimeMs: number; ctimeMs: number; file: boolean; dir: boolean; link: boolean }
 
 export interface DirEntryInfo { name: string; file: boolean; dir: boolean; link: boolean }
@@ -381,5 +452,23 @@ export interface AosBridge {
     state(): ThemeState;
     set(source: ThemeSource): Result<ThemeState>;
     onChange(cb: (s: ThemeState) => void): () => void;
+  };
+  /** Agent sessions in a workspace (spec 2026-10-07-unidex-sessions), run by main while the Sessions surface is on. */
+  sessions: {
+    /** Opens a thread and starts its first turn; events follow on onEvent. */
+    start(req: SessionStartRequest): Promise<Result<SessionThread>>;
+    /** The thread's next turn. */
+    send(req: SessionSendRequest): Promise<Result<SessionThread>>;
+    /** Stops the running turn (SIGTERM, then SIGKILL after 10 s). */
+    stop(thread: string): void;
+    list(): Promise<Result<SessionThread[]>>;
+    read(thread: string): Promise<Result<SessionEventRecord[]>>;
+    onEvent(cb: (ev: SessionEvent) => void): () => void;
+  };
+  /** A workspace's repository: read, and commit on the user's word. Nothing is pushed. */
+  git: {
+    status(workspace: string): Promise<Result<GitStatus>>;
+    diff(workspace: string, file?: string): Promise<Result<GitDiff>>;
+    commit(workspace: string, message: string): Promise<Result<{ commit: string }>>;
   };
 }

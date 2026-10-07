@@ -94,8 +94,10 @@ test("↻ re-describes one file; with no model provider it fails, the ledger rec
   const was = fileMapRun()?.startedAt ?? null;
   await mapRow(win, "README.md").locator("a.aos-sp-redesc").click();
   await expect(win.locator(".notice-container")).toContainText("▶ map-workspace.js harbor-map --file README.md");
-  await expect.poll(() => fileMapRun()?.startedAt ?? null, { timeout: 30_000 }).not.toBe(was);
-  expect(fileMapRun()).toMatchObject({ status: "error", error: "could not describe README.md (missing file or qwen failure)" });
+  // The ledger writes lastRun twice (lib/pipeline-report.js): at the start, status "running" with the new startedAt, then
+  // the outcome. Wait for a run that started after the click AND ended: reading at the first write saw "running".
+  await expect.poll(() => { const r = fileMapRun(); return r && r.startedAt !== was && r.status !== "running" ? r : null; }, { timeout: 30_000 })
+    .toMatchObject({ status: "error", error: "could not describe README.md (missing file or qwen failure)" });
   expect(fs.readFileSync(mapFile("harbor-map"), "utf8")).toBe(before);
 });
 

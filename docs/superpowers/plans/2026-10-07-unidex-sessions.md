@@ -22,15 +22,15 @@ Spec: `docs/superpowers/specs/2026-10-07-unidex-sessions-design.md` (approved 20
 
 ## PR 2b — app service (`feat/unidex-sessions-app`)
 
-- [ ] **B1 `app/src/main/services/sessions.ts`:**
+- [x] **B1 `app/src/main/services/sessions.ts`:**
   - Start, send, stop and list threads.
   - Each turn spawns `sessions.js args`, then the host's binary in `workspaces/<slug>`, then pipes its output through `sessions.js events`.
   - Events are written to `brain/_index/sessions/<slug>/<thread>.jsonl` and `agent-runs/live/<id>.ndjson`.
   - When a turn ends, it records spend and a `runs.jsonl` row.
   - Stop sends SIGTERM, then SIGKILL after 10 s.
-- [ ] **B2 Channels:** `session:start|send|stop|list` and the event `session:event` in `shared/ipc.ts`, the preload, zod schemas in `ipc/schemas.ts`, handlers through `ipc/trust.ts`, and the `sessions` surface in `shared/surfaces.ts` (`verified: false` until a live check).
-- [ ] **B3 Git** (`services/git.ts`): `git:status|diff|commit` for a workspace repo, with the refusals in §4.4.
-- [ ] **B4 Tests and docs:** unit tests on fake `claude`/`codex` scripts that replay fixtures, git on a temp repo, the `sandbox.spec.ts` lines for the new channels, and the `SECURITY.md` rows.
+- [x] **B2 Channels:** `session:start|send|stop|list` and the event `session:event` in `shared/ipc.ts`, the preload, zod schemas in `ipc/schemas.ts`, handlers through `ipc/trust.ts`, and the `sessions` surface in `shared/surfaces.ts` (`verified: false` until a live check).
+- [x] **B3 Git** (`services/git.ts`): `git:status|diff|commit` for a workspace repo, with the refusals in §4.4.
+- [x] **B4 Tests and docs:** unit tests on fake `claude`/`codex` scripts that replay fixtures, git on a temp repo, the `sandbox.spec.ts` lines for the new channels, and the `SECURITY.md` rows.
 
 ## PR 2c — UI (`feat/unidex-sessions-ui`)
 

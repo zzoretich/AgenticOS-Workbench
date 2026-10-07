@@ -3,7 +3,7 @@
 // HUD sends and small enough that one call cannot exhaust main.
 
 import { z } from "zod";
-import type { ExecRequest, InstallRequest, PersonaAnswers, PtySpawnRequest, ReadyInfo, SetupFixId, SpawnRequest, ThemeSource, WriteVia } from "../../shared/ipc";
+import type { ExecRequest, InstallRequest, PersonaAnswers, PtySpawnRequest, ReadyInfo, SessionSendRequest, SessionStartRequest, SetupFixId, SpawnRequest, ThemeSource, WriteVia } from "../../shared/ipc";
 
 const MB = 1024 * 1024;
 
@@ -108,3 +108,27 @@ export const InstallRequestSchema: z.ZodType<InstallRequest> = z.object({
   vault: Text(4096).refine((s) => s.trim().length > 0, "a folder"),
   persona: PersonaSchema.nullable(),
 });
+
+// Sessions (spec 2026-10-07-unidex-sessions S3): the page names a workspace, a thread, a host, a prompt or a file; main
+// and the runtime decide everything else.
+/** A thread id, as main makes them (randomUUID). */
+const ThreadId = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+/** A folder under <vault>/workspaces: one segment, not hidden, not the team worktrees (services/sessions.ts WORKSPACE_RE). */
+const WorkspaceName = z.string().max(128).regex(/^[^._/\\\0][^/\\\0]*$/);
+const Prompt = z.string().max(64 * 1024).refine((s) => s.trim().length > 0 && !s.includes("\0"), "a prompt");
+/** A model, never one that could read as a flag. */
+const SessionModel = Model.refine((s) => !s.startsWith("-"), "a model name");
+
+export const SessionStartSchema: z.ZodType<SessionStartRequest> = z.object({
+  workspace: WorkspaceName,
+  host: z.enum(["claude", "codex"]),
+  text: Prompt,
+  model: SessionModel.nullable().optional(),
+  effort: z.enum(["minimal", "low", "medium", "high", "xhigh", "max"]).nullable().optional(),
+  allowCommands: z.boolean().optional(),
+}).strict();
+export const SessionSendSchema: z.ZodType<SessionSendRequest> = z.object({ thread: ThreadId, text: Prompt, allowCommands: z.boolean().optional() }).strict();
+export const ThreadArgs = z.object({ thread: ThreadId }).strict();
+export const GitStatusArgs = z.object({ workspace: WorkspaceName }).strict();
+export const GitDiffArgs = z.object({ workspace: WorkspaceName, file: Text(4096).refine((f) => f.length > 0, "a file").optional() }).strict();
+export const GitCommitArgs = z.object({ workspace: WorkspaceName, message: Text(64 * 1024).refine((m) => m.trim().length > 0, "a message") }).strict();

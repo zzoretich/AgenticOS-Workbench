@@ -17,6 +17,7 @@ import { writeHudHostMarker } from "./hud-host";
 import { registerFsIpc } from "./ipc/fs";
 import { registerHostIpc } from "./ipc/host";
 import { registerProcIpc } from "./ipc/proc";
+import { registerSessionIpc } from "./ipc/sessions";
 import { registerSetupIpc, registerUpdateIpc } from "./ipc/setup";
 import { openExternalSafe, registerShellIpc } from "./ipc/shell";
 import { registerThemeIpc } from "./ipc/theme";
@@ -29,9 +30,12 @@ import { WritePolicy } from "./policy/write-policy";
 import { SCHEME, parseAgenticosUrl, urlFromArgv } from "./protocol";
 import { FsService } from "./services/fs";
 import { ProcService } from "./services/proc";
+import { GitService } from "./services/git";
 import { PtyService, type PtyLib } from "./services/pty";
+import { SessionService, workspaceDir } from "./services/sessions";
 import { attachInfo } from "./setup/attach";
 import { SetupController, type AgenticosJson } from "./setup/controller";
+import { defaultLoginPathDeps, findOnPath, isExecutable, loginPath } from "./setup/env";
 import { findPayload } from "./setup/payload";
 import { loadThemeSource, saveThemeSource, windowBackground } from "./theme";
 import { STATUSLINE_PATH, StatusTray } from "./tray";
@@ -94,6 +98,19 @@ let attached: AttachInfo | null = null;
 const procService = new ProcService({ policy: () => policy, context: () => context, env: process.env, emit: (ev) => send(CH.procEvent, ev) });
 // The app's own node-pty: in a packaged build its JavaScript is in the archive and its native parts are unpacked beside it.
 const ptyService = new PtyService({ context: () => context, env: process.env, emit: (ev) => send(CH.ptyEvent, ev), load: () => require("node-pty") as PtyLib });
+// Agent sessions (UniDeX phase 2) and the workspace repositories they change: main's own services, behind the Sessions
+// surface. A turn outlives a page reload; quitting stops every one.
+const sessionsOn = (): boolean => policy.ids.includes("sessions");
+let loginPATH: string | null = null;
+/** The node the runtime's scripts run with: agenticos.json's (aos init records it), else the login shell's. */
+function sessionNode(): string | null {
+  const recorded = agenticos?.node;
+  if (typeof recorded === "string" && isExecutable(recorded)) return recorded;
+  loginPATH ??= loginPath(defaultLoginPathDeps(process.env, os.homedir()));
+  return findOnPath("node", loginPATH);
+}
+const sessionService = new SessionService({ vaultRoot: () => context.vaultRoot ?? null, enabled: sessionsOn, context: () => context, env: process.env, node: sessionNode, emit: (ev) => send(CH.sessionEvent, ev) });
+const gitService = new GitService({ workspace: (name) => workspaceDir(context.vaultRoot ?? null, name), enabled: sessionsOn, env: process.env });
 
 /** The variables the HUD reads (HudHost.env), from main's environment; nothing else of it reaches the page. */
 const PAGE_ENV = ["SHELL", "CLAUDE_CONFIG_DIR", "AOS_CONFIG", "AOS_VAULT", "CODEX_HOME"];
@@ -300,6 +317,7 @@ registerHostIpc(trust, {
 });
 registerFsIpc(trust, () => fsService);
 registerProcIpc(trust, procService, ptyService);
+registerSessionIpc(trust, sessionService, gitService);
 registerShellIpc(trust, () => (vault.root ? scope : null), () => vault.root);
 registerSetupIpc(trust, setup);
 registerUpdateIpc(trust, {
@@ -383,7 +401,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on("activate", () => show());
   app.on("before-quit", () => { quitting = true; });
   app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
-  app.on("will-quit", () => { watcher?.stop(); tray?.destroy(); updates.stop(); endPageWork(); });
+  app.on("will-quit", () => { watcher?.stop(); tray?.destroy(); updates.stop(); endPageWork(); sessionService.killAll(); });
 
   void app.whenReady().then(() => {
     // Only a packaged, signed app claims the scheme; a dev run must not re-point the system's agenticos:// handler.

@@ -96,7 +96,7 @@ test("normalizePath matches Obsidian's", () => {
 test("write surfaces: every verified surface by default; AOS_APP_WRITE narrows or widens a run", () => {
   const verified = SURFACES.filter((s) => s.verified).map((s) => s.id);
   assert.deepEqual(loadWriteSettings({}), { surfaces: verified, source: "default" });
-  assert.ok(verified.length > 0 && verified.length === SURFACES.length, "every surface is verified today");
+  assert.deepEqual(SURFACES.filter((s) => !s.verified).map((s) => s.id), ["sessions"], "every surface but Sessions is verified today: it waits for a live turn on each host (plan 2026-10-07-unidex-sessions C3)");
   assert.deepEqual(loadWriteSettings({ AOS_APP_WRITE: "todo,chat" }), { surfaces: ["todo", "chat"], source: "AOS_APP_WRITE" });
   assert.deepEqual(loadWriteSettings({ AOS_APP_WRITE: "" }), { surfaces: [], source: "AOS_APP_WRITE" });
   // A surface not verified yet (a new one starts this way) stays off by default; AOS_APP_WRITE can still turn it on

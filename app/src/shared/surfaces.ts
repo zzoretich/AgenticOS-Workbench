@@ -42,10 +42,11 @@ export interface Surface {
   /** Vault-relative globs it never writes or creates, even where `writes` or `folders` match. */
   except?: readonly string[];
   /**
-   * Whose writes it admits: the HUD's (the default), checked by the guarded fs and the vault adapter; or the app's
-   * note editor's, checked only by the editor's save (canSave).
+   * Whose writes it admits: the HUD's (the default), checked by the guarded fs and the vault adapter; the app's note
+   * editor's, checked only by the editor's save (canSave); or a service of main's own (Sessions), which main runs only
+   * while the surface is on and whose writes and commands are never the page's: the HUD's rules leave it out.
    */
-  scope?: "hud" | "editor";
+  scope?: "hud" | "editor" | "main";
   spawns: readonly SpawnRule[];
   /**
    * Its writes were checked on a live vault with the Obsidian HUD open (phase 2's per-surface step). Only these are on
@@ -237,6 +238,22 @@ export const SURFACES: readonly Surface[] = [
       claudeAsk(true),
     ],
     verified: true,
+  },
+  {
+    id: "sessions",
+    label: "Sessions",
+    source: "main/services/sessions.ts and main/services/git.ts, for views/SessionsTab.ts (spec 2026-10-07-unidex-sessions): main runs each turn through the runtime's lib/sessions.js in a workspace folder, keeps the thread, and diffs and commits the workspace repository; the page only names a workspace, a host and a prompt",
+    scope: "main",
+    writes: ["brain/_index/sessions/*/*.jsonl", "brain/_index/provider-spend.jsonl", "brain/_index/agent-runs/runs.jsonl"],
+    folders: ["brain/_index/sessions", "brain/_index/sessions/*", "brain/_index/agent-runs"],
+    spawns: [
+      { script: "lib/sessions.js", args: argv("args", JSON_OBJ) },
+      { script: "lib/sessions.js", args: argv("events", "--host", /claude|codex/) },
+      { script: "lib/sessions.js", args: argv("events", "--host", /claude|codex/, "--model", WORD) },
+      { script: "lib/sessions.js", args: argv("record", JSON_OBJ) },
+    ],
+    // Off until a turn on each host has run on a live workspace (plan 2026-10-07-unidex-sessions C3).
+    verified: false,
   },
 ];
 
