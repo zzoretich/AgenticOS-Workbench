@@ -68,7 +68,7 @@ dmg:
 publish:
   provider: github
   owner: zzoretich
-  repo: AgenticOS-Workbench
+  repo: UniDeX-Agent-Harness
   releaseType: release
 
 electronFuses:

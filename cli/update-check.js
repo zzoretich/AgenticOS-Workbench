@@ -18,8 +18,11 @@ const https = require('https');
 
 // What a release is called where people read it (UniDeX spec D1; app/src/shared/brand.ts).
 const PRODUCT = 'UniDeX';
-const REPO_SLUG = 'zzoretich/AgenticOS-Workbench';
+const REPO_SLUG = 'zzoretich/UniDeX-Agent-Harness';
 const LATEST_URL = `https://api.github.com/repos/${REPO_SLUG}/releases/latest`;
+// GitHub answers a renamed repository's old API path with a 301 (and any later move the same way).
+const REDIRECTS = new Set([301, 302, 303, 307, 308]);
+const MAX_REDIRECTS = 3;
 const STORE_REL = path.join('brain', '_index', 'update-check.json');
 const LINE_REL = path.join('brain', '_index', 'update-line.txt');
 const SCHEMA = 1;
@@ -226,14 +229,28 @@ function updatesConfig({ configDir = claudeConfigDir(), vault } = {}) {
   return out;
 }
 
-/** GET + JSON parse. Rejects with an Error carrying .statusCode on a non-200 so callers can single out 404. */
-function httpGetJson(url, { getFn = (u, o, cb) => https.get(u, o, cb), timeoutMs = 5000 } = {}) {
+/**
+ * GET + JSON parse, following up to MAX_REDIRECTS https redirects. Rejects with an Error carrying .statusCode on a
+ * non-200 so callers can single out 404.
+ */
+function httpGetJson(url, { getFn = (u, o, cb) => https.get(u, o, cb), timeoutMs = 5000, redirects = MAX_REDIRECTS } = {}) {
   return new Promise((resolve, reject) => {
     let settled = false;
     const fail = (e) => { if (!settled) { settled = true; reject(e); } };
     const req = getFn(url, {
       headers: { 'user-agent': 'agenticos-update-check', accept: 'application/vnd.github+json' },
     }, (res) => {
+      const location = REDIRECTS.has(res.statusCode) && res.headers ? res.headers.location : null;
+      if (location) {
+        res.resume();
+        let next;
+        try { next = new URL(location, url); } catch { return fail(new Error(`bad redirect from ${url}`)); }
+        if (next.protocol !== 'https:') return fail(new Error(`refusing a non-https redirect from ${url}`));
+        if (redirects <= 0) return fail(new Error(`too many redirects from ${url}`));
+        if (settled) return;
+        settled = true;
+        return httpGetJson(next.href, { getFn, timeoutMs, redirects: redirects - 1 }).then(resolve, reject);
+      }
       if (res.statusCode !== 200) {
         res.resume();
         const e = new Error(`HTTP ${res.statusCode} for ${url}`);

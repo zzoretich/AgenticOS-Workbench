@@ -202,7 +202,7 @@ if (!argv.includes("--app-only")) {
   // The updater's files (I6): the app's own feed (electron-builder writes app-update.yml only when it builds a DMG or a
   // zip, so a --dir build has none), the zip Squirrel installs from and the feed that names it.
   const feed = fs.existsSync(path.join(RES, "app-update.yml")) ? fs.readFileSync(path.join(RES, "app-update.yml"), "utf8") : "";
-  check("the app knows its update feed (GitHub Releases of this repo)", /provider: github/.test(feed) && /owner: zzoretich/.test(feed) && /repo: AgenticOS-Workbench/.test(feed), feed.replace(/\n/g, " ").trim());
+  check("the app knows its update feed (GitHub Releases of this repo)", /provider: github/.test(feed) && /owner: zzoretich/.test(feed) && /repo: UniDeX-Agent-Harness/.test(feed), feed.replace(/\n/g, " ").trim());
   const ZIP = path.join(repo, "dist", `AgenticOS-Workbench-${pkg.version}-arm64.zip`);
   const latest = path.join(repo, "dist", "latest-mac.yml");
   const yml = fs.existsSync(latest) ? fs.readFileSync(latest, "utf8") : "";

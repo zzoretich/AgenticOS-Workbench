@@ -5,8 +5,8 @@
   "author": {
     "name": "AgenticOS Workbench contributors"
   },
-  "homepage": "https://github.com/zzoretich/AgenticOS-Workbench",
-  "repository": "https://github.com/zzoretich/AgenticOS-Workbench",
+  "homepage": "https://github.com/zzoretich/UniDeX-Agent-Harness",
+  "repository": "https://github.com/zzoretich/UniDeX-Agent-Harness",
   "license": "MIT",
   "keywords": [
     "memory",
@@ -30,7 +30,7 @@
       "Read",
       "Write"
     ],
-    "websiteURL": "https://github.com/zzoretich/AgenticOS-Workbench",
+    "websiteURL": "https://github.com/zzoretich/UniDeX-Agent-Harness",
     "defaultPrompt": [
       "What did we decide about this project last time?",
       "Show my brain state",

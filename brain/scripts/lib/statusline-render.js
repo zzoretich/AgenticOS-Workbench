@@ -15,7 +15,7 @@
 const path = require('path');
 const { links } = require('./hud-host.js');
 
-const REPO_SLUG = 'zzoretich/AgenticOS-Workbench'; // mirrors cli/update-check.js (brain/scripts must not require cli/)
+const REPO_SLUG = 'zzoretich/UniDeX-Agent-Harness'; // mirrors cli/update-check.js (brain/scripts must not require cli/)
 const AUTO_COMPACT_BUFFER_PCT = 16.5;
 const E = '\x1b[';
 const C = { dim: '2', bold: '1', green: '32', yellow: '33', orange: '38;5;208', red: '31', cyan: '36', magenta: '35', boldMagenta: '1;35', boldRed: '1;31' };

@@ -20,7 +20,7 @@ each block names the one it proves.
 
 ## 1. Download → wizard → Workbench, with no terminal (criterion 1)
 Start a timer. Do not open Terminal until the box says so.
-- [ ] From `https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v<version>`, download
+- [ ] From `https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v<version>`, download
   `AgenticOS-Workbench-<version>-arm64.dmg`; open it, drag the app to Applications, and open it from there. macOS asks
   once whether to open an app downloaded from the internet, and shows no "cannot be checked for malicious software"
   dialog (the app and the DMG are notarized).
@@ -65,9 +65,9 @@ Start a timer. Do not open Terminal until the box says so.
 - [ ] Stop Ollama; after 60 s, `aos scan-vault --quiet && aos status` shows `claude` (or `none` if not logged in).
 
 ## 3. Privacy gate (criterion 3)
-The rest of the run needs a clone: `git clone https://github.com/zzoretich/AgenticOS-Workbench ~/AgenticOS-Workbench && cd ~/AgenticOS-Workbench && npm ci --ignore-scripts` (the command `docs/install.md` and CI use) finishes without error.
+The rest of the run needs a clone: `git clone https://github.com/zzoretich/UniDeX-Agent-Harness ~/AgenticOS-Workbench && cd ~/AgenticOS-Workbench && npm ci --ignore-scripts` (the command `docs/install.md` and CI use) finishes without error.
 - [ ] `cd ~/AgenticOS-Workbench && npm run gate` → `privacy-gate: 0 violation(s)`, and `node tools/privacy-gate.js --json` prints `[]`. This is the pass condition: the gate scans every tracked and untracked-not-ignored file for every term `tools/privacy-terms.js` loads (the public `tools/privacy-terms.json` plus the maintainer's private list; `npm run gate -- --require-private` fails when the private list is missing).
-- [ ] Cross-check the exception table: `cat tools/privacy-exceptions.json` shows exactly eight rows: the gate's two data files, `tools/privacy-terms.json` and `tools/privacy-exceptions.json` (term `*`); the example agent name, in `cli/aos.js` and `docs/chief-of-staff.md`; and the maintainer's credit, in `README.md`, `tools/brand-assets.js`, `tools/brand-assets.test.js` and `docs/assets/banner.svg`. Any other row blocks the release. (The launcher and the CLI probe `$HOME`-relative node paths, and the GitHub source `zzoretich/AgenticOS-Workbench` is not a term, so neither needs a row.)
+- [ ] Cross-check the exception table: `cat tools/privacy-exceptions.json` shows exactly eight rows: the gate's two data files, `tools/privacy-terms.json` and `tools/privacy-exceptions.json` (term `*`); the example agent name, in `cli/aos.js` and `docs/chief-of-staff.md`; and the maintainer's credit, in `README.md`, `tools/brand-assets.js`, `tools/brand-assets.test.js` and `docs/assets/banner.svg`. Any other row blocks the release. (The launcher and the CLI probe `$HOME`-relative node paths, and the GitHub source `zzoretich/UniDeX-Agent-Harness` is not a term, so neither needs a row.)
 - [ ] GitHub Actions: for the release commit, the `privacy` run (the gate with the maintainer's private terms, on every push to `main` and every pull request) is green, and so is the `ci` run (tests on Ubuntu and macOS, the install rehearsals and the app); the `release` run for the `v*` tag (Ubuntu only) shows its own gate step green in the `build` job, and the `publish` job created the release with the version's `CHANGELOG.md` section as its notes. The release's assets are what `release:app` uploaded: `AgenticOS-Workbench-<version>-arm64.dmg`, `AgenticOS-Workbench-<version>-arm64.zip` and its `.zip.blockmap`, and `latest-mac.yml`, and nothing else.
 
 ## 4. Test suites offline (criterion 4)

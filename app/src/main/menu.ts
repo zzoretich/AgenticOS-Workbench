@@ -109,7 +109,7 @@ export function buildAppMenu(commands: CommandInfo[], run: (id: string) => void,
     { role: "windowMenu" },
     {
       role: "help",
-      submenu: [{ label: `${BRAND.name} on GitHub`, click: () => void shell.openExternal("https://github.com/zzoretich/AgenticOS-Workbench") }],
+      submenu: [{ label: `${BRAND.name} on GitHub`, click: () => void shell.openExternal("https://github.com/zzoretich/UniDeX-Agent-Harness") }],
     },
   ];
   return Menu.buildFromTemplate(template);

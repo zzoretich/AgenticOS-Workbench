@@ -3,7 +3,7 @@
 
 import { createHash } from "node:crypto";
 
-export const REPO = "zzoretich/AgenticOS-Workbench";
+export const REPO = "zzoretich/UniDeX-Agent-Harness";
 
 /** electron-builder.yml's artifactName for this version: the DMG people download and the zip the updater installs. */
 export function artifacts(version) {

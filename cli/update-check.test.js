@@ -78,7 +78,7 @@ function vaultWorld() {
 const behindState = (over = {}) => ({
   schema: 1, checkedAt: '2026-09-15T00:00:00.000Z', installed: '0.1.0',
   vaultVersion: '0.1.0', pluginVersion: '0.1.0', latest: '0.2.0', behind: true,
-  url: 'https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.2.0',
+  url: 'https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v0.2.0',
   snooze: null, lastError: null, consecutiveFailures: 0, ...over,
 });
 
@@ -195,7 +195,7 @@ test('writeFragment writes zero bytes when there is nothing to say', () => {
 const { EventEmitter } = require('events');
 
 /** A fake https.get: replays one scripted response (or an error) with no network. */
-function fakeGet({ status = 200, body = '{}', err = null, chunks = null } = {}) {
+function fakeGet({ status = 200, body = '{}', err = null, chunks = null, headers = {} } = {}) {
   return (_url, _opts, cb) => {
     const req = new EventEmitter();
     req.destroy = (e) => { if (e) req.emit('error', e); };
@@ -204,6 +204,7 @@ function fakeGet({ status = 200, body = '{}', err = null, chunks = null } = {}) 
       if (err) return req.emit('error', err);
       const res = new EventEmitter();
       res.statusCode = status;
+      res.headers = headers;
       res.setEncoding = () => {};
       res.resume = () => {};
       cb(res);
@@ -240,13 +241,46 @@ test('httpGetJson surfaces the status code on a non-200', async () => {
     /ENOTFOUND/);
 });
 
+/** A getter that answers by URL (fakeGet's options per URL) and records what was asked for. */
+function routeGet(routes) {
+  const asked = [];
+  const get = (url, opts, cb) => { asked.push(url); return fakeGet(routes[url] || { status: 404 })(url, opts, cb); };
+  return { get, asked };
+}
+
+test('httpGetJson follows the 301 GitHub answers for a renamed repository, to the release', async () => {
+  const old = 'https://api.github.com/repos/zzoretich/AgenticOS-Workbench/releases/latest';
+  const moved = 'https://api.github.com/repositories/1372433490/releases/latest';
+  const { get, asked } = routeGet({
+    [old]: { status: 301, headers: { location: moved } },
+    [moved]: { body: release('v1.2.1') },
+  });
+  assert.equal((await U.httpGetJson(old, { getFn: get })).tag_name, 'v1.2.1');
+  assert.deepEqual(asked, [old, moved]);
+  // A relative Location resolves against the URL that answered it.
+  const rel = routeGet({ 'https://example.invalid/a': { status: 302, headers: { location: '/b' } }, 'https://example.invalid/b': { body: '{"ok":1}' } });
+  assert.deepEqual(await U.httpGetJson('https://example.invalid/a', { getFn: rel.get }), { ok: 1 });
+});
+
+test('httpGetJson follows at most three redirects, only to https, and needs a Location', async () => {
+  const loop = routeGet(Object.fromEntries([0, 1, 2, 3].map((i) => [`https://example.invalid/${i}`, { status: 307, headers: { location: `/${i + 1}` } }])));
+  await assert.rejects(() => U.httpGetJson('https://example.invalid/0', { getFn: loop.get }), /too many redirects/);
+  assert.equal(loop.asked.length, 4);
+  const plain = routeGet({ 'https://example.invalid/x': { status: 301, headers: { location: 'http://example.invalid/y' } } });
+  await assert.rejects(() => U.httpGetJson('https://example.invalid/x', { getFn: plain.get }), /non-https redirect/);
+  assert.deepEqual(plain.asked, ['https://example.invalid/x']);
+  await assert.rejects(
+    () => U.httpGetJson('https://example.invalid/x', { getFn: fakeGet({ status: 301 }) }),
+    (e) => e.statusCode === 301);
+});
+
 test('runCheck records a newer release and never renders the release body', async () => {
   const w = vaultWorld();
   const s = await check(w, { vaultVersion: '0.1.0', pluginVersion: '0.1.0', get: fakeGet({ body: release('v0.2.0') }) });
   assert.equal(s.latest, '0.2.0');
   assert.equal(s.behind, true);
   assert.equal(s.installed, '0.1.0');
-  assert.equal(s.url, 'https://github.com/zzoretich/AgenticOS-Workbench/releases/tag/v0.2.0');
+  assert.equal(s.url, 'https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v0.2.0');
   assert.equal(s.consecutiveFailures, 0);
   assert.equal(s.lastError, null);
   assert.equal(w.line(), '⬆ UniDeX 0.2.0\n');

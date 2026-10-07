@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/zzoretich/AgenticOS-Workbench/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/zzoretich/AgenticOS-Workbench/ci.yml?branch=main&amp;style=flat-square&amp;labelColor=0d1117&amp;label=ci" alt="CI status" /></a>
+  <a href="https://github.com/zzoretich/UniDeX-Agent-Harness/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/zzoretich/UniDeX-Agent-Harness/ci.yml?branch=main&amp;style=flat-square&amp;labelColor=0d1117&amp;label=ci" alt="CI status" /></a>
   <img src="https://img.shields.io/badge/node-%E2%89%A5%2020-3fb950?style=flat-square&amp;labelColor=0d1117" alt="Node 20 or newer" />
   <img src="https://img.shields.io/badge/platform-macOS-58a6ff?style=flat-square&amp;labelColor=0d1117" alt="macOS" />
   <img src="https://img.shields.io/badge/hosts-Claude%20Code%20%C2%B7%20Codex%20CLI%20%C2%B7%20Ollama-bc8cff?style=flat-square&amp;labelColor=0d1117" alt="Works with Claude Code or Codex CLI, with a local Ollama" />
@@ -53,7 +53,7 @@ It works with **Claude Code alone**, with **Codex CLI alone**, or with both shar
 <a name="quick-start"></a>
 ## <img src="docs/assets/icon-quickstart.svg" width="36" align="top" alt="" /> Quick start
 
-1. Download **UniDeX** from the [latest release](https://github.com/zzoretich/AgenticOS-Workbench/releases/latest) (`AgenticOS-Workbench-<version>-arm64.dmg`, for Macs with Apple silicon on macOS 13 or later), open it and drag the app to Applications.
+1. Download **UniDeX** from the [latest release](https://github.com/zzoretich/UniDeX-Agent-Harness/releases/latest) (`AgenticOS-Workbench-<version>-arm64.dmg`, for Macs with Apple silicon on macOS 13 or later), open it and drag the app to Applications.
 2. Open the app. Its setup wizard checks what UniDeX needs and fixes what is missing, asks which hosts and which vault folder, asks your Chief of Staff's questions, installs, and opens the Workbench. No terminal needed.
 3. Start a `claude` or `codex` session: the first prompt already carries your brain context. In Codex, first run `/hooks` once and trust the agenticos entries, as the wizard's last step reminds you; until then they do not run.
 
@@ -65,8 +65,8 @@ It works with **Claude Code alone**, with **Codex CLI alone**, or with both shar
 Prefer a terminal? The same install runs from a clone:
 
 ```sh
-git clone https://github.com/zzoretich/AgenticOS-Workbench.git
-cd AgenticOS-Workbench
+git clone https://github.com/zzoretich/UniDeX-Agent-Harness.git
+cd UniDeX-Agent-Harness
 npm ci --ignore-scripts
 npm run setup                          # interactive installer (= node cli/aos.js init)
 ```
@@ -99,7 +99,7 @@ Obsidian is not needed: the Workbench is the **UniDeX** app, which reads the vau
 
 ### With the app
 
-Download `AgenticOS-Workbench-<version>-arm64.dmg` from the [latest release](https://github.com/zzoretich/AgenticOS-Workbench/releases/latest), open it, drag **UniDeX** to Applications and open it. The app is signed and notarized, and carries the runtime inside it. With no install on this Mac it opens a setup wizard:
+Download `AgenticOS-Workbench-<version>-arm64.dmg` from the [latest release](https://github.com/zzoretich/UniDeX-Agent-Harness/releases/latest), open it, drag **UniDeX** to Applications and open it. The app is signed and notarized, and carries the runtime inside it. With no install on this Mac it opens a setup wizard:
 
 1. **Check** — Homebrew (optional; most of the fix-its use it), then Node, Claude Code and Codex and their logins, Ollama and its two models, python3 and uv, each with a fix-it for what is missing. Ollama's fix-it, **Install Ollama and its models**, installs it, starts it and downloads the models (about 7.2 GB), so Continue waits for that download; with Ollama already installed, a missing model alone is a warning, not a requirement.
 2. **Choose** — which of Claude Code and Codex to wire (both, when both are ready) and the vault folder (default `~/AgenticOS`; files already there are kept).
@@ -116,8 +116,8 @@ The same install from a clone of this repository, which is also how CI tests it.
 ### 1. Clone and install dependencies
 
 ```sh
-git clone https://github.com/zzoretich/AgenticOS-Workbench.git
-cd AgenticOS-Workbench
+git clone https://github.com/zzoretich/UniDeX-Agent-Harness.git
+cd UniDeX-Agent-Harness
 npm ci --ignore-scripts
 ```
 
@@ -163,7 +163,7 @@ The installer never edits your `CLAUDE.md`. Add the line it printed — it looks
 Nothing to paste: Codex's `AGENTS.md` has no include syntax, so a SessionStart hook injects `AGENTICOS.md` at every session start (and again after compaction). `aos init` installs the Workbench as a Codex plugin, `agenticos@agenticos-workbench`, from the same repository (Codex reads `.agents/plugins/marketplace.json`, which points at `codex-plugin/`). To install it by hand instead:
 
 ```sh
-codex plugin marketplace add zzoretich/AgenticOS-Workbench
+codex plugin marketplace add zzoretich/UniDeX-Agent-Harness
 codex plugin add agenticos@agenticos-workbench
 ```
 
@@ -173,7 +173,7 @@ A Codex CLI that predates plugins is wired directly instead (hook entries in `~/
 
 ### 5. Open the Workbench
 
-Open the **UniDeX** app ([download](https://github.com/zzoretich/AgenticOS-Workbench/releases/latest)). It finds your vault through `~/.claude/agenticos.json`, skips its wizard, and opens on Home: Sessions once a model provider is set up, else Pulse, whose row of LEDs stays gray or green; amber `stale` LEDs simply mean a stage has not run for a while. Each start records the app in the vault (`brain/_index/hud-host.json`), so `aos doctor` and the update check can see it. To run it from this checkout instead, see [app/README.md](app/README.md).
+Open the **UniDeX** app ([download](https://github.com/zzoretich/UniDeX-Agent-Harness/releases/latest)). It finds your vault through `~/.claude/agenticos.json`, skips its wizard, and opens on Home: Sessions once a model provider is set up, else Pulse, whose row of LEDs stays gray or green; amber `stale` LEDs simply mean a stage has not run for a while. Each start records the app in the vault (`brain/_index/hud-host.json`), so `aos doctor` and the update check can see it. To run it from this checkout instead, see [app/README.md](app/README.md).
 
 <p align="center"><img src="docs/assets/divider.svg" width="960" alt="" /></p>
 
