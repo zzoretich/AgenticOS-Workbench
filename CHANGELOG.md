@@ -4,6 +4,9 @@ All notable changes to AgenticOS Workbench. Versions follow the tags. From the n
 
 ## [Unreleased]
 
+### Added
+- **`statusline.chainPosition`** puts the status line you had below AgenticOS's lines instead of above them. It applies to `aos statusline install --chain-output`, which shows that line's first line: `aos config set statusline.chainPosition bottom` (or Settings → Status line). `top` is the default, and the change shows on the next refresh, with no reinstall.
+
 ## [1.0.1] — 2026-10-06
 
 ### Fixed

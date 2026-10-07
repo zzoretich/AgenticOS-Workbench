@@ -283,7 +283,7 @@ async function main(argv, {
         payload, model, work: workOf(payload, claudeDir), git: gitForRender(ws.current_dir || ws.project_dir || payload.cwd, { now: at.getTime(), spawnFn, env }),
         columns: parseInt(env.COLUMNS || '0', 10) || 0, links: sl.links !== false, segments: sl.segments, env, now: at.getTime(),
       });
-      const out = [chained, ...lines].filter(Boolean);
+      const out = (sl.chainPosition === 'bottom' ? [...lines, chained] : [chained, ...lines]).filter(Boolean);
       if (out.length) stdout(`${out.join('\n')}\n`);
       return 0;
     }

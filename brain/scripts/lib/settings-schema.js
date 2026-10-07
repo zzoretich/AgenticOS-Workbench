@@ -227,6 +227,8 @@ const SETTINGS = [
     help: 'What the third line shows, in order of priority: needs-you, runs, spend, health.' },
   { key: 'statusline.links', section: 'statusline', label: 'Clickable links', type: 'bool', applies: 'next-render',
     help: 'Make status line segments open the Workbench tab they name (terminals with OSC 8 links).' },
+  { key: 'statusline.chainPosition', section: 'statusline', label: 'Chained line position', type: 'enum', values: ['top', 'bottom'], applies: 'next-render',
+    help: 'With --chain-output, where the previous status line\'s first line goes: top (above ours) or bottom (below).' },
   { key: 'statusline.subagents', section: 'statusline', label: 'Subagent rows', type: 'bool', applies: 'next-install', followUp: STATUSLINE_INSTALL,
     help: 'Also render Claude Code subagent rows (model, effort, context, age).' },
   { key: 'statusline.refreshSeconds', section: 'statusline', label: 'Status line refresh', type: 'number', int: true, min: 1, applies: 'next-install', followUp: STATUSLINE_INSTALL,
