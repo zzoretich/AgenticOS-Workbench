@@ -519,13 +519,15 @@ const ROUTINE_FEATURE = /^routine:/;
 const GRAPH_FEATURE = /^graph:/;
 const CROSS_REVIEW_FEATURE = /^cross-review:/;
 const TEAM_FEATURE = /^team:/;
+const SESSION_FEATURE = /^session:/;
 const isDutyFeature = (feature) => DUTY_FEATURE.test(feature);
 const isReasonFeature = (feature) => REASON_FEATURE.test(feature);
 const isRoutineFeature = (feature) => ROUTINE_FEATURE.test(feature);
 const isGraphFeature = (feature) => GRAPH_FEATURE.test(feature);
 const isCrossReviewFeature = (feature) => CROSS_REVIEW_FEATURE.test(feature);
 const isTeamFeature = (feature) => TEAM_FEATURE.test(feature);
-const isHookFeature = (feature) => ![DUTY_FEATURE, REASON_FEATURE, ROUTINE_FEATURE, GRAPH_FEATURE, CROSS_REVIEW_FEATURE, TEAM_FEATURE].some((re) => re.test(feature));
+const isSessionFeature = (feature) => SESSION_FEATURE.test(feature);
+const isHookFeature = (feature) => ![DUTY_FEATURE, REASON_FEATURE, ROUTINE_FEATURE, GRAPH_FEATURE, CROSS_REVIEW_FEATURE, TEAM_FEATURE, SESSION_FEATURE].some((re) => re.test(feature));
 /** Today's provider-spend.jsonl rows (local calendar day) that carry a numeric usd; [] when the ledger is absent. */
 function spendRowsToday(file) {
   let raw = '';
@@ -550,7 +552,7 @@ function spendByFamily(vault) {
   return {
     hooks: r6(sumUsd(rows, isHookFeature)), duties: r6(sumUsd(rows, isDutyFeature)), reasoner: r6(sumUsd(rows, isReasonFeature)),
     routines: r6(sumUsd(rows, isRoutineFeature)), graph: r6(sumUsd(rows, isGraphFeature)), crossReview: r6(sumUsd(rows, isCrossReviewFeature)),
-    teams: r6(sumUsd(rows, isTeamFeature)),
+    sessions: r6(sumUsd(rows, isSessionFeature)), teams: r6(sumUsd(rows, isTeamFeature)),
   };
 }
 function status() {
@@ -570,6 +572,7 @@ function status() {
   const semOf = (c) => (c && c.graph && c.graph.semantic) || null;
   const graphCap = num(semOf(cfg), 'perDayUsd') ?? num(semOf(vaultCfg), 'perDayUsd') ?? 1;
   const crossReviewCap = num(cfg.crossReview, 'perDayUsd') ?? num(vaultCfg.crossReview, 'perDayUsd') ?? 10;
+  const sessionCap = num(cfg.sessions, 'perDayUsd') ?? num(vaultCfg.sessions, 'perDayUsd') ?? 10;
   const str = (obj, key) => (obj && typeof obj[key] === 'string' && obj[key].trim() ? obj[key].trim() : undefined);
   // The reasoner role (sdk/lib/models.js): BRAIN_REASONER, then reasoner.model by config precedence, then the default.
   const reasonerModel = (process.env.BRAIN_REASONER || '').trim() || str(cfg.reasoner, 'model') || str(vaultCfg.reasoner, 'model') || 'claude-opus-5';
@@ -597,6 +600,7 @@ function status() {
   out.log(`spend      today (routines) $${sumUsd(spend, isRoutineFeature).toFixed(4)} / cap $${routineCap}`);
   out.log(`spend      today (graph) $${sumUsd(spend, isGraphFeature).toFixed(4)} / cap $${graphCap}`);
   out.log(`spend      today (cross-review) $${sumUsd(spend, isCrossReviewFeature).toFixed(4)} / cap $${crossReviewCap}`);
+  out.log(`spend      today (sessions) $${sumUsd(spend, isSessionFeature).toFixed(4)} / cap $${sessionCap}`);
   out.log(`spend      today (teams) $${sumUsd(spend, isTeamFeature).toFixed(4)} (no daily cap: each board item has a phase budget)`);
   // Ledger shape (lib/pipeline-report.js): { version: 1, pipelines: { <name>: { lastRun: {…} | null, history: [] } } }.
   const ledger = readJson(path.join(idx, 'pipelines.json'), {}) || {};

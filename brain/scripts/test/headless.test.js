@@ -152,3 +152,27 @@ test('codexMcpServers: the [mcp_servers.<name>] tables of config.toml, quoted or
   ].join('\n'));
   assert.deepEqual(H.codexMcpServers(home), ['node_repl', 'odd.name', 'lit', 'computer-use']);
 });
+
+test('sessionArgs: a claude turn streams JSON, edits without prompts, and runs under the session id the app picks, then resumes it', () => {
+  const first = H.sessionArgs('claude', { prompt: 'fix the parser', sessionId: 'a1b2', model: 'sonnet', effort: 'high', budget: 1 });
+  assert.equal(first.stdin, null, 'nothing on stdin: spawns from the app have none');
+  assert.deepEqual(first.argv, ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'acceptEdits', '--permission-prompts', 'none',
+    '--session-id', 'a1b2', '--max-budget-usd', '1.00', '--model', 'sonnet', '--effort', 'high', '--', 'fix the parser']);
+  const next = H.sessionArgs('claude', { prompt: '-v is a flag here', resume: 'a1b2', allowCommands: true });
+  assert.deepEqual(next.argv.slice(8), ['--resume', 'a1b2', '--allowedTools', 'Bash', '--', '-v is a flag here'], 'a prompt that looks like a flag stays the prompt');
+  assert.ok(!first.argv.includes('--allowedTools'), 'Bash only when commands are allowed');
+  assert.throws(() => H.sessionArgs('claude', { prompt: 'x' }), /sessionId/);
+  assert.throws(() => H.sessionArgs('claude', { prompt: '  ', sessionId: 'a' }), /prompt/);
+});
+
+test('sessionArgs: a codex turn runs exec --json in the workspace-write sandbox whatever allowCommands says, then exec resume', () => {
+  const first = H.sessionArgs('codex', { prompt: 'fix the parser', model: 'gpt-5-mini', effort: 'low', allowCommands: false });
+  assert.equal(first.stdin, null);
+  assert.deepEqual(first.argv, ['exec', '--json', '--skip-git-repo-check', '-c', 'sandbox_mode="workspace-write"', '-c', 'features.hooks=false',
+    '-c', 'approval_policy="never"', '-m', 'gpt-5-mini', '-c', 'model_reasoning_effort="low"', '--', 'fix the parser']);
+  const next = H.sessionArgs('codex', { prompt: 'and the tests', resume: '0199-thread' });
+  assert.deepEqual(next.argv.slice(0, 2), ['exec', 'resume']);
+  assert.deepEqual(next.argv.slice(-3), ['0199-thread', '--', 'and the tests'], 'the thread id, then the prompt after --');
+  assert.ok(!next.argv.includes('-s') && !next.argv.includes('-C'), 'exec resume takes neither -s nor -C');
+  assert.throws(() => H.sessionArgs('nohost', { prompt: 'x' }), /no such host/);
+});

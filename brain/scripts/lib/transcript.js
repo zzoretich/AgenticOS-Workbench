@@ -203,4 +203,4 @@ function flattenTurns(parsed, { maxChars = 0 } = {}) {
   return out.join('\n');
 }
 
-module.exports = { parseJsonl, textOf, detectFormat, isRealPrompt, parseEntries, readTurns, readTranscriptFile, flattenTurns, sessionModel, sessionModelFile, FILE_TOOLS };
+module.exports = { parseJsonl, textOf, kindOf, detectFormat, isRealPrompt, parseEntries, readTurns, readTranscriptFile, flattenTurns, sessionModel, sessionModelFile, FILE_TOOLS };
