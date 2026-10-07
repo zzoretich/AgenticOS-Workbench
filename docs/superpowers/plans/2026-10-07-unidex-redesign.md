@@ -85,7 +85,7 @@ PR 1 merged first (#82), so PR 2 builds on `main`. It is split for review:
   - An in-app `Mark` component.
 - [ ] **B4 Docs.**
   - The README name and `banner.svg`, screenshots (light, plus one dark), `app/README.md`, `docs/install.md` and `docs/app-smoke.md`.
-  - `CHANGELOG` **Upgrading**: "The app is now called UniDeX. An updated install keeps its file name, AgenticOS Workbench.app. Rename it in Finder if you like; nothing depends on it."
+  - `CHANGELOG` **Upgrading**: "The app is now called UniDeX. (Measured at release: the update renames the file to UniDeX.app and does not reopen it once; the 1.1.0 notes say so.) An updated install keeps its file name, AgenticOS Workbench.app. Rename it in Finder if you like; nothing depends on it."
 - [ ] **B5 Packaging.**
   - `dist:test` and `smoke:packaged`.
   - A real update from 1.0.1 to a 1.1.0 test build: it relaunches, the menu reads UniDeX and the data is intact (acceptance §8).

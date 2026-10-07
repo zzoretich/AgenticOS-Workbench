@@ -572,7 +572,7 @@ aos uninstall                  # additionally delete the vault, after you type i
 aos uninstall --host codex     # unwire only the Codex host (its plugin and marketplace, or the direct wiring); keep everything else
 ```
 
-To remove the app too, quit it and drag **UniDeX** from Applications to the Trash (an install updated from 1.0 keeps the name **AgenticOS Workbench**); its own settings are in `~/Library/Application Support/AgenticOS Workbench`.
+To remove the app too, quit it and drag **UniDeX** from Applications to the Trash; its own settings are in `~/Library/Application Support/AgenticOS Workbench`.
 
 `~/.claude` and `~/.codex` are left exactly as they were (a `hooks.json` that held only our entries is removed; one with your own entries keeps them). No form of `aos uninstall` edits your `CLAUDE.md`: remove the `@<vault>/AGENTICOS.md` line yourself (you added it from the installer's checklist, or the app's wizard added it at your request). The vault is never deleted when it is your home directory or a Claude config directory.
 

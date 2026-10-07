@@ -106,9 +106,11 @@ The installed app is the previous release's (or a signed local build of it with 
 - [ ] The app menu ▸ About shows the previous version (the menu carries the running app's name: AgenticOS Workbench
   before 1.1, UniDeX from 1.1). Check for Updates… in that menu (or 30 s after launch) finds `<version>` and downloads it; the status bar shows `⬆ Restart to update to <version>`.
 - [ ] **Restart to update**: the app quits, comes back, and About shows `<version>`.
-- [ ] From 1.0.x to 1.1 or later (UniDeX D2): after the restart, the Dock, the app menu, About and the menubar tooltip
-  read UniDeX and the menubar item is the UDX mark; `/Applications` still holds `AgenticOS Workbench.app`; App settings,
-  the vault, its notes and the Workbench's tab are as they were before the update.
+- [ ] From 1.0.x to 1.1 or later (UniDeX D2): Squirrel moves the bundle to `/Applications/UniDeX.app` and, this once,
+  does not reopen it (its relauncher lived in the old bundle; `~/Library/Caches/com.zzoretich.agenticos-workbench.ShipIt/ShipIt_stderr.log`
+  shows `posix_spawn: No such file or directory`). Open UniDeX from Applications: the Dock, the app menu, About and the
+  menubar tooltip read UniDeX, the menubar item is the UDX mark, and App settings, the vault, its notes and the
+  Workbench's tab are as they were before the update.
 - [ ] **Update the runtime in your vault** follows on its own (the vault's runtime is the previous version): **Update
   now** runs `aos upgrade` with its output and ends `Updated to <version>.`
 - [ ] `aos routines sync` when the release's **Upgrading** notes ask for it; `aos doctor` exits 0, its `workbench app` row
@@ -122,4 +124,5 @@ Result: ______ (pass / fail with the failing box numbers). Tester: ______ Date: 
 | Release | Date | §0–§7 fresh account | §8 update | Notes |
 |---|---|---|---|---|
 | 1.0.0 | 2026-10-06 | pass, §0–§7 in full, on another Mac | pass: 0.21.0 → 1.0.0 (Restart to update, then **Update now** took the runtime to 1.0.0); the 12 Obsidian-era settings were copied; `aos routines sync` and `aos doctor` green | §1: every wizard row was green on **Check**, so no fix-it ran there. `release:app` threw at its feed step (electron-builder 26 lists only the zip); the four assets were uploaded by hand, and #73 fixed it |
+| 1.1.0 | 2026-10-07 | not run | pass, with two findings: **Check for Updates…** found 1.1.0 and Squirrel installed it, moving `AgenticOS Workbench.app` to `UniDeX.app`. Its relaunch failed (`posix_spawn: No such file or directory` on the old bundle's ShipIt), so UniDeX was opened by hand. LaunchServices names it UniDeX, Gatekeeper accepts it (Notarized Developer ID), and it kept the same data folder (`attach.json` and the HUD settings unchanged). **Update now** took the runtime to 1.1.0. `aos doctor` exit 0: `workbench app  UniDeX 1.1.0`, both plugins 1.1.0, codex hooks 16 of 16. | D2 expected the old file name to stay; the notes and this checklist are corrected. Later updates keep `UniDeX.app` and relaunch as before. |
 | 1.0.1 | 2026-10-06 | not run | pass: **Check for Updates…** found 1.0.1 and downloaded it in about 150 s (the staged zip's sha512 matched `latest-mac.yml`), Restart to update, the runtime upgrade; `aos doctor` all green (both plugins 1.0.1, Codex hooks 16 of 16) | `release:app` ran end to end (`verify-dist` 39/39). The wizard's Ollama models step (#77) is new in 1.0.1 and has had no fresh-account run yet |
