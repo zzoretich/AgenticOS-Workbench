@@ -1,4 +1,4 @@
-# AgenticOS Workbench — the app
+# UniDeX — the app
 
 The Workbench as a macOS app. The HUD in `../obsidian-plugin` runs in its own Electron window, compiled unchanged
 against an Obsidian compatibility package (`compat/`), so the same source is the Workbench everywhere. The runtime,
@@ -26,7 +26,7 @@ The app updates itself from this repo's GitHub Releases (electron-updater; a pac
 
 ## Run it from a checkout
 
-Requires Node 22.12+. With an AgenticOS install the app reads the vault from `agenticos.json` (or `$AOS_APP_VAULT`);
+Requires Node 22.12+. With an install (`aos init`) the app reads the vault from `agenticos.json` (or `$AOS_APP_VAULT`);
 without one it shows the setup wizard, which installs only when the run has a payload: `npm run payload`, then start it
 with `AOS_APP_PAYLOAD=$PWD/payload`.
 

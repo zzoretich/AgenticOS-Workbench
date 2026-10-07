@@ -1,26 +1,17 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="960" height="200" viewBox="0 0 960 200" fill="none" role="img" aria-label="AgenticOS Workbench — a second brain for Claude Code. Created by Zach Zoretich.">
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="200" viewBox="0 0 960 200" fill="none" role="img" aria-label="UniDeX — a second brain for Claude Code and Codex. Created by Zach Zoretich.">
 <defs>
 <linearGradient id="card" x1="0" y1="0" x2="0" y2="1">
 <stop offset="0" stop-color="#161b22"/>
 <stop offset="1" stop-color="#0d1117"/>
 </linearGradient>
-<linearGradient id="mark" x1="0" y1="0" x2="1" y2="1">
-<stop offset="0" stop-color="#58a6ff"/>
-<stop offset="1" stop-color="#bc8cff"/>
-</linearGradient>
 </defs>
 <rect x="0.5" y="0.5" width="959" height="199" rx="12" fill="url(#card)" stroke="#30363d"/>
-<rect x="40" y="52" width="56" height="56" rx="14" fill="url(#mark)"/>
-<g stroke="#0d1117" stroke-width="2.6" stroke-linecap="round" fill="#0d1117">
-<circle cx="57" cy="71" r="4.2"/>
-<circle cx="79" cy="71" r="4.2"/>
-<circle cx="68" cy="91" r="4.2"/>
-<path d="M61.2 71 H74.8"/>
-<path d="M59.4 74.8 L65.6 87.2"/>
-<path d="M76.6 74.8 L70.4 87.2"/>
+<rect x="40" y="52" width="56" height="56" rx="14" fill="#e6edf3"/>
+<g transform="translate(49.8 73.56) scale(0.28)" stroke="#0d1117" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" fill="none">
+<path d="M6 6V26a14 14 0 0 0 28 0V6 M48 6V40H60a17 17 0 0 0 0-34H48Z M92 6L124 40 M124 6L92 40"/>
 </g>
-<text x="120" y="86" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="38" font-weight="600" letter-spacing="-0.5" fill="#e6edf3">AgenticOS Workbench</text>
-<text x="122" y="112" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="16" fill="#8b949e">A second brain for Claude Code</text>
+<text x="120" y="86" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="38" font-weight="600" letter-spacing="-0.5" fill="#e6edf3">UniDeX</text>
+<text x="122" y="112" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="16" fill="#8b949e">A second brain for Claude Code and Codex</text>
 <rect x="122" y="126" width="160" height="1.5" rx="0.75" fill="#30363d"/>
 <text x="122" y="151" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="13" letter-spacing="0.3" fill="#6e7681">Created by Zach Zoretich</text>
 <circle cx="724" cy="93" r="4.5" fill="#3fb950" opacity="0.35"><animate attributeName="opacity" values="0.35;1;0.35" dur="3s" begin="0.0s" repeatCount="indefinite"/></circle>

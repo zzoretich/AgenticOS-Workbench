@@ -87,7 +87,7 @@ test('the banner credits its author in the accessible label', () => {
   const banner = built.get('banner.svg');
   const label = banner.match(/aria-label="([^"]+)"/)[1];
   assert.match(label, /Zach Zoretich/, 'banner aria-label omits the author');
-  assert.match(label, /AgenticOS Workbench/, 'banner aria-label omits the product');
+  assert.match(label, /UniDeX/, 'banner aria-label omits the product');
 });
 
 test('only the declared assets animate, and they really do', () => {

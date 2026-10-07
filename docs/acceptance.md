@@ -41,21 +41,21 @@ Start a timer. Do not open Terminal until the box says so.
 - [ ] **Finish**: with Claude Code, the `CLAUDE.md` diff; **Add the line** → `~/.claude/CLAUDE.md` ends with an
   `@…/AgenticOS/AGENTICOS.md` line carrying the **absolute** vault path (do not paste it anywhere). With Codex, the
   `/hooks` step is shown.
-- [ ] **Open the Workbench**: it opens on Pulse with no LED red, then shows the one-time note **AgenticOS Workbench is
-  an app now** once. Gray "disabled" for auto-cost and embeddings is correct, and amber `stale` is expected for any
+- [ ] **Open the Workbench**: it opens on Home (Chat once a provider is set up, else Pulse), Pulse has no LED red, and
+  the one-time note **UniDeX is an app now** shows once. Gray "disabled" for auto-cost and embeddings is correct, and amber `stale` is expected for any
   stage whose last run has aged out — `scan-vault`, `build-brain-md` and the heartbeat go stale 45 minutes after they
   ran. Only red is a failure.
 - [ ] Timer under 10:00 → record the time: ______
 - [ ] Now open Terminal: `export PATH="$HOME/.local/bin:$PATH"` (append the same line to `~/.zprofile`); `which aos`
   prints the `.local/bin/aos` symlink under your home; `aos doctor` exits 0, and its `workbench app` row reads
-  `AgenticOS Workbench <version>`.
+  `UniDeX <version>`.
 - [ ] `ls ~/AgenticOS` shows no `.obsidian`.
 - [ ] `ls ~/AgenticOS/persona` shows `IDENTITY.md STATE.md PLAYBOOK.md duties proposals journal answers.json autoapply.json` — and no `identity.template.md` or `STATE.template.md`; `grep -c Atlas ~/AgenticOS/persona/IDENTITY.md` ≥ 1.
 - [ ] `ls ~/Library/LaunchAgents | grep agenticos` lists the three plists; `launchctl list | grep com.agenticos` shows them loaded.
 - [ ] `cd ~ && claude`, first prompt `what do you know about me?` → the reply shows it received `<persona>` (mentions Atlas) and `<brain-context>`.
 - [ ] `/wrap` in that session → `~/AgenticOS/brain/memory/` gains at least one file and `MEMORY.md` one line.
 - [ ] In a new session: `use the agenticos recall tool to search for "Atlas"` → the `recall` tool of the `agenticos` MCP server — exposed to Claude Code as `mcp__plugin_agenticos_agenticos__recall` (contract §0) — answers (hits or an empty result, no error).
-- [ ] ⌘Q the app and open it again: it goes straight to the Workbench (no wizard, no second "AgenticOS Workbench is an app now" note).
+- [ ] ⌘Q the app and open it again: it goes straight to the Workbench (no wizard, no second "UniDeX is an app now" note).
 
 ## 2. Ollama auto-switch (criterion 2)
 `aos status` only reads the cached `brain/_index/provider-state.json` and never probes; `aos scan-vault --quiet` resolves the provider and rewrites that file, so run it before every status check below.
@@ -103,13 +103,16 @@ The rest of the run needs a clone: `git clone https://github.com/zzoretich/Agent
 ## 8. The update from the previous release (the maintainer's Mac)
 The installed app is the previous release's (or a signed local build of it with the zip target, so it carries
 `app-update.yml`), signed by the same team: the updater installs only an update signed like the running app.
-- [ ] AgenticOS Workbench ▸ About shows the previous version. AgenticOS Workbench ▸ Check for Updates… (or 30 s after
-  launch) finds `<version>` and downloads it; the status bar shows `⬆ Restart to update to <version>`.
+- [ ] The app menu ▸ About shows the previous version (the menu carries the running app's name: AgenticOS Workbench
+  before 1.1, UniDeX from 1.1). Check for Updates… in that menu (or 30 s after launch) finds `<version>` and downloads it; the status bar shows `⬆ Restart to update to <version>`.
 - [ ] **Restart to update**: the app quits, comes back, and About shows `<version>`.
+- [ ] From 1.0.x to 1.1 or later (UniDeX D2): after the restart, the Dock, the app menu, About and the menubar tooltip
+  read UniDeX and the menubar item is the UDX mark; `/Applications` still holds `AgenticOS Workbench.app`; App settings,
+  the vault, its notes and the Workbench's tab are as they were before the update.
 - [ ] **Update the runtime in your vault** follows on its own (the vault's runtime is the previous version): **Update
   now** runs `aos upgrade` with its output and ends `Updated to <version>.`
 - [ ] `aos routines sync` when the release's **Upgrading** notes ask for it; `aos doctor` exits 0, its `workbench app` row
-  reads `AgenticOS Workbench <version>`, and every enabled host's block is green (Codex: re-trust under `/hooks` if
+  reads `UniDeX <version>`, and every enabled host's block is green (Codex: re-trust under `/hooks` if
   `codex hooks trusted` counts fewer than all).
 
 Result: ______ (pass / fail with the failing box numbers). Tester: ______ Date: ______
