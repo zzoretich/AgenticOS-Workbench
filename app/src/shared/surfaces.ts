@@ -252,8 +252,9 @@ export const SURFACES: readonly Surface[] = [
       { script: "lib/sessions.js", args: argv("events", "--host", /claude|codex/, "--model", WORD) },
       { script: "lib/sessions.js", args: argv("record", JSON_OBJ) },
     ],
-    // Off until a turn on each host has run on a live workspace (plan 2026-10-07-unidex-sessions C3).
-    verified: false,
+    // Checked live on 2026-10-07 (plan 2026-10-07-unidex-sessions C3): a turn and a resume on each host through the runtime
+    // and the real CLIs, recorded in the ledger and in Runs.
+    verified: true,
   },
 ];
 

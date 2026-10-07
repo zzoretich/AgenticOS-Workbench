@@ -221,7 +221,7 @@ The Sessions tab's first thread, Vault: the Chat tab as it was, inside the Sessi
 
 ## Sessions (per host; each turn spends)
 
-Off until its live check (plan 2026-10-07-unidex-sessions C3): run these with the `sessions` surface on (`AOS_APP_WRITE=sessions` with `npm start` in `app/`), in a workspace that is a git repository of its own.
+On by default since 1.2.0 (plan 2026-10-07-unidex-sessions C3). Run these in a workspace that is a git repository of its own.
 
 - [ ] Claude Code: **New session** with a workspace, the Claude Code chip and **Allow commands** on: the thread appears under its workspace with a running dot; the timeline shows your prompt as a bubble, the agent's text as Markdown, each tool as one line (`kind · name · file`) that opens to its input and result (failed ones in red), and a footer with the turn's cost; the dot goes out; `brain/_index/sessions/<workspace>/<thread>.jsonl` holds the thread, `agent-runs/runs.jsonl` a `session:claude` row and `provider-spend.jsonl` a `session:claude` row. A reply resumes the same session.
 - [ ] Codex: the same with the Codex chip: the composer says "Codex runs commands in its sandbox" instead of Allow commands; command rows read `bash · shell`, changed files show as "Changed N files"; the footer's cost says `estimated`; a reply runs `codex exec resume` on the same thread.
