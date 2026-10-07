@@ -52,7 +52,7 @@ export class RunInspectorView extends ItemView {
     const root = this.containerEl.children[1] as HTMLElement;
     root.empty();
     root.addClass("aos-root", "aos-runinspector");
-    root.createDiv({ cls: "aos-title", text: "[ RUN INSPECTOR ]" });
+    root.createDiv({ cls: "aos-title", text: "Run inspector" });
     root.createDiv({ cls: "aos-dim", text: "no run selected" });
   }
 
@@ -62,7 +62,7 @@ export class RunInspectorView extends ItemView {
     root.addClass("aos-root", "aos-runinspector");
 
     const header = root.createDiv({ cls: "aos-ri-header" });
-    header.createSpan({ cls: "aos-title", text: "[ RUN INSPECTOR ]" });
+    header.createSpan({ cls: "aos-title", text: "Run inspector" });
     header.createSpan({ cls: "aos-ri-id aos-dim", text: this.runId || "" });
 
     if (!this.detail) {

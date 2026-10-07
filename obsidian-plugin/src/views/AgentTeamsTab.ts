@@ -224,7 +224,7 @@ export class AgentTeamsTab {
 
     const cards = gateCards(this.teams);
     const head = host.createDiv({ cls: "aos-rt-head" });
-    head.createSpan({ cls: "aos-rt-title", text: "AGENT TEAMS" });
+    head.createSpan({ cls: "aos-rt-title", text: "Agent teams" });
     if (this.teams.length) head.createSpan({ cls: "aos-dim aos-rt-count", text: `${cards.length} gate${cards.length === 1 ? "" : "s"} waiting · ${this.teams.length} team${this.teams.length === 1 ? "" : "s"}` });
     if (this.runtimeNote) host.createDiv({ cls: "aos-rt-banner", text: this.runtimeNote });
     if (this.readError) host.createDiv({ cls: "aos-st-failure", text: `${this.readError}. The teams below are as last read.` });

@@ -39,7 +39,7 @@ html, body { height: 100%; margin: 0; }
 body { background: var(--compat-bg); color: var(--compat-text); font: 13px/1.5 var(--compat-sans); overflow: hidden; -webkit-font-smoothing: antialiased; }
 /* Native controls as Obsidian draws them (the HUD's plain buttons, fields and pickers rely on these):
    filled, rounded buttons that do not wrap; fields sized border-box; pickers with their own chevron. */
-button { font: inherit; font-size: 12px; color: var(--compat-text); border-radius: 5px; padding: 4px 12px; cursor: pointer; white-space: nowrap; }
+button { font: inherit; font-size: 12.5px; font-weight: 500; color: var(--compat-text); border-radius: 8px; padding: 5px 12px; cursor: pointer; white-space: nowrap; }
 /* As specific as Obsidian's own rule, so it wins over a HUD class's panel background there too (.aos-ws-action). */
 button:not(.clickable-icon) { background: var(--compat-button); border: 1px solid var(--udx-line); box-shadow: none; }
 button:not(.clickable-icon):hover:not(:disabled) { background: var(--compat-button-hover); }
@@ -49,7 +49,7 @@ button.mod-cta:not(.clickable-icon):hover:not(:disabled) { background: var(--udx
 button.mod-warning:not(.clickable-icon) { background: transparent; border-color: var(--compat-warn); color: var(--compat-warn); box-shadow: none; }
 input[type="text"], input[type="search"], input[type="number"], input[type="date"], input[type="time"], input[type="email"],
 input[type="url"], input[type="password"], input:not([type]), textarea, select {
-  box-sizing: border-box; font: inherit; color: var(--compat-text); background: var(--compat-field); border: 1px solid var(--compat-border); border-radius: 5px; padding: 4px 8px;
+  box-sizing: border-box; font: inherit; color: var(--compat-text); background: var(--compat-field); border: 1px solid var(--compat-border); border-radius: 8px; padding: 5px 10px;
 }
 input[type="search"] { -webkit-appearance: none; appearance: none; }
 input::placeholder, textarea::placeholder { color: var(--compat-dim); }
@@ -74,7 +74,7 @@ a { color: var(--compat-accent); }
    name and description to nothing. */
 .setting-item-control { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px; flex: 0 1 auto; min-width: 0; max-width: 50%; }
 .setting-item-control select { max-width: 100%; min-width: 0; text-overflow: ellipsis; }
-.setting-item-heading .setting-item-name { font-weight: 700; letter-spacing: .06em; text-transform: uppercase; font-size: 11px; color: var(--compat-accent); }
+.setting-item-heading .setting-item-name { font-weight: 600; letter-spacing: .04em; text-transform: uppercase; font-size: 11px; color: var(--udx-text-3); }
 .setting-item-heading .setting-item-control { display: none; }
 .setting-item.is-disabled { opacity: .5; }
 
@@ -89,7 +89,7 @@ a { color: var(--compat-accent); }
 /* modals */
 .modal-container { position: fixed; inset: 0; z-index: 50; display: flex; align-items: flex-start; justify-content: center; padding-top: 12vh; }
 .modal-bg { position: absolute; inset: 0; background: var(--udx-scrim); }
-.modal { position: relative; width: min(560px, calc(100vw - 32px)); max-height: 76vh; overflow: auto; background: var(--compat-panel); border: 1px solid var(--compat-border); border-radius: 8px; padding: 18px 20px; box-shadow: var(--udx-shadow); }
+.modal { position: relative; width: min(560px, calc(100vw - 32px)); max-height: 76vh; overflow: auto; background: var(--udx-bg); border: 1px solid var(--compat-border); border-radius: 14px; padding: 18px 20px; box-shadow: var(--udx-shadow); }
 .modal-close-button { position: absolute; top: 10px; right: 12px; color: var(--compat-dim); cursor: pointer; font-size: 12px; }
 .modal-close-button:hover { color: var(--compat-text); }
 
@@ -101,9 +101,9 @@ a { color: var(--compat-accent); }
 .vertical-tab-header { width: 200px; flex: none; overflow: auto; padding: 16px 8px; background: var(--compat-bg); border-right: 1px solid var(--compat-border); }
 .vertical-tab-header-group + .vertical-tab-header-group { margin-top: 16px; }
 .vertical-tab-header-group-title { padding: 0 10px 6px; font: 600 11px var(--compat-sans); letter-spacing: .06em; text-transform: uppercase; color: var(--compat-dim); }
-.vertical-tab-nav-item { padding: 6px 10px; border-radius: 5px; font: 13px var(--compat-sans); color: var(--compat-text); cursor: pointer; }
+.vertical-tab-nav-item { padding: 6px 10px; border-radius: 8px; font: 13px var(--compat-sans); color: var(--compat-text); cursor: pointer; }
 .vertical-tab-nav-item:hover, .vertical-tab-nav-item:focus-visible { background: var(--compat-raised); outline: none; }
-.vertical-tab-nav-item.is-active { background: var(--compat-raised); color: var(--compat-accent); }
+.vertical-tab-nav-item.is-active { background: var(--udx-raised-2); color: var(--udx-text); font-weight: 600; }
 .vertical-tab-content-container { flex: 1; min-width: 0; overflow: auto; }
 .vertical-tab-content { padding: 20px 28px 40px; }
 .modal-title { font-weight: 600; font-size: 15px; margin-bottom: 10px; padding-right: 20px; }
@@ -114,7 +114,7 @@ a { color: var(--compat-accent); }
 .prompt-input-container { border-bottom: 1px solid var(--compat-border); }
 .prompt-input { width: 100%; box-sizing: border-box; border: none !important; background: transparent !important; padding: 14px 16px !important; font-size: 15px !important; }
 .prompt-results { overflow: auto; max-height: 52vh; padding: 6px; }
-.suggestion-item { padding: 7px 10px; border-radius: 5px; cursor: pointer; }
+.suggestion-item { padding: 7px 10px; border-radius: 8px; cursor: pointer; }
 .suggestion-item.is-selected { background: var(--compat-raised); }
 .suggestion-empty { padding: 12px; color: var(--compat-dim); }
 .prompt-instructions { display: flex; gap: 14px; padding: 8px 14px; border-top: 1px solid var(--compat-border); color: var(--compat-dim); font-size: 11px; }
@@ -123,7 +123,7 @@ a { color: var(--compat-accent); }
 
 /* notices */
 .notice-container { position: fixed; top: 44px; right: 14px; z-index: 60; display: flex; flex-direction: column; gap: 8px; max-width: 380px; }
-.notice { background: var(--compat-raised); border: 1px solid var(--compat-border); border-left: 3px solid var(--compat-accent); border-radius: 6px; padding: 10px 12px; box-shadow: var(--udx-shadow); cursor: pointer; overflow-wrap: anywhere; }
+.notice { background: var(--udx-bg); border: 1px solid var(--compat-border); border-radius: 12px; padding: 10px 12px; box-shadow: var(--udx-shadow); cursor: pointer; overflow-wrap: anywhere; }
 
 /* rendered markdown */
 .markdown-rendered { line-height: 1.6; overflow-wrap: anywhere; }

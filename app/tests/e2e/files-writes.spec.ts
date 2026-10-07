@@ -75,7 +75,7 @@ test("rename keeps the folder, the extension and the bytes", async () => {
   const before = fs.readFileSync(FX.v("workspaces/harbor-map/PLAN.md"));
   await reveal(win, "workspaces/harbor-map");
   await act(win, "workspaces/harbor-map/PLAN.md", "✎");
-  await expect(drawer(win).locator(".aos-wb-drawertitle")).toHaveText("⌜ RENAME ⌝");
+  await expect(drawer(win).locator(".aos-wb-drawertitle")).toHaveText("Rename");
   await inputs(win).nth(0).fill("ROADMAP");
   await expect(note(win)).toHaveText("→ workspaces/harbor-map/ROADMAP.md");
   await button(win, "rename").click();

@@ -375,11 +375,9 @@ async function loadBudgetLedger(app: App): Promise<{ readings: number; settled: 
 function makeSectionPanel(host: HTMLElement, title: string, badge?: string): HTMLElement {
   const panel = host.createDiv({ cls: "aos-panel" });
   const head = panel.createDiv({ cls: "aos-panel-head" });
-  head.createSpan({ cls: "aos-panel-bracket", text: "⌜" });
-  head.createSpan({ cls: "aos-panel-title", text: ` ${title} ` });
+  head.createSpan({ cls: "aos-panel-title", text: title });
   head.createSpan({ cls: "aos-panel-rule" });
   if (badge) head.createSpan({ cls: "aos-panel-badge", text: badge });
-  head.createSpan({ cls: "aos-panel-bracket", text: "⌝" });
   return panel;
 }
 

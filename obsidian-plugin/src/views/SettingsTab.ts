@@ -140,7 +140,7 @@ export class SettingsTab {
     host.empty();
 
     const head = host.createDiv({ cls: "aos-rt-head" });
-    head.createSpan({ cls: "aos-rt-title", text: "SETTINGS" });
+    head.createSpan({ cls: "aos-rt-title", text: "Settings" });
     head.createSpan({ cls: "aos-dim aos-rt-count", text: this.list ? `${changedCount(this.list)} changed from the defaults` : this.loading || !this.failure ? "loading…" : "" });
     const actions = head.createDiv({ cls: "aos-rt-actions" });
     const reload = actions.createEl("button", { cls: "aos-ws-action", text: "⟳ reload" });

@@ -76,7 +76,7 @@ export class FilesTab {
 
     const files = quickOpenFiles(this.plugin.app);
     const head = host.createDiv({ cls: "aos-rt-head" });
-    head.createSpan({ cls: "aos-rt-title", text: "FILES" });
+    head.createSpan({ cls: "aos-rt-title", text: "Files" });
     head.createSpan({ cls: "aos-dim aos-rt-count", text: `${files.length} files` });
     const actions = head.createDiv({ cls: "aos-rt-actions" });
     const add = actions.createEl("button", { cls: "aos-ws-action", text: "+ note" });
@@ -269,7 +269,7 @@ export class FilesTab {
   }
 
   newNote(folder: string): void {
-    this.form("NEW NOTE", [{ label: "folder", value: folder, list: this.folders() }, { label: "name", value: "" }], "create",
+    this.form("New note", [{ label: "folder", value: folder, list: this.folders() }, { label: "name", value: "" }], "create",
       ([dir, name]) => newNotePath(dir, name, this.exists),
       async (path) => {
         const vault = this.plugin.app.vault;
@@ -283,7 +283,7 @@ export class FilesTab {
 
   private rename(path: string): void {
     const name = path.split("/").pop()!;
-    this.form("RENAME", [{ label: `rename ${name} to`, value: name }], "rename",
+    this.form("Rename", [{ label: `rename ${name} to`, value: name }], "rename",
       ([n]) => renamePath(path, n, this.exists),
       async (to) => { await this.renameFile(path, to); });
   }

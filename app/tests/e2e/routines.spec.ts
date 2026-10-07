@@ -83,7 +83,7 @@ test("+ new opens the editor: an invalid cron shows the runtime's error, a valid
   const writes = await guardWrites(h);
   await C().locator(".aos-rt-actions button", { hasText: "+ new" }).click();
   const d = drawer(h.win);
-  await expect(d.locator(".aos-wb-drawertitle")).toHaveText("⌜ NEW ROUTINE ⌝");
+  await expect(d.locator(".aos-wb-drawertitle")).toHaveText("New routine");
   await expect(d.locator(".aos-rt-field label")).toContainText(["slug", "name", "kind", "schedule (cron: min hour day month weekday)", "enabled"]);
   const schedule = d.locator(".aos-rt-field", { hasText: "schedule (cron" }).locator("input");
   await schedule.fill("61 * * * *");
@@ -106,7 +106,7 @@ test("+ new opens the editor: an invalid cron shows the runtime's error, a valid
 test("✎ on a guarded duty opens its editor with the guarded note and the slug locked", async () => {
   await row("monitor").locator(".aos-rt-rowactions a", { hasText: "✎" }).click();
   const d = drawer(app().win);
-  await expect(d.locator(".aos-wb-drawertitle")).toHaveText("⌜ EDIT monitor ⌝");
+  await expect(d.locator(".aos-wb-drawertitle")).toHaveText("Edit monitor");
   await expect(d.locator(".aos-rt-guard")).toContainText("guarded: the persona contract covers this duty");
   await expect(d.locator(".aos-rt-field", { hasText: /^slug/ }).locator("input")).toBeDisabled();
   await expect(d.locator(".aos-rt-note")).toHaveText("runs persona/duties/monitor.md through run-duty.sh (persona caps and journal apply)");

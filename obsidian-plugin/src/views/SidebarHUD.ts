@@ -82,7 +82,7 @@ export class SidebarHUDView extends ItemView {
     root.addClass("aos-root", "aos-sidebar");
 
     const head = root.createDiv({ cls: "aos-sb-head" });
-    head.createDiv({ cls: "aos-sb-title", text: "[ AGENTIC OS ]" });
+    head.createDiv({ cls: "aos-sb-title", text: "AgenticOS" });
     head.createDiv({ cls: "aos-sb-clock aos-text-cyan", text: new Date().toLocaleTimeString(undefined, { hour12: false }) });
 
     // pipeline LEDs — first HUD section; same chip markup as PulseTab's strip

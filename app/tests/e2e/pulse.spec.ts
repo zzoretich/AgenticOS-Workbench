@@ -70,7 +70,7 @@ test("Fix Queue: health errors, stale artifacts, the cost anchor and the uncoste
     "2 session(s) missing cost",
   ];
   expect(titles).toEqual(want);
-  await expect(win.locator(".aos-pulse-fixq-title")).toHaveText(`⌜ FIX QUEUE (${want.length}) ⌝`);
+  await expect(win.locator(".aos-pulse-fixq-title")).toHaveText(`Fix queue (${want.length})`);
   await expect(cards.first()).toHaveClass(/is-error/);
   await expect(cards.filter({ hasText: "2 session(s) missing cost" }).locator("a")).toHaveText("▶ run auto-cost.js --backfill");
   await expect(cards.filter({ hasText: "Cost tracking not yet anchored" }).locator("a")).toHaveText("▶ re-anchor…");
@@ -88,7 +88,7 @@ test("Fix Queue: ▸ open on the health card opens brain/_index/health.md", asyn
 test("command deck lists the registry commands with their kind and description", async () => {
   const { win } = app();
   const deck = win.locator(".aos-pulse-deck");
-  await expect(deck.locator(".aos-deck-label")).toHaveText("[ COMMAND DECK ]");
+  await expect(deck.locator(".aos-deck-label")).toHaveText("Commands");
   const names = (await deck.locator(".aos-deck-btn").allTextContents()).map((t) => t.trim());
   expect(names).toEqual(expect.arrayContaining(["/scan", "/reflect-week", "/remember", "/pattern", "/wrap", "/ask-brain"]));
   await expect(deck.locator(".aos-deck-btn", { hasText: "/scan" })).toHaveAttribute("title", /· /);
@@ -137,7 +137,7 @@ test("SYSTEM drawer: inventory counts and lists, the DISK donut and the COST DET
   await win.locator(".aos-pulse-row a", { hasText: "SYSTEM ▸" }).click();
   const d = drawer(win);
   await expect(d).toHaveClass(/is-open/);
-  await expect(d.locator(".aos-wb-drawertitle")).toHaveText("⌜ SYSTEM ⌝");
+  await expect(d.locator(".aos-wb-drawertitle")).toHaveText("System");
   const inv = d.locator(".aos-panel", { hasText: "INVENTORY" });
   await expect(inv.locator(".aos-inv-strip .aos-pill")).toHaveText(["0 agents", "0 skills", "1 commands", "0 hooks"]);
   await inv.locator(".aos-inv-tab", { hasText: "commands (1)" }).click();
@@ -162,7 +162,7 @@ test("SYSTEM drawer: inventory counts and lists, the DISK donut and the COST DET
 test("the embedded terminal panel sits under Pulse", async () => {
   const { win } = app();
   const term = win.locator(".aos-pulse-term");
-  await expect(term.locator(".aos-term-title")).toHaveText("[ TERMINAL ]");
+  await expect(term.locator(".aos-term-title")).toHaveText("Terminal");
   await expect(term.locator(".xterm")).toHaveCount(1);
 });
 
@@ -179,7 +179,7 @@ test("listener leak: switching Pulse → Memory → Pulse → Term → Pulse doe
   for (let i = 0; i < 4; i++) await cycle();
   expect(await count()).toBe(once);
   expect(once).toBeLessThanOrEqual(2);   // the Pulse panel on screen, plus the Term tab's panel kept for its next visit
-  await expect(content(win)).toContainText("FIX QUEUE");
+  await expect(content(win)).toContainText("Fix queue");
   await expect(rail(win, "pulse")).toHaveClass(/is-active/);
 });
 

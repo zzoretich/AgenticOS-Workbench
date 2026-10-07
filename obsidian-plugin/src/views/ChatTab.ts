@@ -167,9 +167,8 @@ export class ChatTab {
   //    see WorkbenchView.onOpen's `root.addClass("aos-root", "aos-wb")` — reapplying it
   //    per-tab would nest the scanline background effect; MemoryTab's graph mode drops it
   //    the same way when reusing the old Cortex view's `.aos-cortex` root class).
-  //  - Header title text "[ ASSISTANT ]" kept verbatim (not renamed to "[ CHAT ]") —
-  //    matches the Task 2 precedent of not renaming ported view headers (the old Cortex view's
-  //    "[ CORTEX // KNOWLEDGE GRAPH ]" survives unchanged inside MemoryTab).
+  //  - Header title "Chat" (UniDeX: sentence case, no bracket decorations; it was "[ ASSISTANT ]",
+  //    kept from the old view until the redesign renamed every ported header).
   //  - Background-repaint guard (new, Lesson 2): bails before touching DOM if another
   //    rail tab is active. The status span is saved to this.statusPillEl so
   //    updateStatusPill() can patch it in place later without a full render().
@@ -189,13 +188,13 @@ export class ChatTab {
     const provider = this.providerName();
     if (provider === "none") {
       const hint = host.createDiv({ cls: "aos-asst-nohint aos-dim" });
-      hint.createSpan({ cls: "aos-title", text: "[ ASSISTANT ]" });
+      hint.createSpan({ cls: "aos-title", text: "Chat" });
       hint.createDiv({ text: "no provider — run `aos provider` (Ollama reachable, or Claude Code or Codex logged in), then reopen the Workbench." });
       return;
     }
 
     const header = host.createDiv({ cls: "aos-asst-head" });
-    header.createSpan({ cls: "aos-title", text: "[ ASSISTANT ]" });
+    header.createSpan({ cls: "aos-title", text: "Chat" });
     const status = header.createSpan({ cls: "aos-pill" });
     this.statusPillEl = status;
     const up = this.plugin.hb.getStatus().up;

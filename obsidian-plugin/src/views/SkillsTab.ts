@@ -99,7 +99,7 @@ export class SkillsTab {
     const n = skillCounts(yours);
 
     const head = host.createDiv({ cls: "aos-rt-head" });
-    head.createSpan({ cls: "aos-rt-title", text: "SKILLS" });
+    head.createSpan({ cls: "aos-rt-title", text: "Skills" });
     head.createSpan({ cls: "aos-dim aos-rt-count", text: `${n.both} on both · ${n.claude} Claude Code only · ${n.codex} Codex only · ${listed.length} from plugins` });
     const actions = head.createDiv({ cls: "aos-rt-actions" });
     const syncBtn = actions.createEl("button", { cls: "aos-ws-action", text: "sync now" });

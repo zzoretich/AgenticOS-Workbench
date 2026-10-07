@@ -35,9 +35,15 @@ The current layout, recolored in the UniDeX tokens, follows macOS light and dark
   - `sandbox.spec.ts`: the new `window.aos` line and a refusal case.
   - `docs/app-smoke.md` items with their `COVERAGE.md` rows. `CHANGELOG` gets an Added entry.
 
-## PR 2 — shell (`feat/unidex-shell`, stacked on PR 1)
+## PR 2 — shell, in two parts
 
-- [ ] **S1 One rail.**
+PR 1 merged first (#82), so PR 2 builds on `main`. It is split for review:
+
+- **2a (`feat/unidex-shell`):** S1, S5 and S7, with the type and shape pass of S6 and the bracket headings gone.
+- **2b:** S2–S4, the list panes. It changes how Notifications and Proposals behave, so its specs are rewritten.
+
+
+- [x] **S1 One rail.**
   - Lucide icons replace the Unicode glyphs (they must exist in compat `setIcon`). The mark at the top opens Home.
   - Add Quick Capture. Theme and settings go at the foot. The active tab is an inverted tile, and badges use tone colors.
   - Hide `.aos-host-ribbon` and remove `.aos-wb-topbar`.
@@ -48,7 +54,7 @@ The current layout, recolored in the UniDeX tokens, follows macOS light and dark
   - Button roles: primary (inverted), secondary and quiet.
 - [ ] **S3 Notifications.** An inbox in the pane and the reading pane in the workspace, replacing inline expand. Arrow keys move through the list. Mark read/unread, archive, ▲▼ and Deep dive stay.
 - [ ] **S4 Panes for the other list tabs.** Proposals, Runs (inspector in the workspace), Memory, Files (tree), Spaces (already split) and the Pulse sections.
-- [ ] **S5 Chat as Home.**
+- [x] **S5 Chat as Home.**
   - The default tab becomes `chat`. The composer is at the bottom with host and workspace chips.
   - Timeline rows become steps, and the status line sits under the composer. The provider `none` hint stays.
   - Terminal is one rail click away.
@@ -58,7 +64,7 @@ The current layout, recolored in the UniDeX tokens, follows macOS light and dark
   - **Tables and editors:** Routines (with its editor), To-do, Skills and Agents.
   - **Modals:** Capture, Remember, Pattern, Anchor, Confirm, Omni and QuickOpen.
   - **Elsewhere:** toasts, the settings window, the wizard, the tray popover (`SidebarHUD`) and both inspectors.
-- [ ] **S7 Chrome.** A 24 px status footer, pane tabs as a slim strip, and the right drawer restyled.
+- [x] **S7 Chrome.** A 24 px status footer, pane tabs as a slim strip, and the right drawer restyled.
 - [ ] **Tests.**
   - `shell.spec.ts`: rail glyphs become aria-labels. Update the notifications, proposals and runs specs.
   - `variants.spec.ts`: Codex-only Home.

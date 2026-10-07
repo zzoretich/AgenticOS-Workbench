@@ -1,4 +1,4 @@
-import { ItemView, TAbstractFile, WorkspaceLeaf } from "obsidian";
+import { ItemView, TAbstractFile, WorkspaceLeaf, setIcon } from "obsidian";
 import type AgenticOSPlugin from "../../main";
 import { PulseTab } from "./PulseTab";
 import { SpacesTab } from "./SpacesTab";
@@ -20,29 +20,37 @@ import { NOTIFICATIONS_DIR, STATE_PATH, notificationId, parseNotification, parse
 import { badgeText, proposalBadge, todoBadge, touchesBadges } from "../data/badges";
 import { TODO_PATH, localDay } from "../data/todos";
 import { readTeams, diskAdapter, gateBadge } from "../data/teams";
+import { CaptureModal } from "../ui/CaptureModal";
+import { HOST_APP_SETTINGS, HOST_TOGGLE_THEME, runHostCommand } from "../ui/hostCommands";
+import { currentTheme, onThemeChange } from "../ui/theme";
 
 export const VIEW_TYPE_WORKBENCH = "agentic-os-workbench";
 
+/** A rail button: its tab id, its lucide icon, and the name its tooltip and screen readers give. */
 interface RailTab { id: string; icon: string; label: string }
 
+/** The rail (UniDeX D3): Chat first, as the Home tab when a provider is set up (D5), then every other tab. */
 const RAIL: RailTab[] = [
-  { id: "pulse", icon: "◉", label: "Pulse" },
-  { id: "files", icon: "▤", label: "Files" },
-  { id: "todo", icon: "☐", label: "To-Do" },
-  { id: "proposals", icon: "⚖", label: "Proposals" },
-  { id: "notifications", icon: "◔", label: "Notifications" },
-  { id: "spaces", icon: "▣", label: "Spaces" },
-  { id: "memory", icon: "◈", label: "Memory" },
-  { id: "runs", icon: "≣", label: "Runs" },
-  { id: "routines", icon: "⟳", label: "Routines" },
-  { id: "skills", icon: "✦", label: "Skills" },
-  { id: "agents", icon: "♟", label: "Agents" },
-  { id: "agent-teams", icon: "⁂", label: "Agent Teams" },
-  { id: "chat", icon: "✎", label: "Chat" },
-  { id: "term", icon: "❯_", label: "Term" },
+  { id: "chat", icon: "message-square", label: "Chat" },
+  { id: "pulse", icon: "activity", label: "Pulse" },
+  { id: "files", icon: "file-text", label: "Files" },
+  { id: "todo", icon: "square-check", label: "To-Do" },
+  { id: "proposals", icon: "inbox", label: "Proposals" },
+  { id: "notifications", icon: "bell", label: "Notifications" },
+  { id: "spaces", icon: "folder", label: "Spaces" },
+  { id: "memory", icon: "brain", label: "Memory" },
+  { id: "runs", icon: "list", label: "Runs" },
+  { id: "routines", icon: "repeat", label: "Routines" },
+  { id: "skills", icon: "sparkles", label: "Skills" },
+  { id: "agents", icon: "bot", label: "Agents" },
+  { id: "agent-teams", icon: "users", label: "Agent Teams" },
+  { id: "term", icon: "terminal", label: "Term" },
 ];
 /** Pinned to the rail's foot, below the scrolling tab list (spec 2026-09-24-settings-tab D1). */
-const SETTINGS_TAB: RailTab = { id: "settings", icon: "⚙", label: "Settings" };
+const SETTINGS_TAB: RailTab = { id: "settings", icon: "settings", label: "Settings" };
+
+/** The Line UDX mark (UniDeX D10): one stroke weight with round ends, drawn in the text colour. */
+const MARK_PATH = "M6 6V26a14 14 0 0 0 28 0V6 M48 6V40H60a17 17 0 0 0 0-34H48Z M92 6L124 40 M124 6L92 40";
 /** Every tab id setTab() can build: what an agenticos://workbench?tab=<id> link may name (statusline spec D10). */
 export const WORKBENCH_TAB_IDS: readonly string[] = [...RAIL.map((t) => t.id), SETTINGS_TAB.id];
 
@@ -51,13 +59,13 @@ export class WorkbenchView extends ItemView {
   private contentHost!: HTMLElement;
   private drawerHost!: HTMLElement;
   private railEl!: HTMLElement;
-  private clockTimer: number | null = null;
   private badgeEls: Record<string, HTMLElement> = {};
   private badgeTimer: number | null = null;
   private teamsReads = 0;
   private teamsShown = 0;
   private tabs: Partial<Record<string, { mount(h: HTMLElement): void; refresh(): Promise<void>; unmount(): void }>> = {};
   private activeTab = "pulse";
+  private unwatchTheme: (() => void) | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: AgenticOSPlugin) { super(leaf); this.plugin = plugin; }
   getViewType(): string { return VIEW_TYPE_WORKBENCH; }
@@ -73,7 +81,7 @@ export class WorkbenchView extends ItemView {
     this.drawerHost.empty();
     this.drawerHost.addClass("is-open");
     const head = this.drawerHost.createDiv({ cls: "aos-wb-drawerhead" });
-    head.createSpan({ text: `⌜ ${title} ⌝`, cls: "aos-wb-drawertitle" });
+    head.createSpan({ text: title, cls: "aos-wb-drawertitle" });
     const actions = head.createDiv({ cls: "aos-wb-draweractions" });
     if (popOut) {
       const pop = actions.createEl("a", { text: "⧉", cls: "aos-link", href: "#", attr: { "aria-label": "Open in split" } });
@@ -90,29 +98,36 @@ export class WorkbenchView extends ItemView {
     root.empty();
     root.addClass("aos-root", "aos-wb");
 
-    // top bar
-    const top = root.createDiv({ cls: "aos-wb-topbar" });
-    const brand = top.createSpan({ cls: "aos-wb-brand" });
-    brand.createSpan({ text: "AGENTIC OS", cls: "aos-text-cyan" });
-    brand.createSpan({ text: " WORKBENCH", cls: "aos-dim" });
-    this.registerDomListenerClock(top.createSpan({ cls: "aos-wb-clock" }));
-    const omniBtn = top.createEl("button", { cls: "aos-wb-omnibtn", text: "⌕", attr: { "aria-label": "Omnisearch" } });
-    omniBtn.addEventListener("click", () => { void this.plugin.openOmni(); });
-
-    // body: rail | content | drawer
+    // body: rail | content | drawer. No top bar (UniDeX D3): the mark, search and capture head the rail.
     const body = root.createDiv({ cls: "aos-wb-body" });
-    // The tab buttons scroll inside .aos-wb-railtabs so a short pane never pushes the ⚙ footer out of reach (D1).
     this.railEl = body.createDiv({ cls: "aos-wb-rail" });
+    const head = this.railEl.createDiv({ cls: "aos-wb-railhead" });
+    this.railMark(head);
+    this.railAction(head, { action: "search", icon: "search", label: "Search (⌘K)" }, () => { void this.plugin.openOmni(); });
+    this.railAction(head, { action: "capture", icon: "plus", label: "Quick Capture" }, () => { new CaptureModal(this.app).open(); });
+    // The tab buttons scroll inside .aos-wb-railtabs so a short pane never pushes the ⚙ footer out of reach (D1).
     const tabsEl = this.railEl.createDiv({ cls: "aos-wb-railtabs" });
     for (const tab of RAIL) {
       if (tab.id === "chat" && !this.plugin.chatAvailable()) continue; // no provider → no Chat tab (hint lives in ChatTab.render)
       this.railButton(tabsEl, tab);
     }
-    this.railButton(this.railEl.createDiv({ cls: "aos-wb-railfoot" }), SETTINGS_TAB);
+    const foot = this.railEl.createDiv({ cls: "aos-wb-railfoot" });
+    const theme = this.railAction(foot, { action: "theme", icon: "moon", label: "Switch to dark" }, () => { runHostCommand(this.app, HOST_TOGGLE_THEME); });
+    const showTheme = (): void => {
+      const dark = currentTheme(theme.ownerDocument) === "dark";
+      setIcon(theme, dark ? "sun" : "moon");
+      const label = dark ? "Switch to light" : "Switch to dark";
+      theme.setAttr("aria-label", label);
+      theme.setAttr("title", label);
+    };
+    showTheme();
+    this.unwatchTheme = onThemeChange(showTheme, theme.ownerDocument);
+    this.railAction(foot, { action: "app-settings", icon: "monitor-cog", label: "App settings" }, () => { runHostCommand(this.app, HOST_APP_SETTINGS); });
+    this.railButton(foot, SETTINGS_TAB);
     this.contentHost = body.createDiv({ cls: "aos-wb-content" });
     this.drawerHost = body.createDiv({ cls: "aos-wb-drawer" });
 
-    this.setTab("pulse");
+    this.setTab(this.homeTab());
 
     // rail badges (spec 2026-09-22-todo-and-proposals-tabs D7): recomputed on any vault event under a watched
     // path, whichever tab is active — tabs are built lazily, so they cannot own this.
@@ -128,9 +143,38 @@ export class WorkbenchView extends ItemView {
     void this.refreshBadges();
   }
 
+  /** Home (UniDeX D5): Chat when a provider is set up, else Pulse. */
+  homeTab(): string { return this.plugin.chatAvailable() ? "chat" : "pulse"; }
+
+  /** The mark at the rail's head: it opens Home. */
+  private railMark(parent: HTMLElement): void {
+    const b = parent.createDiv({ cls: "aos-wb-mark", attr: { "aria-label": "Home", title: "Home", role: "button", tabindex: "0" } });
+    const NS = "http://www.w3.org/2000/svg";
+    const svg = b.ownerDocument.createElementNS(NS, "svg");
+    svg.setAttribute("viewBox", "0 0 130 46");
+    svg.setAttribute("aria-hidden", "true");
+    const path = b.ownerDocument.createElementNS(NS, "path");
+    path.setAttribute("d", MARK_PATH);
+    svg.appendChild(path);
+    b.appendChild(svg);
+    const go = (): void => this.setTab(this.homeTab());
+    b.addEventListener("click", go);
+    b.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
+  }
+
+  /** A rail button that runs something rather than opening a tab. */
+  private railAction(parent: HTMLElement, a: { action: string; icon: string; label: string }, run: () => void): HTMLElement {
+    const b = parent.createDiv({ cls: "aos-wb-railact", attr: { "data-action": a.action, "aria-label": a.label, title: a.label, role: "button", tabindex: "0" } });
+    setIcon(b, a.icon);
+    b.addEventListener("click", run);
+    b.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); run(); } });
+    return b;
+  }
+
   private railButton(parent: HTMLElement, tab: RailTab): void {
-    const b = parent.createDiv({ cls: "aos-wb-railbtn", attr: { "data-tab": tab.id, "aria-label": tab.label, role: "button", tabindex: "0" } });
-    b.createDiv({ text: tab.icon, cls: "aos-wb-railicon" });
+    const b = parent.createDiv({ cls: "aos-wb-railbtn", attr: { "data-tab": tab.id, "aria-label": tab.label, title: tab.label, role: "button", tabindex: "0" } });
+    const icon = b.createDiv({ cls: "aos-wb-railicon" });
+    setIcon(icon, tab.icon);
     b.createDiv({ text: tab.label, cls: "aos-wb-raillabel" });
     this.badgeEls[tab.id] = b.createDiv({ cls: "aos-wb-railbadge is-empty" });
     b.addEventListener("click", () => this.onRailClick(tab));
@@ -218,12 +262,6 @@ export class WorkbenchView extends ItemView {
     return id !== null;
   }
 
-  private registerDomListenerClock(el: HTMLElement): void {
-    const tick = () => { el.textContent = new Date().toLocaleTimeString(undefined, { hour12: false }); };
-    tick();
-    this.clockTimer = window.setInterval(tick, 1000);
-  }
-
   private onRailClick(tab: RailTab): void {
     this.setTab(tab.id);
   }
@@ -260,7 +298,8 @@ export class WorkbenchView extends ItemView {
   }
 
   async onClose(): Promise<void> {
-    if (this.clockTimer !== null) window.clearInterval(this.clockTimer);
+    this.unwatchTheme?.();
+    this.unwatchTheme = null;
     if (this.badgeTimer !== null) window.clearTimeout(this.badgeTimer);
     for (const tab of Object.values(this.tabs)) tab?.unmount();
     this.tabs = {};

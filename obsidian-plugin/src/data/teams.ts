@@ -311,12 +311,12 @@ export function boardColumns(t: Team): Column[] {
   return other ? [...cols, other] : cols;
 }
 
-export type Tone = "is-ok" | "is-neutral" | "is-stale" | "is-failed" | "is-off" | "is-live";
-/** The chip for an item's status: live work cyan, waiting on the user amber, blocked rose, done green. */
+export type Tone = "is-ok" | "is-neutral" | "is-stale" | "is-failed" | "is-off" | "is-live" | "is-gate";
+/** The chip for an item's status (UniDeX tones): live work blue, waiting on the user violet, blocked red, done green. */
 export function itemTone(it: BoardItem): Tone {
   switch (it.status) {
     case "working": return "is-live";
-    case "gate": return "is-stale";
+    case "gate": return "is-gate";
     case "blocked": return "is-failed";
     case "done": return "is-ok";
     case "paused": return "is-off";

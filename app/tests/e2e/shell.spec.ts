@@ -18,7 +18,9 @@ test("boots the Workbench on Pulse against the fixture vault, read-only", async 
   // The harness runs it read-only (AOS_APP_WRITE=""); the default, every surface on, is in variants.spec.ts.
   expect(info.writeSurfaces).toEqual([]);
   expect(info.writeSource).toBe("AOS_APP_WRITE");
-  await expect(win.locator(".aos-wb-brand")).toHaveText("AGENTIC OS WORKBENCH");
+  // No top bar (UniDeX D3): the mark heads the rail and opens Home, which is Pulse without a chat provider.
+  await expect(win.locator(".aos-wb-mark")).toHaveAttribute("aria-label", "Home");
+  await expect(win.locator(".aos-wb-topbar")).toHaveCount(0);
   // The unmodified HUD from this repo loaded ("[agentic-os] loaded" in Obsidian).
   const plugin = await win.evaluate(() => {
     const p = (window as unknown as { aosHost: { plugin: { manifest: { id: string; version: string }; settings: object; _loaded: boolean } } }).aosHost.plugin;
@@ -52,11 +54,15 @@ test("rail: the tabs in order, no Chat without a provider, ⚙ Settings at the f
   expect(ids.indexOf("notifications")).toBe(ids.indexOf("proposals") + 1);
   expect(ids.indexOf("agent-teams")).toBe(ids.indexOf("agents") + 1);
   await expect(win.locator(".aos-wb-railfoot .aos-wb-railbtn[data-tab='settings']")).toHaveCount(1);
-  await expect(rail(win, "files").locator(".aos-wb-railicon")).toHaveText("▤");
-  await expect(rail(win, "skills").locator(".aos-wb-railicon")).toHaveText("✦");
-  await expect(rail(win, "agents").locator(".aos-wb-railicon")).toHaveText("♟");
-  await expect(rail(win, "agent-teams").locator(".aos-wb-railicon")).toHaveText("⁂");
-  await expect(rail(win, "settings").locator(".aos-wb-railicon")).toHaveText("⚙");
+  await expect(rail(win, "files").locator(".aos-wb-railicon")).toHaveAttribute("data-icon", "file-text");
+  await expect(rail(win, "skills").locator(".aos-wb-railicon")).toHaveAttribute("data-icon", "sparkles");
+  await expect(rail(win, "agents").locator(".aos-wb-railicon")).toHaveAttribute("data-icon", "bot");
+  await expect(rail(win, "agent-teams").locator(".aos-wb-railicon")).toHaveAttribute("data-icon", "users");
+  await expect(rail(win, "settings").locator(".aos-wb-railicon")).toHaveAttribute("data-icon", "settings");
+  // The head: search and capture; the foot: light and dark, App settings, then Settings.
+  const acts = (where: string) => win.locator(`.aos-wb-rail${where} .aos-wb-railact`).evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.action));
+  expect(await acts("head")).toEqual(["search", "capture"]);
+  expect(await acts("foot")).toEqual(["theme", "app-settings"]);
 });
 
 test("rail: ⚙ stays reachable in a pane too short for every tab, which scroll above it", async () => {
@@ -97,16 +103,6 @@ test("rail badges count the fixture: to-do, proposals, notifications (rose for b
   for (const id of ["pulse", "spaces", "memory", "runs", "routines", "skills", "agents", "term", "settings"]) {
     await expect(badge(win, id)).toHaveClass(/is-empty/);
   }
-});
-
-test("the clock and the host chrome follow the OS locale", async () => {
-  const { win } = app();
-  const clock = win.locator(".aos-wb-clock");
-  const first = await clock.textContent();
-  const local = await win.evaluate(() => new Date().toLocaleTimeString(undefined, { hour12: false }));
-  // Same format as the OS locale's 24-hour time, and it ticks.
-  expect(first?.length).toBe(local.length);
-  await expect.poll(() => clock.textContent(), { timeout: 3000 }).not.toBe(first);
 });
 
 test("status bar: READ-ONLY, the live marker and the runtime's status-line segments", async () => {
@@ -217,7 +213,7 @@ test("a tour of every tab, the sidebar HUD and ⌘K raises no renderer or main-p
     await expect(content(win)).not.toBeEmpty();
   }
   await command(win, "agentic-os:open-sidebar-hud");
-  await expect(win.locator(".aos-host-right .aos-sb-title")).toHaveText("[ AGENTIC OS ]");
+  await expect(win.locator(".aos-host-right .aos-sb-title")).toHaveText("AgenticOS");
   await command(win, "agentic-os:open-omnisearch");
   await expect(win.locator(".modal.prompt .prompt-input")).toBeVisible();
   await win.keyboard.press("Escape");
@@ -269,7 +265,7 @@ test("tray popover: the SidebarHUD in a window of its own, hidden until the menu
   expect(await main((m) => m.togglePopover())).toBe(true);
   expect(await main((m) => m.popoverVisible())).toBe(true);
   await expect(pop.locator(".aos-popover-leaf .aos-sb-status")).toBeVisible();
-  await expect(pop.locator(".aos-popover-leaf")).toContainText("[ AGENTIC OS ]");
+  await expect(pop.locator(".aos-popover-leaf")).toContainText("AgenticOS");
   // The same plugin draws it: no second HUD, so one status bar and one Workbench.
   expect(await h.win.evaluate(() => document.querySelectorAll(".aos-statusbar").length)).toBe(1);
   expect(await main((m) => m.togglePopover())).toBe(true);

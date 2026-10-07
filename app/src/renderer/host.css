@@ -3,9 +3,9 @@
 #app { height: 100vh; display: flex; flex-direction: column; }
 .aos-host { flex: 1; min-height: 0; display: flex; }
 
-.aos-host-ribbon { width: 40px; flex: none; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 0; background: var(--compat-bg); border-right: 1px solid var(--compat-border); }
+/* The HUD's rail is the one navigation (UniDeX D3): it carries what the ribbon did. */
+.aos-host-ribbon { display: none; }
 .aos-host-ribbon .clickable-icon { width: 28px; height: 28px; font-size: 15px; }
-.aos-host-ribbon .aos-host-theme { margin-top: auto; }
 .aos-app-path { margin-top: 4px; font: 11px var(--compat-mono); color: var(--compat-dim); word-break: break-all; }
 .aos-app-writes { font: 12px var(--compat-mono); color: var(--compat-dim); }
 .aos-app-writes.is-writing { color: var(--compat-accent); }
@@ -21,8 +21,8 @@
 .aos-host-right .aos-host-pane { flex: 1; min-height: 0; }
 
 .aos-host-tabbar { display: flex; gap: 2px; height: 30px; align-items: flex-end; padding: 0 6px; background: var(--compat-bg); border-bottom: 1px solid var(--compat-border); overflow-x: auto; flex: none; }
-.aos-host-tab { display: flex; align-items: center; gap: 8px; max-width: 220px; height: 26px; padding: 0 8px 0 12px; border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; color: var(--compat-dim); font: 12px var(--compat-mono); cursor: pointer; white-space: nowrap; }
-.aos-host-tab.is-active { background: var(--compat-panel); border-color: var(--compat-border); color: var(--compat-text); }
+.aos-host-tab { display: flex; align-items: center; gap: 8px; max-width: 220px; height: 26px; padding: 0 8px 0 12px; border: 1px solid transparent; border-bottom: none; border-radius: 8px 8px 0 0; color: var(--udx-text-2); font: 500 12.5px var(--compat-sans); cursor: pointer; white-space: nowrap; }
+.aos-host-tab.is-active { background: var(--udx-bg); border-color: var(--compat-border); color: var(--udx-text); }
 .aos-host-tab.is-split .aos-host-tab-title::before { content: "⧉ "; color: var(--compat-accent); }
 .aos-host-tab-title { overflow: hidden; text-overflow: ellipsis; }
 .aos-host-tab-close { opacity: .5; font-size: 10px; }
@@ -36,8 +36,10 @@
 /* Obsidian's geometry for plugin views: a 12px inset that outranks the HUD's own .aos-root padding; notes get none. */
 .workspace-leaf-content .view-content { padding: 12px 12px 32px; }
 .workspace-leaf-content[data-type="markdown"] .view-content { padding: 0; }
+/* The Workbench fills its pane: its rail sits against the window's edge. */
+.workspace-leaf-content[data-type="agentic-os-workbench"] .view-content { padding: 0; }
 
-.aos-host-status { height: 24px; flex: none; display: flex; justify-content: flex-end; align-items: center; gap: 14px; padding: 0 12px; border-top: 1px solid var(--compat-border); background: var(--compat-panel); font: 11px var(--compat-mono); color: var(--compat-dim); }
+.aos-host-status { height: 24px; flex: none; display: flex; justify-content: flex-end; align-items: center; gap: 14px; padding: 0 12px; border-top: 1px solid var(--compat-border); background: var(--udx-bg); font: 11px var(--compat-mono); color: var(--udx-text-3); }
 .aos-host-status .status-bar-item { display: flex; align-items: center; gap: 6px; }
 .aos-host-mode { color: var(--udx-warn); letter-spacing: .08em; margin-right: auto; }
 

@@ -1,5 +1,5 @@
 // The settings window: Obsidian's settings, in the app (`app.setting`). The app's own App tab under Options, the tab
-// the Workbench plugin registers under Community plugins. Opened from ⚙ at the ribbon's foot, from AgenticOS Workbench ▸
+// the Workbench plugin registers under Community plugins. Opened from App settings at the rail's foot, from AgenticOS Workbench ▸
 // App Settings… (the host:settings command) and from the palette. It runs read-only: a plugin row saves to the app's own
 // data folder, and the system switches, which run `aos config set`, are refused with the Settings surface off.
 
@@ -30,12 +30,12 @@ test.afterEach(async () => {
   expectNoErrors(h);
 });
 
-test("⚙ at the ribbon's foot opens the window on the plugin's tab: Options ▸ App, Community plugins ▸ Agentic OS", async () => {
+test("App settings at the rail's foot opens the window on the plugin's tab: Options ▸ App, Community plugins ▸ Agentic OS", async () => {
   const { win } = app();
-  const gear = win.locator(".aos-host-ribbon .aos-host-settings");
+  const gear = win.locator('.aos-wb-railfoot .aos-wb-railact[data-action="app-settings"]');
   await expect(gear).toHaveAttribute("aria-label", "App settings");
-  // It sits last in the ribbon, below the plugin's own icons.
-  expect(await win.locator(".aos-host-ribbon > *").last().evaluate((el) => el.classList.contains("aos-host-settings"))).toBe(true);
+  // The app's ribbon is hidden (UniDeX D3): the rail carries its actions.
+  await expect(win.locator(".aos-host-ribbon")).toBeHidden();
   await gear.click();
   await expect(modal(win)).toBeVisible();
   await expect(modal(win).locator(".vertical-tab-header-group-title")).toHaveText(["Options", "Community plugins"]);

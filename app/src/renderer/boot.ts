@@ -3,7 +3,7 @@
 // through window.aos (src/preload), and the HUD's own I/O goes through the bridge host installed here before the plugin
 // loads. Main feeds it vault changes, menu commands and agenticos:// links.
 
-import { App, Notice, guardState, setBridge, setIcon, setMarkdownHost, setWriteGuard, type PluginManifest } from "obsidian";
+import { App, Notice, guardState, setBridge, setMarkdownHost, setWriteGuard, type PluginManifest } from "obsidian";
 import AgenticOSPlugin from "@workbench/hud";
 import { version as hudVersion } from "@workbench/hud-package";
 import { setHudHost } from "../../../obsidian-plugin/src/host";
@@ -15,7 +15,7 @@ import { attachUi } from "./setup/attach";
 import { runSetup } from "./setup/wizard";
 import { openPopover } from "./popover";
 import { CommandPalette } from "./palette";
-import { PageTheme, THEME_LABELS, applyTheme, toggledSource } from "./theme";
+import { PageTheme, applyTheme } from "./theme";
 
 /**
  * The HUD as a plugin, the manifest Obsidian read from its plugin folder. The id keys the HUD's settings
@@ -82,9 +82,9 @@ async function boot(): Promise<void> {
   await plugin.load();
   app.workspace.markLayoutReady();
 
-  // The settings window: the app's own tab beside the one the plugin registered. It opens from ⚙ at the ribbon's
-  // foot (where Obsidian has it), AgenticOS Workbench ▸ App Settings… (⌘⇧,) and the palette; ⌘, stays the
-  // Workbench's Settings tab.
+  // The settings window: the app's own tab beside the one the plugin registered. It opens from the Workbench rail's
+  // foot (App settings), AgenticOS Workbench ▸ App Settings… (⌘⇧,) and the palette; ⌘, stays the Workbench's Settings
+  // tab. The ribbon is hidden (UniDeX D3): the rail runs these two commands.
   app.setting.addSettingTab(new AppSettingTab(app, {
     vaultRoot: info.vaultRoot, vaultSource: info.vaultSource, userData: info.userData, appVersion: info.appVersion,
     hudVersion: HUD.version, electron: info.electron, policy: () => policy, writeSource: () => info.writeSource, aos, theme,
@@ -93,21 +93,6 @@ async function boot(): Promise<void> {
   app.commands.add({ id: HOST_COMMANDS.settings, name: "Open app settings", callback: openSettings });
   // Light and dark: one click flips what shows now (App settings and View ▸ Appearance can go back to Match macOS).
   app.commands.add({ id: HOST_COMMANDS.toggleTheme, name: "Toggle light and dark", callback: () => theme.toggle() });
-  const themeBtn = ribbonEl.createDiv({ cls: "side-dock-ribbon-action clickable-icon aos-host-theme", attr: { role: "button", tabindex: "0" } });
-  const showToggle = (): void => {
-    const next = THEME_LABELS[toggledSource(theme.state)];
-    setIcon(themeBtn, theme.state.dark ? "sun" : "moon");
-    themeBtn.setAttr("aria-label", `Switch to ${next.toLowerCase()}`);
-    themeBtn.setAttr("title", `Switch to ${next.toLowerCase()}`);
-  };
-  showToggle();
-  theme.onChange(showToggle);
-  themeBtn.addEventListener("click", () => theme.toggle());
-  themeBtn.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); theme.toggle(); } });
-  const gear = ribbonEl.createDiv({ cls: "side-dock-ribbon-action clickable-icon aos-host-settings", attr: { "aria-label": "App settings", title: "App settings", role: "button", tabindex: "0" } });
-  setIcon(gear, "settings");
-  gear.addEventListener("click", openSettings);
-  gear.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openSettings(); } });
 
   app.vault.startWatching(info.mainWatcher ? (onPaths) => bridgeHost.onVaultChanges(onPaths) : undefined);
 

@@ -103,7 +103,7 @@ export class AgentsTab {
     const n = agentCounts(yours);
 
     const head = host.createDiv({ cls: "aos-rt-head" });
-    head.createSpan({ cls: "aos-rt-title", text: "AGENTS" });
+    head.createSpan({ cls: "aos-rt-title", text: "Agents" });
     head.createSpan({ cls: "aos-dim aos-rt-count", text: `${n.both} on both · ${n.claude} Claude Code only · ${n.codex} Codex only · ${listed.length} from plugins and config.toml` });
     const actions = head.createDiv({ cls: "aos-rt-actions" });
     const syncBtn = actions.createEl("button", { cls: "aos-ws-action", text: "sync now" });
