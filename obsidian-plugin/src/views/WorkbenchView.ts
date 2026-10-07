@@ -8,7 +8,7 @@ import { RunsTab } from "./RunsTab";
 import { RoutinesTab } from "./RoutinesTab";
 import { SkillsTab } from "./SkillsTab";
 import { AgentsTab } from "./AgentsTab";
-import { ChatTab } from "./ChatTab";
+import { SessionsTab } from "./SessionsTab";
 import { TermTab } from "./TermTab";
 import { ProposalsTab } from "./ProposalsTab";
 import { TodoTab } from "./TodoTab";
@@ -29,9 +29,10 @@ export const VIEW_TYPE_WORKBENCH = "agentic-os-workbench";
 /** A rail button: its tab id, its lucide icon, and the name its tooltip and screen readers give. */
 interface RailTab { id: string; icon: string; label: string }
 
-/** The rail (UniDeX D3): Chat first, as the Home tab when a provider is set up (D5), then every other tab. */
+/** The rail (UniDeX D3): Sessions first, as the Home tab when a provider is set up (D5), then every other tab. Sessions
+ *  keeps the id "chat" it had as the Chat tab, so links and commands that name it still open it. */
 const RAIL: RailTab[] = [
-  { id: "chat", icon: "message-square", label: "Chat" },
+  { id: "chat", icon: "message-square", label: "Sessions" },
   { id: "pulse", icon: "activity", label: "Pulse" },
   { id: "files", icon: "file-text", label: "Files" },
   { id: "todo", icon: "square-check", label: "To-Do" },
@@ -108,7 +109,7 @@ export class WorkbenchView extends ItemView {
     // The tab buttons scroll inside .aos-wb-railtabs so a short pane never pushes the ⚙ footer out of reach (D1).
     const tabsEl = this.railEl.createDiv({ cls: "aos-wb-railtabs" });
     for (const tab of RAIL) {
-      if (tab.id === "chat" && !this.plugin.chatAvailable()) continue; // no provider → no Chat tab (hint lives in ChatTab.render)
+      if (tab.id === "chat" && !this.plugin.chatAvailable()) continue; // no provider → no Sessions tab (hint lives in ChatTab.render)
       this.railButton(tabsEl, tab);
     }
     const foot = this.railEl.createDiv({ cls: "aos-wb-railfoot" });
@@ -143,7 +144,7 @@ export class WorkbenchView extends ItemView {
     void this.refreshBadges();
   }
 
-  /** Home (UniDeX D5): Chat when a provider is set up, else Pulse. */
+  /** Home (UniDeX D5): Sessions when a provider is set up, else Pulse. */
   homeTab(): string { return this.plugin.chatAvailable() ? "chat" : "pulse"; }
 
   /** The mark at the rail's head: it opens Home. */
@@ -279,7 +280,7 @@ export class WorkbenchView extends ItemView {
     if (id === "skills") return new SkillsTab(this.plugin, this);
     if (id === "agents") return new AgentsTab(this.plugin, this);
     if (id === "agent-teams") return new AgentTeamsTab(this.plugin, this);
-    if (id === "chat") return new ChatTab(this.plugin, this);
+    if (id === "chat") return new SessionsTab(this.plugin, this);
     if (id === "term") return new TermTab(this.plugin, this);
     if (id === "settings") return new SettingsTab(this.plugin, this);
     return null;

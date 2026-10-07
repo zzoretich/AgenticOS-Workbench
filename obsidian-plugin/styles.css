@@ -2402,3 +2402,134 @@ a.aos-at-itemid:hover { text-decoration: underline; text-underline-offset: 2px; 
 .aos-nt-reader .aos-nt-detail { margin: 0; padding: 0; border: none; background: none; font-size: 14px; line-height: 1.6; }
 .aos-nt-reader .aos-nt-actions { justify-content: flex-start; flex-wrap: wrap; gap: 8px; margin: 10px 0 14px; }
 .aos-pr-reader .aos-pr-detail { margin: 0; padding: 0; border: none; background: none; font-size: 14px; line-height: 1.6; }
+
+/* ── Sessions (spec 2026-10-07-unidex-sessions §4.5): the Chat tab's place on the rail. The thread list on the left,
+   Vault first; the reader on the right is a fixed-height column: the header, then the timeline and the repository card
+   (which scroll), then the composer at its foot. Vault's reader holds the chat (ChatTab) as it was. ── */
+.aos-ss-split { flex-wrap: wrap; align-items: stretch; }
+.aos-ss-list { flex: 1 1 260px; max-width: 340px; display: flex; flex-direction: column; gap: 2px; }
+.aos-ss-reader {
+  display: flex; flex-direction: column; height: calc(100vh - 165px); max-height: none; min-height: 420px;
+  padding: 16px 20px 14px; overflow: hidden;
+}
+.aos-ss-reader.is-vault { padding: 16px 20px 14px; }
+.aos-ss-vaultchat { flex: 1; min-height: 0; }
+.aos-ss-reader .aos-assistant { height: 100%; padding: 0; box-sizing: border-box; }
+.aos-ss-reader .aos-asst-head { justify-content: flex-start; padding-top: 0; }
+.aos-ss-reader .aos-asst-log { min-height: 0; }
+
+/* The list: a row per thread, a dot that lights while its turn runs, its host as a chip. */
+.aos-ss-row {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; cursor: pointer;
+  color: var(--udx-text);
+}
+.aos-ss-row:hover, .aos-ss-row:focus-visible { background: var(--udx-raised); outline: none; }
+.aos-ss-row.is-selected { background: var(--udx-raised-2); }
+.aos-ss-dot { flex: none; width: 8px; height: 8px; border-radius: 999px; background: transparent; }
+.aos-ss-row.is-running .aos-ss-dot { background: var(--udx-ok-dot); box-shadow: 0 0 0 3px var(--udx-ok-bg); }
+.aos-ss-vault .aos-ss-dot { background: var(--udx-info-dot); }
+.aos-ss-name { flex: 1; min-width: 0; }
+.aos-ss-title { font-size: 13.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aos-ss-meta { font-size: 12px; color: var(--udx-text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aos-ss-group { margin-top: 10px; }
+.aos-ss-ws {
+  padding: 4px 10px; font-family: var(--udx-sans); font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
+  color: var(--udx-text-3);
+}
+.aos-ss-host { flex: none; }
+.aos-ss-host.is-claude { color: var(--udx-info); border-color: var(--udx-info-bg); background: var(--udx-info-bg); }
+.aos-ss-host.is-codex { color: var(--udx-gate); border-color: var(--udx-gate-bg); background: var(--udx-gate-bg); }
+.aos-ss-note { padding: 8px 10px; font-size: 12.5px; color: var(--udx-text-3); }
+
+/* The reader's header: workspace › title, the host and model, Stop while a turn runs. */
+.aos-ss-head { flex: none; margin-bottom: 10px; }
+.aos-ss-headrow { display: flex; align-items: center; gap: 10px; }
+.aos-ss-crumbs { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 6px; overflow: hidden; }
+.aos-ss-crumb-ws { color: var(--udx-text-3); font-weight: 500; white-space: nowrap; }
+.aos-ss-crumb-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aos-ss-sep { color: var(--udx-text-3); font-weight: 400; }
+.aos-ss-stop { color: var(--udx-danger); border-color: var(--udx-danger-bg); }
+.aos-ss-model { font-family: var(--udx-mono); font-size: 11.5px; }
+
+/* The timeline: your prompts as bubbles, the agent's text as text, its steps as quiet one-line rows. */
+.aos-ss-scroll { flex: 1; min-height: 0; overflow-y: auto; padding-right: 4px; }
+.aos-ss-timeline { display: flex; flex-direction: column; gap: 10px; padding-bottom: 8px; }
+.aos-ss-prompt { display: flex; justify-content: flex-end; margin-top: 6px; }
+.aos-ss-bubble {
+  max-width: 78%; padding: 9px 14px; border-radius: 18px; background: var(--udx-raised); color: var(--udx-text);
+  font-size: 14px; line-height: 1.5; white-space: pre-wrap; word-break: break-word;
+}
+.aos-ss-text { font-size: 14px; line-height: 1.65; color: var(--udx-text); word-break: break-word; }
+.aos-ss-text p { margin: 0 0 8px; }
+.aos-ss-text code { background: var(--udx-raised); border-radius: 6px; padding: 1px 5px; font-size: 12.5px; }
+.aos-ss-tool { border: 1px solid var(--udx-line); border-radius: 10px; background: var(--udx-bg); font-size: 12.5px; }
+.aos-ss-toolline {
+  padding: 6px 10px; cursor: pointer; font-family: var(--udx-mono); font-size: 12px; color: var(--udx-text-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.aos-ss-tool.is-ok .aos-ss-toolline::marker { color: var(--udx-ok); }
+.aos-ss-tool.is-failed { border-color: var(--udx-danger-bg); }
+.aos-ss-tool.is-failed .aos-ss-toolline { color: var(--udx-danger); }
+.aos-ss-toolbody { padding: 0 10px 8px; }
+.aos-ss-toolstate { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; color: var(--udx-text-3); margin: 6px 0 2px; }
+.aos-ss-tool.is-ok .aos-ss-toolstate { color: var(--udx-ok); }
+.aos-ss-tool.is-failed .aos-ss-toolstate { color: var(--udx-danger); }
+.aos-ss-toolin, .aos-ss-toolout, .aos-ss-diff {
+  margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--udx-surface); color: var(--udx-text);
+  font-family: var(--udx-mono); font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word;
+}
+.aos-ss-patch { border: 1px solid var(--udx-line); border-radius: 10px; padding: 8px 10px; font-size: 12.5px; }
+.aos-ss-patchhead { font-weight: 500; margin-bottom: 4px; }
+.aos-ss-patchfile, .aos-ss-file { display: flex; align-items: center; gap: 8px; font-family: var(--udx-mono); font-size: 12px; }
+.aos-ss-change { flex: none; min-width: 62px; color: var(--udx-text-3); font-family: var(--udx-sans); font-size: 11.5px; }
+.aos-ss-error {
+  padding: 8px 12px; border-radius: 10px; background: var(--udx-danger-bg); color: var(--udx-danger);
+  font-size: 13px; white-space: pre-wrap; word-break: break-word;
+}
+.aos-ss-done { align-self: flex-end; font-family: var(--udx-mono); font-size: 11px; color: var(--udx-text-3); }
+.aos-ss-done.is-failed { color: var(--udx-danger); }
+.aos-ss-working { font-size: 12.5px; color: var(--udx-text-3); }
+
+/* The repository card: what changed, a file's diff, and the commit. */
+.aos-ss-repo {
+  display: flex; flex-direction: column; gap: 8px; margin: 6px 0 10px; padding: 12px 14px;
+  border: 1px solid var(--udx-line); border-radius: 12px; background: var(--udx-surface);
+}
+.aos-ss-repohead { display: flex; align-items: baseline; gap: 10px; }
+.aos-ss-reposum { font-size: 13.5px; font-weight: 500; }
+.aos-ss-branch { font-family: var(--udx-mono); font-size: 11.5px; color: var(--udx-text-3); }
+.aos-ss-files { display: flex; flex-direction: column; gap: 4px; }
+.aos-ss-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aos-ss-file .aos-ws-action { margin-left: 0; }
+.aos-ss-file.is-open .aos-ss-path { color: var(--udx-info); }
+.aos-ss-diffwrap { max-height: 340px; overflow: auto; }
+.aos-ss-commit { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.aos-ss-message, .aos-ss-modelinput {
+  flex: 1; min-width: 160px; padding: 5px 10px; border: 1px solid var(--udx-line-2); border-radius: 8px;
+  background: var(--udx-field); color: var(--udx-text); font-family: var(--udx-sans); font-size: 13px;
+}
+.aos-ss-message:focus, .aos-ss-modelinput:focus { border-color: var(--udx-focus); outline: none; }
+.aos-ss-commit .mod-cta, .aos-ss-send { border-radius: 999px; padding: 6px 14px; }
+.aos-ss-commitresult { font-size: 12.5px; }
+.aos-ss-commitresult.is-ok { color: var(--udx-ok); }
+.aos-ss-commitresult.is-failed { color: var(--udx-danger); }
+
+/* The composer at the reader's foot. */
+.aos-ss-composer-wrap { flex: none; padding-top: 8px; }
+.aos-ss-composer {
+  padding: 10px 12px 10px 14px; border: 1px solid var(--udx-line-2); border-radius: 16px; background: var(--udx-bg);
+  box-shadow: var(--udx-shadow);
+}
+.aos-ss-opts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; }
+.aos-ss-hosts { display: flex; gap: 6px; }
+.aos-ss-hostchip:disabled { opacity: 0.45; cursor: not-allowed; }
+.aos-ss-input {
+  width: 100%; border: none; background: transparent; color: var(--udx-text); padding: 0; resize: none;
+  font-family: var(--udx-sans); font-size: 14px; line-height: 1.5;
+}
+.aos-ss-input:focus { outline: none; }
+.aos-ss-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 6px; }
+.aos-ss-allow { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--udx-text-2); }
+.aos-ss-sandbox { font-size: 12.5px; color: var(--udx-text-3); }
+.aos-ss-composererror { flex-basis: 100%; order: 3; font-size: 12.5px; color: var(--udx-danger); }
+.aos-ss-send { margin-left: auto; }

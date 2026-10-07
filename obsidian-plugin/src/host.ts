@@ -1,6 +1,7 @@
 // host.ts — the HudHost seam (docs/superpowers/plans/2026-10-05-sandbox-renderer.md S1). Everything the HUD does
 // outside its own DOM goes through one HudHost: read or write a file, start a process or a terminal, hand a path or a
-// link to the OS, read the environment. Under node:test that is the Node host (nodeHost.ts); in the AgenticOS
+// link to the OS, read the environment, and (in the app only) run an agent session in a workspace and read or commit
+// its repository. Under node:test that is the Node host (nodeHost.ts); in the AgenticOS
 // Workbench app it is the sandboxed page's bridge to the main process, which checks every call.
 //
 // Modules import `fs`, `spawn`, `execFileSync`, `pty`, `shell` and `env` from here. Their names and signatures follow
@@ -116,6 +117,62 @@ export interface HostEnv {
   cwd(): string;
 }
 
+// ── agent sessions in a workspace (spec 2026-10-07-unidex-sessions) ──
+// The app's main process runs them; these types mirror app/src/shared/ipc.ts (the HUD imports nothing from the app),
+// and the app's typecheck holds the two together where bridgeHost.ts hands its bridge over.
+
+/** A call's answer: the data, or why not (`code` EROFS when a policy or a switch refused it). Never thrown. */
+export type HostResult<T> = { ok: true; data: T } | { ok: false; error: string; code: string };
+
+export type HostSessionHost = "claude" | "codex";
+
+/** One event of a thread: prompt, session, text, tool, tool_result, patch, usage, error or done, and its turn. */
+export interface HostSessionEvent {
+  t: string;
+  kind: "prompt" | "session" | "text" | "tool" | "tool_result" | "patch" | "usage" | "error" | "done";
+  turn: number;
+  [field: string]: unknown;
+}
+
+export interface HostSessionThread {
+  id: string;
+  workspace: string;
+  host: HostSessionHost;
+  model: string | null;
+  title: string;
+  created: string;
+  updated: string;
+  turns: number;
+  running: boolean;
+  usd: number;
+}
+
+export interface HostSessions {
+  /** Opens a thread in a workspace and starts its first turn; events follow on onEvent. */
+  start(req: { workspace: string; host: HostSessionHost; text: string; model?: string | null; effort?: string | null; allowCommands?: boolean }): Promise<HostResult<HostSessionThread>>;
+  /** The thread's next turn. */
+  send(req: { thread: string; text: string; allowCommands?: boolean }): Promise<HostResult<HostSessionThread>>;
+  stop(thread: string): void;
+  list(): Promise<HostResult<HostSessionThread[]>>;
+  read(thread: string): Promise<HostResult<HostSessionEvent[]>>;
+  onEvent(cb: (ev: { thread: string; event: HostSessionEvent }) => void): () => void;
+}
+
+/** A workspace's repository: its branch and the files that differ from HEAD (`git status --porcelain=v2` codes). */
+export interface HostGitStatus {
+  repo: boolean;
+  branch: string | null;
+  detached: boolean;
+  merging: boolean;
+  files: { path: string; status: string }[];
+}
+
+export interface HostGit {
+  status(workspace: string): Promise<HostResult<HostGitStatus>>;
+  diff(workspace: string, file?: string): Promise<HostResult<{ stat: string; text: string; truncated: boolean }>>;
+  commit(workspace: string, message: string): Promise<HostResult<{ commit: string }>>;
+}
+
 export interface HudHost {
   fs: HostFs;
   spawn: SpawnFn;
@@ -123,6 +180,9 @@ export interface HudHost {
   pty: HostPty;
   shell: HostShell;
   env: HostEnv;
+  /** Agent sessions and their repositories: only the app has them (its main runs the turns); undefined elsewhere. */
+  sessions?: HostSessions;
+  git?: HostGit;
 }
 
 let current: HudHost | null = null;
@@ -173,6 +233,12 @@ export const shell: HostShell = {
   openExternal: (url) => hudHost().shell.openExternal(url),
   showItemInFolder: (p) => hudHost().shell.showItemInFolder(p),
 };
+
+/** The installed host's sessions and git, or null when it has none (plain Node). */
+export function sessionsHost(): { sessions: HostSessions; git: HostGit } | null {
+  const h = hudHost();
+  return h.sessions && h.git ? { sessions: h.sessions, git: h.git } : null;
+}
 
 export const env: HostEnv = {
   get: (name) => hudHost().env.get(name),

@@ -116,7 +116,7 @@ The independent review found no critical or high issue. Its findings, and what b
 | A recursive remove of a writable folder (`brain`) took the runtime's folders with it | medium | fixed: main never removes a folder (the Files tab sends folders to the Trash), and never moves or trashes `brain/_index`, `brain/scripts` or a folder above them |
 | Credential files were refused by name only, inside whole host folders (an IDE lock file there carries a token) | medium | fixed: of the hosts' folders the page reads only `agenticos.json`, skills, agents, commands and prompts; it may list the session folders to find a transcript, never read one |
 | Whether a program exists can be asked anywhere by its name (`…/node`) | low | accepted: the node, claude and shell pickers need it, and the answer is one bit about a path ending in a program's name |
-| Chat's `claude -p` takes the page's question and per-call cap | low | accepted: what the Chat tab's button does; the cap is the user's setting, which the Settings tab can change too |
+| Vault chat's `claude -p` takes the page's question and per-call cap | low | accepted: what the Sessions tab's Vault chat does; the cap is the user's setting, which the Settings tab can change too |
 | A web page the page wrote could open in the browser | low | fixed: `.html` and `.svg` open only from `brain/_index` (the runtime's proposal pages), else Finder shows them |
 | Links already in the vault are followed | note | accepted (above) |
 | The debugging switches are a list | note | fixed: `--inspect-wait` added; the inspector fuse is off, which `dist:verify` checks |

@@ -3,7 +3,7 @@
 // recorded in the guard log and answered as Node would answer a refusal: an EROFS error, or for a spawn a child that
 // prints why and exits 1 (as the page's write guards did before main took the checks over).
 
-import type { HostChild, HostDirent, HostFs, HostPty, HostPtyProcess, HostStats, HudHost } from "../../../obsidian-plugin/src/host";
+import type { HostChild, HostDirent, HostFs, HostGit, HostPty, HostPtyProcess, HostSessions, HostStats, HudHost } from "../../../obsidian-plugin/src/host";
 import { refuse } from "../../compat/src/guard";
 import { callError } from "../../compat/src/bridge";
 import * as path from "./shims/path";
@@ -191,9 +191,29 @@ export function createBridgeHost(aos: AosBridge, info: BootInfo): BridgeHost {
     },
   };
 
+  // ── agent sessions and their repositories: main answers every call with a Result, refusals included; a call that
+  // fails on the way (the bridge itself) answers the same way, so the HUD shows it rather than throws ──
+  const settle = <T>(p: Promise<Result<T>>): Promise<Result<T>> =>
+    p.catch((err: unknown) => ({ ok: false as const, error: err instanceof Error ? err.message : String(err), code: "EIO" }));
+  const sessions: HostSessions = {
+    start: (req) => settle(aos.sessions.start(req)),
+    send: (req) => settle(aos.sessions.send(req)),
+    stop: (thread) => aos.sessions.stop(thread),
+    list: () => settle(aos.sessions.list()),
+    read: (thread) => settle(aos.sessions.read(thread)),
+    onEvent: (cb) => aos.sessions.onEvent(cb),
+  };
+  const git: HostGit = {
+    status: (workspace) => settle(aos.git.status(workspace)),
+    diff: (workspace, file) => settle(aos.git.diff(workspace, file)),
+    commit: (workspace, message) => settle(aos.git.commit(workspace, message)),
+  };
+
   const host: HudHost = {
     fs,
     spawn,
+    sessions,
+    git,
     execFileSync: (file, args, opts) => {
       const r = aos.proc.execSync({ file, args, timeoutMs: opts.timeout });
       if (!r.ok) throw r.code === "EROFS" ? refuse("spawn", describe(file, args)) : callError(r, describe(file, args));

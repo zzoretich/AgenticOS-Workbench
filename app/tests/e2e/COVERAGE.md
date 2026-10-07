@@ -16,13 +16,13 @@ list at the top of app-smoke.md is the release process, not app behaviour: it is
 
 | Status | Items |
 |---|---|
-| covered | 90 |
+| covered | 97 |
 | covered in part | 17 |
 | N/A in the app | 39 |
 | not covered | 5 |
-| **total** | **151** |
+| **total** | **158** |
 
-Of the 112 items about the app (151 minus the 39 N/A), 107 are asserted (90 fully, 17 in part); the other 5 are not
+Of the 119 items about the app (158 minus the 39 N/A), 114 are asserted (97 fully, 17 in part); the other 5 are not
 covered, for the reasons below. Every write surface is enabled and tested. The
 "in part" rows need something the fixture or the app lacks (a dispatched seat, a Codex database, the clipboard, the
 OS handing over an `agenticos://` link, a published update). The writes, each surface on through `AOS_APP_WRITE`:
@@ -36,6 +36,7 @@ OS handing over an `agenticos://` link, a published update). The writes, each su
 - Spaces' map now, ↻ and regen (beyond the checklist) in `spaces-writes.spec.ts`;
 - Agent Teams (AT1, AT3, AT5's budget, AT7, AT8) in `teams-writes.spec.ts`, and the seed in `variants.spec.ts`;
 - Chat (CH1, CH3, CH4) in `chat-writes.spec.ts`, against stub `claude` and `codex` CLIs and a stub Ollama server;
+- Sessions (SE1–SE7) in `sessions.spec.ts`, against stand-in `claude` and `codex` CLIs that print recorded-shape streams, the vault's own runtime, and a git repository the spec makes in a workspace;
 - Files (F5, F6, F7) in `files-writes.spec.ts`;
 - the note editor, the app's own Notes surface (beyond the checklist), in `notes-writes.spec.ts`;
 - the settings window (I3, S1, S11) in `settings-window.spec.ts`.
@@ -286,14 +287,26 @@ see below).
 |---|---|---|---|
 | CX1–CX15 | Plugin install, doctor rows, upgrade, `codex exec` telemetry, hooks, skills, reconcile, cost, graph, uninstall (15 items) | N/A in the app | The Codex CLI host and the runtime; the app is not in that process tree. |
 
-## Chat (per provider)
+## Vault chat (per provider)
 
 | # | Item | Status | Covered by / reason |
 |---|---|---|---|
-| CH1 | `codex`: header `· codex via ask.js (reasoner caps)`; an answer; the spend row | covered | `variants › a provider on record › Chat…` (the header), `chat-writes › codex (CH1)…`: `ask.js --local` answers through a stub `codex exec`, and the runtime records its `reason:ask` row. |
-| CH2 | `none`: no Chat rail button; Open Workbench: Chat shows the hint | covered | `sidebar-omni-notes › Chat and Term › no provider…`, `shell › rail…` |
-| CH3 | `ollama` without a Claude login: header `· local ask.js`; an answer | covered | `variants › a provider on record › Chat…` (the header), `chat-writes › ollama without a Claude login (CH3)…`: the answer comes from a stub Ollama server; nothing is billed. |
-| CH4 | `claude`: header `· claude (claude-opus-5, capped)`; an answer with its cost | covered | `variants › a provider on record › the Chat rail button…`, `› Chat under claude…` (the header), `chat-writes › claude (CH4)…`: a stub `claude` answers, the turn shows its time and cost, and the chat log and the spend ledger gain their lines. |
+| CH1 | `codex`: header `· codex via ask.js (reasoner caps)`; an answer; the spend row | covered | `variants › a provider on record › Vault chat…` (the header), `chat-writes › codex (CH1)…`: `ask.js --local` answers through a stub `codex exec`, and the runtime records its `reason:ask` row. |
+| CH2 | `none`: no Sessions rail button; Open Workbench: Sessions shows the hint | covered | `sidebar-omni-notes › Sessions and Term › no provider…`, `shell › rail…` |
+| CH3 | `ollama` without a Claude login: header `· local ask.js`; an answer | covered | `variants › a provider on record › Vault chat…` (the header), `chat-writes › ollama without a Claude login (CH3)…`: the answer comes from a stub Ollama server; nothing is billed. |
+| CH4 | `claude`: header `· claude (claude-opus-5, capped)`; an answer with its cost | covered | `variants › a provider on record › Sessions (rail id chat) heads the rail…`, `› Vault chat under claude…` (the header), `chat-writes › claude (CH4)…`: a stub `claude` answers, the turn shows its time and cost, and the chat log and the spend ledger gain their lines. |
+
+## Sessions (per host; each turn spends)
+
+| # | Item | Status | Covered by / reason |
+|---|---|---|---|
+| SE1 | Claude Code: a turn in a workspace (timeline, tool rows, cost footer, the thread under its workspace, the thread file, the run and spend rows), resumed by a reply | covered | `sessions › both hosts… › a Claude turn end to end…` (`--session-id` then `--resume` with the thread's id, `--allowedTools Bash`, the workspace as its folder, the thread file, the `session:claude` run row). The live turn is plan C3. |
+| SE2 | Codex: sandbox note, `bash · shell` rows, changed files, an estimated cost, a reply that resumes | covered | `sessions › both hosts… › a Codex turn, then a reply that resumes it…` (`exec` then `exec resume <thread>`), `› a Codex-only machine…` |
+| SE3 | Stop on each host | covered | `sessions › both hosts… › Stop ends a running claude turn…`, `› Stop ends a running codex turn…` |
+| SE4 | Review: the card's summary, a file's diff, not a repository | covered | `sessions › both hosts… › the repository card…` (a new file's diff), `› a Claude turn end to end…` (a plain folder), `tests/unit/sessions.test.ts` (a folder inside the vault's repository) |
+| SE5 | Commit with the edited message; refusals in the card; no push | covered | `sessions › both hosts… › the repository card…`: an empty message refused, one commit with the edited message and no remote, then a detached HEAD and a merge in progress said in the card with Commit off. |
+| SE6 | The day cap refuses a turn in the thread; no host runs | covered | `sessions › both hosts… › the day cap…` |
+| SE7 | A host that is off is a disabled chip with why; the surface off is said in the list and under the composer; Vault still works | covered | `sessions › a Codex-only machine…`, `› the Sessions surface off…` |
 
 ## Term
 

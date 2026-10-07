@@ -48,6 +48,9 @@ interface LiveTurn {
 // send/live-tail logic, moved into the tab surface. The ask.js spawn engine
 // (runAsk/isAskBusy from askSpawner.ts) is untouched — ChatTab calls the exact same
 // functions the old Assistant view did.
+// UniDeX phase 2 (spec 2026-10-07-unidex-sessions S10): this is the Sessions tab's "Vault" thread now. SessionsTab owns
+// the rail tab ("chat") and mounts this into its reading pane while Vault is selected; `shown` says when that is, so a
+// live turn never paints over a workspace thread.
 export class ChatTab {
   private host: HTMLElement | null = null;
   private history: ChatEntry[] = [];
@@ -71,7 +74,12 @@ export class ChatTab {
   // and assigns `this.plugin` in the body. ChatTab has no superclass — constructor
   // matches the tab-surface (plugin, view) param-property pattern used by
   // RunsTab/MemoryTab/PulseTab instead.
-  constructor(private plugin: AgenticOSPlugin, private view: WorkbenchView) {}
+  constructor(private plugin: AgenticOSPlugin, private view: WorkbenchView, private shown: () => boolean = () => true) {}
+
+  /** Whether this chat is on screen: its rail tab is the active one and SessionsTab shows Vault. */
+  private onScreen(): boolean {
+    return this.view.isTabActive("chat") && this.shown();
+  }
 
   // Adaptation: getViewType()/getDisplayText()/getIcon() are ItemView registration
   // hooks with no equivalent in the { mount, refresh, unmount } tab-surface interface
@@ -167,8 +175,8 @@ export class ChatTab {
   //    see WorkbenchView.onOpen's `root.addClass("aos-root", "aos-wb")` — reapplying it
   //    per-tab would nest the scanline background effect; MemoryTab's graph mode drops it
   //    the same way when reusing the old Cortex view's `.aos-cortex` root class).
-  //  - Header title "Chat" (UniDeX: sentence case, no bracket decorations; it was "[ ASSISTANT ]",
-  //    kept from the old view until the redesign renamed every ported header).
+  //  - Header title "Vault" (UniDeX: sentence case, no bracket decorations; it was "[ ASSISTANT ]",
+  //    then "Chat", until Chat became the Sessions tab's Vault thread).
   //  - Background-repaint guard (new, Lesson 2): bails before touching DOM if another
   //    rail tab is active. The status span is saved to this.statusPillEl so
   //    updateStatusPill() can patch it in place later without a full render().
@@ -179,7 +187,7 @@ export class ChatTab {
   //    this.draftText instead of always starting empty, so an unsent draft survives a
   //    tab-switch-away-and-return the same way the running ask already does.
   private render(): void {
-    if (!this.view.isTabActive("chat")) return;
+    if (!this.onScreen()) return;
     const host = this.host;
     if (!host) return;
     host.empty();
@@ -188,13 +196,13 @@ export class ChatTab {
     const provider = this.providerName();
     if (provider === "none") {
       const hint = host.createDiv({ cls: "aos-asst-nohint aos-dim" });
-      hint.createSpan({ cls: "aos-title", text: "Chat" });
+      hint.createSpan({ cls: "aos-title", text: "Vault" });
       hint.createDiv({ text: "no provider — run `aos provider` (Ollama reachable, or Claude Code or Codex logged in), then reopen the Workbench." });
       return;
     }
 
     const header = host.createDiv({ cls: "aos-asst-head" });
-    header.createSpan({ cls: "aos-title", text: "Chat" });
+    header.createSpan({ cls: "aos-title", text: "Vault" });
     const status = header.createSpan({ cls: "aos-pill" });
     this.statusPillEl = status;
     const up = this.plugin.hb.getStatus().up;
@@ -243,7 +251,7 @@ export class ChatTab {
 
     requestAnimationFrame(() => {
       log.scrollTop = log.scrollHeight;
-      if (!this.view.isTabActive("chat")) return;
+      if (!this.onScreen()) return;
       input.focus();
     });
   }
@@ -258,7 +266,7 @@ export class ChatTab {
   // boxes, applied here to the composer instead of a search field. The full render() path
   // is untouched for every other trigger (mount, send, finalize).
   private updateStatusPill(): void {
-    if (!this.view.isTabActive("chat")) return;
+    if (!this.onScreen()) return;
     const pill = this.statusPillEl;
     if (!pill) return;
     const up = this.plugin.hb.getStatus().up;
@@ -388,7 +396,7 @@ export class ChatTab {
       // Background repaint guard (Lesson 2): only touch the live DOM ref while this tab
       // is the one on screen; mountLiveTurn() re-derives this same text from
       // this.liveTurn.runId when the tab becomes active again.
-      if (this.view.isTabActive("chat") && this.liveTurn.el?.runMeta) {
+      if (this.onScreen() && this.liveTurn.el?.runMeta) {
         this.liveTurn.el.runMeta.textContent = id ? `run ${id.slice(0, 24)}…` : "(no run id — events may be unavailable)";
       }
       if (!id) {
@@ -481,7 +489,7 @@ export class ChatTab {
       const list = this.liveTurn.el?.timeline;
       if (list && list.firstElementChild) list.firstElementChild.remove();
     }
-    if (!this.view.isTabActive("chat")) return;
+    if (!this.onScreen()) return;
     this.appendTimelineRow(row);
   }
 
@@ -491,7 +499,7 @@ export class ChatTab {
   private appendPartial(chunk: string): void {
     if (!this.liveTurn) return;
     this.liveTurn.partialText += chunk;
-    if (!this.view.isTabActive("chat")) return;
+    if (!this.onScreen()) return;
     if (this.liveTurn.el?.partial) {
       this.liveTurn.el.partial.textContent = this.liveTurn.partialText;
     }
