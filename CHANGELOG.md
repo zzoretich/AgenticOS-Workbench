@@ -4,6 +4,8 @@ All notable changes to UniDeX (AgenticOS Workbench before 1.1). Versions follow 
 
 ## [Unreleased]
 
+## [1.2.1] — 2026-10-07
+
 ### Upgrading
 - The repository is now **zzoretich/UniDeX-Agent-Harness**. Links, clones and the plugin marketplaces still reach it through GitHub's redirect, and the app keeps updating itself. A runtime from 1.2.0 or earlier, though, stopped seeing new releases when the repository was renamed: its update check met GitHub's redirect and gave up. If you use the app, accept the runtime update it offers after it updates to this release. Without the app, run `aos upgrade` once.
 
@@ -378,7 +380,8 @@ The first public release: an `aos` CLI, the AgenticOS runtime, a Claude Code plu
 - Update notifications: a GitHub release check surfaced as a session-start notice.
 - Docs: README, install guide, and a release acceptance runbook.
 
-[Unreleased]: https://github.com/zzoretich/UniDeX-Agent-Harness/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/zzoretich/UniDeX-Agent-Harness/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v1.2.1
 [1.2.0]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v1.2.0
 [1.1.0]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v1.1.0
 [1.0.1]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v1.0.1
