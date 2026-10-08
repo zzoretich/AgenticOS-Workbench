@@ -187,6 +187,26 @@ test("a tick made in the other HUD shows here while the tab is open, and the nex
   await expect.poll(onDisk).toBe(ticked(theirs, call));
 });
 
+test("an edit survives TODO.md changing underneath with its line intact: the typing, caret and focus stay; Enter saves onto the new text", async () => {
+  const { win } = app();
+  const e = expected().todo;
+  await row(win, "Draft the release notes").locator(".aos-td-text").dblclick();
+  const edit = td(win).locator("input.aos-td-edit");
+  await edit.selectText();
+  await win.keyboard.insertText("Draft the release notes for 0.22");
+  // Another HUD ticks a different item while this one is being edited: the tab redraws from the new file.
+  const theirs = ticked(pristine(), REVIEW);
+  fs.writeFileSync(FILE, theirs);
+  await expect(count(win)).toHaveText(`${e.open - 1} open · ${e.overdue} overdue · ${e.today - 1} today`, { timeout: 3000 });
+  await expect(edit).toHaveValue("Draft the release notes for 0.22");
+  await expect(edit).toBeFocused();
+  expect(onDisk()).toBe(theirs);   // nothing saved halfway through the typing
+  await win.keyboard.insertText(` 📅 ${day(1)} #harbor`);
+  await edit.press("Enter");
+  await expect.poll(onDisk).toBe(theirs.replace(`- [ ] Draft the release notes 📅 ${day(1)} #harbor`, `- [ ] Draft the release notes for 0.22 📅 ${day(1)} #harbor`));
+  await expect(edit).toHaveCount(0);
+});
+
 test("stale guard: a line changed underneath is reported, nothing is written, and the quick-add draft survives (T7)", async () => {
   const { win } = app();
   const e = expected().todo;
