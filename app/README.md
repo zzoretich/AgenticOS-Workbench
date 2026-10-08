@@ -40,8 +40,8 @@ npm start
 Every Workbench surface writes to the vault, as the HUD always has; writes outside the surfaces in
 `src/shared/surfaces.ts` are refused and logged. `AOS_APP_WRITE` narrows a run: `""` is read-only, `todo,chat` turns
 on only those. The Term tab is a real shell: what you run there, or what a ❯_ button types for you, runs for real. Its New button,
-⌘T and ⌥⌘1–3 start Claude Code, Codex or a shell by typing the command into a fresh shell, in Scratch, a workspace
-or its linked code folder (`data/terminalLaunch.ts`); terminals start with the login shell's `PATH`.
+⌘T and ⌥⌘1–3 start Claude Code, Codex or a shell by typing the command into a fresh shell, in the vault, a workspace
+(or its linked code folder) or Scratch (`data/terminalLaunch.ts`); terminals start with the login shell's `PATH`.
 
 The page runs sandboxed, with context isolation and no Node. Every file it reads or writes, every process and terminal
 it starts and everything it hands to the OS is a call over the preload's bridge (`window.aos`), which main checks

@@ -78,7 +78,7 @@ export class TerminalSession {
       cols: opts.cols || 80,
       rows: opts.rows || 24,
       cwd: opts.cwd,
-      env: { ...(opts.env || {}), TERM: "xterm-256color", COLORTERM: "truecolor", AGENTIC_OS: "1" },
+      env: { ...(opts.env || {}), TERM: "xterm-256color", COLORTERM: "truecolor", AGENTIC_OS: "1", FORCE_HYPERLINK: "1" },
     });
 
     this.pty.onData((d: string) => {

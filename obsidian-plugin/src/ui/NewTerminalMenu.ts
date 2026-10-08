@@ -23,7 +23,7 @@ export interface NewTerminalActions {
   start(req: { host: TermHost | "quick"; picked?: Place | null; resume?: "last" | { id: string } | null }): Promise<void>;
   /** Make workspaces/<slug> and start `host` there. */
   create(name: string, host: TermHost, gitInit: boolean): Promise<void>;
-  /** What you are looking at (a selected workspace or Scratch terminal), for the "Same as selected" row. */
+  /** What you are looking at (a selected workspace terminal), for the "Same as selected" row. */
   context(): Place | null;
 }
 
@@ -46,11 +46,14 @@ export class NewTerminalMenu {
   private createName = "";
   private createGit: boolean | null = null;
   private busy = false;
+  /** True while renderPop replaces the menu: Chromium reports the focused field's removal as focus leaving it. */
+  private redrawing = false;
   private error: string | null = null;
 
   constructor(parent: HTMLElement, private launcher: TerminalLauncher, private actions: NewTerminalActions) {
     this.el = parent.createDiv({ cls: "aos-ntm" });
     this.el.addEventListener("focusout", (e) => {
+      if (this.redrawing) return;
       const next = e.relatedTarget as Node | null;
       if (this.pop && (!next || !this.el.contains(next))) this.close(false);
     });
@@ -128,7 +131,8 @@ export class NewTerminalMenu {
   // ── the menu ──
 
   private renderPop(): void {
-    this.pop?.detach();
+    this.redrawing = true;
+    try { this.pop?.detach(); } finally { this.redrawing = false; }
     const pop = this.el.createDiv({ cls: "aos-ntm-pop", attr: { role: "dialog", "aria-label": this.mode === "create" ? "New workspace" : "New terminal" } });
     this.pop = pop;
     this.el.addClass("is-open");
@@ -148,6 +152,7 @@ export class NewTerminalMenu {
       b.disabled = !c.ready;
       b.createSpan({ cls: `aos-ntm-dot is-${c.host}` });
       b.createSpan({ text: c.label });
+      b.addEventListener("mousedown", (e) => e.preventDefault()); // keep focus in the filter, as the rows do
       b.addEventListener("click", () => onPick(c.host));
     }
   }
@@ -268,6 +273,7 @@ export class NewTerminalMenu {
       e.preventDefault();
       this.cycleHost(e.shiftKey ? -1 : 1);
       this.renderPop();
+      this.focusFilter();
       return;
     }
     if (e.key === "Enter") {
@@ -359,7 +365,7 @@ export class NewTerminalMenu {
     input.addEventListener("input", () => { this.createName = input.value; draw(); });
     input.addEventListener("keydown", (e) => {
       if (e.key === "Enter") { e.preventDefault(); submit(e.metaKey); }
-      else if (e.key === "Tab" && !e.shiftKey && e.altKey) { e.preventDefault(); this.cycleHost(1); this.renderPop(); }
+      else if (e.key === "Tab" && !e.shiftKey && e.altKey) { e.preventDefault(); this.cycleHost(1); this.renderPop(); (this.pop?.querySelector(".aos-ntm-name-input") as HTMLInputElement | null)?.focus(); }
     });
     go.addEventListener("click", () => submit(true));
     draw();

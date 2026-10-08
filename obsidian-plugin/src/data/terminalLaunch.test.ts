@@ -99,26 +99,30 @@ test("placeOf finds the longest match: a linked folder, a workspace, the vault, 
   assert.deepEqual([other.kind, other.label], ["other", "proj"]);
 });
 
-test("only a workspace or Scratch counts as context", () => {
+test("only a workspace counts as context: never Scratch, the vault or home", () => {
   assert.equal(isContextPlace(workspacePlace("bz-wedding", world)), true);
-  assert.equal(isContextPlace(workspacePlace(SCRATCH, world)), true);
+  assert.equal(isContextPlace(workspacePlace(SCRATCH, world)), false);
   assert.equal(isContextPlace(vaultPlace(world)), false);
   assert.equal(isContextPlace(homePlace(world)), false);
   assert.equal(isContextPlace(null), false);
 });
 
-test("resolvePlace: picked, then context, then the default per host and setting", () => {
-  const base = { scratch: workspacePlace(SCRATCH, world), vault: vaultPlace(world), shellDefault: vaultPlace(world), agentPlace: "scratch" as const };
+test("resolvePlace: picked, then a workspace in view, then the vault (or the choice) per host", () => {
+  const base = { scratch: workspacePlace(SCRATCH, world), vault: vaultPlace(world), shellDefault: vaultPlace(world), agentPlace: "vault" as const };
   const ws = workspacePlace("bz-wedding", world);
   assert.deepEqual(resolvePlace({ ...base, host: "claude", picked: ws, context: base.scratch }), { place: ws, why: "picked" });
   assert.deepEqual(resolvePlace({ ...base, host: "codex", context: ws }), { place: ws, why: "context" });
   assert.deepEqual(resolvePlace({ ...base, host: "shell", context: ws }), { place: ws, why: "context" });
   // a selected Vault row (a skill run) never pulls an agent into the vault root
-  assert.deepEqual(resolvePlace({ ...base, host: "claude", context: vaultPlace(world) }), { place: base.scratch, why: "default" });
+  assert.deepEqual(resolvePlace({ ...base, host: "claude", context: vaultPlace(world) }), { place: base.vault, why: "default" });
+  // A selected Scratch terminal does not pull the next one into Scratch.
+  assert.deepEqual(resolvePlace({ ...base, host: "codex", context: base.scratch }), { place: base.vault, why: "default" });
+  assert.deepEqual(resolvePlace({ ...base, host: "shell", context: base.scratch }), { place: base.shellDefault, why: "default" });
   assert.deepEqual(resolvePlace({ ...base, host: "shell" }), { place: base.shellDefault, why: "default" });
-  assert.deepEqual(resolvePlace({ ...base, host: "claude", agentPlace: "vault" }).place, base.vault);
+  assert.deepEqual(resolvePlace({ ...base, host: "claude" }).place, base.vault);
+  assert.deepEqual(resolvePlace({ ...base, host: "claude", agentPlace: "scratch" }).place, base.scratch);
   assert.deepEqual(resolvePlace({ ...base, host: "claude", agentPlace: "last", lastWorkspace: ws }).place, ws);
-  assert.deepEqual(resolvePlace({ ...base, host: "claude", agentPlace: "last", lastWorkspace: null }).place, base.scratch);
+  assert.deepEqual(resolvePlace({ ...base, host: "claude", agentPlace: "last", lastWorkspace: null }).place, base.vault);
 });
 
 // ── linked code folders (T8) ──
@@ -205,7 +209,10 @@ test("menuRows with no query: Start now per host that is on, then the places, re
   const rows = menuRows({ query: "", host: "claude", choices: termHostChoices(codexOnly, null), world, context: workspacePlace("bz-wedding", world), recent: ["notes-only", "gone"], nowSub: (h) => `sub ${h}` });
   assert.deepEqual(rows.filter((r) => r.kind === "now").map((r) => [r.host, r.kbd, r.sub]), [["codex", "⌥⌘2", "sub codex"], ["shell", "⌥⌘3", "sub shell"]]);
   assert.deepEqual(rows.filter((r) => r.kind !== "now").map((r) => r.key),
-    ["h-now", "h-in", "same", "scratch", "vault", "h-recent", "recent-notes-only", "h-ws", "ws-bz-wedding", "ws-notes-only", "new"]);
+    ["h-now", "h-in", "same", "vault", "scratch", "h-recent", "recent-notes-only", "h-ws", "ws-bz-wedding", "ws-notes-only", "new"]);
+  assert.match(rows.find((r) => r.key === "vault")?.sub ?? "", /when nothing is picked/);
+  // A selected Scratch terminal is not "Same as selected": Scratch is in the list already.
+  assert.equal(menuRows({ query: "", host: "claude", choices: termHostChoices(codexOnly, null), world, context: workspacePlace(SCRATCH, world), recent: [], nowSub: () => "" }).some((r) => r.key === "same"), false);
   assert.equal(rows.find((r) => r.key === "ws-notes-only")?.sub, `code: ${path.join(home, "Code", "app")}`);
   assert.equal(firstActionable(rows)?.key, "now-codex");
   // Home is a shell's place only; a logged-out host is listed but cannot be picked

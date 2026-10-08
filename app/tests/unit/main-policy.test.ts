@@ -131,9 +131,10 @@ test("a spawn sets only the pins the HUD sends, each to a value main trusts, on 
   ] as Array<[Record<string, string>, string[]]>) assert.ok("refusal" in spawnEnv(base, set, unset, c), JSON.stringify([set, unset]));
 });
 
-test("a terminal adds TerminalSession's three variables, and starts only a listed shell with no arguments", () => {
-  const r = ptyEnv({ PATH: "/usr/bin" }, { TERM: "xterm-256color", COLORTERM: "truecolor", AGENTIC_OS: "1" }, ctx());
-  assert.ok("env" in r && r.env.TERM === "xterm-256color");
+test("a terminal adds TerminalSession's four variables, and starts only a listed shell with no arguments", () => {
+  const r = ptyEnv({ PATH: "/usr/bin" }, { TERM: "xterm-256color", COLORTERM: "truecolor", AGENTIC_OS: "1", FORCE_HYPERLINK: "1" }, ctx());
+  assert.ok("env" in r && r.env.TERM === "xterm-256color" && r.env.FORCE_HYPERLINK === "1");
+  assert.ok("refusal" in ptyEnv({}, { FORCE_HYPERLINK: "0" }, ctx()));
   assert.ok("refusal" in ptyEnv({}, { TERM: "dumb" }, ctx()));
   assert.ok("refusal" in ptyEnv({}, { NODE_OPTIONS: "x" }, ctx()));
   assert.equal(shellRefusal("/bin/zsh", [], ctx()), null);

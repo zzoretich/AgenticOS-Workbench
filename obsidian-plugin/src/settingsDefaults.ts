@@ -86,7 +86,7 @@ export const DEFAULT_SETTINGS: AgenticOSSettings = {
   sessionChoice: { host: null, access: "edit", models: { claude: null, codex: null }, efforts: { claude: null, codex: null } },
   vaultChoice: { host: null, models: { claude: null, codex: null }, efforts: { claude: null, codex: null } },
   // Term
-  terminalChoice: { host: null, access: "host", agentPlace: "scratch", recent: [] },
+  terminalChoice: { host: null, access: "host", agentPlace: "vault", recent: [] },
   terminalSnippets: [],
 };
 
@@ -196,7 +196,7 @@ export function sanitizeTerminalChoice(raw: unknown): TerminalChoice {
   return {
     host: TERM_HOSTS.includes(r.host as TermHostId) ? (r.host as TermHostId) : null,
     access: TERM_ACCESS.includes(r.access as TermAccessId) ? (r.access as TermAccessId) : "host",
-    agentPlace: AGENT_PLACES.includes(r.agentPlace as AgentPlaceId) ? (r.agentPlace as AgentPlaceId) : "scratch",
+    agentPlace: AGENT_PLACES.includes(r.agentPlace as AgentPlaceId) ? (r.agentPlace as AgentPlaceId) : "vault",
     recent,
   };
 }

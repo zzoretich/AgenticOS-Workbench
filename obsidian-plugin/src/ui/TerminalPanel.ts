@@ -311,7 +311,7 @@ export class TerminalPanel {
     }
   }
 
-  /** "Started Claude Code in Scratch · Change" for a few seconds; Change ends that terminal and reopens the menu. */
+  /** "Started Claude Code in Vault · Change" for a few seconds; Change ends that terminal and reopens the menu. */
   private showStarted(note: LaunchNote): void {
     if (this.noteTimer !== null) window.clearTimeout(this.noteTimer);
     this.noteEl?.detach();
@@ -469,11 +469,13 @@ export class TerminalPanel {
     term.loadAddon(search);
     // Links: https opens in the browser; agenticos:// (the agents' status lines) opens its Workbench tab (spec §4).
     term.loadAddon(new WebLinksAddon((_e, uri) => this.openLink(uri)));
-    term.options.linkHandler = { activate: (_e, text) => this.openLink(text) };
+    // Links an app prints (OSC 8, as Claude Code's status line does) may be agenticos:// ones: openLink checks each.
+    term.options.linkHandler = { activate: (_e, text) => this.openLink(text), allowNonHttpProtocols: true };
     // Shift+Enter is a new line in Claude Code's prompt: Ctrl+J, which its docs say works in every terminal (T12).
+    // Every event of that key stays from xterm: the keypress after the keydown would send ⏎ too, and submit the prompt.
     term.attachCustomKeyEventHandler((e) => {
-      if (e.type === "keydown" && e.key === "Enter" && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && sess.meta.host === "claude" && !sess.isExited) {
-        sess.write("\n");
+      if (e.key === "Enter" && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && sess.meta.host === "claude" && !sess.isExited) {
+        if (e.type === "keydown") sess.write("\n");
         return false;
       }
       return true;
@@ -502,6 +504,11 @@ export class TerminalPanel {
     if (u.protocol === "agenticos:" && u.hostname === "workbench") {
       const tab = u.searchParams.get("tab");
       if (tab && /^[a-z-]+$/.test(tab)) void this.plugin.openWorkbenchTab(tab);
+    }
+    // A note in the vault (the status line's "1 flag" opens persona/STATE.md): a relative path that never climbs out.
+    if (u.protocol === "agenticos:" && u.hostname === "note") {
+      const file = u.searchParams.get("file");
+      if (file && !file.startsWith("/") && !file.split(/[\\/]/).includes("..")) void this.plugin.app.workspace.openLinkText(file, "", true);
     }
   }
 
