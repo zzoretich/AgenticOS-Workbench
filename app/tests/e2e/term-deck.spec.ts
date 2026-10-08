@@ -199,3 +199,36 @@ test("links an app prints in a terminal open: an agenticos:// note in the Workbe
   await label("OPEN-TODO").click();
   await expect(win.locator(".aos-wb-railbtn[data-tab='todo']")).toHaveClass(/is-active/, { timeout: 10_000 });
 });
+
+test("opening Term defers nothing that takes the focus: the list filter keeps its typing, however late the page's frames run", async () => {
+  const { win } = app();
+  await openTab(win, "pulse");
+  // fill() is a focus and a select-all, then the typing. Hold this page's animation frames, as a loaded runner can, and
+  // run them in between: a terminal focus the panel deferred to one would take the typing into the shell.
+  await win.evaluate(() => {
+    const w = window as unknown as Record<string, unknown>;
+    const held: FrameRequestCallback[] = [];
+    w.__heldRaf = held;
+    w.__raf = window.requestAnimationFrame;
+    window.requestAnimationFrame = (cb: FrameRequestCallback) => { held.push(cb); return 0; };
+  });
+  const filter = C().locator(".aos-tl-filter");
+  try {
+    await openTab(win, "term");
+    await filter.focus();
+    await filter.selectText();
+    await win.evaluate(() => { for (const f of ((window as unknown as Record<string, unknown>).__heldRaf as FrameRequestCallback[]).splice(0)) f(performance.now()); });
+    await win.keyboard.insertText("zzz-nothing");
+    await expect(filter).toHaveValue("zzz-nothing");
+  } finally {
+    await win.evaluate(() => {
+      const w = window as unknown as Record<string, unknown>;
+      window.requestAnimationFrame = w.__raf as typeof window.requestAnimationFrame;
+      for (const f of (w.__heldRaf as FrameRequestCallback[]).splice(0)) f(performance.now());
+      delete w.__raf;
+      delete w.__heldRaf;
+    });
+  }
+  await expect(C().locator(".aos-tl-empty")).toHaveText("No terminal matches.");
+  await filter.fill("");
+});

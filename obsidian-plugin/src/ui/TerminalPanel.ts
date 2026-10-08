@@ -446,9 +446,17 @@ export class TerminalPanel {
     // refit + focus next frame so layout settles; a menu or field the user is in keeps its focus
     requestAnimationFrame(() => {
       this.refit();
-      if (this.newMenu?.isOpen() || this.composer?.isFocused() || this.finder?.isFocused()) return;
+      if (this.newMenu?.isOpen() || this.typingElsewhere()) return;
       b?.term.focus();
     });
+  }
+
+  /** Whether a field in the panel has the focus (the list's filter, the composer, the find bar): a terminal shown later
+   *  must not take the typing from it. The terminal's own input does not count. */
+  private typingElsewhere(): boolean {
+    const a = document.activeElement as HTMLElement | null;
+    if (!a || !this.host?.contains(a) || a.classList.contains("xterm-helper-textarea")) return false;
+    return a.matches("input, textarea, select") || a.isContentEditable;
   }
 
   private createBinding(sess: TerminalSession): XtermBinding {
