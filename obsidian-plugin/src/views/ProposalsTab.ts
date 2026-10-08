@@ -111,7 +111,7 @@ export class ProposalsTab {
     const rc = reviewCommand(readAgenticosJson());
     const review = actions.createEl("button", { cls: "aos-ws-action", text: rc.label });
     review.setAttr("title", `Opens a Term session in the vault running: ${rc.command}`);
-    review.addEventListener("click", () => this.view.runInTerm(rc.command));
+    review.addEventListener("click", () => this.view.runInTerm(rc.command, { host: rc.host, origin: "Proposals" }));
 
     if (!this.personaPresent) {
       host.createDiv({ cls: "aos-rt-note aos-dim", text: "The Chief of Staff isn't set up — run `aos persona` to create it." });

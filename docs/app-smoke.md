@@ -241,6 +241,10 @@ On by default since 1.2.0 (plan 2026-10-07-unidex-sessions C3). Run these in a w
 ## Term
 
 - [ ] On a fresh install the Term tab opens a live shell at once (the app carries the terminal), with no "Terminal unavailable".
+- [ ] ⌘T from another tab starts the host you used last in Scratch (made on first use with README, CLAUDE.md and AGENTS.md), and the header says "Started Claude Code in Scratch · Change". **Claude Code:** the tab gets the conversation's title. **Codex:** ⌥⌘2 starts `codex` the same way.
+- [ ] New ▾: typing an existing workspace's exact name starts there; a new name ("Tide chart") creates `workspaces/tide-chart` and starts there; the preview line matches what the terminal shows. ⇧⌘N refuses `research` and offers to open an existing workspace.
+- [ ] Spaces ▸ link code folder… with `~/<a repo>`: the detail shows `code: …`, and Claude Code here starts in that folder.
+- [ ] From the Dock or Finder (not a terminal), an npm-installed `codex` or `claude` starts from the Term tab.
 
 ## Telemetry switch
 

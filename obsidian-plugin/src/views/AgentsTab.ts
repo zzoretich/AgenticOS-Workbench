@@ -169,7 +169,7 @@ export class AgentsTab {
       const cmd = runCommand(r, h);
       if (!cmd) continue;
       const run = acts.createEl("a", { text: `❯_ ${h}`, cls: "aos-link", href: "#", attr: { title: `${RUN_TITLE[h]}: ${cmd}` } });
-      run.addEventListener("click", (e) => { e.preventDefault(); this.view.runInTerm(cmd); });
+      run.addEventListener("click", (e) => { e.preventDefault(); this.view.runInTerm(cmd, { host: h, origin: "Agents" }); });
     }
     const first = this.hosts.map((h) => r.on[h]).find(Boolean) ?? r.on.claude ?? r.on.codex;
     if (first) {

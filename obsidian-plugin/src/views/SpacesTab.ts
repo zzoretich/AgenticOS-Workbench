@@ -1,4 +1,6 @@
 import { Notice, TFile } from "obsidian";
+import { workspacePlace, type TermHost } from "../data/terminalLaunch";
+import { LinkRepoModal } from "../ui/LinkRepoModal";
 import type { TAbstractFile } from "obsidian";
 import type AgenticOSPlugin from "../../main";
 import type { WorkbenchView } from "./WorkbenchView";
@@ -117,7 +119,24 @@ export class SpacesTab {
     const openBtn = head.createEl("button", { cls: "aos-ws-action", text: "open folder" });
     openBtn.addEventListener("click", () => this.openFolder(w.path));
     const termBtn = head.createEl("button", { cls: "aos-ws-action", text: "terminal here" });
-    termBtn.addEventListener("click", () => { void this.openTerminal(w.path); });
+    termBtn.addEventListener("click", () => { void this.openTerminal(w.name, "shell"); });
+    const link = this.plugin.termLauncher.world().links[w.name] ?? null;
+    if (link) head.createSpan({ cls: "aos-pill aos-pill-dim aos-ws-code", text: `code: ${link}`, attr: { title: "Terminals in this workspace start in its linked code folder" } });
+    const linkBtn = head.createEl("button", { cls: "aos-ws-action", text: link ? "code folder…" : "link code folder…" });
+    linkBtn.addEventListener("click", () => {
+      new LinkRepoModal(this.plugin.app, w.name, link, (typed) => {
+        const abs = this.plugin.termLauncher.linkRepo(w.name, typed);
+        new Notice(abs ? `${w.name} is linked to ${abs}` : `${w.name} is no longer linked`);
+        this.render();
+        return abs;
+      }).open();
+    });
+    for (const c of this.plugin.termLauncher.choices()) {
+      if (c.host === "shell" || c.hidden) continue;
+      const b = head.createEl("button", { cls: "aos-ws-action", text: `${c.label} here`, attr: { title: c.ready ? `Start ${c.label} in ${w.name}` : c.reason ?? "" } });
+      b.disabled = !c.ready;
+      b.addEventListener("click", () => { void this.openTerminal(w.name, c.host); });
+    }
 
     const pending = this.map ? mapStats(this.map).pending : 0;
     const tabs = parent.createDiv({ cls: "aos-ws-tabs" });
@@ -394,11 +413,16 @@ export class SpacesTab {
     }
   }
 
-  private async openTerminal(rel: string): Promise<void> {
+  /** The workspace whose detail is open: what ⌘T starts next to while Spaces is shown (spec 2026-10-08-term-agent-deck T4). */
+  selectedWorkspace(): string | null { return this.selected; }
+
+  /** A terminal in the workspace (its linked code folder when it has one), shown on Term. */
+  private async openTerminal(name: string, host: TermHost): Promise<void> {
     try {
-      const abs = `${this.vaultBase()}/${rel}`;
-      this.plugin.terminalPool.create({ cwd: abs });
-      await this.plugin.openWorkbenchTab("term");
+      const launcher = this.plugin.termLauncher;
+      const w = launcher.world();
+      if (!w.workspaces.includes(name)) throw new Error(`${name} is not a workspace folder`);
+      await this.view.launchTerminal(host, { picked: workspacePlace(name, w) });
     } catch (e) {
       new Notice(`Terminal unavailable: ${e instanceof Error ? e.message : String(e)}`);
     }

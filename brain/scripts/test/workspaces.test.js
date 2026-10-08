@@ -22,7 +22,7 @@ test('parseManifest reads scalars, objective list, and mixed subprojects', () =>
 
 test('parseManifest returns empty shape when no frontmatter', () => {
   const m = parseManifest('# just a heading\nno frontmatter here');
-  assert.deepEqual(m, { status: null, summary: null, objectives: [], subprojects: [], documents: [], next: null });
+  assert.deepEqual(m, { status: null, summary: null, objectives: [], subprojects: [], documents: [], next: null, repo: null });
 });
 
 const { detectChildren } = require('../collectors/workspaces');
@@ -161,4 +161,35 @@ test('collectWorkspaces reads summary, objectives and next from AGENTS.md when C
   assert.deepEqual(ws.objectives.map((o) => o.text), ['Ship the thing', 'Measure it']);
   assert.equal(ws.next.text, 'Write the plan');
   assert.equal(ws.absPath, path.join(vault, 'workspaces', 'codex-proj'));
+});
+
+test('parseManifest reads repo:, and repoPath keeps only an absolute folder outside the vault (spec 2026-10-08 T8)', () => {
+  const { repoPath } = require('../collectors/workspaces');
+  assert.equal(parseManifest('---\nstatus: active\nrepo: "~/Code/app"\n---\n').repo, '~/Code/app');
+  const home = path.join(path.sep, 'h');
+  const vault = path.join(home, 'Vault');
+  assert.equal(repoPath('~/Code/app', vault, home), path.join(home, 'Code', 'app'));
+  assert.equal(repoPath('/opt/src/app', vault, home), path.resolve('/opt/src/app'));
+  assert.equal(repoPath('Code/app', vault, home), null);
+  assert.equal(repoPath(path.join(vault, 'workspaces', 'x'), vault, home), null);
+  assert.equal(repoPath(vault, vault, home), null);
+  assert.equal(repoPath(null, vault, home), null);
+});
+
+test('collectWorkspaces records a linked code folder as repoPath, after the insight hash', () => {
+  const fs = require('fs');
+  const os = require('os');
+  const { collectWorkspaces } = require('../collectors/workspaces');
+  const vault = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-ws-repo-'));
+  const code = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-ws-code-'));
+  fs.mkdirSync(path.join(vault, 'workspaces', 'linked'), { recursive: true });
+  fs.mkdirSync(path.join(vault, 'workspaces', 'plain'), { recursive: true });
+  fs.writeFileSync(path.join(vault, 'workspaces', 'linked', 'workspace.md'), `---\nstatus: active\nrepo: ${code}\n---\n`);
+  fs.writeFileSync(path.join(vault, 'workspaces', 'plain', 'workspace.md'), '---\nstatus: active\n---\n');
+  const ws = collectWorkspaces({ vault });
+  const linked = ws.find((w) => w.name === 'linked');
+  const plain = ws.find((w) => w.name === 'plain');
+  assert.equal(linked.repoPath, path.resolve(code));
+  assert.equal('repoPath' in plain, false);
+  assert.equal(typeof linked.inputHash, 'string');
 });

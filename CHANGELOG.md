@@ -4,6 +4,20 @@ All notable changes to UniDeX (AgenticOS Workbench before 1.1). Versions follow 
 
 ## [Unreleased]
 
+### Added
+- **Start Claude Code, Codex or a shell from anywhere, without picking a workspace.** ⌘T starts the host you used last, ⌥⌘1 Claude Code, ⌥⌘2 Codex and ⌥⌘3 a shell, from any tab. The Term tab's New button says what it will start and where ("New Claude Code · in Scratch"); its ▾ menu lists every host, every place (what you have selected, Scratch, the vault, your workspaces, recent ones) and shows the exact command it will type. Agents start next to what you are looking at (a selected workspace terminal, or the workspace open in Spaces), else in **Scratch**, a shared workspace at `workspaces/scratch` made on first use.
+- **New workspace in one step.** ⇧⌘N, or a new name typed in the ▾ menu, makes `workspaces/<name>` with its README, CLAUDE.md and AGENTS.md (and its own git repo, unless your vault's git tracks `workspaces/`) and starts the agent there. An existing name opens only when typed exactly.
+- **Linked code folders.** A workspace's `workspace.md` can name the folder its code lives in (`repo: ~/Code/app`, or Spaces ▸ link code folder…): terminals started in that workspace start there, and sessions run there count for it.
+- **Terminals show what runs in them:** each tab has the host's dot, the agent's own title (Claude Code's conversation; Codex keeps its name), where it runs or which tab started it, and the agent's exit code when it ends. Spaces' workspace detail adds Claude Code here and Codex here.
+
+### Changed
+- Agents started from the Term tab, Spaces and the ❯_ buttons run with `exec` and a check that the CLI is there, so a missing `claude` or `codex` says "run aos doctor" instead of failing quietly. Access defaults to **Host default**: no flags, exactly as if you typed `claude` or `codex` yourself.
+- Terminals start with your login shell's `PATH`, so an app opened from Finder finds `claude`, `codex` and the `node` an npm-installed CLI runs on.
+- The Term tab and the Pulse strip keep the terminal you were on when you come back to them; the Shell and Working directory settings apply without a restart.
+
+### Fixed
+- "New terminal session" no longer opens two shells on an empty Term tab, and Spaces' terminal no longer hides behind the first session.
+
 ## [1.3.1] — 2026-10-07
 
 ### Upgrading

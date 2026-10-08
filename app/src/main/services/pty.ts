@@ -23,9 +23,23 @@ export interface PtyProcess {
 
 export interface PtyLib { spawn(file: string, args: string[], opts: Record<string, unknown>): PtyProcess }
 
+/**
+ * The environment a terminal starts from (spec 2026-10-08-term-agent-deck T14): main's own, with the login shell's PATH
+ * when it is known, since an app opened from Finder has launchd's PATH and the terminal's zsh is not a login shell
+ * (no /etc/zprofile, no ~/.zprofile), so `claude` or `codex` — or the node an npm-installed one runs on — would not be
+ * found. CLAUDECODE goes: an app started from a Claude Code session must not make its terminals look like one.
+ */
+export function terminalBaseEnv(env: NodeJS.ProcessEnv, loginPATH: string | null): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = { ...env };
+  if (loginPATH) out.PATH = loginPATH;
+  delete out.CLAUDECODE;
+  return out;
+}
+
 export interface PtyServiceOptions {
   context: () => ProgramContext;
-  env: NodeJS.ProcessEnv;
+  /** The base environment, or how to get it at each new terminal (terminalBaseEnv). */
+  env: NodeJS.ProcessEnv | (() => NodeJS.ProcessEnv);
   emit: (ev: PtyEvent) => void;
   /** Loads node-pty (the tests pass a fake). */
   load: () => PtyLib;
@@ -59,7 +73,8 @@ export class PtyService {
     if (why) return refused(why);
     try { if (!path.isAbsolute(req.cwd) || !fs.statSync(req.cwd).isDirectory()) return refused("a working directory that is not a folder"); }
     catch { return refused("a working directory that is not there"); }
-    const env = ptyEnv(this.o.env, req.env, this.o.context());
+    const base = typeof this.o.env === "function" ? this.o.env() : this.o.env;
+    const env = ptyEnv(base, req.env, this.o.context());
     if ("refusal" in env) return refused(env.refusal);
     let p: PtyProcess;
     try {

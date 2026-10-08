@@ -25,6 +25,21 @@ export interface VaultChoice {
   efforts: PerHost<string | null>;
 }
 
+/** What a Term launch runs, and what an agent there may do (spec 2026-10-08-term-agent-deck T2, T11): the same
+ *  literals as data/terminalLaunch.ts TermHost and TermAccess, kept here so this module stays import-free. */
+export type TermHostId = "claude" | "codex" | "shell";
+export type TermAccessId = "host" | "read" | "edit" | "run";
+export type AgentPlaceId = "scratch" | "last" | "vault";
+
+/** The Term tab's last choice (T2, T4, T11): the host ⌘T starts, the access level, where agents start when no place
+ *  is picked, and the workspaces launched in most recently (newest first). */
+export interface TerminalChoice {
+  host: TermHostId | null;
+  access: TermAccessId;
+  agentPlace: AgentPlaceId;
+  recent: string[];
+}
+
 export interface AgenticOSSettings {
   statusBarEnabled: boolean;
   autoOpenSidebarOnStart: boolean;
@@ -43,6 +58,8 @@ export interface AgenticOSSettings {
   // Sessions (U12): read through sanitizeSessionChoice / sanitizeVaultChoice, since data.json may hold anything
   sessionChoice: SessionChoice;
   vaultChoice: VaultChoice;
+  // Term (spec 2026-10-08-term-agent-deck): read through sanitizeTerminalChoice
+  terminalChoice: TerminalChoice;
 }
 
 /** Keys data.json may still hold from earlier versions; loadSettings prunes them (the two HUD-only toggles, D10). */
@@ -66,6 +83,8 @@ export const DEFAULT_SETTINGS: AgenticOSSettings = {
   // Sessions
   sessionChoice: { host: null, access: "edit", models: { claude: null, codex: null }, efforts: { claude: null, codex: null } },
   vaultChoice: { host: null, models: { claude: null, codex: null }, efforts: { claude: null, codex: null } },
+  // Term
+  terminalChoice: { host: null, access: "host", agentPlace: "scratch", recent: [] },
 };
 
 // ── remembered choices (U12) ──
@@ -153,4 +172,43 @@ export function rememberVaultChoice(
   if (pick.model !== undefined) c.models[pick.host] = pick.model;
   if (pick.effort !== undefined) c.efforts[pick.host] = pick.effort;
   return sanitizeVaultChoice(c);
+}
+
+// ── the Term tab's choice (spec 2026-10-08-term-agent-deck T2, T4, T11) ──
+
+const TERM_HOSTS: readonly TermHostId[] = ["claude", "codex", "shell"];
+const TERM_ACCESS: readonly TermAccessId[] = ["host", "read", "edit", "run"];
+const AGENT_PLACES: readonly AgentPlaceId[] = ["scratch", "last", "vault"];
+/** How many recent workspaces the menu keeps. */
+export const TERM_RECENT_MAX = 5;
+/** A workspace folder name the list may keep: one segment, not hidden, not a team folder (agentSessions.workspaceNames). */
+const WORKSPACE_NAME = /^[^./\\_][^/\\]{0,127}$/;
+
+/** A clean copy of a stored Term choice; anything missing or malformed reads as its default. */
+export function sanitizeTerminalChoice(raw: unknown): TerminalChoice {
+  const r = isRecord(raw) ? raw : {};
+  const recent = Array.isArray(r.recent)
+    ? [...new Set(r.recent.filter((n): n is string => typeof n === "string" && WORKSPACE_NAME.test(n)))].slice(0, TERM_RECENT_MAX)
+    : [];
+  return {
+    host: TERM_HOSTS.includes(r.host as TermHostId) ? (r.host as TermHostId) : null,
+    access: TERM_ACCESS.includes(r.access as TermAccessId) ? (r.access as TermAccessId) : "host",
+    agentPlace: AGENT_PLACES.includes(r.agentPlace as AgentPlaceId) ? (r.agentPlace as AgentPlaceId) : "scratch",
+    recent,
+  };
+}
+
+/** The Term choice after a launch or a pick: a host launched from the deck becomes the one ⌘T starts, a workspace
+ *  launched in moves to the front of the recent list, and an access level or default place that is given replaces the
+ *  stored one. Returns a new object to store. */
+export function rememberTerminalChoice(
+  current: unknown,
+  pick: { host?: TermHostId; workspace?: string | null; access?: TermAccessId; agentPlace?: AgentPlaceId },
+): TerminalChoice {
+  const c = sanitizeTerminalChoice(current);
+  if (pick.host) c.host = pick.host;
+  if (pick.access) c.access = pick.access;
+  if (pick.agentPlace) c.agentPlace = pick.agentPlace;
+  if (pick.workspace) c.recent = [pick.workspace, ...c.recent.filter((n) => n !== pick.workspace)];
+  return sanitizeTerminalChoice(c);
 }

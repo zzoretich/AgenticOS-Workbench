@@ -16,11 +16,11 @@ list at the top of app-smoke.md is the release process, not app behaviour: it is
 
 | Status | Items |
 |---|---|
-| covered | 103 |
-| covered in part | 17 |
+| covered | 105 |
+| covered in part | 18 |
 | N/A in the app | 39 |
-| not covered | 5 |
-| **total** | **164** |
+| not covered | 6 |
+| **total** | **168** |
 
 Of the 125 items about the app (164 minus the 39 N/A), 120 are asserted (103 fully, 17 in part); the other 5 are not
 covered, for the reasons below. Every write surface is enabled and tested. The
@@ -319,6 +319,10 @@ see below).
 | # | Item | Status | Covered by / reason |
 |---|---|---|---|
 | TM1 | A fresh install's Term tab opens a live shell at once, with no "Terminal unavailable" | covered | `sidebar-omni-notes › Term: a live shell…` (node-pty is the app's own dependency). |
+| TM2 | ⌘T starts the last host in Scratch, made with its stubs; the Started note | covered | `term-writes › ⌘T with nothing picked…` (fixture stubs; the conversation title needs a real Claude Code: manual). |
+| TM3 | New ▾: exact name starts there; a new name creates and starts; ⇧⌘N refusals | covered | `term-writes › typing an exact workspace name…`, `› New workspace (⇧⌘N)…`. |
+| TM4 | Spaces link code folder… and Claude Code here | covered in part | `term-writes › ⌥⌘3's command…` covers Claude Code here; the link needs a folder outside the vault, which the sandboxed page cannot check: manual. |
+| TM5 | A Finder-launched app finds npm-installed CLIs | not covered | The login-shell PATH is unit-tested (`main-services › terminals start with the login shell's PATH`); e2e stands in for it with `$AOS_SETUP_PATH`. |
 
 ## Telemetry switch
 

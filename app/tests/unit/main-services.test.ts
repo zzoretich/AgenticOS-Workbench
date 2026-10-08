@@ -12,7 +12,7 @@ import { ReadScope } from "../../src/main/policy/read-scope";
 import type { ProgramContext } from "../../src/main/policy/programs";
 import { FsService } from "../../src/main/services/fs";
 import { ProcService } from "../../src/main/services/proc";
-import { PtyService, type PtyLib, type PtyProcess } from "../../src/main/services/pty";
+import { PtyService, terminalBaseEnv, type PtyLib, type PtyProcess } from "../../src/main/services/pty";
 
 const ROOT = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "aos-services-")));
 process.on("exit", () => fs.rmSync(ROOT, { recursive: true, force: true }));
@@ -353,4 +353,19 @@ test("without node-pty, terminals say why and nothing starts", () => {
   const r = t.available();
   assert.equal(!r.ok && r.error, "node-pty failed to load: Cannot find module 'node-pty'");
   assert.equal(t.spawn({ id: "t", file: "/bin/sh", args: [], cwd: VAULT, name: "xterm-256color", cols: 80, rows: 24 }).ok, false);
+});
+
+test("terminals start with the login shell's PATH and without CLAUDECODE (spec 2026-10-08-term-agent-deck T14)", () => {
+  assert.deepEqual(terminalBaseEnv({ PATH: "/usr/bin", HOME: "/h", CLAUDECODE: "1" }, "/opt/homebrew/bin:/usr/bin"), { PATH: "/opt/homebrew/bin:/usr/bin", HOME: "/h" });
+  assert.deepEqual(terminalBaseEnv({ PATH: "/usr/bin" }, null), { PATH: "/usr/bin" });
+  reset([]);
+  const { lib, spawned } = fakePty();
+  let asked = 0;
+  const t = new PtyService({ context, env: () => { asked++; return terminalBaseEnv({ PATH: "/usr/bin", CLAUDECODE: "1" }, "/login/bin:/usr/bin"); }, emit: () => {}, load: () => lib });
+  assert.ok(t.spawn({ id: "t1", file: "/bin/sh", args: [], cwd: VAULT, name: "xterm-256color", cols: 80, rows: 24 }).ok);
+  const env = spawned[0].opts.env as Record<string, string>;
+  assert.equal(env.PATH, "/login/bin:/usr/bin");
+  assert.equal(env.CLAUDECODE, undefined);
+  assert.equal(asked, 1);
+  t.killAll();
 });

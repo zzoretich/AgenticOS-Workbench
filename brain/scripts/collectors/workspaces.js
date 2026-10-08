@@ -1,4 +1,5 @@
 'use strict';
+const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const { VAULT, safeStat, listDir, exists, readText, lastCommit } = require('./util');
@@ -16,11 +17,11 @@ const MAX_DOCS = 5;
 
 // ── manifest parser ──────────────────────────────────────────────
 // Tolerant, supports exactly the fields we render:
-//   scalar: status, summary, next, type
+//   scalar: status, summary, next, type, repo (a linked code folder outside the vault: spec 2026-10-08-term-agent-deck T8)
 //   block list: objectives:\n  - item
 //   subprojects:\n  - { name: x, path: y }   |   - bareName
 function parseManifest(text) {
-  const empty = { status: null, summary: null, objectives: [], subprojects: [], documents: [], next: null };
+  const empty = { status: null, summary: null, objectives: [], subprojects: [], documents: [], next: null, repo: null };
   if (!text) return empty;
   const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!m) return empty;
@@ -65,8 +66,24 @@ function parseManifest(text) {
     if (key === 'status') out.status = value ? unquote(value) : null;
     else if (key === 'summary') out.summary = value ? unquote(value) : null;
     else if (key === 'next') out.next = value ? unquote(value) : null;
+    else if (key === 'repo') out.repo = value ? unquote(value) : null;
   }
   return out;
+}
+
+/**
+ * A manifest's `repo:` as an absolute folder: `~/…` or absolute, and outside the vault (a workspace's own folder is
+ * already its place). Anything else is null, so a typo never points a workspace somewhere unexpected.
+ */
+function repoPath(value, vaultRoot, home = os.homedir()) {
+  if (!value || typeof value !== 'string') return null;
+  const v = value.trim();
+  const p = v === '~' ? home : v.startsWith('~/') ? path.join(home, v.slice(2)) : v;
+  if (!path.isAbsolute(p)) return null;
+  const abs = path.resolve(p);
+  const rel = path.relative(path.resolve(vaultRoot), abs);
+  if (rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))) return null;
+  return abs;
 }
 
 function isProjectLike(absChild) {
@@ -282,6 +299,10 @@ function scanOneWorkspace(absDir, relDir, name) {
   // Obsidian opens a symlink-curated vault whose root differs from where the
   // collector ran. Set AFTER the hash so it never affects insight caching.
   entry.absPath = absDir;
+  // A linked code folder (T8): the Term tab starts there, and sessions run there count for this workspace. Also after
+  // the hash, like absPath.
+  const repo = repoPath(manifest.repo, path.dirname(path.dirname(absDir)));
+  if (repo) entry.repoPath = repo;
   return entry;
 }
 
@@ -314,4 +335,4 @@ function collectWorkspaces(opts = {}) {
   return out;
 }
 
-module.exports = { parseManifest, detectChildren, extractObjectives, extractNext, defaultStatusFromAge, computeInputHash, collectWorkspaces };
+module.exports = { parseManifest, repoPath, detectChildren, extractObjectives, extractNext, defaultStatusFromAge, computeInputHash, collectWorkspaces };

@@ -44,7 +44,8 @@ export interface TeamsCtx {
   error(key: string): string | null;
   /** Runs `aos team <args>` (after `confirm`, when given), shows its verdict under `key`, then re-reads. True on success. */
   act(key: string, args: string[], confirm?: Confirm): Promise<boolean>;
-  term(command: string): void;
+  /** Opens a terminal running `command`; `host` is the agent it starts (its dot in the Term list). */
+  term(command: string, host?: SessionHost): void;
   render(): void;
   select(team: string, view?: TeamsView, item?: string | null): void;
   openFile(vaultPath: string): void;
@@ -126,7 +127,7 @@ export function hostButtons(parent: HTMLElement, ctx: TeamsCtx, label: string, c
     // Quiet: a row of many members gets the Agents tab's "❯_ claude" links, not a wall of buttons.
     const text = quiet ? `❯_ ${h}` : ctx.hosts.length > 1 ? `${label} ❯_ ${h}` : `${label} ❯_`;
     const b = quiet ? parent.createEl("a", { cls: "aos-link", text, href: "#", attr: { title: title(h, cmd) } }) : parent.createEl("button", { cls: "aos-ws-action aos-at-btn", text, attr: { title: title(h, cmd) } });
-    b.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); ctx.term(cmd); });
+    b.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); ctx.term(cmd, h); });
   }
 }
 
