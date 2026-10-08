@@ -4,6 +4,17 @@ All notable changes to UniDeX (AgenticOS Workbench before 1.1). Versions follow 
 
 ## [Unreleased]
 
+### Upgrading
+- Accept the runtime update the app offers (or run `aos upgrade`): the model lists, access levels and Vault's host choice come from the runtime's `lib/host-catalog.js`, `lib/sessions.js catalog` and `sdk/ask.js`.
+
+### Added
+- **Each host lists its own models and commands.** The runtime asks Claude Code (one `initialize` request, no model call) and Codex (`codex debug models` and `codex debug prompt-input`) what they can run, and keeps the answer in `brain/_index/host-catalog.json` for a day. A host that does not answer keeps its aliases. The account details Claude Code sends with its list are never stored.
+- **Access levels for a session turn:** read only (Claude plan mode, Codex's read-only sandbox), edit files (the default), or edit and run commands (Claude adds Bash; Codex always runs commands inside its sandbox).
+- A session turn can change its model, effort and access from one turn to the next; each prompt in the thread records them. Codex turns take the `max` and `ultra` efforts.
+- Plans: Claude's to-do list and Codex's `todo_list` become one `plan` event in the thread.
+- The changes card's files carry lines added and removed (`git diff --numstat`, and an untracked file's lines).
+- `ask.js --local --host=claude|codex --model=<id> --effort=<level>` answers a vault question on that host only, with no fallback to another provider.
+
 ## [1.2.1] — 2026-10-07
 
 ### Upgrading
