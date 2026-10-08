@@ -6,7 +6,7 @@
 // check it against the read scope, the write surfaces and the program rules (./policy). Main itself writes one file
 // outside its userData: the app's record in the vault's runtime cache (hud-host.ts). The app updates itself (./updater).
 
-import { app, BrowserWindow, dialog, Menu, nativeTheme, screen, type Rectangle } from "electron";
+import { app, autoUpdater, BrowserWindow, dialog, Menu, nativeTheme, screen, type Rectangle } from "electron";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -147,6 +147,8 @@ let win: BrowserWindow | null = null;
 let tray: StatusTray | null = null;
 let watcher: VaultWatcher | null = null;
 let quitting = false;
+/** Set when the quit is an update's: an updater error before the app exits gives the window its hide-on-close back. */
+let quittingForUpdate = false;
 let rendererReady = false;
 let commands: CommandInfo[] = [];
 const pendingLinks: ProtocolRequest[] = [];
@@ -157,7 +159,13 @@ const updates = new UpdateService({
   ...updatesWanted({ packaged: app.isPackaged, testBuild: __AOS_TEST_BUILD__, env: process.env, config: updateConfig }),
   intervalHours: updateConfig.intervalHours,
   load: () => (require("electron-updater") as { autoUpdater: UpdaterLike }).autoUpdater,
-  emit: (s) => { send(CH.updateEvent, s); setMenu(); },
+  emit: (s) => {
+    if (s.status === "error" && quittingForUpdate) { quittingForUpdate = false; quitting = false; }
+    send(CH.updateEvent, s);
+    setMenu();
+  },
+  // The window hides on close until the app quits; an update's quit closes the windows before `before-quit`, so it says so first.
+  beforeInstall: () => { quitting = true; quittingForUpdate = true; },
 });
 /** How many times the page asked to restart into an update (the e2e suite reads it: a dev run has no update to install). */
 let installRequests = 0;
@@ -399,7 +407,9 @@ if (!app.requestSingleInstanceLock()) {
   app.on("open-url", (e, url) => { e.preventDefault(); openLink(url); });
   app.on("second-instance", (_e, argv) => { const url = urlFromArgv(argv); if (url) openLink(url); else show(); });
   app.on("activate", () => show());
-  app.on("before-quit", () => { quitting = true; });
+  app.on("before-quit", () => { quitting = true; quittingForUpdate = false; });
+  // Any quitAndInstall, not only Restart to Update's: Squirrel's own signal comes before the windows are asked to close.
+  autoUpdater.on("before-quit-for-update", () => { quitting = true; quittingForUpdate = true; });
   app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
   app.on("will-quit", () => { watcher?.stop(); tray?.destroy(); updates.stop(); endPageWork(); sessionService.killAll(); });
 

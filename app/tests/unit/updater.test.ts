@@ -173,3 +173,18 @@ test("uploads go feed last, and the release waits on every precondition", () => 
   const bad = releaseChecks({ ...ok, rootVersion: "1.0.0", tags: [], clean: false, profile: undefined, gh: false, release: false });
   assert.deepEqual(bad.filter((c) => !c.ok).length, 6);
 });
+
+test("Restart to Update marks the app as quitting before quitAndInstall closes its windows, and only when it installs", () => {
+  const order: string[] = [];
+  const u = new FakeUpdater();
+  const quit = u.quitAndInstall.bind(u);
+  u.quitAndInstall = (a?: boolean, b?: boolean) => { order.push("quitAndInstall"); quit(a, b); };
+  const svc = new UpdateService({ on: true, reason: null, intervalHours: 24, load: () => u, emit: () => {}, firstCheckMs: 60_000, beforeInstall: () => order.push("beforeInstall") });
+  svc.start();
+  assert.equal(svc.install(), false);
+  assert.deepEqual(order, [], "nothing downloaded: the app is not marked as quitting");
+  u.emit("update-downloaded", { version: "1.3.1" });
+  assert.equal(svc.install(), true);
+  assert.deepEqual(order, ["beforeInstall", "quitAndInstall"]);
+  svc.stop();
+});

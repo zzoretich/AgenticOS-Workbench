@@ -59,6 +59,13 @@ export interface UpdateServiceOptions {
   emit: (s: UpdateState) => void;
   /** How long after launch the first check runs. */
   firstCheckMs?: number;
+  /**
+   * Runs just before Restart to Update hands over to quitAndInstall. Electron closes every window first and emits
+   * `before-quit` only after that (electron.d.ts, `before-quit`), so a window that hides instead of closing until the app
+   * is quitting must be told here, or the quit stops at the first window and the installer waits for an app that never
+   * exits.
+   */
+  beforeInstall?: () => void;
 }
 
 export class UpdateService {
@@ -116,6 +123,7 @@ export class UpdateService {
   /** Restart to Update: only with an update downloaded. */
   install(): boolean {
     if (!this.updater || this.s.status !== "downloaded") return false;
+    this.o.beforeInstall?.();
     this.updater.quitAndInstall(false, true);
     return true;
   }
