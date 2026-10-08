@@ -8,10 +8,14 @@
 // Each answered call appends the contract §3 spend row to brain/_index/provider-spend.jsonl
 // (feature "reason:chat" by default: the reasoner cap's family) so `aos status` and the daily
 // caps account for chat spend too. chatRoute() decides between this path and askSpawner.
+// Vault chat's host and model menu (spec 2026-10-07-sessions-ux U9) reads its hosts, its starting choice, the alias
+// list it falls back to and today's reasoner spend from the helpers at the end of this file.
 import * as path from "path";
-import { env, fs, spawn as hostSpawn, type HostChild, type HostSpawnOptions, type SpawnFn } from "../host";
+import { env, fs, spawn as hostSpawn, utf8, type HostCatalog, type HostCatalogHost, type HostChild, type HostSpawnOptions, type SpawnFn } from "../host";
 import { lastStderrLine, type AskHandle, type AskResult } from "./askSpawner";
-import { readAgenticosJson, readProviderState, AgenticosJson, ProviderState } from "./aosConfig";
+import { readAgenticosJson, readProviderState, AgenticosJson, ProviderState, type SessionHost } from "./aosConfig";
+import { catalogHost, findModel, hostChoices, usdText, type HostChoice, type RememberedChoice } from "./agentSessions";
+import type { VaultChoice } from "../settingsDefaults";
 
 export interface ClaudeAskOptions {
   vault: string;
@@ -19,8 +23,9 @@ export interface ClaudeAskOptions {
   claudeBin: string;     // Plugin.claudeBin()
   question: string;
   model: string;         // readVaultConfig().reasoner.model
+  chosenModel?: string;  // the model Vault chat's menu picked (spec U9); "default" or none → `model`
   maxBudgetUsd: number;  // readVaultConfig().reasoner.perCallUsd
-  effort?: string;       // readVaultConfig().reasoner.effort → --effort (low|medium|high; anything else is left off)
+  effort?: string;       // the menu's effort or readVaultConfig().reasoner.effort → --effort (one of EFFORTS; anything else is left off)
   feature?: string;      // ledger row feature, default "reason:chat"
   timeoutMs?: number;        // default 120 s
   recallTimeoutMs?: number;  // default 15 s
@@ -46,8 +51,21 @@ export function composePrompt(question: string, recallContext: string): string {
   return ctx ? `CONTEXT (recall hits from the vault):\n${ctx}\n\nQUESTION: ${question}` : `QUESTION: ${question}`;
 }
 
-export const EFFORTS = ["low", "medium", "high"];
+/** The levels `claude --effort` takes, all of which the chat surface admits (spec 2026-10-07-sessions-ux U9). */
+export const EFFORTS = ["low", "medium", "high", "xhigh", "max"];
 export const CHAT_FEATURE = "reason:chat";
+
+/** One argument the chat surface reads as a model: no whitespace and no leading "-", so it can never pass for a flag. */
+export const MODEL_ID_RE = /^[^\s-]\S*$/;
+
+/**
+ * The model `claude -p` runs for a menu pick. The catalog's "default" means "pass no --model", but this spawn rule
+ * always names one, so it (or no pick) is the configured reasoner's; an id the surface would refuse is null.
+ */
+export function claudeChatModel(chosen: string | undefined, reasonerModel: string): string | null {
+  const m = chosen === undefined || chosen === "" || chosen === "default" ? reasonerModel : chosen;
+  return MODEL_ID_RE.test(m) ? m : null;
+}
 
 /**
  * Which spawner answers a Chat question. The reasoner is a Claude model, so headless Claude is
@@ -149,7 +167,10 @@ export function runClaudeAsk(opts: ClaudeAskOptions, deps: ClaudeAskDeps = DEFAU
   const fail = (error: string, extra: Partial<AskResult> = {}): AskResult =>
     ({ ok: false, runId: null, answer: "", stderr: "", elapsedMs: Date.now() - start, exitCode: null, error, ...extra });
 
+  const model = claudeChatModel(opts.chosenModel, opts.model);
+
   const result = (async (): Promise<AskResult> => {
+    if (model === null) return fail(`Not a model id: ${opts.chosenModel ?? opts.model}`);
     // 1. recall context (best-effort)
     let context = "";
     try {
@@ -165,7 +186,7 @@ export function runClaudeAsk(opts: ClaudeAskOptions, deps: ClaudeAskDeps = DEFAU
     let child: HostChild;
     try {
       child = deps.spawn(opts.claudeBin,
-        buildClaudeArgs({ prompt: composePrompt(opts.question, context), model: opts.model, maxBudgetUsd: opts.maxBudgetUsd, effort: opts.effort }),
+        buildClaudeArgs({ prompt: composePrompt(opts.question, context), model, maxBudgetUsd: opts.maxBudgetUsd, effort: opts.effort }),
         { cwd: opts.vault, ...headlessEnv() });
     } catch (e) {
       return fail(e instanceof Error ? e.message : String(e));
@@ -185,7 +206,7 @@ export function runClaudeAsk(opts: ClaudeAskOptions, deps: ClaudeAskDeps = DEFAU
       if (!parsed) return;
       try {
         deps.appendFileSync(path.join(opts.vault, SPEND_LEDGER_PATH), JSON.stringify({
-          ts: new Date().toISOString(), feature: opts.feature ?? CHAT_FEATURE, provider: "claude", model: opts.model,
+          ts: new Date().toISOString(), feature: opts.feature ?? CHAT_FEATURE, provider: "claude", model,
           usd: parsed.usd, inputTokens: parsed.inputTokens, outputTokens: parsed.outputTokens, ms: elapsedMs,
         }) + "\n");
       } catch { /* ledger is best-effort */ }
@@ -207,4 +228,121 @@ export function runClaudeAsk(opts: ClaudeAskOptions, deps: ClaudeAskDeps = DEFAU
     result,
     cancel: () => { cancelled = true; try { current?.kill("SIGKILL"); } catch { /* ignore */ } },
   };
+}
+
+// ── Vault chat's host and model menu (spec 2026-10-07-sessions-ux U9) ──
+
+/**
+ * The hosts a Vault question may go to: the composer's (on in agenticos.json, login not known missing), except that
+ * Claude also needs the login this path checks (chatRoute), since `claude -p` without one answers nothing.
+ */
+export function vaultHostChoices(cfg: AgenticosJson | null, state: ProviderState | null): HostChoice[] {
+  return hostChoices(cfg, state).map((c) =>
+    c.host === "claude" && c.ready && chatRoute(state) !== "claude" ? { ...c, ready: false, reason: `${c.label} is not logged in` } : c);
+}
+
+/** Why the menu shows only the aliases: the app's catalog was not there to ask. */
+export const ALIAS_REASON = "Only the aliases: the hosts' own lists are not available";
+
+/** The runtime's fallback (lib/host-catalog.js, spec U4) for a window without the catalog: Claude's aliases, which
+ *  always resolve, and Codex's own default. */
+export function aliasCatalog(now: Date, reason = ALIAS_REASON): HostCatalog {
+  const at = now.toISOString();
+  const entry = (models: HostCatalogHost["models"]): HostCatalogHost =>
+    ({ ok: false, reason, version: null, fetchedAt: at, defaultModel: null, defaultEffort: null, models, commands: [] });
+  const alias = (id: string, name: string, description: string) => ({ id, name, description, efforts: [...EFFORTS], main: true });
+  return {
+    schema: 1, fetchedAt: at,
+    hosts: {
+      claude: entry([
+        alias("default", "Default", "The reasoner model"),
+        alias("opus", "Opus", "The latest Opus"),
+        alias("fable", "Fable", "The latest Fable"),
+        alias("sonnet", "Sonnet", "The latest Sonnet"),
+        alias("haiku", "Haiku", "The latest Haiku"),
+      ]),
+      codex: entry([]),
+    },
+  };
+}
+
+/**
+ * Where each host's menu starts: the stored pick (settings' vaultChoice), else the reasoner's own (its Claude effort,
+ * its Codex model). A model the host's answered list no longer has is dropped, so the host's default takes over;
+ * defaultChoice then keeps the effort only when the model takes it.
+ */
+export function vaultRemembered(choice: VaultChoice, catalog: HostCatalog | null, reasoner: { effort: string; codexModel: string | null }): Record<SessionHost, RememberedChoice> {
+  const one = (host: SessionHost, model: string | null, effort: string | null): RememberedChoice => {
+    const entry = catalogHost(catalog, host);
+    return { model: model && entry?.ok && !findModel(entry, model) ? null : model, effort };
+  };
+  return {
+    claude: one("claude", choice.models.claude, choice.efforts.claude ?? (EFFORTS.includes(reasoner.effort) ? reasoner.effort : null)),
+    codex: one("codex", choice.models.codex ?? reasoner.codexModel, choice.efforts.codex),
+  };
+}
+
+/**
+ * The header's route line. A host from the menu names it and the model it runs: on Claude the configured reasoner for
+ * `default`, capped per call; on Codex through ask.js, under the reasoner's caps. With no host ready the route is
+ * today's: headless Claude, or ask.js under whichever provider the scripts resolved.
+ */
+export function vaultModeLine(host: SessionHost | null, modelLabel: string | null, o: { reasonerModel: string; route: "claude" | "local" | "none"; provider: string }): string {
+  if (host === "claude") return ` · Claude Code (${modelLabel || o.reasonerModel}, capped)`;
+  if (host === "codex") return ` · Codex via ask.js (${modelLabel || "Codex default"}, reasoner caps)`;
+  if (o.route === "claude") return ` · claude (${o.reasonerModel}, capped)`;
+  return o.provider === "codex" ? " · codex via ask.js (reasoner caps)" : " · local ask.js";
+}
+
+const REASON_ROWS = /^reason:/;
+const SPEND_TAIL_BYTES = 256 * 1024;
+
+function localDay(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+/** Today's (local calendar day) reasoner spend in ledger text: the reason:* rows reasoner.perDayUsd caps, as the
+ *  runtime's spend-ledger.js reasonSpendToday counts them. Torn lines are skipped. */
+export function reasonSpendToday(text: string, now: Date): number {
+  const day = localDay(now);
+  let sum = 0;
+  for (const line of text.split("\n")) {
+    if (!line.trim()) continue;
+    let r: { ts?: unknown; feature?: unknown; usd?: unknown };
+    try { r = JSON.parse(line) as typeof r; } catch { continue; }
+    const t = new Date(typeof r.ts === "string" ? r.ts : NaN);
+    if (Number.isNaN(t.getTime()) || localDay(t) !== day || !REASON_ROWS.test(String(r.feature ?? ""))) continue;
+    sum += Number(r.usd) || 0;
+  }
+  return Math.round(sum * 1e6) / 1e6;
+}
+
+/**
+ * Today's reasoner spend from the vault's ledger, read from its tail only (the ledger is append-only, so today is at
+ * the end). 0 without a ledger; null when the tail starts inside today, since the sum would then be short.
+ */
+export function readReasonSpendToday(vault: string, now: Date, tailBytes = SPEND_TAIL_BYTES): number | null {
+  const file = path.join(vault, SPEND_LEDGER_PATH);
+  try {
+    if (!fs.existsSync(file)) return 0;
+    const size = fs.statSync(file).size;
+    const from = Math.max(0, size - tailBytes);
+    let text = utf8(fs.readBytesSync(file, from, size - from));
+    if (from > 0) {
+      text = text.slice(text.indexOf("\n") + 1);
+      const first = text.split("\n").find((l) => l.trim());
+      let ts: unknown;
+      try { ts = first ? (JSON.parse(first) as { ts?: unknown }).ts : undefined; } catch { ts = undefined; }
+      const t = new Date(typeof ts === "string" ? ts : NaN);
+      if (Number.isNaN(t.getTime()) || localDay(t) === localDay(now)) return null;
+    }
+    return reasonSpendToday(text, now);
+  } catch { return null; }
+}
+
+/** The composer's spend note: `Vault today $0.12 of $5 (reasoner cap)`; null when the spend is not known or there is no cap. */
+export function vaultSpendLine(spent: number | null, cap: number): string | null {
+  if (spent === null || !(cap > 0)) return null;
+  return `Vault today ${usdText(spent)} of ${Number.isInteger(cap) ? `$${cap}` : usdText(cap)} (reasoner cap)`;
 }

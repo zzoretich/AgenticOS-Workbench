@@ -241,6 +241,7 @@ export const SURFACES: readonly Surface[] = [
       { script: "sdk/ask.js", args: argv("--local", QUESTION) },
       { script: "sdk/ask.js", args: argv("--local", ASK_HOST, QUESTION) },
       { script: "sdk/ask.js", args: argv("--local", ASK_HOST, ASK_MODEL, QUESTION) },
+      { script: "sdk/ask.js", args: argv("--local", ASK_HOST, ASK_EFFORT, QUESTION) },
       { script: "sdk/ask.js", args: argv("--local", ASK_HOST, ASK_MODEL, ASK_EFFORT, QUESTION) },
       claudeAsk(false),
       claudeAsk(true),

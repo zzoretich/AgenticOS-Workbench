@@ -1,6 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DEFAULT_SETTINGS, DEAD_SETTINGS_KEYS } from "./settingsDefaults";
+import {
+  DEFAULT_SETTINGS, DEAD_SETTINGS_KEYS,
+  sanitizeSessionChoice, sanitizeVaultChoice, rememberSessionChoice, rememberVaultChoice,
+} from "./settingsDefaults";
 
 test("the contract §5 settings exist with their defaults", () => {
   assert.equal(DEFAULT_SETTINGS.vaultRoot, "");
@@ -22,4 +25,85 @@ test("cost and telemetry are the system's switches, not plugin settings (spec 20
   assert.equal("telemetryEnabled" in DEFAULT_SETTINGS, false);
   assert.ok(DEAD_SETTINGS_KEYS.includes("costEnabled") && DEAD_SETTINGS_KEYS.includes("telemetryEnabled"), "a stored HUD-only value is pruned");
   for (const k of DEAD_SETTINGS_KEYS) assert.equal(k in DEFAULT_SETTINGS, false, k);
+});
+
+// ── remembered session choices (spec 2026-10-07-sessions-ux U12) ──
+
+const EMPTY = { claude: null, codex: null };
+
+test("the remembered choices default to no host, edit access and the hosts' defaults", () => {
+  assert.deepEqual(DEFAULT_SETTINGS.sessionChoice, { host: null, access: "edit", models: EMPTY, efforts: EMPTY });
+  assert.deepEqual(DEFAULT_SETTINGS.vaultChoice, { host: null, models: EMPTY, efforts: EMPTY });
+  assert.equal("access" in DEFAULT_SETTINGS.vaultChoice, false, "Vault chat is always read only");
+});
+
+test("a data.json without the keys reads as the defaults", () => {
+  for (const raw of [undefined, null, {}, [], "claude", 3, true]) {
+    assert.deepEqual(sanitizeSessionChoice(raw), DEFAULT_SETTINGS.sessionChoice, String(raw));
+    assert.deepEqual(sanitizeVaultChoice(raw), DEFAULT_SETTINGS.vaultChoice, String(raw));
+  }
+});
+
+test("a well-formed choice reads back unchanged", () => {
+  const session = {
+    host: "codex", access: "run",
+    models: { claude: "claude-opus-4-5[1m]", codex: "gpt-5.1-codex" },
+    efforts: { claude: "max", codex: "ultra" },
+  };
+  assert.deepEqual(sanitizeSessionChoice(session), session);
+  const vault = { host: "claude", models: { claude: "default", codex: "gpt-5.1-codex" }, efforts: { claude: "xhigh", codex: "minimal" } };
+  assert.deepEqual(sanitizeVaultChoice(vault), vault);
+});
+
+test("bad parts fall back to their defaults and good parts are kept", () => {
+  const got = sanitizeSessionChoice({
+    host: "other", access: "admin",
+    models: { claude: "sonnet", codex: 42 },
+    efforts: { claude: "ultra", codex: "high" },
+  });
+  assert.deepEqual(got, { host: null, access: "edit", models: { claude: "sonnet", codex: null }, efforts: { claude: null, codex: "high" } });
+  assert.deepEqual(sanitizeSessionChoice({ host: "claude", models: "opus", efforts: ["low"] }),
+    { host: "claude", access: "edit", models: EMPTY, efforts: EMPTY });
+});
+
+test("a model id must be one word the app admits", () => {
+  const model = (m: unknown) => sanitizeSessionChoice({ models: { claude: m } }).models.claude;
+  assert.equal(model("  opus  "), "opus", "trimmed");
+  for (const bad of ["", "   ", "--dangerously-skip-permissions", "two words", "a;b", "x".repeat(81), null, {}]) {
+    assert.equal(model(bad), null, String(bad));
+  }
+});
+
+test("Vault chat takes only the efforts its one-shot paths admit", () => {
+  const got = sanitizeVaultChoice({ host: "codex", efforts: { claude: "max", codex: "max" } });
+  assert.deepEqual(got.efforts, { claude: "max", codex: null }, "ask.js --effort= stops at xhigh");
+  assert.equal("access" in sanitizeVaultChoice({ access: "run" }), false);
+});
+
+test("sanitizing returns a fresh copy, never the defaults or the input", () => {
+  const raw = { host: "claude", access: "read", models: { claude: "opus", codex: null }, efforts: { claude: "low", codex: null }, extra: 1 };
+  const got = sanitizeSessionChoice(raw);
+  assert.notEqual(got.models, raw.models);
+  assert.equal("extra" in got, false, "unknown keys are dropped");
+  const fromDefault = sanitizeSessionChoice(undefined);
+  fromDefault.models.claude = "haiku";
+  assert.equal(DEFAULT_SETTINGS.sessionChoice.models.claude, null);
+});
+
+test("remembering a pick sets the host and replaces only what the pick names", () => {
+  let c = rememberSessionChoice(undefined, { host: "claude", model: "opus", effort: "high", access: "read" });
+  assert.deepEqual(c, { host: "claude", access: "read", models: { claude: "opus", codex: null }, efforts: { claude: "high", codex: null } });
+  c = rememberSessionChoice(c, { host: "codex", model: "gpt-5.1-codex" });
+  assert.deepEqual(c, { host: "codex", access: "read", models: { claude: "opus", codex: "gpt-5.1-codex" }, efforts: { claude: "high", codex: null } },
+    "the other host's model and effort, and the access, are kept");
+  c = rememberSessionChoice(c, { host: "claude", model: null });
+  assert.equal(c.models.claude, null, "null goes back to the host's default");
+  assert.equal(c.efforts.claude, "high");
+  assert.equal(rememberSessionChoice(c, { host: "codex", effort: "turbo" }).efforts.codex, null, "a level the host does not take is dropped");
+});
+
+test("remembering a Vault chat pick works the same way and never stores access", () => {
+  const v = rememberVaultChoice({ host: "other" }, { host: "codex", model: "gpt-5.1-codex", effort: "xhigh" });
+  assert.deepEqual(v, { host: "codex", models: { claude: null, codex: "gpt-5.1-codex" }, efforts: { claude: null, codex: "xhigh" } });
+  assert.deepEqual(rememberVaultChoice(v, { host: "claude" }).models, v.models);
 });
