@@ -1,8 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import type { HostChild, HostSpawnOptions } from "../host";
-import { runClaudeAsk, buildClaudeArgs, composePrompt, parseClaudeJson, headlessEnv, resolveClaudeBin, chatRoute, ClaudeAskDeps } from "./claudeAsk";
+import {
+  runClaudeAsk, buildClaudeArgs, claudeChatModel, composePrompt, parseClaudeJson, headlessEnv, resolveClaudeBin, chatRoute, ClaudeAskDeps, CHAT_SYSTEM_PROMPT,
+  ALIAS_REASON, aliasCatalog, readReasonSpendToday, reasonSpendToday, vaultAsked, vaultHostChoices, vaultModeLine, vaultRemembered, vaultSpendLine, vaultStart,
+} from "./claudeAsk";
+import { DEFAULT_SETTINGS } from "../settingsDefaults";
 
 function fakeChild(stdout: string, code = 0, stderr = ""): HostChild {
   const child = new EventEmitter() as EventEmitter & { stdout: EventEmitter; stderr: EventEmitter; kill: () => boolean };
@@ -83,9 +90,44 @@ test("effort and feature: a valid effort becomes --effort after --model; the fea
   const c = h.calls[1];
   assert.deepEqual(c.args.slice(2, 6), ["--model", "claude-opus-5", "--effort", "high"]);
   assert.equal(JSON.parse(h.ledger[0]).model, "claude-opus-5");
-  for (const bad of ["max", "", undefined]) {
+  for (const bad of ["minimal", "ultra", "", undefined]) {
     assert.ok(!buildClaudeArgs({ prompt: "p", model: "m", maxBudgetUsd: 1, effort: bad }).includes("--effort"), `effort=${String(bad)}`);
   }
+});
+
+test("buildClaudeArgs: every level claude --effort takes, in the chat surface's argv order", () => {
+  for (const effort of ["low", "medium", "high", "xhigh", "max"]) {
+    assert.deepEqual(buildClaudeArgs({ prompt: "P", model: "opus", maxBudgetUsd: 0.5, effort }), [
+      "-p", "P", "--model", "opus", "--effort", effort, "--tools", "", "--setting-sources", "", "--strict-mcp-config",
+      "--no-session-persistence", "--system-prompt", CHAT_SYSTEM_PROMPT, "--max-budget-usd", "0.5", "--output-format", "json",
+    ]);
+  }
+});
+
+test("claudeChatModel: a menu pick wins; default or none is the reasoner's; an id the surface would refuse is null", () => {
+  assert.equal(claudeChatModel("sonnet", "haiku"), "sonnet");
+  assert.equal(claudeChatModel("claude-opus-5", "haiku"), "claude-opus-5");
+  for (const none of [undefined, "", "default"]) assert.equal(claudeChatModel(none, "haiku"), "haiku", `chosen=${String(none)}`);
+  for (const bad of ["-x", "--tools", "two words"]) assert.equal(claudeChatModel(bad, "haiku"), null, `chosen=${bad}`);
+  assert.equal(claudeChatModel("default", ""), null, "no reasoner model either");
+});
+
+test("runClaudeAsk: the chosen model runs and is ledgered; default falls back to the reasoner; a bad id spawns nothing", async () => {
+  const picked = harness([fakeChild(""), fakeChild(CLAUDE_JSON)]);
+  await runClaudeAsk({ ...OPTS, chosenModel: "sonnet", effort: "xhigh" }, picked.deps).result;
+  assert.deepEqual(picked.calls[1].args.slice(2, 6), ["--model", "sonnet", "--effort", "xhigh"]);
+  assert.equal(JSON.parse(picked.ledger[0]).model, "sonnet");
+
+  const dflt = harness([fakeChild(""), fakeChild(CLAUDE_JSON)]);
+  await runClaudeAsk({ ...OPTS, chosenModel: "default" }, dflt.deps).result;
+  assert.deepEqual(dflt.calls[1].args.slice(2, 4), ["--model", "haiku"]);
+
+  const bad = harness([]);
+  const r = await runClaudeAsk({ ...OPTS, chosenModel: "-x" }, bad.deps).result;
+  assert.equal(r.ok, false);
+  assert.match(r.error ?? "", /Not a model id/);
+  assert.equal(bad.calls.length, 0);
+  assert.equal(bad.ledger.length, 0);
 });
 
 test("chatRoute: claude when the scripts saw a login or resolved claude; local for Ollama alone; none otherwise", () => {
@@ -168,4 +210,136 @@ test('a user cancel under claude reports "cancelled", never "exit null"', async 
   assert.equal(r.ok, false);
   assert.equal(r.error, "cancelled");
   assert.equal(h.ledger.length, 0);
+});
+
+// ── Vault chat's host and model menu (spec 2026-10-07-sessions-ux U9) ──
+
+const BOTH = { hosts: { claude: { enabled: true }, codex: { enabled: true } } };
+const ps = (name: "claude" | "codex" | "ollama", claude?: boolean, codex?: boolean) => ({
+  checkedAt: "", name, reason: "",
+  ...(claude === undefined ? {} : { claude: { loggedIn: claude, checkedAt: "" } }),
+  ...(codex === undefined ? {} : { codex: { loggedIn: codex, checkedAt: "" } }),
+});
+
+test("vaultHostChoices: Claude needs the login chatRoute checks; Codex is the composer's choice", () => {
+  const ready = (c: ReturnType<typeof vaultHostChoices>) => c.map((x) => `${x.host}:${x.ready ? "ready" : x.reason}`);
+  assert.deepEqual(ready(vaultHostChoices(BOTH, ps("claude"))), ["claude:ready", "codex:ready"]);
+  assert.deepEqual(ready(vaultHostChoices(BOTH, ps("ollama", true, false))), ["claude:ready", "codex:Codex is not logged in"]);
+  assert.deepEqual(ready(vaultHostChoices(BOTH, ps("ollama"))), ["claude:Claude Code is not logged in", "codex:ready"],
+    "a login no probe confirmed is not enough for claude -p");
+  assert.deepEqual(ready(vaultHostChoices({ hosts: { codex: { enabled: true } } }, ps("claude", true))), ["claude:Claude Code is off on this machine", "codex:ready"]);
+  assert.deepEqual(ready(vaultHostChoices(null, ps("codex", false))), ["claude:Claude Code is not logged in", "codex:Codex is off on this machine"]);
+});
+
+test("aliasCatalog: Claude's aliases at Vault's levels, Codex's own default, both marked as a short list", () => {
+  const now = new Date("2026-10-07T12:00:00Z");
+  const c = aliasCatalog(now);
+  assert.equal(c.fetchedAt, now.toISOString());
+  assert.deepEqual(c.hosts.claude!.models.map((m) => m.id), ["default", "opus", "fable", "sonnet", "haiku"]);
+  assert.ok(c.hosts.claude!.models.every((m) => m.main && m.efforts.join() === "low,medium,high,xhigh,max"));
+  assert.deepEqual(c.hosts.codex!.models, []);
+  assert.equal(c.hosts.claude!.ok, false);
+  assert.equal(c.hosts.codex!.reason, ALIAS_REASON);
+  assert.equal(aliasCatalog(now, "why").hosts.claude!.reason, "why");
+  c.hosts.claude!.models[0].efforts.push("ultra");
+  assert.equal(aliasCatalog(now).hosts.claude!.models[0].efforts.length, 5, "each call is a fresh copy");
+});
+
+test("vaultRemembered: the stored pick, else the reasoner's; a model the host's list dropped is forgotten", () => {
+  const reasoner = { effort: "high", codexModel: "gpt-x" };
+  const empty = DEFAULT_SETTINGS.vaultChoice;
+  assert.deepEqual(vaultRemembered(empty, null, reasoner), { claude: { model: null, effort: "high" }, codex: { model: "gpt-x", effort: null } });
+  assert.deepEqual(vaultRemembered(empty, null, { effort: "turbo", codexModel: null }).claude, { model: null, effort: null }, "a level claude -p does not take");
+
+  const stored = { host: "codex" as const, models: { claude: "opus", codex: "gpt-old" }, efforts: { claude: "max", codex: "low" } };
+  const answered = {
+    schema: 1 as const, fetchedAt: "",
+    hosts: {
+      claude: { ok: true, version: "2", fetchedAt: "", defaultModel: null, defaultEffort: null, models: [{ id: "opus", name: "Opus", description: "", efforts: ["low"], main: true }], commands: [] },
+      codex: { ok: true, version: "1", fetchedAt: "", defaultModel: "gpt-new", defaultEffort: "high", models: [{ id: "gpt-new", name: "GPT new", description: "", efforts: ["low"], main: true }], commands: [] },
+    },
+  };
+  assert.deepEqual(vaultRemembered(stored, answered, reasoner), { claude: { model: "opus", effort: "max" }, codex: { model: null, effort: "low" } });
+  // A host that did not answer keeps the id: its short list proves nothing.
+  assert.deepEqual(vaultRemembered(stored, aliasCatalog(new Date()), reasoner).codex, { model: "gpt-old", effort: "low" });
+});
+
+test("vaultStart: a pick made in the menu is kept as it is, a custom id included; else the stored host's remembered choice", () => {
+  const answered = {
+    schema: 1 as const, fetchedAt: "",
+    hosts: {
+      claude: { ok: true, version: "2", fetchedAt: "", defaultModel: null, defaultEffort: null, models: [{ id: "opus", name: "Opus", description: "", efforts: ["low"], main: true }], commands: [] },
+      codex: { ok: true, version: "1", fetchedAt: "", defaultModel: "gpt-new", defaultEffort: "high", models: [], commands: [] },
+    },
+  };
+  const reasoner = { effort: "high", codexModel: null };
+  // The user typed an id the catalog never lists, and it was stored; a refresh brings an answered catalog.
+  const stored = { host: "claude" as const, models: { claude: "claude-sonnet-4-5-20250929", codex: null }, efforts: { claude: "high", codex: null } };
+  const remembered = vaultRemembered(stored, answered, reasoner);
+  assert.equal(remembered.claude.model, null, "the stored id alone is dropped by an answered list");
+  const pick = { host: "claude" as const, model: "claude-sonnet-4-5-20250929", effort: "high" };
+  assert.deepEqual(vaultStart(pick, stored, remembered), { value: pick, chosen: true }, "the pick made this session survives the refresh");
+  // No pick yet: the stored host with what the list still has.
+  assert.deepEqual(vaultStart(null, stored, remembered), { value: { host: "claude", model: null, effort: "high" }, chosen: true });
+  // Nothing stored and nothing picked: no host was chosen.
+  const none = DEFAULT_SETTINGS.vaultChoice;
+  assert.deepEqual(vaultStart(null, none, vaultRemembered(none, null, reasoner)), { value: { host: null, model: null, effort: null }, chosen: false });
+});
+
+test("vaultAsked: a Codex nobody chose is not named (ask.js keeps its fallback); a chosen host, or Claude, runs as the chip says", () => {
+  const codex = { host: "codex" as const, model: null, effort: "medium" };
+  const claude = { host: "claude" as const, model: "default", effort: "medium" };
+  assert.deepEqual(vaultAsked(codex, false), { host: null, model: null, effort: null });
+  assert.deepEqual(vaultAsked(codex, true), codex);
+  assert.deepEqual(vaultAsked(claude, false), claude);
+  assert.deepEqual(vaultAsked(claude, true), claude);
+  assert.deepEqual(vaultAsked({ host: null, model: null, effort: null }, true), { host: null, model: null, effort: null });
+});
+
+test("vaultModeLine names the menu's host and model, else today's route", () => {
+  const o = { reasonerModel: "claude-opus-5", route: "claude" as const, provider: "claude" };
+  assert.equal(vaultModeLine("claude", null, o), " · Claude Code (claude-opus-5, capped)");
+  assert.equal(vaultModeLine("claude", "Sonnet", o), " · Claude Code (Sonnet, capped)");
+  assert.equal(vaultModeLine("codex", "GPT-6-Luna", o), " · Codex via ask.js (GPT-6-Luna, reasoner caps)");
+  assert.equal(vaultModeLine("codex", null, o), " · Codex via ask.js (Codex default, reasoner caps)");
+  assert.equal(vaultModeLine(null, null, o), " · claude (claude-opus-5, capped)");
+  assert.equal(vaultModeLine(null, null, { ...o, route: "local", provider: "codex" }), " · codex via ask.js (reasoner caps)");
+  assert.equal(vaultModeLine(null, null, { ...o, route: "local", provider: "ollama" }), " · local ask.js");
+});
+
+const row = (ts: string, feature: string, usd: number) => JSON.stringify({ ts, feature, provider: "claude", model: "m", usd });
+
+test("reasonSpendToday sums today's reason:* rows on the local day, skipping other families and torn lines", () => {
+  const now = new Date(2026, 9, 7, 15, 0, 0);
+  const at = (h: number, d = 7) => new Date(2026, 9, d, h, 30).toISOString();
+  const text = [
+    row(at(9, 6), "reason:chat", 1), row(at(9), "reason:chat", 0.1), row(at(10), "reason:ask", 0.02),
+    row(at(11), "session:turn", 3), row(at(12), "chat", 0.5), "{torn", "", row(at(13), "reason:chat", 0.0034),
+  ].join("\n");
+  assert.equal(reasonSpendToday(text, now), 0.1234);
+  assert.equal(reasonSpendToday("", now), 0);
+});
+
+test("readReasonSpendToday reads the ledger's tail; 0 without one, null when the tail starts inside today", () => {
+  const vault = fs.mkdtempSync(path.join(os.tmpdir(), "aos-vault-spend-"));
+  const now = new Date(2026, 9, 7, 15, 0, 0);
+  assert.equal(readReasonSpendToday(vault, now), 0);
+  const ledger = path.join(vault, "brain", "_index", "provider-spend.jsonl");
+  fs.mkdirSync(path.dirname(ledger), { recursive: true });
+  const old = row(new Date(2026, 9, 6, 9).toISOString(), "reason:chat", 9);
+  const today = row(new Date(2026, 9, 7, 9).toISOString(), "reason:chat", 0.25);
+  fs.writeFileSync(ledger, `${old}\n${old}\n${today}\n${today}\n`);
+  assert.equal(readReasonSpendToday(vault, now), 0.5);
+  const tail = Buffer.byteLength(`${old}\n${today}\n${today}\n`) + 3;
+  assert.equal(readReasonSpendToday(vault, now, tail), 0.5, "the tail opens on yesterday: today is whole");
+  assert.equal(readReasonSpendToday(vault, now, Buffer.byteLength(`${today}\n`) + 3), null, "the tail opens inside today");
+  fs.rmSync(vault, { recursive: true, force: true });
+});
+
+test("vaultSpendLine: today's spend against the reasoner cap, or nothing", () => {
+  assert.equal(vaultSpendLine(0.12, 5), "Vault today $0.12 of $5 (reasoner cap)");
+  assert.equal(vaultSpendLine(0.0034, 0.5), "Vault today $0.0034 of $0.50 (reasoner cap)");
+  assert.equal(vaultSpendLine(0, 5), "Vault today $0.00 of $5 (reasoner cap)");
+  assert.equal(vaultSpendLine(null, 5), null);
+  assert.equal(vaultSpendLine(1, 0), null);
 });

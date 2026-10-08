@@ -2403,133 +2403,455 @@ a.aos-at-itemid:hover { text-decoration: underline; text-underline-offset: 2px; 
 .aos-nt-reader .aos-nt-actions { justify-content: flex-start; flex-wrap: wrap; gap: 8px; margin: 10px 0 14px; }
 .aos-pr-reader .aos-pr-detail { margin: 0; padding: 0; border: none; background: none; font-size: 14px; line-height: 1.6; }
 
-/* ── Sessions (spec 2026-10-07-unidex-sessions §4.5): the Chat tab's place on the rail. The thread list on the left,
-   Vault first; the reader on the right is a fixed-height column: the header, then the timeline and the repository card
-   (which scroll), then the composer at its foot. Vault's reader holds the chat (ChatTab) as it was. ── */
-.aos-ss-split { flex-wrap: wrap; align-items: stretch; }
-.aos-ss-list { flex: 1 1 260px; max-width: 340px; display: flex; flex-direction: column; gap: 2px; }
-.aos-ss-reader {
-  display: flex; flex-direction: column; height: calc(100vh - 165px); max-height: none; min-height: 420px;
-  padding: 16px 20px 14px; overflow: hidden;
-}
-.aos-ss-reader.is-vault { padding: 16px 20px 14px; }
-.aos-ss-vaultchat { flex: 1; min-height: 0; }
-.aos-ss-reader .aos-assistant { height: 100%; padding: 0; box-sizing: border-box; }
-.aos-ss-reader .aos-asst-head { justify-content: flex-start; padding-top: 0; }
-.aos-ss-reader .aos-asst-log { min-height: 0; }
+/* ══ UniDeX sessions: the Claude Code-style tab, its menus and Vault's picker (spec 2026-10-07-sessions-ux) ═══════════
+   The Sessions tab (U1): the list (New session, Vault, each workspace folder with its threads, the day's spend) on the
+   left; the reader fills the rest, as Claude Code shows a session: a bar with the thread, its branch, Review changes and
+   Stop, one centred column for the conversation, the composer and its status line. The composer's menus: host and model
+   (U2, U6, U9), access (U7) and `/` (U8). Vault chat keeps its own composer, with the same chips (U9). Colours come only
+   from the tokens, so both themes follow body.theme-light and body.theme-dark. Buttons use `button.x:not(.clickable-icon)`
+   or `.aos-ss button.x` so they win over compat's base `button:not(.clickable-icon)`. ══ */
 
-/* The list: a row per thread, a dot that lights while its turn runs, its host as a chip. */
-.aos-ss-row {
-  display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; cursor: pointer;
-  color: var(--udx-text);
+/* Host and model menu (U2, U6, U9; ui/HostModelMenu.ts): the chip, and the popover that opens above it. */
+.aos-hm { position: relative; display: inline-flex; min-width: 0; max-width: 100%; }
+.aos-hm-trigger {
+  display: inline-flex; align-items: center; gap: 6px; height: 32px; min-width: 0; max-width: 100%; padding: 0 11px;
+  border: 1px solid transparent; border-radius: 999px; background: transparent; box-shadow: none;
+  font-family: var(--udx-sans); font-size: 12.5px; font-weight: 400; color: var(--udx-text-2); cursor: pointer; white-space: nowrap;
 }
-.aos-ss-row:hover, .aos-ss-row:focus-visible { background: var(--udx-raised); outline: none; }
-.aos-ss-row.is-selected { background: var(--udx-raised-2); }
-.aos-ss-dot { flex: none; width: 8px; height: 8px; border-radius: 999px; background: transparent; }
-.aos-ss-row.is-running .aos-ss-dot { background: var(--udx-ok-dot); box-shadow: 0 0 0 3px var(--udx-ok-bg); }
-.aos-ss-vault .aos-ss-dot { background: var(--udx-info-dot); }
-.aos-ss-name { flex: 1; min-width: 0; }
-.aos-ss-title { font-size: 13.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.aos-ss-meta { font-size: 12px; color: var(--udx-text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.aos-ss-group { margin-top: 10px; }
-.aos-ss-ws {
-  padding: 4px 10px; font-family: var(--udx-sans); font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
+button.aos-hm-trigger:not(.clickable-icon) { background: transparent; border-color: transparent; }
+button.aos-hm-trigger:not(.clickable-icon):hover:not(:disabled) { background: var(--udx-raised); }
+button.aos-hm-trigger.is-open:not(.clickable-icon) { border-color: var(--udx-focus); background: var(--udx-bg); }
+.aos-hm-trigger:focus-visible { outline: 2px solid var(--udx-focus); outline-offset: 1px; }
+.aos-hm-chiphost { color: var(--udx-text); font-weight: 500; }
+.aos-hm-chiprest { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.aos-hm-chev, .aos-hm-lockicon, .aos-hm-searchicon, .aos-hm-check { flex: none; display: inline-flex; align-items: center; }
+.aos-hm-chev svg { width: 12px; height: 12px; }
+.aos-hm-lockicon svg, .aos-hm-searchicon svg { width: 13px; height: 13px; }
+.aos-hm-check svg { width: 16px; height: 16px; }
+.aos-hm-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--udx-line-2); }
+.aos-hm-dot.is-claude { background: var(--udx-info); }
+.aos-hm-dot.is-codex { background: var(--udx-gate); }
+.aos-hm-lockicon { color: var(--udx-text-2); }
+.aos-hm-lockicon.is-claude { color: var(--udx-info); }
+.aos-hm-lockicon.is-codex { color: var(--udx-gate); }
+
+.aos-hm-pop {
+  position: absolute; right: 0; bottom: calc(100% + 8px); z-index: 30; width: min(420px, calc(100vw - 32px));
+  box-sizing: border-box; padding: 8px; display: flex; flex-direction: column; gap: 6px;
+  border: 1px solid var(--udx-line-2); border-radius: 14px; background: var(--udx-bg); box-shadow: var(--udx-shadow);
+  color: var(--udx-text); font-family: var(--udx-sans); font-size: 13px; line-height: 1.4; text-align: left; white-space: normal;
+}
+.aos-hm-pop button { font-family: var(--udx-sans); }
+.aos-hm-pop button:focus-visible, .aos-hm-pop input:focus-visible { outline: 2px solid var(--udx-focus); outline-offset: 1px; }
+
+.aos-hm-hosts { display: flex; gap: 2px; padding: 3px; border-radius: 10px; background: var(--udx-raised); }
+button.aos-hm-host:not(.clickable-icon) {
+  flex: 1; display: flex; align-items: center; justify-content: center; gap: 7px; height: 32px; padding: 0 8px;
+  border: 0; border-radius: 8px; background: transparent; color: var(--udx-text-2); font-size: 13px; font-weight: 500;
+}
+button.aos-hm-host:not(.clickable-icon):hover:not(:disabled) { background: var(--udx-raised-2); color: var(--udx-text); }
+button.aos-hm-host.is-active:not(.clickable-icon), button.aos-hm-host.is-active:not(.clickable-icon):hover:not(:disabled) {
+  background: var(--udx-bg); color: var(--udx-text); box-shadow: 0 1px 2px var(--udx-scrim);
+}
+button.aos-hm-host:disabled { color: var(--udx-text-3); opacity: 0.5; cursor: not-allowed; }
+.aos-hm-offline { padding: 2px 8px; font-size: 12px; color: var(--udx-text-3); }
+.aos-hm-nohost { padding: 18px 12px; font-size: 13px; color: var(--udx-text-2); }
+
+.aos-hm-lock { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 9px; background: var(--udx-raised); font-size: 12.5px; }
+.aos-hm-locktext { flex: 1; min-width: 0; color: var(--udx-text-3); }
+.aos-hm-lockhost { font-weight: 500; color: var(--udx-text); }
+button.aos-hm-newon:not(.clickable-icon) { height: auto; padding: 2px 4px; border: 0; background: transparent; color: var(--udx-info); font-size: 12px; font-weight: 500; }
+button.aos-hm-newon:not(.clickable-icon):hover:not(:disabled) { background: transparent; color: var(--udx-text); text-decoration: underline; }
+
+.aos-hm-searchbox { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--udx-line); border-radius: 8px; color: var(--udx-text-3); cursor: text; }
+.aos-hm-searchbox:focus-within { border-color: var(--udx-focus); }
+.aos-hm-pop input.aos-hm-search { flex: 1; min-width: 0; height: auto; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; font-size: 13px; color: var(--udx-text); outline: none; }
+.aos-hm-pop input.aos-hm-search:focus-visible { outline: none; }
+
+.aos-hm-modelwrap { max-height: 240px; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; }
+.aos-hm-models { display: flex; flex-direction: column; gap: 1px; }
+button.aos-hm-model:not(.clickable-icon) {
+  display: flex; align-items: flex-start; gap: 10px; width: 100%; height: auto; padding: 6px 10px;
+  border: 0; border-radius: 8px; background: transparent; text-align: left; white-space: normal; font-weight: 400; color: var(--udx-text);
+}
+button.aos-hm-model:not(.clickable-icon):hover:not(:disabled), button.aos-hm-model.is-selected:not(.clickable-icon) { background: var(--udx-raised); }
+.aos-hm-modeltext { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.aos-hm-modelname { font-size: 13.5px; font-weight: 500; overflow-wrap: anywhere; }
+.aos-hm-model.is-custom .aos-hm-modelname { font-family: var(--udx-mono); font-size: 12.5px; }
+.aos-hm-modeldesc { font-size: 12px; color: var(--udx-text-3); }
+.aos-hm-check { margin-top: 2px; color: var(--udx-text); }
+.aos-hm-empty { padding: 10px; font-size: 12.5px; color: var(--udx-text-3); }
+button.aos-hm-older:not(.clickable-icon) {
+  display: flex; align-items: center; justify-content: space-between; width: 100%; height: auto; padding: 7px 10px;
+  border: 0; border-radius: 8px; background: transparent; text-align: left; font-size: 12.5px; font-weight: 400; color: var(--udx-text-2);
+}
+button.aos-hm-older:not(.clickable-icon):hover:not(:disabled) { background: var(--udx-raised); }
+
+.aos-hm-effortbox { padding: 8px 10px 4px; border-top: 1px solid var(--udx-line); }
+.aos-hm-efforthead { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 6px; font-size: 12px; color: var(--udx-text-3); }
+.aos-hm-efforttitle { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+.aos-hm-efforts { display: flex; flex-wrap: wrap; gap: 4px; }
+button.aos-hm-effort:not(.clickable-icon) { height: auto; padding: 4px 10px; border: 1px solid var(--udx-line-2); border-radius: 999px; background: var(--udx-bg); color: var(--udx-text-2); font-size: 12px; font-weight: 500; }
+button.aos-hm-effort:not(.clickable-icon):hover:not(:disabled) { background: var(--udx-raised); color: var(--udx-text); }
+button.aos-hm-effort.is-active:not(.clickable-icon), button.aos-hm-effort.is-active:not(.clickable-icon):hover:not(:disabled) { border-color: var(--udx-inv); background: var(--udx-inv); color: var(--udx-inv-text); }
+.aos-hm-noeffort { font-size: 12px; color: var(--udx-text-3); }
+
+.aos-hm-foot { padding: 6px 4px 2px 10px; border-top: 1px solid var(--udx-line); }
+.aos-hm-footrow, .aos-hm-customrow { display: flex; align-items: center; gap: 8px; }
+button.aos-hm-custom:not(.clickable-icon) { flex: none; height: auto; padding: 4px 0; border: 0; background: transparent; font-size: 12.5px; font-weight: 400; color: var(--udx-text-2); }
+button.aos-hm-custom:not(.clickable-icon):hover:not(:disabled) { background: transparent; color: var(--udx-text); }
+.aos-hm-source { flex: 1; min-width: 0; text-align: right; font-size: 11.5px; color: var(--udx-text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aos-hm-source.is-short { color: var(--udx-warn); white-space: normal; }
+button.aos-hm-refresh:not(.clickable-icon) { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--udx-text-3); }
+button.aos-hm-refresh:not(.clickable-icon):hover:not(:disabled) { background: var(--udx-raised); color: var(--udx-text); }
+.aos-hm-refresh svg { width: 13px; height: 13px; }
+.aos-hm-refresh.is-busy svg { animation: aos-hm-spin 1s linear infinite; }
+@keyframes aos-hm-spin { to { transform: rotate(360deg); } }
+.aos-hm-pop input.aos-hm-custominput { flex: 1; min-width: 0; padding: 5px 8px; border: 1px solid var(--udx-line-2); border-radius: 7px; background: var(--udx-bg); font-family: var(--udx-mono); font-size: 12px; color: var(--udx-text); }
+.aos-hm-pop input.aos-hm-custominput[aria-invalid="true"] { border-color: var(--udx-danger); }
+button.aos-hm-customuse { flex: none; padding: 5px 10px; border-radius: 7px; font-size: 12px; }
+.aos-hm-customerror { padding: 4px 0 2px; font-size: 12px; color: var(--udx-danger); }
+.aos-hm-caption { padding: 6px 10px 2px; border-top: 1px solid var(--udx-line); font-size: 12px; color: var(--udx-text-3); }
+
+/* Access menu (U7; ui/AccessMenu.ts): the composer's chip and the menu that opens above it. */
+.aos-am { position: relative; display: inline-flex; }
+.aos-am .aos-am-trigger, .aos-am button.aos-am-trigger {
+  display: inline-flex; align-items: center; gap: 6px; height: 32px; box-sizing: border-box; padding: 0 10px;
+  border: 1px solid var(--udx-line); border-radius: 999px; background: transparent; color: var(--udx-text-2);
+  font-family: var(--udx-sans); font-size: 12.5px; font-weight: 500; box-shadow: none;
+}
+.aos-am button.aos-am-trigger:hover:not(:disabled) { background: var(--udx-raised); color: var(--udx-text); }
+.aos-am.is-open button.aos-am-trigger { border-color: var(--udx-focus); background: var(--udx-bg); color: var(--udx-text); }
+.aos-am button.aos-am-trigger:focus-visible { outline: 2px solid var(--udx-focus); outline-offset: 1px; }
+.aos-am .aos-am-trigger.is-fixed { cursor: default; color: var(--udx-text-3); }
+.aos-am-icon, .aos-am-caret { display: inline-flex; }
+.aos-am-icon svg { width: 13px; height: 13px; }
+.aos-am-caret svg { width: 12px; height: 12px; }
+.aos-am-menu {
+  position: absolute; left: 0; bottom: calc(100% + 8px); z-index: 30; width: 470px; max-width: calc(100vw - 48px);
+  box-sizing: border-box; padding: 6px; border: 1px solid var(--udx-line-2); border-radius: 14px;
+  background: var(--udx-bg); box-shadow: var(--udx-shadow); font-family: var(--udx-sans);
+}
+.aos-am-head, .aos-sm-head {
+  padding: 6px 10px 4px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
   color: var(--udx-text-3);
 }
-.aos-ss-host { flex: none; }
-.aos-ss-host.is-claude { color: var(--udx-info); border-color: var(--udx-info-bg); background: var(--udx-info-bg); }
-.aos-ss-host.is-codex { color: var(--udx-gate); border-color: var(--udx-gate-bg); background: var(--udx-gate-bg); }
+.aos-am-menu button.aos-am-item {
+  display: flex; align-items: flex-start; gap: 12px; width: 100%; height: auto; padding: 8px 10px; border: 0;
+  border-radius: 9px; background: transparent; color: var(--udx-text); text-align: left; white-space: normal;
+  font-weight: 400; box-shadow: none;
+}
+.aos-am-menu button.aos-am-item:hover:not(:disabled), .aos-am-menu button.aos-am-item:focus-visible,
+.aos-am-menu button.aos-am-item.is-checked { background: var(--udx-raised); outline: none; }
+.aos-am-menu button.aos-am-item:focus-visible { box-shadow: inset 0 0 0 2px var(--udx-focus); }
+.aos-am-itemicon { flex: none; display: inline-flex; margin-top: 2px; color: var(--udx-text-2); }
+.aos-am-itemicon svg { width: 18px; height: 18px; stroke-width: 1.8; }
+.aos-am-text { flex: 1; min-width: 0; }
+.aos-am-name { display: block; font-size: 14px; font-weight: 500; }
+.aos-am-desc { display: block; font-size: 12.5px; color: var(--udx-text-2); }
+.aos-am-map { display: block; margin-top: 3px; font-family: var(--udx-mono); font-size: 11px; color: var(--udx-text-3); }
+.aos-am-check { flex: none; display: inline-flex; width: 16px; margin-top: 3px; }
+.aos-am-check svg { width: 16px; height: 16px; }
+.aos-am-note { margin: 6px 10px 4px; padding-top: 8px; border-top: 1px solid var(--udx-line); font-size: 12px; color: var(--udx-text-3); }
+
+/* The `/` menu (U8; ui/SlashMenu.ts): the host's commands above the composer, focus kept in the textarea. */
+.aos-sm-anchor { position: relative; }
+.aos-sm-menu {
+  position: absolute; left: 0; right: 0; bottom: calc(100% + 8px); z-index: 30; box-sizing: border-box; padding: 6px;
+  border: 1px solid var(--udx-line-2); border-radius: 14px; background: var(--udx-bg); box-shadow: var(--udx-shadow);
+  font-family: var(--udx-sans);
+}
+.aos-sm-list { max-height: 300px; overflow-y: auto; }
+.aos-sm-menu button.aos-sm-option {
+  display: flex; align-items: baseline; gap: 12px; width: 100%; height: auto; padding: 6px 10px; border: 0;
+  border-radius: 8px; background: transparent; color: var(--udx-text); text-align: left; white-space: normal;
+  font-weight: 400; box-shadow: none;
+}
+.aos-sm-menu button.aos-sm-option:hover:not(:disabled) { background: transparent; }
+.aos-sm-menu button.aos-sm-option.is-selected, .aos-sm-menu button.aos-sm-option.is-selected:hover:not(:disabled) { background: var(--udx-raised); }
+.aos-sm-name {
+  flex: 0 0 190px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--udx-mono); font-size: 13px; font-weight: 500;
+}
+.aos-sm-desc { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; color: var(--udx-text-2); }
+.aos-sm-hint { flex: none; max-width: 30%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--udx-mono); font-size: 11.5px; color: var(--udx-text-3); }
+.aos-sm-empty { padding: 8px 10px; font-size: 12.5px; color: var(--udx-text-2); }
+.aos-sm-foot {
+  display: flex; justify-content: space-between; gap: 12px; margin: 6px 10px 2px; padding-top: 8px;
+  border-top: 1px solid var(--udx-line); font-size: 11.5px; color: var(--udx-text-3);
+}
+.aos-sm-keys { font-family: var(--udx-mono); }
+
+/* The tab takes the whole content pane, edge to edge. */
+.aos-wb-content:has(> .aos-ss) { display: flex; padding: 0; overflow: hidden; }
+.aos-ss { flex: 1; min-width: 0; min-height: 0; display: flex; background: var(--udx-bg); color: var(--udx-text); }
+.aos-ss button { font-family: var(--udx-sans); }
 .aos-ss-note { padding: 8px 10px; font-size: 12.5px; color: var(--udx-text-3); }
-
-/* The reader's header: workspace › title, the host and model, Stop while a turn runs. */
-.aos-ss-head { flex: none; margin-bottom: 10px; }
-.aos-ss-headrow { display: flex; align-items: center; gap: 10px; }
-.aos-ss-crumbs { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 6px; overflow: hidden; }
-.aos-ss-crumb-ws { color: var(--udx-text-3); font-weight: 500; white-space: nowrap; }
-.aos-ss-crumb-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.aos-ss-sep { color: var(--udx-text-3); font-weight: 400; }
-.aos-ss-stop { color: var(--udx-danger); border-color: var(--udx-danger-bg); }
-.aos-ss-model { font-family: var(--udx-mono); font-size: 11.5px; }
-
-/* The timeline: your prompts as bubbles, the agent's text as text, its steps as quiet one-line rows. */
-.aos-ss-scroll { flex: 1; min-height: 0; overflow-y: auto; padding-right: 4px; }
-.aos-ss-timeline { display: flex; flex-direction: column; gap: 10px; padding-bottom: 8px; }
-.aos-ss-prompt { display: flex; justify-content: flex-end; margin-top: 6px; }
-.aos-ss-bubble {
-  max-width: 78%; padding: 9px 14px; border-radius: 18px; background: var(--udx-raised); color: var(--udx-text);
-  font-size: 14px; line-height: 1.5; white-space: pre-wrap; word-break: break-word;
-}
-.aos-ss-text { font-size: 14px; line-height: 1.65; color: var(--udx-text); word-break: break-word; }
-.aos-ss-text p { margin: 0 0 8px; }
-.aos-ss-text code { background: var(--udx-raised); border-radius: 6px; padding: 1px 5px; font-size: 12.5px; }
-.aos-ss-tool { border: 1px solid var(--udx-line); border-radius: 10px; background: var(--udx-bg); font-size: 12.5px; }
-.aos-ss-toolline {
-  padding: 6px 10px; cursor: pointer; font-family: var(--udx-mono); font-size: 12px; color: var(--udx-text-2);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.aos-ss-tool.is-ok .aos-ss-toolline::marker { color: var(--udx-ok); }
-.aos-ss-tool.is-failed { border-color: var(--udx-danger-bg); }
-.aos-ss-tool.is-failed .aos-ss-toolline { color: var(--udx-danger); }
-.aos-ss-toolbody { padding: 0 10px 8px; }
-.aos-ss-toolstate { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; color: var(--udx-text-3); margin: 6px 0 2px; }
-.aos-ss-tool.is-ok .aos-ss-toolstate { color: var(--udx-ok); }
-.aos-ss-tool.is-failed .aos-ss-toolstate { color: var(--udx-danger); }
-.aos-ss-toolin, .aos-ss-toolout, .aos-ss-diff {
-  margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--udx-surface); color: var(--udx-text);
-  font-family: var(--udx-mono); font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word;
-}
-.aos-ss-patch { border: 1px solid var(--udx-line); border-radius: 10px; padding: 8px 10px; font-size: 12.5px; }
-.aos-ss-patchhead { font-weight: 500; margin-bottom: 4px; }
-.aos-ss-patchfile, .aos-ss-file { display: flex; align-items: center; gap: 8px; font-family: var(--udx-mono); font-size: 12px; }
-.aos-ss-change { flex: none; min-width: 62px; color: var(--udx-text-3); font-family: var(--udx-sans); font-size: 11.5px; }
 .aos-ss-error {
   padding: 8px 12px; border-radius: 10px; background: var(--udx-danger-bg); color: var(--udx-danger);
   font-size: 13px; white-space: pre-wrap; word-break: break-word;
 }
-.aos-ss-done { align-self: flex-end; font-family: var(--udx-mono); font-size: 11px; color: var(--udx-text-3); }
-.aos-ss-done.is-failed { color: var(--udx-danger); }
-.aos-ss-working { font-size: 12.5px; color: var(--udx-text-3); }
 
-/* The repository card: what changed, a file's diff, and the commit. */
-.aos-ss-repo {
-  display: flex; flex-direction: column; gap: 8px; margin: 6px 0 10px; padding: 12px 14px;
-  border: 1px solid var(--udx-line); border-radius: 12px; background: var(--udx-surface);
+/* The list: New session, Vault, each workspace folder with its threads, the day's spend. */
+.aos-ss-list {
+  flex: 0 0 248px; max-width: 256px; min-height: 0; box-sizing: border-box; padding: 12px 8px 0; display: flex;
+  flex-direction: column; gap: 2px; background: var(--udx-surface); border-right: 1px solid var(--udx-line);
 }
-.aos-ss-repohead { display: flex; align-items: baseline; gap: 10px; }
+.aos-ss button.aos-ss-newbtn {
+  flex: none; display: flex; align-items: center; gap: 8px; width: 100%; height: auto; margin: 0 0 8px; padding: 8px 10px;
+  border: 1px solid var(--udx-line-2); border-radius: 8px; background: var(--udx-bg); color: var(--udx-text);
+  font-size: 13px; font-weight: 500; text-align: left;
+}
+.aos-ss button.aos-ss-newbtn:hover:not(:disabled) { background: var(--udx-raised); }
+.aos-ss button.aos-ss-newbtn.is-selected { background: var(--udx-raised-2); }
+.aos-ss-newicon, .aos-ss-rowicon, .aos-ss-wsicon { flex: none; display: flex; color: var(--udx-text-2); }
+.aos-ss-newicon svg { width: 15px; height: 15px; }
+.aos-ss-rowicon svg { width: 14px; height: 14px; }
+.aos-ss-wsicon svg { width: 13px; height: 13px; }
+.aos-ss-threads { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; padding-bottom: 8px; }
+.aos-ss-row {
+  display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 8px; cursor: pointer;
+  color: var(--udx-text); font-size: 13px;
+}
+.aos-ss-row:hover { background: var(--udx-raised); }
+.aos-ss-row:focus-visible { outline: 2px solid var(--udx-focus); outline-offset: -2px; }
+.aos-ss-row.is-selected { background: var(--udx-raised-2); }
+.aos-ss-thread { padding-left: 16px; }
+.aos-ss-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 400; }
+.aos-ss-row.is-selected .aos-ss-title { font-weight: 500; }
+.aos-ss-hostdot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--udx-off-dot); }
+.aos-ss-hostdot.is-claude { background: var(--udx-info); }
+.aos-ss-hostdot.is-codex { background: var(--udx-gate); }
+.aos-ss-age { flex: none; font-size: 11.5px; color: var(--udx-text-3); font-variant-numeric: tabular-nums; }
+/* text-3 on raised-2 falls just under 4.5:1 in light theme; step the selected row's age up to text-2. */
+.aos-ss-row.is-selected .aos-ss-age { color: var(--udx-text-2); }
+.aos-ss-runmark { flex: none; font-size: 11.5px; line-height: 1; color: var(--udx-warn); }
+.aos-ss-ws {
+  display: flex; align-items: center; gap: 6px; padding: 12px 10px 4px; font-size: 12.5px; font-weight: 500;
+  color: var(--udx-text-2);
+}
+.aos-ss-wsname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aos-ss-spend { flex: none; margin: 0 -8px; padding: 10px 18px 12px; border-top: 1px solid var(--udx-line); font-size: 12px; color: var(--udx-text-3); }
+.aos-ss-spendline { display: flex; justify-content: space-between; gap: 8px; }
+.aos-ss-spendval { font-family: var(--udx-mono); }
+.aos-ss-spendbar { height: 4px; margin-top: 6px; border-radius: 2px; background: var(--udx-raised-2); overflow: hidden; }
+.aos-ss-spendfill { height: 100%; border-radius: 2px; background: var(--udx-ok-dot); }
+.aos-ss-spend.is-high .aos-ss-spendfill { background: var(--udx-warn-dot); }
+.aos-ss-spend.is-over .aos-ss-spendfill { background: var(--udx-danger-dot); }
+
+/* The reader: the bar, the conversation (with the review drawer over it), the composer. Vault holds ChatTab. */
+.aos-ss-reader { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--udx-bg); overflow: hidden; }
+.aos-ss-reader.is-vault { padding: 16px 24px 14px; }
+/* ChatTab draws into .aos-ss-vaultchat itself (it adds .aos-assistant there): one centred column, as the threads have. */
+.aos-ss-vaultchat.aos-assistant { flex: 1; min-height: 0; width: 100%; height: auto; max-width: 760px; margin: 0 auto; padding: 0; box-sizing: border-box; }
+.aos-ss-vaultchat .aos-asst-head { justify-content: flex-start; padding-top: 0; }
+.aos-ss-vaultchat .aos-asst-log { min-height: 0; }
+.aos-ss-top {
+  flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; min-height: 52px; box-sizing: border-box;
+  margin: 0; padding: 10px 20px; border-bottom: 1px solid var(--udx-line);
+}
+.aos-ss-top .aos-reader-title { font-size: 14px; font-weight: 600; letter-spacing: 0; }
+.aos-ss-crumbs { flex: 1; min-width: 200px; display: flex; align-items: baseline; gap: 6px; overflow: hidden; font-size: 13.5px; }
+.aos-ss-crumb-ws, .aos-ss-sep { color: var(--udx-text-3); white-space: nowrap; }
+.aos-ss-crumb-title { min-width: 0; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aos-ss-topbranch {
+  display: inline-flex; align-items: center; gap: 5px; max-width: 220px; padding: 3px 9px; border: 1px solid var(--udx-line);
+  border-radius: 7px; font-family: var(--udx-mono); font-size: 12px; color: var(--udx-text-2);
+}
+.aos-ss-topbranchicon { flex: none; display: flex; }
+.aos-ss-topbranchicon svg { width: 12px; height: 12px; }
+.aos-ss-topbranchname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aos-ss button.aos-ss-reviewbtn, .aos-ss button.aos-ss-stop {
+  display: inline-flex; align-items: center; gap: 6px; height: auto; margin: 0; padding: 5px 11px;
+  border: 1px solid var(--udx-line-2); border-radius: 8px; background: var(--udx-bg); color: var(--udx-text); font-size: 12.5px;
+}
+.aos-ss button.aos-ss-reviewbtn { font-weight: 500; }
+.aos-ss button.aos-ss-stop { font-weight: 400; }
+.aos-ss button.aos-ss-reviewbtn:hover:not(:disabled), .aos-ss button.aos-ss-stop:hover:not(:disabled) { background: var(--udx-raised); }
+.aos-ss button.aos-ss-reviewbtn.is-open { background: var(--udx-raised-2); }
+.aos-ss-plus { font-family: var(--udx-mono); color: var(--udx-ok); }
+.aos-ss-minus { font-family: var(--udx-mono); color: var(--udx-danger); }
+.aos-ss-kbd { font-family: var(--udx-mono); color: var(--udx-text-3); }
+
+.aos-ss-body { flex: 1; min-height: 0; display: flex; position: relative; }
+.aos-ss-scroll { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; padding: 20px 24px 8px; }
+.aos-ss-column { max-width: 760px; margin: 0 auto; }
+.aos-ss-timeline { display: flex; flex-direction: column; gap: 14px; padding-bottom: 8px; }
+.aos-ss-prompt { margin-top: 2px; }
+.aos-ss-bubble {
+  padding: 10px 14px; border-radius: 12px; background: var(--udx-raised); color: var(--udx-text);
+  font-size: 14px; line-height: 1.5; white-space: pre-wrap; word-break: break-word;
+}
+.aos-ss-text { font-size: 14px; line-height: 1.6; color: var(--udx-text); word-break: break-word; }
+.aos-ss-text p { margin: 0 0 8px; }
+.aos-ss-text code { background: var(--udx-raised); border-radius: 6px; padding: 1px 5px; font-size: 12.5px; }
+.aos-ss-text > :first-child { margin-top: 0; }
+.aos-ss-text > :last-child { margin-bottom: 0; }
+
+/* Tool calls: `⏺ Verb(target)` and `⎿ result`, mono, opening to the input, the result and the file's diff. */
+.aos-ss-tool, .aos-ss-patch { display: flex; flex-direction: column; gap: 3px; font-family: var(--udx-mono); font-size: 12.5px; line-height: 1.55; }
+.aos-ss-patch { gap: 8px; }
+.aos-ss-patchfile { display: flex; flex-direction: column; gap: 3px; }
+.aos-ss button.aos-ss-toolline {
+  display: flex; align-items: baseline; width: 100%; height: auto; margin: 0; padding: 0; border: none; border-radius: 4px;
+  background: none; color: var(--udx-text); font-family: var(--udx-mono); font-size: 12.5px; font-weight: 400;
+  line-height: 1.55; text-align: left; overflow: hidden; cursor: pointer;
+}
+.aos-ss button.aos-ss-toolline:hover:not(:disabled) { background: none; }
+.aos-ss button.aos-ss-toolline:hover .aos-ss-target { text-decoration: underline; text-underline-offset: 2px; }
+.aos-ss button.aos-ss-toolline:focus-visible { outline: 2px solid var(--udx-focus); outline-offset: 2px; }
+/* The glyphs are decoration: the `/ ""` alt text keeps them out of the accessible name (the first `content` is the fallback). */
+.aos-ss-toolline::before { content: "⏺"; content: "⏺" / ""; flex: none; margin-right: 0.6em; color: var(--udx-text-3); }
+.aos-ss-tool.is-ok > .aos-ss-toolline::before, .aos-ss-patchfile > .aos-ss-toolline::before { color: var(--udx-ok-dot); }
+.aos-ss-tool.is-failed > .aos-ss-toolline::before { color: var(--udx-danger-dot); }
+.aos-ss-tool.is-pending > .aos-ss-toolline::before { animation: aos-ss-blink 1.2s ease-in-out infinite; }
+.aos-ss-verb { flex: none; font-weight: 600; }
+.aos-ss-target { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aos-ss-toolresult { padding-left: 18px; color: var(--udx-text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aos-ss-toolresult::before { content: "⎿  "; content: "⎿  " / ""; white-space: pre; }
+.aos-ss-toolresult.is-failed { color: var(--udx-danger); }
+.aos-ss-toolbody { display: flex; flex-direction: column; gap: 4px; margin: 4px 0 2px 18px; font-family: var(--udx-sans); }
+.aos-ss-toolstate { margin-top: 2px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; color: var(--udx-text-3); }
+.aos-ss-tool.is-ok .aos-ss-toolstate { color: var(--udx-ok); }
+.aos-ss-tool.is-failed .aos-ss-toolstate { color: var(--udx-danger); }
+.aos-ss-toolin, .aos-ss-toolout {
+  max-height: 320px; overflow: auto; margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--udx-surface);
+  color: var(--udx-text); font-family: var(--udx-mono); font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word;
+}
+.aos-ss-diff {
+  display: grid; grid-template-columns: minmax(100%, max-content); margin: 0; padding: 4px 0; max-height: 420px; overflow: auto;
+  border: 1px solid var(--udx-line); border-radius: 8px; background: var(--udx-bg); color: var(--udx-text); white-space: pre;
+  word-break: normal; font-family: var(--udx-mono); font-size: 12px; line-height: 1.5;
+}
+.aos-ss-diffline { display: block; padding: 0 10px; white-space: pre; }
+.aos-ss-diffline.is-add { background: var(--udx-ok-bg); }
+.aos-ss-diffline.is-del { background: var(--udx-danger-bg); }
+.aos-ss-diffline.is-hunk { color: var(--udx-info); }
+.aos-ss-diffline.is-meta { color: var(--udx-text-3); }
+.aos-ss-filediff .aos-ss-note, .aos-ss-diffwrap .aos-ss-note { padding: 4px 0; }
+
+/* The plan, a change of model, the turn's footer, the working line, the new session's intro. */
+.aos-ss-plan { padding: 10px 14px; border: 1px solid var(--udx-line); border-radius: 10px; font-size: 13px; }
+.aos-ss-planhead { margin-bottom: 6px; font-weight: 500; }
+.aos-ss-planlist { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.aos-ss-planitem { display: flex; gap: 8px; }
+.aos-ss-planbox { flex: none; font-family: var(--udx-mono); }
+.aos-ss-planitem.is-done { color: var(--udx-text-3); text-decoration: line-through; }
+.aos-ss-planitem.is-active { font-weight: 500; }
+.aos-ss-sronly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.aos-ss-turnchange { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--udx-text-3); }
+.aos-ss-turnchange::before, .aos-ss-turnchange::after { content: ""; flex: 1; border-top: 1px solid var(--udx-line); }
+.aos-ss-done { font-size: 12px; color: var(--udx-text-3); }
+.aos-ss-done.is-failed { color: var(--udx-danger); }
+.aos-ss-working { font-family: var(--udx-mono); font-size: 12.5px; color: var(--udx-text-2); }
+.aos-ss-working::before { content: "✻"; content: "✻" / ""; display: inline-block; margin-right: 0.5em; color: var(--udx-warn); animation: aos-ss-spin 2.4s linear infinite; }
+@keyframes aos-ss-blink { 50% { opacity: 0.3; } }
+@keyframes aos-ss-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .aos-ss-working::before, .aos-ss-tool.is-pending > .aos-ss-toolline::before, .aos-hm-refresh.is-busy svg { animation: none; }
+}
+.aos-ss-intro { display: flex; flex-direction: column; gap: 6px; max-width: 460px; margin: 12vh auto 0; text-align: center; }
+.aos-ss-introtitle { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+.aos-ss-introtext { font-size: 13.5px; line-height: 1.5; color: var(--udx-text-2); }
+
+/* Review changes: the repository card in a drawer over the conversation. */
+.aos-ss-drawer {
+  display: none; position: absolute; top: 0; right: 0; bottom: 0; z-index: 5; width: min(480px, 100%); box-sizing: border-box;
+  flex-direction: column; background: var(--udx-bg); border-left: 1px solid var(--udx-line); box-shadow: var(--udx-shadow);
+}
+.aos-ss-drawer.is-open { display: flex; }
+.aos-ss-drawerhead { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px 10px 16px; border-bottom: 1px solid var(--udx-line); }
+.aos-ss-drawertitle { font-size: 13.5px; font-weight: 600; }
+.aos-ss button.aos-ss-drawerclose {
+  display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: none;
+  border-radius: 6px; background: transparent; color: var(--udx-text-2);
+}
+.aos-ss button.aos-ss-drawerclose:hover:not(:disabled) { background: var(--udx-raised); color: var(--udx-text); }
+.aos-ss-drawerclose svg { width: 16px; height: 16px; }
+.aos-ss-drawerbody { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 16px 16px; }
+.aos-ss-repo { display: flex; flex-direction: column; gap: 8px; }
+.aos-ss-repohead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; }
 .aos-ss-reposum { font-size: 13.5px; font-weight: 500; }
 .aos-ss-branch { font-family: var(--udx-mono); font-size: 11.5px; color: var(--udx-text-3); }
-.aos-ss-files { display: flex; flex-direction: column; gap: 4px; }
-.aos-ss-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.aos-ss-file .aos-ws-action { margin-left: 0; }
-.aos-ss-file.is-open .aos-ss-path { color: var(--udx-info); }
-.aos-ss-diffwrap { max-height: 340px; overflow: auto; }
-.aos-ss-commit { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.aos-ss-message, .aos-ss-modelinput {
-  flex: 1; min-width: 160px; padding: 5px 10px; border: 1px solid var(--udx-line-2); border-radius: 8px;
-  background: var(--udx-field); color: var(--udx-text); font-family: var(--udx-sans); font-size: 13px;
-}
-.aos-ss-message:focus, .aos-ss-modelinput:focus { border-color: var(--udx-focus); outline: none; }
-.aos-ss-commit .mod-cta, .aos-ss-send { border-radius: 999px; padding: 6px 14px; }
+.aos-ss-counts { flex: none; display: inline-flex; gap: 6px; font-family: var(--udx-mono); font-size: 11.5px; }
+.aos-ss-counts.is-binary { color: var(--udx-text-3); }
 .aos-ss-commitresult { font-size: 12.5px; }
 .aos-ss-commitresult.is-ok { color: var(--udx-ok); }
 .aos-ss-commitresult.is-failed { color: var(--udx-danger); }
+.aos-ss-files { display: flex; flex-direction: column; gap: 4px; }
+.aos-ss-file { display: flex; align-items: center; gap: 8px; font-family: var(--udx-mono); font-size: 12px; }
+.aos-ss-change { flex: none; min-width: 62px; color: var(--udx-text-3); font-family: var(--udx-sans); font-size: 11.5px; }
+.aos-ss-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aos-ss-file .aos-ws-action { margin-left: 0; }
+.aos-ss-file.is-open .aos-ss-path { color: var(--udx-info); }
+.aos-ss-commit { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.aos-ss input.aos-ss-message {
+  flex: 1; min-width: 160px; padding: 5px 10px; border: 1px solid var(--udx-line-2); border-radius: 8px;
+  background: var(--udx-field); color: var(--udx-text); font-family: var(--udx-sans); font-size: 13px;
+}
+.aos-ss input.aos-ss-message:focus { border-color: var(--udx-focus); outline: none; }
+.aos-ss-commit .mod-cta { border-radius: 999px; padding: 6px 14px; }
 
-/* The composer at the reader's foot. */
-.aos-ss-composer-wrap { flex: none; padding-top: 8px; }
+/* The composer and its status line, in the conversation's column. z-index keeps its menus above the drawer. */
+.aos-ss-composer-wrap { flex: none; position: relative; z-index: 6; padding: 12px 24px 14px; }
 .aos-ss-composer {
-  padding: 10px 12px 10px 14px; border: 1px solid var(--udx-line-2); border-radius: 16px; background: var(--udx-bg);
-  box-shadow: var(--udx-shadow);
+  position: relative; padding: 12px 12px 8px 16px; border: 1px solid var(--udx-line-2); border-radius: 18px;
+  background: var(--udx-bg); box-shadow: var(--udx-shadow);
 }
-.aos-ss-opts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; }
-.aos-ss-hosts { display: flex; gap: 6px; }
-.aos-ss-hostchip:disabled { opacity: 0.45; cursor: not-allowed; }
-.aos-ss-input {
-  width: 100%; border: none; background: transparent; color: var(--udx-text); padding: 0; resize: none;
-  font-family: var(--udx-sans); font-size: 14px; line-height: 1.5;
+.aos-ss .aos-ss-input {
+  display: block; width: 100%; min-height: 42px; max-height: 240px; box-sizing: border-box; field-sizing: content;
+  padding: 0; border: none; border-radius: 0; background: transparent; color: var(--udx-text); font-family: var(--udx-sans);
+  font-size: 14px; line-height: 1.5; resize: none;
 }
-.aos-ss-input:focus { outline: none; }
-.aos-ss-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 6px; }
-.aos-ss-allow { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--udx-text-2); }
-.aos-ss-sandbox { font-size: 12.5px; color: var(--udx-text-3); }
-.aos-ss-composererror { flex-basis: 100%; order: 3; font-size: 12.5px; color: var(--udx-danger); }
-.aos-ss-send { margin-left: auto; }
+.aos-ss .aos-ss-input:focus { border: none; outline: none; }
+.aos-ss .aos-ss-input:disabled { opacity: 0.6; }
+.aos-ss-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
+.aos-ss-spacer { flex: 1; }
+.aos-ss-wschip {
+  display: inline-flex; align-items: center; gap: 4px; height: 32px; box-sizing: border-box; padding: 0 2px 0 10px;
+  border: 1px solid var(--udx-line); border-radius: 999px; color: var(--udx-text-2); font-size: 12.5px; cursor: pointer;
+}
+.aos-ss-wschip:focus-within { border-color: var(--udx-focus); }
+.aos-ss-wschipicon { flex: none; display: flex; }
+.aos-ss-wschipicon svg { width: 13px; height: 13px; }
+.aos-ss-wschip select.aos-ss-workspace {
+  height: 30px; max-width: 200px; padding: 0 24px 0 2px; border: none; background-color: transparent; color: var(--udx-text);
+  font-family: var(--udx-sans); font-size: 12.5px;
+}
+.aos-ss-wschip select.aos-ss-workspace:focus { border: none; outline: none; }
+.aos-ss-noworkspace { padding: 0 6px; }
+.aos-ss button.aos-ss-send {
+  flex: none; display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; margin: 0; padding: 0;
+  border: none; border-radius: 50%; background: var(--udx-inv); color: var(--udx-inv-text);
+}
+.aos-ss button.aos-ss-send:hover:not(:disabled) { background: var(--udx-inv-hover); }
+.aos-ss button.aos-ss-send:disabled { opacity: 0.35; }
+.aos-ss button.aos-ss-send.is-busy { opacity: 0.6; cursor: progress; }
+.aos-ss button.aos-ss-send:focus-visible { outline: 2px solid var(--udx-focus); outline-offset: 2px; }
+.aos-ss-send svg { width: 16px; height: 16px; stroke-width: 2.2; }
+.aos-ss-composererror { margin: 6px 6px 0; font-size: 12.5px; color: var(--udx-danger); }
+.aos-ss-composererror:empty { display: none; }
+.aos-ss-statusline {
+  display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 8px 6px 0; font-family: var(--udx-mono); font-size: 11.5px;
+  color: var(--udx-text-3);
+}
+.aos-ss-statusline:empty { display: none; }
+
+/* Narrow: the list above the reader. */
+@media (max-width: 760px) {
+  .aos-ss { flex-direction: column; }
+  .aos-ss-list { flex: none; max-width: none; max-height: 38vh; border-right: none; border-bottom: 1px solid var(--udx-line); }
+  .aos-ss-scroll, .aos-ss-composer-wrap { padding-left: 16px; padding-right: 16px; }
+  .aos-ss-top { padding: 10px 16px; }
+}
+
+/* Vault chat's composer (U9, canvas ChosenVault): Read only, the host and model chip, Send; the spend under it. */
+.aos-ss-vaultchat .aos-asst-composer { padding: 12px 12px 8px 16px; border-radius: 18px; }
+.aos-asst-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
+.aos-asst-tools { flex: 1 1 auto; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.aos-asst-spacer { flex: 1 1 auto; }
+.aos-asst-bar .aos-asst-actions { margin-top: 0; }
+.aos-asst-foot {
+  display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 8px 6px 0;
+  font-family: var(--udx-mono); font-size: 11.5px; color: var(--udx-text-3);
+}

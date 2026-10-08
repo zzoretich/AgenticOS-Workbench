@@ -1,7 +1,8 @@
 // Chat with its write surface on (AOS_APP_WRITE=chat). Chat writes two files itself: every turn goes into the chat log
 // (brain/_index/agentic-os-chat.jsonl, which the tab reads and rewrites whole), and a billed headless Claude call adds a
 // row to the spend ledger (brain/_index/provider-spend.jsonl). It runs recall-cli.js and `claude -p` on the Claude
-// route, or ask.js --local on the other one (claudeAsk.ts chatRoute). No model is ever called: `claude` and `codex` are
+// route, or ask.js --local on the other one (claudeAsk.ts chatRoute); when a host is ready for Vault, its host and
+// model menu picks the question's host, model and effort instead (SE13). No model is ever called: `claude` and `codex` are
 // stubs that record their calls (harness installChatStubs), and the vault's Ollama is a stub server on a random port
 // that answers only the Chat question. The provider is forced to that Ollama, as on a machine where Ollama is up, and
 // each test puts the login caches the runtime publishes in provider-state.json (Claude's decides the route).
@@ -12,9 +13,10 @@ import * as fs from "node:fs";
 import * as http from "node:http";
 import type { AddressInfo } from "node:net";
 import * as path from "node:path";
+import { buildAskArgs } from "../../../obsidian-plugin/src/data/askSpawner";
 import { buildClaudeArgs, composePrompt, SPEND_LEDGER_PATH } from "../../../obsidian-plugin/src/data/claudeAsk";
 import {
-  CLAUDE_ANSWER, CODEX_ANSWER, FX, appEnv, chatReply, claudeCalls, codexCalls, content, expectNoErrors, guardWrites, installChatStubs,
+  CLAUDE_ANSWER, CODEX_ANSWER, FX, USER_DATA, appEnv, chatReply, claudeCalls, codexCalls, content, expectNoErrors, guardWrites, installChatStubs,
   openTab, providerState, useApp,
 } from "./harness";
 
@@ -104,6 +106,11 @@ async function reopen(win: Page): Promise<void> {
   await openTab(win, "chat");
 }
 
+/** The HUD's saved settings: the app keeps the plugin's data.json as <userData>/plugins/agentic-os.json. */
+function savedSettings(): Record<string, any> {
+  try { return JSON.parse(fs.readFileSync(path.join(USER_DATA, "plugins", "agentic-os.json"), "utf8")) as Record<string, any>; } catch { return {}; }
+}
+
 test.beforeEach(async () => { await openTab(app().win, "chat"); });
 
 test.afterEach(async () => {
@@ -125,7 +132,7 @@ test("Chat is the one surface on: the status bar names it and what it may write 
 
 test("claude (CH4): recall, then one capped headless call; the answer with its cost, two log lines and one spend row", async () => {
   const { win } = app();
-  await expect(mode(win)).toHaveText(" · claude (claude-opus-5, capped)");
+  await expect(mode(win)).toHaveText(" · Claude Code (claude-opus-5, capped)");
   const log0 = read(CHAT_LOG), ledger0 = read(LEDGER), calls0 = claudeCalls().length, t0 = Date.now();
   const q = "What comes first on the harbor map?";
   await ask(win, q);
@@ -327,4 +334,136 @@ test("with only Chat on, other surfaces stay refused: a To-Do tick cannot write 
   await expect.poll(() => guardWrites(h)).toEqual(["write TODO.md"]);
   expect(fs.readFileSync(FX.v("TODO.md"), "utf8")).toBe(before);
   await h.win.evaluate(() => { (window as unknown as { aosHost: { guard: { log: unknown[] } } }).aosHost.guard.log.length = 0; });
+});
+
+// ── Vault chat's host and model menu (spec 2026-10-07-sessions-ux U9) ──
+
+test("SE13 Vault chat's picker: a fixed Read only chip; a question on Claude passes --model and --effort to claude -p, one on Codex runs ask.js on that host with its model and effort", async () => {
+  test.setTimeout(150_000);
+  const { win } = app();
+  // Codex as a Vault host too: on in agenticos.json, with a login on record. Put back at the end.
+  const agenticos = path.join(FX.claude, "agenticos.json");
+  const saved = fs.readFileSync(agenticos, "utf8");
+  const cfg = JSON.parse(saved) as { hosts: { codex: { enabled: boolean } } };
+  cfg.hosts.codex.enabled = true;
+  fs.writeFileSync(agenticos, `${JSON.stringify(cfg, null, 2)}\n`);
+  providerState("ollama", { claude: true, codex: true });
+  const tools = C(win).locator(".aos-asst-composer .aos-asst-bar .aos-asst-tools");
+  const menu = tools.locator('.aos-hm[data-mode="vault"]');
+  const chip = menu.locator(".aos-hm-trigger");
+  const pop = menu.locator(".aos-hm-pop");
+  const ids = (sel: string, attr: string) => pop.locator(sel).evaluateAll((els, a) => els.map((e) => e.getAttribute(a)), attr);
+  const close = async () => {
+    await pop.locator(".aos-hm-search").press("Escape");
+    await expect(pop).toHaveCount(0);
+    await expect(chip).toBeFocused();
+  };
+  try {
+    await reopen(win);
+    // Read only, fixed: a Vault question never changes files, so there is no menu to open.
+    const fixed = tools.locator('.aos-am[data-access="read"] .aos-am-trigger');
+    await expect(fixed).toHaveClass(/is-fixed/);
+    await expect(fixed).toHaveText("Read only");
+    await expect(fixed).toHaveAttribute("title", "Vault questions never change files");
+    await expect(tools.locator("button.aos-am-trigger")).toHaveCount(0);
+    await expect(C(win).locator(".aos-asst-actions button")).toHaveText("Send (⌘↵)");
+    await expect(C(win).locator(".aos-asst-foot")).toContainText("Each question can use any host");
+    await expect(C(win).locator(".aos-asst-foot .aos-asst-spend")).toHaveText(/^Vault today \$\d+\.\d{2,4} of \$\d+(\.\d+)? \(reasoner cap\)$/);
+    await expect(chip.locator(".aos-hm-chiphost")).toHaveText("Claude Code");
+    await expect(chip.locator(".aos-hm-chiprest")).toHaveText("· Default · Medium");
+    await expect(mode(win)).toHaveText(" · Claude Code (claude-opus-5, capped)");
+
+    // Claude: Sonnet at High. With only Chat on, the menu offers the aliases, and says why its list is short.
+    await chip.click();
+    await expect(pop.locator(".aos-hm-host")).toHaveText(["Claude Code", "Codex"]);
+    await expect(pop.locator(".aos-hm-source")).toHaveText("Only the aliases: the hosts' own lists are not available");
+    await expect(pop.locator(".aos-hm-caption")).toHaveText("Each question can use any host");
+    expect(await ids(".aos-hm-model", "data-model")).toEqual(["default", "opus", "fable", "sonnet", "haiku"]);
+    await pop.locator('.aos-hm-model[data-model="sonnet"]').click();
+    await expect.poll(() => ids(".aos-hm-effort", "data-effort")).toEqual(["low", "medium", "high", "xhigh", "max"]);
+    await pop.locator('.aos-hm-effort[data-effort="high"]').click();
+    await close();
+    await expect(chip.locator(".aos-hm-chiprest")).toHaveText("· Sonnet · High");
+    await expect(mode(win)).toHaveText(" · Claude Code (Sonnet, capped)");
+    // The pick is saved (U12): the host, and that host's model and effort. Back on the tab, the chip keeps it.
+    await expect.poll(() => savedSettings().vaultChoice).toMatchObject({ host: "claude", models: { claude: "sonnet" }, efforts: { claude: "high" } });
+    await reopen(win);
+    await expect(chip.locator(".aos-hm-chiphost")).toHaveText("Claude Code");
+    await expect(chip.locator(".aos-hm-chiprest")).toHaveText("· Sonnet · High");
+    await expect(mode(win)).toHaveText(" · Claude Code (Sonnet, capped)");
+
+    const log0 = read(CHAT_LOG), ledger0 = read(LEDGER), claude0 = claudeCalls().length, codex0 = codexCalls().length;
+    const q = "Which tide tables come first?";
+    chatReply({ delayMs: 1500 });
+    await ask(win, q);
+    await expect(chip).toBeDisabled();   // no other pick while a question runs
+    await newTurns(log0);
+    chatReply(null);
+    await expect(chip).toBeEnabled();
+    const calls = claudeCalls().slice(claude0);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].argv).toEqual(buildClaudeArgs({ prompt: composePrompt(q, recall(q)), model: "sonnet", maxBudgetUsd: 0.5, effort: "high" }));
+    expect(codexCalls()).toHaveLength(codex0);
+    const rows = linesAfter(LEDGER, ledger0);
+    expect(rows).toHaveLength(1);
+    expect(JSON.parse(rows[0])).toMatchObject({ feature: "reason:chat", provider: "claude", model: "sonnet" });
+
+    // Codex: its own default first, then a model id typed in, at High; the levels are the ones ask.js passes on.
+    await chip.click();
+    await pop.locator('.aos-hm-host[data-host="codex"]').click();
+    await expect(pop.locator('.aos-hm-host[data-host="codex"]')).toHaveAttribute("aria-pressed", "true");
+    await expect(mode(win)).toHaveText(" · Codex via ask.js (Codex default, reasoner caps)");
+    await expect(pop.locator(".aos-hm-efforttitle")).toHaveText("Reasoning");
+    expect(await ids(".aos-hm-effort", "data-effort")).toEqual(["minimal", "low", "medium", "high", "xhigh"]);
+    await pop.locator(".aos-hm-custom").click();
+    await pop.locator("input.aos-hm-custominput").fill("gpt-tide-3");
+    await pop.locator(".aos-hm-customuse").click();
+    await expect(pop.locator('.aos-hm-model.is-custom[data-model="gpt-tide-3"]')).toHaveAttribute("aria-selected", "true");
+    await pop.locator('.aos-hm-effort[data-effort="high"]').click();
+    await close();
+    await expect(chip.locator(".aos-hm-chiphost")).toHaveText("Codex");
+    await expect(chip.locator(".aos-hm-chiprest")).toHaveText("· gpt-tide-3 · High");
+    await expect(mode(win)).toHaveText(" · Codex via ask.js (gpt-tide-3, reasoner caps)");
+    await expect.poll(() => savedSettings().vaultChoice).toMatchObject({
+      host: "codex", models: { claude: "sonnet", codex: "gpt-tide-3" }, efforts: { claude: "high", codex: "high" },
+    });
+    await reopen(win);
+    await expect(chip.locator(".aos-hm-chiphost")).toHaveText("Codex");
+    await expect(chip.locator(".aos-hm-chiprest")).toHaveText("· gpt-tide-3 · High");
+
+    const log1 = read(CHAT_LOG), ledger1 = read(LEDGER), asks1 = ollama.asks.length, claude1 = claudeCalls().length, codex1 = codexCalls().length, t1 = Date.now();
+    const q2 = "What is next on the harbour chart?";
+    await ask(win, q2);
+    const [ql, al] = await newTurns(log1);
+    expectQuestion(ql, q2, t1);
+    expect(JSON.parse(al)).toMatchObject({ role: "assistant", text: CODEX_ANSWER.text });
+    // The tab's spawn (askSpawner.ts), which the chat surface admitted (afterEach: no refused spawn): ask.js on Codex
+    // only, the model and the effort as single arguments.
+    expect(buildAskArgs({ question: q2, host: "codex", model: "gpt-tide-3", effort: "high" })).toEqual(["brain/scripts/sdk/ask.js", "--local", "--host=codex", "--model=gpt-tide-3", "--effort=high", q2]);
+    // It reached `codex exec` with both, and Claude, logged in and first in the reasoner's order, was never asked.
+    const cx = codexCalls().slice(codex1);
+    expect(cx).toHaveLength(1);
+    expect(cx[0].argv.slice(0, 9)).toEqual(["exec", "--ephemeral", "--skip-git-repo-check", "-s", "read-only", "-c", "features.hooks=false", "--json", "-o"]);
+    expect(cx[0].argv.slice(cx[0].argv.indexOf("-m"), cx[0].argv.indexOf("-m") + 2)).toEqual(["-m", "gpt-tide-3"]);
+    expect(cx[0].argv).toContain('model_reasoning_effort="high"');
+    expect(cx[0].stdin.endsWith(q2)).toBe(true);
+    expect(claudeCalls()).toHaveLength(claude1);
+    expect(ollama.asks).toHaveLength(asks1);
+    const rows2 = linesAfter(LEDGER, ledger1);
+    expect(rows2).toHaveLength(1);
+    expect(JSON.parse(rows2[0])).toMatchObject({ feature: "reason:ask", provider: "codex" });
+    await expect(turns(win).last().locator(".aos-asst-body strong")).toHaveText("next");
+
+    // Back to Claude Code: the switch starts from Claude's remembered Sonnet at High. Then its default, where the
+    // other tests start.
+    await chip.click();
+    await pop.locator('.aos-hm-host[data-host="claude"]').click();
+    await expect(chip.locator(".aos-hm-chiprest")).toHaveText("· Sonnet · High");
+    await pop.locator('.aos-hm-model[data-model="default"]').click();
+    await pop.locator('.aos-hm-effort[data-effort="medium"]').click();
+    await close();
+    await expect(chip.locator(".aos-hm-chiprest")).toHaveText("· Default · Medium");
+  } finally {
+    fs.writeFileSync(agenticos, saved);
+  }
 });
