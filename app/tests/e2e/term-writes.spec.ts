@@ -19,7 +19,7 @@ test.afterAll(() => {
   for (const w of ["scratch", "tide-chart"]) fs.rmSync(FX.v(`workspaces/${w}`), { recursive: true, force: true });
 });
 
-test("⌘T with nothing picked starts Claude Code in Scratch, made on first use with its stubs (T2, T4, T5, T10)", async () => {
+test("⌘T with nothing picked starts Claude Code in the vault, and makes no Scratch (T2, T4, T5)", async () => {
   const { win } = app();
   await openTab(win, "pulse");
   await win.keyboard.press("Meta+t");
@@ -27,12 +27,27 @@ test("⌘T with nothing picked starts Claude Code in Scratch, made on first use 
   await expect.poll(() => terminalText(win), { timeout: 10_000 }).toContain("[fixture claude stub] --session-id");
   const { selected } = await pool();
   expect(selected?.meta.host).toBe("claude");
-  expect(selected?.meta.place?.kind).toBe("scratch");
-  expect(selected?.cwd).toBe(FX.v("workspaces/scratch"));
+  expect(selected?.meta.place?.kind).toBe("vault");
+  expect(selected?.cwd).toBe(FX.vault);
+  expect(fs.existsSync(FX.v("workspaces/scratch"))).toBe(false);
+  await expect(C().locator(".aos-term-started")).toContainText("Started Claude Code in Vault");
+  await expect(C().locator(".aos-term-tab.aos-term-tab-active")).toHaveAttribute("data-host", "claude");
+});
+
+test("Scratch, picked in the New menu, is made on first use with its stubs; a Scratch terminal does not pull ⌘T into Scratch (T4, T10)", async () => {
+  const { win } = app();
+  await openTab(win, "term");
+  await C().locator(".aos-ntm-caret").click();
+  await C().locator(".aos-ntm-row[data-key='scratch']").click();
+  await expect.poll(async () => (await pool()).selected?.meta.place?.kind, { timeout: 10_000 }).toBe("scratch");
+  expect((await pool()).selected?.cwd).toBe(FX.v("workspaces/scratch"));
   expect(fs.readFileSync(FX.v("workspaces/scratch/README.md"), "utf8")).toMatch(/^# Scratch/);
   expect(fs.readFileSync(FX.v("workspaces/scratch/CLAUDE.md"), "utf8")).toBe(fs.readFileSync(FX.v("workspaces/scratch/AGENTS.md"), "utf8"));
-  await expect(C().locator(".aos-term-started")).toContainText("Started Claude Code in Scratch");
-  await expect(C().locator(".aos-term-tab.aos-term-tab-active")).toHaveAttribute("data-host", "claude");
+  // With that Scratch terminal selected, ⌘T still starts in the vault: Scratch is never what you are "looking at".
+  const before = (await pool()).count;
+  expect(await command(win, "agentic-os:new-terminal")).toBe(true);
+  await expect.poll(async () => (await pool()).count).toBe(before + 1);
+  expect((await pool()).selected?.meta.place?.kind).toBe("vault");
 });
 
 test("the New button names what ⌘T starts and where; Codex is off, so it has no row and no ⌥⌘2 (T2, T3)", async () => {

@@ -38,7 +38,7 @@ export interface Launched {
   why: PlaceWhy;
 }
 
-/** What the panel shows for six seconds after a launch: "Started Claude Code in Scratch · Change". */
+/** What the panel shows for six seconds after a launch: "Started Claude Code in Vault · Change". */
 export interface LaunchNote { id: string; text: string; why: PlaceWhy; host: TermHost }
 
 export class TerminalLauncher {

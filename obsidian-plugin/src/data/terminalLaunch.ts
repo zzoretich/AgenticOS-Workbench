@@ -73,11 +73,11 @@ export function workspaceStubs(slug: string): Record<string, string> {
 export function scratchStubs(): Record<string, string> {
   const text = instructions(SCRATCH, [
     "",
-    "Scratch is shared: the Term tab starts agents here when no other place is picked. When the work here becomes a",
+    "Scratch is shared: agents start here when someone picks Scratch in the Term tab. When the work here becomes a",
     "project, ask the user to use Make this a workspace… in the Term tab rather than building it here.",
   ]);
   return {
-    "README.md": "# Scratch\n\nA shared workspace for quick questions and experiments. The Term tab starts Claude Code and Codex here\nwhen you pick no other place. When something here becomes a project, use Make this a workspace… in the Term tab.\n",
+    "README.md": "# Scratch\n\nA shared workspace for quick questions and experiments. Pick Scratch in the Term tab's New menu to start\nClaude Code or Codex here. When something here becomes a project, use Make this a workspace… in the Term tab.\n",
     "CLAUDE.md": text,
     "AGENTS.md": text,
   };
@@ -190,18 +190,18 @@ export function placeOf(dir: string, w: PlaceWorld): Place {
   return { kind: "other", label: path.basename(abs) || abs, dir: abs };
 }
 
-/** Whether a place counts as context for a launch: only a workspace or Scratch, never the vault, home or elsewhere. */
+/** Whether a place counts as context for a launch: only a workspace, never Scratch, the vault, home or elsewhere. */
 export function isContextPlace(p: Place | null | undefined): p is Place {
-  return !!p && (p.kind === "workspace" || p.kind === "scratch");
+  return !!p && p.kind === "workspace";
 }
 
 export type AgentPlaceDefault = "scratch" | "last" | "vault";
 export type PlaceWhy = "picked" | "context" | "default";
 
 /**
- * Where a launch lands (T4): what was picked, else what you are looking at (a workspace or Scratch only), else the
- * default: agents per the "Agents start in" setting (Scratch, the last workspace used, or the vault), shells in the
- * shell default (the Working directory setting).
+ * Where a launch lands (T4): what was picked, else what you are looking at (a workspace only), else the default:
+ * agents per the "Agents start in" choice (the vault unless it says Scratch or the last workspace used), shells in
+ * the shell default (the Working directory setting, else the vault).
  */
 export function resolvePlace(o: {
   host: TermHost;
@@ -216,9 +216,9 @@ export function resolvePlace(o: {
   if (o.picked) return { place: o.picked, why: "picked" };
   if (isContextPlace(o.context)) return { place: o.context, why: "context" };
   if (o.host === "shell") return { place: o.shellDefault, why: "default" };
-  if (o.agentPlace === "vault") return { place: o.vault, why: "default" };
+  if (o.agentPlace === "scratch") return { place: o.scratch, why: "default" };
   if (o.agentPlace === "last" && isContextPlace(o.lastWorkspace)) return { place: o.lastWorkspace, why: "default" };
-  return { place: o.scratch, why: "default" };
+  return { place: o.vault, why: "default" };
 }
 
 // ── linked code folders (T8) ──
@@ -413,8 +413,8 @@ export function menuRows(o: {
   const placeRow = (key: string, p: Place, label = p.label, sub?: string): MenuRow =>
     ({ key, kind: "place", label, place: p, sub: sub ?? (p.linked ? `code: ${p.dir}` : p.kind === "workspace" ? `workspaces/${p.workspace}` : p.dir) });
   const fixed: Array<{ name: string; row: MenuRow }> = [
-    { name: "scratch", row: placeRow("scratch", workspacePlace(SCRATCH, w), "Scratch", "workspaces/scratch · when nothing is picked") },
-    { name: "vault", row: placeRow("vault", vaultPlace(w), "Vault", "the vault itself, for brain tasks") },
+    { name: "vault", row: placeRow("vault", vaultPlace(w), "Vault", "the vault itself · when nothing is picked") },
+    { name: "scratch", row: placeRow("scratch", workspacePlace(SCRATCH, w), "Scratch", "workspaces/scratch · a shared workspace") },
     ...(o.host === "shell" ? [{ name: "home", row: placeRow("home", homePlace(w), "Home", "~") }] : []),
   ];
   const q = o.query.trim().toLowerCase();

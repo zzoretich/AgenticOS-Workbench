@@ -73,6 +73,8 @@ const PTY_VARS: Record<string, ValueRule> = {
   TERM: (v) => v === "xterm-256color",
   COLORTERM: (v) => v === "truecolor",
   AGENTIC_OS: (v) => v === "1",
+  // So Claude Code keeps the links its status line prints (it drops them when it cannot tell the terminal shows them).
+  FORCE_HYPERLINK: (v) => v === "1",
 };
 
 /** The variables a spawn may remove: CLAUDECODE, so a headless claude never re-enters the user's hooks. */

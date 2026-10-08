@@ -111,8 +111,8 @@ test("remembering a Vault chat pick works the same way and never stores access",
 
 // ── the Term tab's choice (spec 2026-10-08-term-agent-deck) ──
 
-test("the Term choice defaults to no remembered host, Host default access, Scratch, no recents", () => {
-  assert.deepEqual(DEFAULT_SETTINGS.terminalChoice, { host: null, access: "host", agentPlace: "scratch", recent: [] });
+test("the Term choice defaults to no remembered host, Host default access, the vault, no recents", () => {
+  assert.deepEqual(DEFAULT_SETTINGS.terminalChoice, { host: null, access: "host", agentPlace: "vault", recent: [] });
   for (const raw of [undefined, null, 7, "x", [], {}]) assert.deepEqual(sanitizeTerminalChoice(raw), DEFAULT_SETTINGS.terminalChoice, String(raw));
 });
 
@@ -120,7 +120,7 @@ test("a Term choice keeps its good parts and drops the rest", () => {
   assert.deepEqual(sanitizeTerminalChoice({ host: "shell", access: "run", agentPlace: "last", recent: ["bz-wedding", "kite"] }),
     { host: "shell", access: "run", agentPlace: "last", recent: ["bz-wedding", "kite"] });
   assert.deepEqual(sanitizeTerminalChoice({ host: "gpt", access: "all", agentPlace: "home", recent: ["ok", ".git", "_worktrees", "a/b", 3, "ok"] }),
-    { host: null, access: "host", agentPlace: "scratch", recent: ["ok"] });
+    { host: null, access: "host", agentPlace: "vault", recent: ["ok"] });
 });
 
 test("remembering a launch: the host becomes ⌘T's, the workspace moves to the front, at most five recents", () => {
