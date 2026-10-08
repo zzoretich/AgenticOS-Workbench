@@ -16,13 +16,13 @@ list at the top of app-smoke.md is the release process, not app behaviour: it is
 
 | Status | Items |
 |---|---|
-| covered | 97 |
+| covered | 103 |
 | covered in part | 17 |
 | N/A in the app | 39 |
 | not covered | 5 |
-| **total** | **158** |
+| **total** | **164** |
 
-Of the 119 items about the app (158 minus the 39 N/A), 114 are asserted (97 fully, 17 in part); the other 5 are not
+Of the 125 items about the app (164 minus the 39 N/A), 120 are asserted (103 fully, 17 in part); the other 5 are not
 covered, for the reasons below. Every write surface is enabled and tested. The
 "in part" rows need something the fixture or the app lacks (a dispatched seat, a Codex database, the clipboard, the
 OS handing over an `agenticos://` link, a published update). The writes, each surface on through `AOS_APP_WRITE`:
@@ -36,7 +36,7 @@ OS handing over an `agenticos://` link, a published update). The writes, each su
 - Spaces' map now, ↻ and regen (beyond the checklist) in `spaces-writes.spec.ts`;
 - Agent Teams (AT1, AT3, AT5's budget, AT7, AT8) in `teams-writes.spec.ts`, and the seed in `variants.spec.ts`;
 - Chat (CH1, CH3, CH4) in `chat-writes.spec.ts`, against stub `claude` and `codex` CLIs and a stub Ollama server;
-- Sessions (SE1–SE7) in `sessions.spec.ts`, against stand-in `claude` and `codex` CLIs that print recorded-shape streams, the vault's own runtime, and a git repository the spec makes in a workspace;
+- Sessions (SE1–SE13) in `sessions.spec.ts` (SE13, Vault chat's host and model menu, in `chat-writes.spec.ts`), against stand-in `claude` and `codex` CLIs that print recorded-shape streams and answer the host catalog's questions (Claude's `initialize`, Codex's `debug models` and `debug prompt-input`) from synthetic lists, the vault's own runtime, and git repositories the spec makes in workspaces;
 - Files (F5, F6, F7) in `files-writes.spec.ts`;
 - the note editor, the app's own Notes surface (beyond the checklist), in `notes-writes.spec.ts`;
 - the settings window (I3, S1, S11) in `settings-window.spec.ts`.
@@ -291,22 +291,28 @@ see below).
 
 | # | Item | Status | Covered by / reason |
 |---|---|---|---|
-| CH1 | `codex`: header `· codex via ask.js (reasoner caps)`; an answer; the spend row | covered | `variants › a provider on record › Vault chat…` (the header), `chat-writes › codex (CH1)…`: `ask.js --local` answers through a stub `codex exec`, and the runtime records its `reason:ask` row. |
+| CH1 | `codex` (a Codex-only vault): header `· Codex via ask.js (Codex default, reasoner caps)`, the menu's pick in place of `Codex default`; an answer; the spend row | covered | `variants › a Codex-only machine › Sessions: the host and model menu offers Codex alone…` (the header with Codex the one ready host), `chat-writes › SE13 Vault chat's picker…` (the header with a picked model, an answer through `ask.js --host=codex` and its `reason:ask` row), `chat-writes › codex (CH1)…` and `variants › a provider on record › Vault chat…` (no host ready: `· codex via ask.js (reasoner caps)`, the answer through a stub `codex exec` and the runtime's `reason:ask` row). |
 | CH2 | `none`: no Sessions rail button; Open Workbench: Sessions shows the hint | covered | `sidebar-omni-notes › Sessions and Term › no provider…`, `shell › rail…` |
-| CH3 | `ollama` without a Claude login: header `· local ask.js`; an answer | covered | `variants › a provider on record › Vault chat…` (the header), `chat-writes › ollama without a Claude login (CH3)…`: the answer comes from a stub Ollama server; nothing is billed. |
-| CH4 | `claude`: header `· claude (claude-opus-5, capped)`; an answer with its cost | covered | `variants › a provider on record › Sessions (rail id chat) heads the rail…`, `› Vault chat under claude…` (the header), `chat-writes › claude (CH4)…`: a stub `claude` answers, the turn shows its time and cost, and the chat log and the spend ledger gain their lines. |
+| CH3 | `ollama` without a Claude login and no host ready: header `· local ask.js`; an answer | covered | `variants › a provider on record › Vault chat…` (the header), `chat-writes › ollama without a Claude login (CH3)…`: the answer comes from a stub Ollama server; nothing is billed. |
+| CH4 | `claude`: header `· Claude Code (claude-opus-5, capped)` (the reasoner while the menu reads Default); an answer with its cost | covered | `variants › a provider on record › Sessions (rail id chat) heads the rail…`, `› Vault chat under claude…` (the header, the fixed Read only chip and the host and model menu on Claude Code), `chat-writes › claude (CH4)…`: a stub `claude` answers, the turn shows its time and cost, and the chat log and the spend ledger gain their lines. |
 
 ## Sessions (per host; each turn spends)
 
 | # | Item | Status | Covered by / reason |
 |---|---|---|---|
-| SE1 | Claude Code: a turn in a workspace (timeline, tool rows, cost footer, the thread under its workspace, the thread file, the run and spend rows), resumed by a reply | covered | `sessions › both hosts… › a Claude turn end to end…` (`--session-id` then `--resume` with the thread's id, `--allowedTools Bash`, the workspace as its folder, the thread file, the `session:claude` run row). The live turn is plan C3. |
-| SE2 | Codex: sandbox note, `bash · shell` rows, changed files, an estimated cost, a reply that resumes | covered | `sessions › both hosts… › a Codex turn, then a reply that resumes it…` (`exec` then `exec resume <thread>`), `› a Codex-only machine…` |
-| SE3 | Stop on each host | covered | `sessions › both hosts… › Stop ends a running claude turn…`, `› Stop ends a running codex turn…` |
-| SE4 | Review: the card's summary, a file's diff, not a repository | covered | `sessions › both hosts… › the repository card…` (a new file's diff), `› a Claude turn end to end…` (a plain folder), `tests/unit/sessions.test.ts` (a folder inside the vault's repository) |
-| SE5 | Commit with the edited message; refusals in the card; no push | covered | `sessions › both hosts… › the repository card…`: an empty message refused, one commit with the edited message and no remote, then a detached HEAD and a merge in progress said in the card with Commit off. |
+| SE1 | Claude Code: a turn in a workspace (prompt, Markdown text, mono tool lines that open to their input and result, the done line, the thread under its workspace, the thread file, the run and spend rows), resumed by a reply | covered | `sessions › both hosts… › a Claude turn end to end…` (`Update(notes.md)` and `Bash(npm test)`, `--session-id` then `--resume` with the thread's id, Edit and run commands as `acceptEdits --allowedTools Bash`, the workspace as its folder, the thread file, the `session:claude` run row). The live turn is plan C3. |
+| SE2 | Codex: the access menu's sandbox note, `Bash(…)` lines, a patch line per file, an estimated cost, a reply that resumes | covered | `sessions › both hosts… › a Codex turn, then a reply that resumes it…` (`exec` then `exec resume <thread>`, `-m` and `model_reasoning_effort`, `Update(src/tiles.js)`), `› a Codex-only machine…` |
+| SE3 | Stop on each host: **Stop** `esc` in the top bar (or Esc in the tab) ends the turn as stopped, the running mark goes out, the thread takes a reply | covered | `sessions › both hosts… › Stop ends a running claude turn…`, `› Stop ends a running codex turn…`, `› SE12 the layout…` (Esc in the composer stops it) |
+| SE4 | Review changes: the drawer's card, its summary, a file's diff, not a repository | covered | `sessions › both hosts… › the repository card in Review changes…` (a new file's diff), `› a Claude turn end to end…` (a plain folder), `tests/unit/sessions.test.ts` (a folder inside the vault's repository) |
+| SE5 | Commit with the edited message; refusals in the card; no push | covered | `sessions › both hosts… › the repository card in Review changes…`: an empty message refused, one commit with the edited message and no remote, then a detached HEAD and a merge in progress said in the card with Commit off. |
 | SE6 | The day cap refuses a turn in the thread; no host runs | covered | `sessions › both hosts… › the day cap…` |
-| SE7 | A host that is off is a disabled chip with why; the surface off is said in the list and under the composer; Vault still works | covered | `sessions › a Codex-only machine…`, `› the Sessions surface off…` |
+| SE7 | A host that is off is a disabled button in the host and model menu with why; the surface off is said in the list and under the composer; Vault still works | covered | `sessions › a Codex-only machine › the host and model menu offers Codex alone…` (and a Codex turn runs), `variants › a Codex-only machine › Sessions: the host and model menu offers Codex alone…`, `sessions › the Sessions surface off › the list says why…` (no host is asked for its models either) |
+| SE8 | The host and model menu on each host: its own list and where it came from, search, older models folded, the efforts each model lists, a custom id (a dash-led one refused), ↻, a host that does not answer (its aliases, why, and a turn still runs), the keys and focus | covered | `sessions › both hosts… › SE8 the host and model menu…`: the stand-ins' catalogs through the runtime's `sessions.js catalog`, `--model`/`--effort` and `-m`/`model_reasoning_effort` in the argv, the cache without the account block (U5), a failing `initialize` on ↻ showing the aliases and `Claude Code exited (1)…`. |
+| SE9 | Mid-thread: the chip's lock, New session on the other host, a model or effort change from the next turn with its marker and done line, the prompt records, earlier turns kept | covered | `sessions › both hosts… › SE9 in a thread the host is locked…` (both hosts: the next call's argv, `Next turn on Opus · Max` before the second prompt, the thread file's `model`, `effort`, `access` per prompt) |
+| SE10 | Access levels on each host: the menu's levels and what each runs as; Claude plan mode, acceptEdits, Bash; Codex read-only and workspace-write, with the note | covered | `sessions › both hosts… › SE10 access levels reach the argv…` (`--permission-mode plan`, `acceptEdits`, `--allowedTools Bash`; `sandbox_mode="read-only"`, `"workspace-write"` twice; ↑↓ and Enter in the menu). What each level lets the host do is the host's own sandbox: the live check (plan B8). |
+| SE11 | Slash commands: `/` lists Claude Code's commands, `$` Codex's skills, filtered as you type; Enter inserts `/name ` or `$name `; Escape closes; the prompt reaches the host unchanged; no skills says so | covered | `sessions › both hosts… › SE11 the slash menu…` (the textarea's `aria-controls`, `aria-autocomplete` and `aria-activedescendant`; `/tide-report Monday` as the argv's prompt; an empty `debug prompt-input` after ↻). The host running the command is the live check. |
+| SE12 | The layout: the list (New session, Vault, workspaces, host dots, running mark, age, spend), mono tool lines, the Plan card, the working line, the top bar with the branch, Review changes +a −b and Stop, the status line, Esc stops a turn | covered | `sessions › both hosts… › SE12 the layout…` (a repository with an edited README and a new file: `+3 −1` in the top bar and per-file counts in the drawer; Claude's `TodoWrite` and Codex's `todo_list` as Plan cards; `main · 2 files` and `turn $0.02 · today …` in the status line) |
+| SE13 | Vault chat's picker on each ready host: the fixed Read only chip, the header following the pick, `claude -p` with `--model` and `--effort`, `ask.js --local --host=codex --model= --effort=` with no fallback, the footer, the menu off while a question runs | covered | `chat-writes › SE13 Vault chat's picker…` (the stub `claude`'s argv equals `buildClaudeArgs` with the pick; the stub `codex exec` gets `-m` and `model_reasoning_effort` while Claude, logged in, is not asked; Codex's levels stop at XHigh) |
 
 ## Term
 

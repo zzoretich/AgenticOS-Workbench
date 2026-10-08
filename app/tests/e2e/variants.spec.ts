@@ -136,9 +136,12 @@ test.describe("a provider on record", () => {
     const { win } = app();
     await openTab(win, "chat");
     await expect(content(win).locator(".aos-asst-head .aos-title")).toHaveText("Vault");
-    await expect(content(win).locator(".aos-asst-mode")).toHaveText(" · claude (claude-opus-5, capped)");
-    await expect(content(win).locator("textarea.aos-asst-input")).toHaveAttribute("placeholder", "ask the brain…");
+    // Claude Code is the ready host: the menu's Default is the configured reasoner.
+    await expect(content(win).locator(".aos-asst-mode")).toHaveText(" · Claude Code (claude-opus-5, capped)");
+    await expect(content(win).locator("textarea.aos-asst-input")).toHaveAttribute("placeholder", "Ask about your notes…");
     await expect(content(win).locator(".aos-asst-actions button")).toHaveText("Send (⌘↵)");
+    await expect(content(win).locator('.aos-asst-tools .aos-am[data-access="read"] .aos-am-trigger.is-fixed')).toHaveText("Read only");
+    await expect(content(win).locator('.aos-asst-tools .aos-hm[data-mode="vault"] .aos-hm-chiphost')).toHaveText("Claude Code");
     state("ollama", false)();
     await openTab(win, "pulse");
     await openTab(win, "chat");
@@ -195,6 +198,10 @@ test.describe("a Codex-only machine", () => {
     prepare: () => {
       editJson(agenticos, (j) => { j.hosts.claude.enabled = false; j.hosts.codex.enabled = true; });
       aos("routines", "hosts", "--refresh");   // the Codex section: this machine has no Codex automations database
+      // What the provider probe leaves on such a machine: Codex, logged in, so Sessions is on the rail.
+      editJson(FX.v("brain/_index/provider-state.json"), (j) => {
+        j.name = "codex"; j.reason = "fixture"; j.codex = { ...(j.codex ?? {}), loggedIn: true, checkedAt: new Date().toISOString() };
+      });
     },
   });
 
@@ -239,6 +246,29 @@ test.describe("a Codex-only machine", () => {
     await expect(row("claude.model")).toHaveClass(/is-dim/);
     await expect(row("claude.model").locator(".aos-st-hostnote")).toHaveText("Claude Code is off on this machine; `aos init --host both` turns it on");
     await expect(row("codex.model")).not.toHaveClass(/is-dim/);
+  });
+
+  test("Sessions: the host and model menu offers Codex alone, Claude Code a disabled button off on this Mac; Vault asks Codex", async () => {
+    const { win } = app();
+    await openTab(win, "chat");
+    // Vault: Codex is the one host ready for a question.
+    await expect(content(win).locator(".aos-asst-mode")).toHaveText(" · Codex via ask.js (Codex default, reasoner caps)");
+    await expect(content(win).locator('.aos-asst-tools .aos-hm[data-mode="vault"] .aos-hm-chiphost')).toHaveText("Codex");
+    await content(win).locator(".aos-ss-newbtn").click();
+    const menu = content(win).locator('.aos-ss-toolbar .aos-hm[data-mode="new"]');
+    const chip = menu.locator(".aos-hm-trigger");
+    await expect(chip).toHaveAttribute("data-host", "codex");
+    await expect(chip.locator(".aos-hm-chiphost")).toHaveText("Codex");
+    await chip.click();
+    const claude = menu.locator('.aos-hm-pop .aos-hm-host[data-host="claude"]');
+    await expect(claude).toBeDisabled();
+    await expect(claude).toHaveAttribute("title", "Claude Code is off on this machine");
+    await expect(menu.locator('.aos-hm-offline[data-host="claude"]')).toHaveText("Claude Code is off on this Mac: aos init --host claude turns it on");
+    await expect(menu.locator('.aos-hm-host[data-host="codex"]')).toHaveAttribute("aria-pressed", "true");
+    await menu.locator(".aos-hm-search").press("Escape");
+    await expect(menu.locator(".aos-hm-pop")).toHaveCount(0);
+    // Without the Sessions surface nothing runs here; sessions.spec's Codex-only machine runs a Codex turn.
+    await expect(content(win).locator(".aos-ss-list .aos-ss-note")).toHaveText("Workspace sessions are unavailable: the Sessions surface is off.");
   });
 });
 
