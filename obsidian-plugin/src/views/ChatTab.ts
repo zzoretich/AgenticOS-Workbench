@@ -2,8 +2,15 @@ import { MarkdownRenderer, Component, EventRef } from "obsidian";
 import type AgenticOSPlugin from "../../main";
 import type { WorkbenchView } from "./WorkbenchView";
 import { runAsk, isAskBusy, AskHandle, AskResult } from "../data/askSpawner";
-import { runClaudeAsk, chatRoute, CHAT_FEATURE } from "../data/claudeAsk";
-import { readProviderState, readVaultConfig, type ProviderName } from "../data/aosConfig";
+import {
+  runClaudeAsk, chatRoute, CHAT_FEATURE, aliasCatalog, readReasonSpendToday, vaultHostChoices, vaultModeLine, vaultRemembered, vaultSpendLine,
+} from "../data/claudeAsk";
+import { readAgenticosJson, readProviderState, readVaultConfig, type ProviderName } from "../data/aosConfig";
+import { catalogHost, modelArg, modelName, type HostChoice } from "../data/agentSessions";
+import { sessionsHost, type HostCatalog } from "../host";
+import { rememberVaultChoice, sanitizeVaultChoice } from "../settingsDefaults";
+import { AccessMenu } from "../ui/AccessMenu";
+import { HostModelMenu, menuValue, type HostModelValue } from "../ui/HostModelMenu";
 
 // PORT of the old Assistant view's module-level constants (~7-8) — verbatim.
 const CHAT_LOG_PATH = "brain/_index/agentic-os-chat.jsonl";
@@ -69,6 +76,15 @@ export class ChatTab {
   // contentHost.empty()), a plain instance field is the only thing that survives the gap;
   // kept in sync by an `input` listener and seeded back into every fresh <textarea> in render().
   private draftText = "";
+  // Vault chat's host and model menu (spec 2026-10-07-sessions-ux U9): any host on any question, read only. The pick
+  // lives here and in settings.vaultChoice; the menus are rebuilt by every render(), the catalog is asked once.
+  private pick: HostModelValue | null = null;
+  private catalog: HostCatalog | null = null;
+  private catalogAsked = false;
+  private catalogBusy = false;
+  private hostMenu: HostModelMenu | null = null;
+  private accessChip: AccessMenu | null = null;
+  private modeEl: HTMLElement | null = null;
 
   // Adaptation: the old Assistant view extended ItemView, so its constructor called super(leaf)
   // and assigns `this.plugin` in the body. ChatTab has no superclass — constructor
@@ -126,8 +142,16 @@ export class ChatTab {
       this.liveTurn = null;
     }
     this.statusPillEl = null;
+    this.destroyMenus();
     this.host?.empty();
     this.host = null;
+  }
+
+  /** SessionsTab leaves Vault for a workspace thread: the menus' DOM goes, so an open popover's document listener goes
+   *  with it. A running question is untouched; the next mount() draws it again. */
+  detach(): void {
+    this.destroyMenus();
+    this.statusPillEl = null;
   }
 
   /** Provider the scripts last resolved (brain/_index/provider-state.json); missing state = none. */
@@ -139,6 +163,82 @@ export class ChatTab {
    *  where the reasoner falls back to Codex on a machine without Claude (provider.js resolveProviderForRole). */
   private route(): "claude" | "local" | "none" {
     return chatRoute(readProviderState(this.plugin.vaultRoot()));
+  }
+
+  /** The hosts the menu offers: the ones on in agenticos.json, Claude only with the login claude -p needs. */
+  private choices(): HostChoice[] {
+    return vaultHostChoices(readAgenticosJson(this.plugin.claudeConfigDir()), readProviderState(this.plugin.vaultRoot()));
+  }
+
+  /** Where each host's menu starts: the remembered Vault pick, else the reasoner's effort and Codex model. */
+  private remembered(): ReturnType<typeof vaultRemembered> {
+    const r = readVaultConfig(this.plugin.vaultRoot(), this.plugin.claudeConfigDir()).reasoner;
+    return vaultRemembered(sanitizeVaultChoice(this.plugin.settings.vaultChoice), this.catalog, { effort: r.effort, codexModel: r.codexModel });
+  }
+
+  /** What the next question runs on: the menu's value, resolved to a ready host and a level its model takes; a null
+   *  host means no host is ready for Vault, and send() takes today's route. */
+  private choice(): HostModelValue {
+    const remembered = this.remembered();
+    if (!this.pick) {
+      const host = sanitizeVaultChoice(this.plugin.settings.vaultChoice).host;
+      this.pick = host ? { host, model: remembered[host].model ?? null, effort: remembered[host].effort ?? null } : { host: null, model: null, effort: null };
+    }
+    return menuValue({ mode: "vault", catalog: this.catalog, choices: this.choices(), value: this.pick, remembered });
+  }
+
+  /** The header's route line for the current choice (data/claudeAsk.ts vaultModeLine). */
+  private modeText(): string {
+    const v = this.choice();
+    const label = v.host === "claude" ? (modelArg("claude", v.model) ? modelName("claude", catalogHost(this.catalog, "claude"), v.model) : null)
+      : v.host === "codex" ? modelName("codex", catalogHost(this.catalog, "codex"), v.model) : null;
+    const reasonerModel = readVaultConfig(this.plugin.vaultRoot(), this.plugin.claudeConfigDir()).reasoner.model;
+    return vaultModeLine(v.host, label, { reasonerModel, route: this.route(), provider: this.providerName() });
+  }
+
+  /** Asks the app for the hosts' models (it answers from its cache under 24 h); without the app, or when it cannot,
+   *  the menu offers the aliases. ↻ asks the hosts again. */
+  private async loadCatalog(refresh = false): Promise<void> {
+    this.catalogAsked = true;
+    const sh = sessionsHost();
+    if (!sh) { this.catalog = aliasCatalog(new Date()); this.catalogChanged(); return; }
+    this.catalogBusy = true;
+    this.hostMenu?.update({ refreshing: true });
+    let cat: HostCatalog | null = null;
+    try {
+      const r = await sh.sessions.catalog(refresh);
+      if (r.ok) cat = r.data;
+    } catch { /* the aliases below */ }
+    this.catalogBusy = false;
+    this.catalog = cat ?? aliasCatalog(new Date());
+    this.catalogChanged();
+  }
+
+  /** A new catalog: the menu, its starting points and the header follow it in place, so a draft keeps its caret. */
+  private catalogChanged(): void {
+    this.pick = null;
+    if (!this.onScreen()) return;
+    this.hostMenu?.update({ catalog: this.catalog, value: this.choice(), remembered: this.remembered(), refreshing: this.catalogBusy });
+    if (this.modeEl) this.modeEl.textContent = this.modeText();
+  }
+
+  /** A pick in the menu: it becomes the next question's choice and Vault chat's remembered one (U12). */
+  private onPick(v: HostModelValue): void {
+    this.pick = v;
+    if (v.host) {
+      this.plugin.settings.vaultChoice = rememberVaultChoice(this.plugin.settings.vaultChoice, { host: v.host, model: v.model, effort: v.effort });
+      void this.plugin.saveSettings();
+    }
+    this.hostMenu?.update({ remembered: this.remembered() });
+    if (this.modeEl) this.modeEl.textContent = this.modeText();
+  }
+
+  private destroyMenus(): void {
+    this.hostMenu?.destroy();
+    this.hostMenu = null;
+    this.accessChip?.destroy();
+    this.accessChip = null;
+    this.modeEl = null;
   }
 
   // PORT of the old Assistant view's loadHistory (~74). Adaptation: this.app → this.plugin.app.
@@ -190,8 +290,10 @@ export class ChatTab {
     if (!this.onScreen()) return;
     const host = this.host;
     if (!host) return;
+    this.destroyMenus();
     host.empty();
     host.addClass("aos-assistant");
+    if (!this.catalogAsked) void this.loadCatalog();
 
     const provider = this.providerName();
     if (provider === "none") {
@@ -208,9 +310,7 @@ export class ChatTab {
     const up = this.plugin.hb.getStatus().up;
     status.addClass(up ? "aos-pill-cyan" : "aos-pill-dim");
     status.textContent = up ? "live tail" : "idle";
-    const reasonerModel = readVaultConfig(this.plugin.vaultRoot(), this.plugin.claudeConfigDir()).reasoner.model;
-    const mode = this.route() === "claude" ? ` · claude (${reasonerModel}, capped)` : provider === "codex" ? " · codex via ask.js (reasoner caps)" : " · local ask.js";
-    header.createSpan({ cls: "aos-dim aos-asst-mode", text: mode });
+    this.modeEl = header.createSpan({ cls: "aos-dim aos-asst-mode", text: this.modeText() });
 
     // history log
     const log = host.createDiv({ cls: "aos-asst-log" });
@@ -228,13 +328,30 @@ export class ChatTab {
 
     // composer
     const composer = host.createDiv({ cls: "aos-asst-composer" });
-    const input = composer.createEl("textarea", { cls: "aos-asst-input" });
-    input.placeholder = isAskBusy() ? "ask busy (max 2 in flight)…" : "ask the brain…";
+    const input = composer.createEl("textarea", { cls: "aos-asst-input", attr: { "aria-label": "Question" } });
+    input.placeholder = isAskBusy() ? "ask busy (max 2 in flight)…" : "Ask about your notes…";
     input.rows = 3;
     input.disabled = this.busy;
     input.value = this.draftText; // restore an unsent draft across a tab-switch-away-and-return
     input.addEventListener("input", () => { this.draftText = input.value; });
-    const actions = composer.createDiv({ cls: "aos-asst-actions" });
+    // The toolbar (canvas ChosenVault): Read only, fixed, since a Vault question runs without tools; then the host and
+    // model chip; Send stays alone in .aos-asst-actions.
+    const bar = composer.createDiv({ cls: "aos-asst-bar" });
+    const tools = bar.createDiv({ cls: "aos-asst-tools" });
+    this.accessChip = new AccessMenu(tools, { host: null, value: "read", fixed: true });
+    tools.createDiv({ cls: "aos-asst-spacer" });
+    this.hostMenu = new HostModelMenu(tools, {
+      mode: "vault",
+      catalog: this.catalog,
+      choices: this.choices(),
+      value: this.choice(),
+      remembered: this.remembered(),
+      refreshing: this.catalogBusy,
+      disabled: this.busy,
+      onChange: (v) => this.onPick(v),
+      onRefresh: () => { void this.loadCatalog(true); },
+    });
+    const actions = bar.createDiv({ cls: "aos-asst-actions" });
     const send = actions.createEl("button", { cls: "mod-cta", text: this.busy ? "…" : "Send (⌘↵)" });
     send.disabled = this.busy;
     send.addEventListener("click", () => { void this.send(input.value); input.value = ""; this.draftText = ""; });
@@ -248,6 +365,13 @@ export class ChatTab {
         void this.send(q);
       }
     });
+
+    // Under the composer: any host per question, and today's reasoner spend when the ledger's tail holds all of today.
+    const foot = host.createDiv({ cls: "aos-asst-foot" });
+    foot.createSpan({ text: "Each question can use any host" });
+    const cfg = readVaultConfig(this.plugin.vaultRoot(), this.plugin.claudeConfigDir());
+    const spend = vaultSpendLine(readReasonSpendToday(this.plugin.vaultRoot(), new Date()), cfg.reasoner.perDayUsd);
+    if (spend) foot.createSpan({ cls: "aos-asst-spend", text: spend });
 
     requestAnimationFrame(() => {
       log.scrollTop = log.scrollHeight;
@@ -365,8 +489,14 @@ export class ChatTab {
     const vaultRoot = this.plugin.vaultRoot();
     const node = this.plugin.nodeBin();
     const cfg = readVaultConfig(vaultRoot, this.plugin.claudeConfigDir());
-    const handle = this.route() === "claude"
-      ? runClaudeAsk({ vault: vaultRoot, node, question: q, claudeBin: this.plugin.claudeBin(), model: cfg.reasoner.model, maxBudgetUsd: cfg.reasoner.perCallUsd, effort: cfg.reasoner.effort, feature: CHAT_FEATURE })
+    // The menu's host answers (U9): Claude through claude -p with the chosen model ("default" is the reasoner's) and
+    // effort; Codex through ask.js on that host only. With no host ready for Vault, today's route.
+    const v = this.choice();
+    const claude = (model: string | undefined, effort: string | undefined): AskHandle =>
+      runClaudeAsk({ vault: vaultRoot, node, question: q, claudeBin: this.plugin.claudeBin(), model: cfg.reasoner.model, chosenModel: model, maxBudgetUsd: cfg.reasoner.perCallUsd, effort, feature: CHAT_FEATURE });
+    const handle = v.host === "claude" ? claude(v.model ?? undefined, v.effort ?? undefined)
+      : v.host === "codex" ? runAsk({ vault: vaultRoot, node, question: q, host: "codex", model: modelArg("codex", v.model) ?? undefined, effort: v.effort ?? undefined })
+      : this.route() === "claude" ? claude(undefined, cfg.reasoner.effort)
       : runAsk({ vault: vaultRoot, node, question: q });
 
     this.liveTurn = {

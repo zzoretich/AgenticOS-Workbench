@@ -1,25 +1,43 @@
-import { Component, MarkdownRenderer } from "obsidian";
+import { Component, MarkdownRenderer, setIcon } from "obsidian";
 import * as path from "path";
 import type AgenticOSPlugin from "../../main";
 import type { WorkbenchView } from "./WorkbenchView";
 import { ChatTab } from "./ChatTab";
-import { fs, sessionsHost, type HostGitStatus, type HostResult, type HostSessionEvent, type HostSessionThread } from "../host";
+import {
+  fs, sessionsHost, type HostCatalog, type HostCatalogHost, type HostGitStatus, type HostResult, type HostSessionAccess,
+  type HostSessionEvent, type HostSessionThread,
+} from "../host";
 import { readAgenticosJson, readProviderState, type SessionHost } from "../data/aosConfig";
 import {
-  CODEX_SANDBOX_NOTE, HOST_LABEL, fileStatusLabel, groupThreads, hostChoices, mergeEvents, statusSummary, threadMeta,
-  timelineRows, toolLine, turnOpen, workspaceNames, type TimelineRow,
+  DEFAULT_ACCESS, HOST_LABEL, accessLabel, catalogHost, choiceText, countsText, diffTotals, doneLine, fileCounts, fileStatusLabel,
+  groupThreads, hostChoices, lastTurnUsd, mergeEvents, modelArg, relPath, sessionSpendToday, spendLine, statusSummary,
+  threadAge, threadMeta, threadRows, toolResultText, turnChoices, turnElapsed, turnOpen, usdText, workingText, workspaceNames,
+  type CatalogCommand, type PlanItem, type RememberedChoice, type ThreadRow,
 } from "../data/agentSessions";
+import { SPEND_LEDGER_PATH } from "../data/claudeAsk";
 import { ago } from "../data/notifications";
+import { rememberSessionChoice, sanitizeSessionChoice } from "../settingsDefaults";
+import { AccessMenu } from "../ui/AccessMenu";
+import { HostModelMenu, type HostModelValue } from "../ui/HostModelMenu";
+import { SlashMenu } from "../ui/SlashMenu";
 
 /** The list's first row: today's Q&A chat about the vault (ChatTab). */
 const VAULT = "vault";
-/** The reader while a new session is being written: the composer with its workspace, host and model pickers. */
+/** The reader while a new session is being written: the composer with its workspace, host and model menus. */
 const NEW = "new";
 /** After a turn ends, main records its spend and run before the thread reads as idle: the list looks again after these. */
 const LIST_RECHECK_MS = [400, 1500, 4000];
 /** A reply sent while main is still recording the last turn: tries again this often, this many times. */
 const BUSY_RETRY_MS = 300;
 const BUSY_RETRIES = 10;
+/** The working line's clock. */
+const TICK_MS = 1000;
+/** A file's diff in the reader shows this many lines; the review drawer's shows them all. */
+const DIFF_LINES = 400;
+/** Claude Code's word for each change a Codex patch reports. */
+const PATCH_VERB: Record<string, string> = { add: "Write", delete: "Delete", update: "Update" };
+/** What a screen reader hears before each plan item: the box alone says it only by sight. */
+const PLAN_STATE: Record<PlanItem["status"], string> = { done: "Done: ", active: "In progress: ", pending: "To do: " };
 
 interface RepoCard {
   workspace: string;
@@ -34,13 +52,41 @@ interface RepoCard {
   committing: boolean;
 }
 
+/** A file's current diff opened from a tool or patch line; null while it is read. */
+type FileDiff = { text: string; truncated: boolean; error: string | null } | null;
+
+/** The reader's parts that change after it is drawn. */
+interface ReaderEls {
+  top: HTMLElement;
+  scroll: HTMLElement;
+  timeline: HTMLElement;
+  drawer: HTMLElement;
+  input: HTMLTextAreaElement;
+  send: HTMLButtonElement;
+  error: HTMLElement;
+  status: HTMLElement;
+  /** The running turn's `✻ Working…` line, which the clock updates in place. */
+  working: HTMLElement | null;
+}
+
+/** What the timeline's rows need to know of their thread. */
+interface RowContext {
+  host: SessionHost;
+  entry: HostCatalogHost | null;
+  root: string | null;
+  choices: Map<number, { model: string | null; effort: string | null }>;
+}
+
 /**
- * SESSIONS — agent sessions in the centre (spec 2026-10-07-unidex-sessions S10, §4.5). The rail tab keeps the id
- * "chat", so links and Home still reach it. The list: Vault first (today's chat about the vault, ChatTab, unchanged),
- * then the app's threads by workspace with a running dot. The reader: the thread's timeline (prompts, the agent's
- * text, tool rows that open to their input and result, changed files, errors, a footer per turn), the repository card
- * (what changed, Review, Commit), and the composer. The app's main process runs every turn and keeps every thread;
- * this tab only names a workspace, a host and a prompt (host.ts sessions and git). Without them, Vault alone works.
+ * SESSIONS — agent sessions in the centre (spec 2026-10-07-unidex-sessions S10; spec 2026-10-07-sessions-ux U1, U2, U6–U8,
+ * U10–U12). The rail tab keeps the id "chat", so links and Home still reach it. The list: New session, Vault (today's
+ * chat about the vault, ChatTab, unchanged), then each workspace folder with its threads, and the day's session spend.
+ * The reader, as Claude Code shows a session: `workspace / title`, the branch, Review changes and Stop above one centred
+ * column; your prompts, the agent's text, its tool calls as `⏺ Verb(target)` lines with their `⎿` result, the turn's
+ * plan, model changes and a footer per turn; the composer below it with the access, workspace and host-and-model menus,
+ * `/` for the host's commands, and a status line. The app's main process runs every turn and keeps every thread; this
+ * tab only names a workspace, a host, a prompt and the turn's model, effort and access (host.ts sessions and git).
+ * Without them, Vault alone works.
  */
 export class SessionsTab {
   private host: HTMLElement | null = null;
@@ -50,15 +96,35 @@ export class SessionsTab {
   private listError: string | null = null;
   private listLoaded = false;
   private listSeq = 0;
+  /** Each thread read; an older read that answers late is dropped. */
+  private readSeq = 0;
+  /** Today's session spend against sessions.perDayUsd; null when the ledger cannot be read. */
+  private spend: { spent: number; cap: number } | null = null;
   /** The open thread, from the list or from the start/send that opened it. */
   private thread: HostSessionThread | null = null;
   private events: HostSessionEvent[] = [];
   /** Live events of the open thread that arrive while its file is being read; merged in when the read answers. */
   private pending: HostSessionEvent[] | null = null;
   private loading = false;
+  /** Tool and patch lines opened to their input, result and diff. */
   private expanded = new Set<string>();
+  private diffs = new Map<string, FileDiff>();
   private repo: RepoCard | null = null;
-  private draft: { workspace: string; host: SessionHost | null; model: string; allowCommands: boolean } = { workspace: "", host: null, model: "", allowCommands: false };
+  /** The Review changes drawer over the conversation. */
+  private drawer = false;
+  /** Each host's models and commands (U3); null until the app answers, when the menus show the aliases. */
+  private catalog: HostCatalog | null = null;
+  private catalogSeq = 0;
+  /** A catalog read is on its way: a second mount does not ask again. */
+  private catalogLoading = false;
+  private refreshing = false;
+  /** The new session's workspace. */
+  private workspace = "";
+  /** The open thread's next turn: what the user picked for it, else what its last turn ran on (U6). */
+  private next: { thread: string; model: string | null; effort: string | null; access: HostSessionAccess } | null = null;
+  /** The new session's host, model and effort as last picked, until it starts: a custom id the catalog does not list
+   *  stays on the chip, though remembered() would drop it from the settings' choice. */
+  private draft: HostModelValue | null = null;
   private text = "";
   private composerError: string | null = null;
   private sending = false;
@@ -66,7 +132,14 @@ export class SessionsTab {
   private md: Component | null = null;
   private unsubscribe: (() => void) | null = null;
   private timers = new Set<number>();
-  private el: { list: HTMLElement; reader: HTMLElement; head?: HTMLElement; scroll?: HTMLElement; timeline?: HTMLElement; repo?: HTMLElement; composer?: HTMLElement } | null = null;
+  private tick: number | null = null;
+  private menus: { host: HostModelMenu; access: AccessMenu; slash: SlashMenu } | null = null;
+  /** What the access chip last drew, so a redraw that would change nothing (and drop its focus) is skipped. */
+  private accessShown = "";
+  /** Whether the host and model chip was last told it is disabled (while a turn is being sent). */
+  private hostDisabled = false;
+  private el: { list: HTMLElement; reader: HTMLElement } | null = null;
+  private r: ReaderEls | null = null;
 
   constructor(private plugin: AgenticOSPlugin, private wb: WorkbenchView) {
     this.chat = new ChatTab(plugin, wb, () => this.selected === VAULT);
@@ -79,6 +152,7 @@ export class SessionsTab {
     this.render();
     if (this.isThread(this.selected)) void this.openThread(this.selected);
     void this.loadList();
+    if (!this.catalog && !this.catalogLoading) void this.loadCatalog(false);
   }
 
   async refresh(): Promise<void> {
@@ -90,10 +164,13 @@ export class SessionsTab {
     this.unsubscribe = null;
     for (const t of this.timers) window.clearTimeout(t);
     this.timers.clear();
+    this.stopTick();
+    this.destroyMenus();
     this.chat.unmount();
     this.md?.unload();
     this.md = null;
     this.el = null;
+    this.r = null;
     this.host?.empty();
     this.host = null;
   }
@@ -105,22 +182,38 @@ export class SessionsTab {
 
   private async loadList(): Promise<void> {
     const sh = sessionsHost();
+    let found = false;
     if (sh) {
       const seq = ++this.listSeq;
-      const r = await sh.sessions.list();
+      const [r] = await Promise.all([sh.sessions.list(), this.loadSpend()]);
       if (seq !== this.listSeq) return;   // a later look already answered
       this.listLoaded = true;
       if (r.ok) {
         this.threads = r.data;
         this.listError = null;
         const open = r.data.find((t) => t.id === this.selected);
-        if (open) this.thread = open;
+        if (open) { found = !this.thread; this.thread = open; }
       } else {
         this.threads = [];
         this.listError = r.error;
       }
     }
-    if (this.active()) this.renderList();
+    if (!this.active()) return;
+    this.renderList();
+    this.renderStatus();
+    // A thread opened before the list knew it (just started elsewhere) gets its header and menus now.
+    if (found) { this.renderHead(); this.renderTimeline(); this.syncMenus(); this.syncComposer(); }
+  }
+
+  /** Today's `session:*` rows of the spend ledger, as the runtime counts them against sessions.perDayUsd (spec §4.3). */
+  private async loadSpend(): Promise<void> {
+    const cap = this.plugin.systemConfig().sessions?.perDayUsd;
+    if (typeof cap !== "number" || !Number.isFinite(cap)) { this.spend = null; return; }
+    const file = path.join(this.plugin.vaultRoot(), SPEND_LEDGER_PATH);
+    try {
+      const raw = fs.existsSync(file) ? await fs.promises.readFile(file, "utf8") : "";
+      this.spend = { spent: sessionSpendToday(raw, new Date()), cap };
+    } catch { this.spend = null; }
   }
 
   private scheduleList(ms: number): void {
@@ -128,15 +221,35 @@ export class SessionsTab {
     this.timers.add(id);
   }
 
+  /** The hosts' models and commands: the app's cache, or the hosts again on the menu's ↻. */
+  private async loadCatalog(refresh: boolean): Promise<void> {
+    const sh = sessionsHost();
+    if (!sh) return;
+    const seq = ++this.catalogSeq;
+    this.catalogLoading = true;
+    if (refresh) { this.refreshing = true; this.menus?.host.update({ refreshing: true }); }
+    let r: HostResult<HostCatalog> | null = null;
+    try { r = await (refresh ? sh.sessions.catalog(true) : sh.sessions.catalog()); } catch { r = null; }
+    if (seq !== this.catalogSeq) return;
+    this.catalogLoading = false;
+    this.refreshing = false;
+    if (r?.ok) this.catalog = r.data;
+    if (!this.active()) return;
+    this.syncMenus();
+    if (this.isThread(this.selected)) this.renderTimeline();   // the change markers and footers name models
+    this.renderStatus();
+  }
+
   /** Reads the thread's file, then keeps it current from live events. */
   private async openThread(id: string): Promise<void> {
     const sh = sessionsHost();
     if (!sh) return;
+    const seq = ++this.readSeq;
     this.pending = [];
     this.loading = !this.events.length;
     if (this.active()) this.renderTimeline();
     const r = await sh.sessions.read(id);
-    if (this.selected !== id) return;
+    if (this.selected !== id || seq !== this.readSeq) return;
     const live = this.pending ?? [];
     this.pending = null;
     this.loading = false;
@@ -145,7 +258,7 @@ export class SessionsTab {
     if (!this.active()) return;
     this.renderHead();
     this.renderTimeline(true);
-    this.renderComposer();
+    this.syncComposer();
     if (!turnOpen(this.events)) void this.loadRepo();
   }
 
@@ -154,10 +267,13 @@ export class SessionsTab {
       if (this.pending) this.pending.push(e);
       else {
         this.events.push(e);
-        if (e.kind === "done" && this.stopping === thread) this.stopping = null;
+        if (e.kind === "done") {
+          if (this.stopping === thread) this.stopping = null;
+          this.diffs.clear();   // the turn may have changed the files a line shows
+        }
         if (this.active()) {
           this.renderTimeline();
-          if (e.kind === "prompt" || e.kind === "done") { this.renderHead(); this.renderComposer(); }
+          if (e.kind === "prompt" || e.kind === "done") { this.renderHead(); this.syncComposer(); }
         }
         if (e.kind === "done") void this.loadRepo();
       }
@@ -166,19 +282,36 @@ export class SessionsTab {
     else if (e.kind === "prompt" || !this.threads.some((t) => t.id === thread)) this.scheduleList(0);
   }
 
+  /** The workspace's status (branch, files and their +/−). Read only between turns: git status may take the index lock
+   *  that an agent's own git command needs. */
   private async loadRepo(): Promise<void> {
     const sh = sessionsHost();
     const t = this.thread;
     if (!sh || !t || this.selected !== t.id) return;
     const prev = this.repo?.workspace === t.workspace ? this.repo : null;
     this.repo = { workspace: t.workspace, status: prev?.status ?? null, error: null, loading: true, review: null, message: prev?.message || t.title, result: prev?.result ?? null, committing: false };
-    if (this.active()) this.renderRepo();
+    if (this.active()) this.renderDrawer();
     const r = await sh.git.status(t.workspace);
     if (this.selected !== t.id || !this.repo) return;
     this.repo.loading = false;
     if (r.ok) this.repo.status = r.data;
     else this.repo.error = r.error;
-    if (this.active()) this.renderRepo();
+    if (!this.active()) return;
+    this.renderHead();
+    this.renderDrawer();
+    this.renderTimeline();   // edit lines show the files' +/−
+    this.renderStatus();
+  }
+
+  private async loadDiff(file: string): Promise<void> {
+    const sh = sessionsHost();
+    const t = this.thread;
+    if (!sh || !t) return;
+    this.diffs.set(file, null);
+    const r = await sh.git.diff(t.workspace, file);
+    if (this.selected !== t.id || !this.diffs.has(file)) return;
+    this.diffs.set(file, r.ok ? { text: r.data.text, truncated: r.data.truncated, error: null } : { text: "", truncated: false, error: r.error });
+    if (this.active()) this.renderTimeline();
   }
 
   /** Folders under <vault>/workspaces, read as every other tab reads the vault. */
@@ -194,21 +327,127 @@ export class SessionsTab {
     } catch { return []; }
   }
 
+  /** The open thread's workspace folder: Claude names files absolutely, the reader shows them from here. */
+  private workspaceRoot(): string | null {
+    return this.thread ? path.join(this.plugin.vaultRoot(), "workspaces", this.thread.workspace) : null;
+  }
+
+  /** A file a line names, relative to its workspace, for git; null for one outside it. */
+  private diffPath(file: string): string | null {
+    const rel = relPath(file, this.workspaceRoot());
+    return rel && !path.isAbsolute(rel) && !rel.startsWith("../") ? rel : null;
+  }
+
+  private repoStatus(): HostGitStatus | null {
+    return this.repo && this.repo.workspace === this.thread?.workspace ? this.repo.status : null;
+  }
+
+  // ── the turn's choices (U6, U7, U12) ──
+
+  /** The last choice on each host from the HUD's settings, each model kept only while the catalog still lists it (a
+   *  host that did not answer lists only its aliases, so its stored model stays). */
+  private remembered(): Record<SessionHost, RememberedChoice> {
+    const c = sanitizeSessionChoice(this.plugin.settings.sessionChoice);
+    const one = (h: SessionHost): RememberedChoice => {
+      const entry = catalogHost(this.catalog, h);
+      const model = c.models[h];
+      return { model: !model || !entry?.ok || entry.models.some((m) => m.id === model) ? model : null, effort: c.efforts[h] };
+    };
+    return { claude: one("claude"), codex: one("codex") };
+  }
+
+  private nextTurn(): { model: string | null; effort: string | null; access: HostSessionAccess } | null {
+    const t = this.thread;
+    if (!t) return null;
+    if (this.next?.thread !== t.id) this.next = { thread: t.id, model: t.model, effort: t.effort, access: t.access };
+    return this.next;
+  }
+
+  /** What the host and model menu starts from: the remembered host and its choice, or the thread's next turn. */
+  private menuValue(): HostModelValue {
+    if (this.selected === NEW) {
+      if (this.draft) return this.draft;
+      const host = sanitizeSessionChoice(this.plugin.settings.sessionChoice).host;
+      const rem = host ? this.remembered()[host] : null;
+      return { host, model: rem?.model ?? null, effort: rem?.effort ?? null };
+    }
+    const n = this.nextTurn();
+    return { host: this.thread?.host ?? null, model: n?.model ?? null, effort: n?.effort ?? null };
+  }
+
+  private accessValue(): HostSessionAccess {
+    if (this.selected === NEW) return sanitizeSessionChoice(this.plugin.settings.sessionChoice).access;
+    return this.nextTurn()?.access ?? DEFAULT_ACCESS;
+  }
+
+  private commands(host: SessionHost | null): CatalogCommand[] {
+    return host ? catalogHost(this.catalog, host)?.commands ?? [] : [];
+  }
+
+  /** Stores the pick as the last choice (U12): a new session starts where the last one left off. */
+  private remember(pick: { host: SessionHost; model?: string | null; effort?: string | null; access?: HostSessionAccess }): void {
+    this.plugin.settings.sessionChoice = rememberSessionChoice(this.plugin.settings.sessionChoice, pick);
+    void this.plugin.saveSettings();
+  }
+
+  private pickModel(v: HostModelValue): void {
+    if (!v.host) return;
+    if (this.selected === NEW) this.draft = v;
+    else {
+      const n = this.nextTurn();
+      if (!n) return;
+      n.model = v.model;
+      n.effort = v.effort;
+    }
+    this.remember({ host: v.host, model: v.model, effort: v.effort });
+    this.syncAccess();
+    this.menus?.slash.update(this.commands(v.host), v.host);
+    this.renderStatus();
+  }
+
+  private pickAccess(level: HostSessionAccess): void {
+    const host = this.menus?.host.value().host ?? null;
+    if (this.selected !== NEW) {
+      const n = this.nextTurn();
+      if (n) n.access = level;
+    }
+    if (host) this.remember({ host, access: level });
+    else {
+      this.plugin.settings.sessionChoice = { ...sanitizeSessionChoice(this.plugin.settings.sessionChoice), access: level };
+      void this.plugin.saveSettings();
+    }
+    this.accessShown = "";
+    this.syncAccess();
+    this.renderStatus();
+  }
+
   // ── actions ──
 
-  private select(id: string): void {
+  private select(id: string, keepText = false): void {
     if (id === this.selected && id !== NEW) return;
     this.selected = id;
     this.thread = this.isThread(id) ? this.threads.find((t) => t.id === id) ?? null : null;
     this.events = [];
     this.pending = null;
     this.expanded.clear();
+    this.diffs.clear();
     this.repo = null;
-    this.text = "";
+    this.drawer = false;
+    this.next = null;
+    if (!keepText) this.text = "";
     this.composerError = null;
     this.renderList();
     this.renderReader();
     if (this.isThread(id)) void this.openThread(id);
+  }
+
+  /** The thread menu's New session on <other host>: in the same workspace, and the draft moves over with it. */
+  private newSessionOn(host: SessionHost): void {
+    if (this.thread) this.workspace = this.thread.workspace;
+    this.draft = null;
+    this.remember({ host });
+    this.select(NEW, true);
+    this.r?.input.focus();
   }
 
   private async submit(): Promise<void> {
@@ -217,54 +456,68 @@ export class SessionsTab {
     if (!sh || !text || this.sending) return;
     let r: HostResult<HostSessionThread>;
     const isNew = this.selected === NEW;
-    if (isNew && !this.draft.workspace) { this.composerError = "Choose a workspace first."; this.renderComposer(); return; }
-    if (isNew && !this.draft.host) { this.composerError = "No host is ready to run this session."; this.renderComposer(); return; }
+    const pick = this.menus?.host.value() ?? { host: null, model: null, effort: null };
+    if (isNew && !this.workspace) { this.composerError = "Choose a workspace first."; this.syncComposer(); return; }
+    if (isNew && !pick.host) { this.composerError = "No host is ready to run this session."; this.syncComposer(); return; }
+    const focused = !!this.r && document.activeElement === this.r.input;
     this.sending = true;
     this.composerError = null;
-    this.renderComposer();
+    this.syncComposer();
     const sent = this.selected;
     if (isNew) {
-      const host = this.draft.host as SessionHost;
-      r = await sh.sessions.start({ workspace: this.draft.workspace, host, text, model: this.draft.model.trim() || null, allowCommands: host === "claude" && this.draft.allowCommands });
+      const host = pick.host as SessionHost;
+      r = await sh.sessions.start({ workspace: this.workspace, host, text, model: modelArg(host, pick.model), effort: pick.effort, access: this.accessValue() });
     } else {
       const thread = sent;
-      const allowCommands = this.thread?.host === "claude" && this.draft.allowCommands;
-      r = await sh.sessions.send({ thread, text, allowCommands });
+      // Every turn names its model, effort and access; an unchanged pick is the thread's last, so no marker comes of it.
+      const n = this.nextTurn();
+      const host = this.thread?.host;
+      const opts = n && host ? { model: modelArg(host, n.model), effort: n.effort, access: n.access } : {};
+      r = await sh.sessions.send({ thread, text, ...opts });
       // The last turn has ended here, but main may still be recording it (its spend and run row): try again shortly.
       for (let i = 0; i < BUSY_RETRIES && !r.ok && r.code === "EBUSY" && !turnOpen(this.events) && this.selected === thread; i++) {
         await new Promise((res) => window.setTimeout(res, BUSY_RETRY_MS));
-        r = await sh.sessions.send({ thread, text, allowCommands });
+        r = await sh.sessions.send({ thread, text, ...opts });
       }
     }
     this.sending = false;
     // The user may have moved to another thread while main answered: then the answer only updates the list.
     const here = isNew ? this.selected === NEW : this.selected === sent;
-    if (!here && this.active()) this.renderComposer();   // its Send was off while this one was sending
+    if (!here && this.active()) this.syncComposer();   // its Send was off while this one was sending
     if (!r.ok) {
       if (here) this.composerError = r.error;
-      if (here && this.active()) this.renderComposer();
+      if (here && this.active()) { this.syncComposer(); if (focused) this.r?.input.focus(); }
       return;
     }
-    this.threads = [r.data, ...this.threads.filter((t) => t.id !== r.data.id)];
+    const t = r.data;
+    this.threads = [t, ...this.threads.filter((x) => x.id !== t.id)];
     if (!here) {
       if (this.active()) this.renderList();
     } else if (isNew) {
       this.text = "";
-      this.thread = r.data;
-      this.selected = r.data.id;
+      this.draft = null;
+      this.thread = t;
+      this.selected = t.id;
       this.events = [];
       this.repo = null;
-      if (this.active()) { this.renderList(); this.renderReader(); }
-      void this.openThread(r.data.id);
+      this.next = { thread: t.id, model: t.model, effort: t.effort, access: t.access };
+      if (this.active()) { this.renderList(); this.renderReader(); if (focused) this.r?.input.focus(); }
+      void this.openThread(t.id);
     } else {
       this.text = "";
-      this.thread = r.data;
-      this.repo = null;
+      // Main answers with the thread as its file stood before this prompt, so t's model, effort and access are the last
+      // turn's: the next turn keeps what this one was sent with (this.next), or the chip would fall back and mark a change.
+      this.thread = t;
+      if (this.next?.thread !== t.id) this.next = { thread: t.id, model: t.model, effort: t.effort, access: t.access };
       if (this.active()) {
+        if (this.r) this.r.input.value = "";
+        this.menus?.slash.refresh();   // the cleared text is no command: an open `/` menu closes
         this.renderList();
         this.renderHead();
-        this.renderRepo();
-        this.renderComposer();
+        this.renderDrawer();
+        this.syncMenus();
+        this.syncComposer();
+        if (focused) this.r?.input.focus();
       }
     }
     this.scheduleList(0);
@@ -277,19 +530,47 @@ export class SessionsTab {
     this.stopping = t.id;
     sh.sessions.stop(t.id);
     this.renderHead();
+    this.r?.working?.setText(this.workingLine());
+  }
+
+  /** Esc stops a running turn while focus is in the tab; the menus and the drawer keep their own Esc. */
+  private onKey(e: KeyboardEvent): void {
+    if (e.key !== "Escape" || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+    if (!this.isThread(this.selected) || !turnOpen(this.events) || this.stopping === this.selected) return;
+    e.preventDefault();
+    this.stop();
+  }
+
+  private toggleTool(key: string, file: string | null): void {
+    if (this.expanded.has(key)) this.expanded.delete(key);
+    else {
+      this.expanded.add(key);
+      if (file && !this.diffs.has(file)) void this.loadDiff(file);
+    }
+    this.renderTimeline();
+  }
+
+  /** Review changes: the repository card in a drawer over the conversation, read again as it opens. */
+  private toggleDrawer(open = !this.drawer): void {
+    this.drawer = open;
+    if (open && !turnOpen(this.events)) void this.loadRepo();
+    this.renderHead();
+    this.renderDrawer();
+    if (open) this.r?.drawer.querySelector<HTMLElement>(".aos-ss-drawerclose")?.focus();
+    else this.r?.top.querySelector<HTMLElement>(".aos-ss-reviewbtn")?.focus();
   }
 
   private async review(file: string): Promise<void> {
     const sh = sessionsHost();
     const repo = this.repo;
     if (!sh || !repo) return;
-    if (repo.review?.file === file) { repo.review = null; this.renderRepo(); return; }
+    if (repo.review?.file === file) { repo.review = null; this.renderDrawer(); return; }
     repo.review = { file, text: "", truncated: false, error: null };
-    this.renderRepo();
+    this.renderDrawer();
     const r = await sh.git.diff(repo.workspace, file);
     if (this.repo !== repo || repo.review?.file !== file) return;
     repo.review = r.ok ? { file, text: r.data.text, truncated: r.data.truncated, error: null } : { file, text: "", truncated: false, error: r.error };
-    if (this.active()) this.renderRepo();
+    if (this.active()) this.renderDrawer();
   }
 
   private async commit(): Promise<void> {
@@ -297,16 +578,16 @@ export class SessionsTab {
     const repo = this.repo;
     if (!sh || !repo || repo.committing) return;
     // Main refuses a blank message too, but only as an argument that does not parse.
-    if (!repo.message.trim()) { repo.result = { ok: false, text: "A commit needs a message." }; this.renderRepo(); return; }
+    if (!repo.message.trim()) { repo.result = { ok: false, text: "A commit needs a message." }; this.renderDrawer(); return; }
     repo.committing = true;
     repo.result = null;
-    this.renderRepo();
+    this.renderDrawer();
     const r = await sh.git.commit(repo.workspace, repo.message);
     if (this.repo !== repo) return;
     repo.committing = false;
     repo.result = r.ok ? { ok: true, text: `Committed ${r.data.commit.slice(0, 7)}` } : { ok: false, text: r.error };
-    if (r.ok) { repo.review = null; await this.loadRepo(); }
-    else if (this.active()) this.renderRepo();
+    if (r.ok) { repo.review = null; this.diffs.clear(); await this.loadRepo(); }
+    else if (this.active()) this.renderDrawer();
   }
 
   // ── render ──
@@ -314,17 +595,14 @@ export class SessionsTab {
   private render(): void {
     if (!this.active()) return;
     const host = this.host as HTMLElement;
+    this.destroyMenus();
+    this.stopTick();
     host.empty();
     const root = host.createDiv({ cls: "aos-ss" });
-    const head = root.createDiv({ cls: "aos-rt-head" });
-    head.createSpan({ cls: "aos-rt-title", text: "Sessions" });
-    const actions = head.createDiv({ cls: "aos-rt-actions" });
-    if (sessionsHost()) {
-      const b = actions.createEl("button", { cls: "aos-ws-action aos-ss-newbtn", text: "New session" });
-      b.addEventListener("click", () => this.select(NEW));
-    }
-    const split = root.createDiv({ cls: "aos-split aos-ss-split" });
-    this.el = { list: split.createDiv({ cls: "aos-split-list aos-ss-list" }), reader: split.createDiv({ cls: "aos-split-detail aos-ss-reader" }) };
+    root.addEventListener("keydown", (e) => this.onKey(e));
+    const list = root.createEl("aside", { cls: "aos-ss-list", attr: { "aria-label": "Sessions" } });
+    const reader = root.createDiv({ cls: "aos-ss-reader" });
+    this.el = { list, reader };
     this.renderList();
     this.renderReader();
   }
@@ -334,26 +612,55 @@ export class SessionsTab {
     el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
   }
 
+  /** Redraws `el`, then gives focus back to the control that had it (by its data-focus key), so a live event does not
+   *  pull focus out from under the keyboard. */
+  private keepFocus(el: HTMLElement, draw: () => void): void {
+    const now = document.activeElement;
+    const key = now instanceof HTMLElement && el.contains(now) ? now.getAttribute("data-focus") : null;
+    draw();
+    if (key) el.querySelector<HTMLElement>(`[data-focus="${CSS.escape(key)}"]`)?.focus();
+  }
+
   private renderList(): void {
     const list = this.el?.list;
     if (!list || !this.active()) return;
-    list.empty();
-    const vault = list.createDiv({ cls: `aos-ss-row aos-ss-vault${this.selected === VAULT ? " is-selected" : ""}`, attr: { "data-thread": VAULT, role: "button", tabindex: "0" } });
-    vault.createSpan({ cls: "aos-ss-dot" });
-    const name = vault.createDiv({ cls: "aos-ss-name" });
-    name.createDiv({ cls: "aos-ss-title", text: "Vault" });
-    name.createDiv({ cls: "aos-ss-meta", text: "Questions about your notes" });
-    this.clickable(vault, () => this.select(VAULT));
+    this.keepFocus(list, () => {
+      list.empty();
+      const sh = sessionsHost();
+      if (sh) {
+        const b = list.createEl("button", { cls: `aos-ss-newbtn${this.selected === NEW ? " is-selected" : ""}`, attr: { type: "button", "data-focus": "new" } });
+        const icon = b.createSpan({ cls: "aos-ss-newicon" });
+        setIcon(icon, "square-pen");
+        b.appendText("New session");
+        b.addEventListener("click", () => this.select(NEW));
+      }
+      const on = this.selected === VAULT;
+      const vault = list.createDiv({
+        cls: `aos-ss-row aos-ss-vault${on ? " is-selected" : ""}`,
+        attr: { "data-thread": VAULT, role: "button", tabindex: "0", title: "Questions about your notes", "data-focus": `row:${VAULT}`, ...(on ? { "aria-current": "true" } : {}) },
+      });
+      const book = vault.createSpan({ cls: "aos-ss-rowicon" });
+      setIcon(book, "book-open");
+      vault.createSpan({ cls: "aos-ss-title", text: "Vault" });
+      this.clickable(vault, () => this.select(VAULT));
 
-    const note = (text: string) => list.createDiv({ cls: "aos-ss-note", text });
-    if (!sessionsHost()) { note("Workspace sessions run in the UniDeX app."); return; }
-    if (this.listError) { note(`Workspace sessions are unavailable: ${this.listError}.`); return; }
-    if (!this.threads.length) { if (this.listLoaded) note("No workspace sessions yet. New session starts one."); return; }
-    for (const g of groupThreads(this.threads)) {
-      const group = list.createDiv({ cls: "aos-ss-group", attr: { "data-workspace": g.workspace } });
-      group.createDiv({ cls: "aos-ss-ws", text: g.workspace });
-      for (const t of g.threads) this.renderThreadRow(group, t);
-    }
+      const threads = list.createDiv({ cls: "aos-ss-threads" });
+      const note = (text: string) => threads.createDiv({ cls: "aos-ss-note", text });
+      if (!sh) note("Workspace sessions run in the UniDeX app.");
+      else if (this.listError) note(`Workspace sessions are unavailable: ${this.listError}.`);
+      else if (!this.threads.length) { if (this.listLoaded) note("No workspace sessions yet. New session starts one."); }
+      else {
+        for (const g of groupThreads(this.threads)) {
+          const group = threads.createDiv({ cls: "aos-ss-group", attr: { "data-workspace": g.workspace, role: "group", "aria-label": g.workspace } });
+          const head = group.createDiv({ cls: "aos-ss-ws" });
+          const folder = head.createSpan({ cls: "aos-ss-wsicon" });
+          setIcon(folder, "folder");
+          head.createSpan({ cls: "aos-ss-wsname", text: g.workspace });
+          for (const t of g.threads) this.renderThreadRow(group, t);
+        }
+      }
+      if (sh && this.spend) this.renderSpend(list, this.spend);
+    });
   }
 
   /** The open thread's own events say whether its turn runs; the list's flag says it for the others. */
@@ -363,121 +670,291 @@ export class SessionsTab {
 
   private renderThreadRow(parent: HTMLElement, t: HostSessionThread): void {
     const running = this.isRunning(t);
-    const row = parent.createDiv({ cls: `aos-ss-row${this.selected === t.id ? " is-selected" : ""}${running ? " is-running" : ""}`, attr: { "data-thread": t.id, role: "button", tabindex: "0" } });
-    row.createSpan({ cls: "aos-ss-dot", attr: running ? { title: "Running", "aria-label": "Running" } : {} });
-    const name = row.createDiv({ cls: "aos-ss-name" });
-    name.createDiv({ cls: "aos-ss-title", text: t.title || "Untitled" });
-    name.createDiv({ cls: "aos-ss-meta", text: `${threadMeta(t)} · ${ago(t.updated, new Date())}` });
-    row.createSpan({ cls: `aos-pill aos-ss-host is-${t.host}`, text: HOST_LABEL[t.host] });
+    const on = this.selected === t.id;
+    const row = parent.createDiv({
+      cls: `aos-ss-row aos-ss-thread${on ? " is-selected" : ""}${running ? " is-running" : ""}`,
+      attr: {
+        "data-thread": t.id, "data-host": t.host, role: "button", tabindex: "0", "data-focus": `row:${t.id}`,
+        title: `${HOST_LABEL[t.host]} · ${threadMeta(t)} · ${ago(t.updated, new Date())}`, ...(on ? { "aria-current": "true" } : {}),
+      },
+    });
+    row.createSpan({ cls: `aos-ss-hostdot is-${t.host}`, attr: { role: "img", title: HOST_LABEL[t.host], "aria-label": HOST_LABEL[t.host] } });
+    row.createSpan({ cls: "aos-ss-title", text: t.title || "Untitled" });
+    if (running) row.createSpan({ cls: "aos-ss-runmark", text: "●", attr: { role: "img", title: "Working", "aria-label": "Working" } });
+    else row.createSpan({ cls: "aos-ss-age", text: threadAge(t.updated, new Date()) });
     this.clickable(row, () => this.select(t.id));
+  }
+
+  /** The list's foot: today's session spend against its cap, with a bar. */
+  private renderSpend(list: HTMLElement, spend: { spent: number; cap: number }): void {
+    const s = spendLine(spend.spent, spend.cap);
+    const foot = list.createDiv({ cls: `aos-ss-spend${s.ratio >= 1 ? " is-over" : s.ratio >= 0.8 ? " is-high" : ""}` });
+    const line = foot.createDiv({ cls: "aos-ss-spendline" });
+    line.createSpan({ text: "Sessions today" });
+    line.createSpan({ cls: "aos-ss-spendval", text: s.text });
+    const pct = Math.round(s.ratio * 100);
+    const bar = foot.createDiv({
+      cls: "aos-ss-spendbar",
+      attr: { role: "progressbar", "aria-label": "Session spend today", "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(pct) },
+    });
+    bar.createDiv({ cls: "aos-ss-spendfill" }).style.width = `${pct}%`;
   }
 
   private renderReader(): void {
     const list = this.el?.list;
     const reader = this.el?.reader;
     if (!list || !reader || !this.active()) return;
+    this.destroyMenus();
+    this.chat.detach();   // Vault's menus go with its DOM; its running question goes on
+    this.stopTick();
     reader.empty();
     this.md?.unload();
     this.md = new Component();
     this.md.load();
-    this.el = { list, reader };
+    this.r = null;
     if (this.selected === VAULT) {
       reader.addClass("is-vault");
       this.chat.mount(reader.createDiv({ cls: "aos-ss-vaultchat" }));
       return;
     }
     reader.removeClass("is-vault");
-    const head = reader.createDiv({ cls: "aos-reader-head aos-ss-head" });
-    const scroll = reader.createDiv({ cls: "aos-ss-scroll" });
-    const timeline = scroll.createDiv({ cls: "aos-ss-timeline" });
-    const repo = scroll.createDiv({ cls: "aos-ss-repo-wrap" });
-    const composer = reader.createDiv({ cls: "aos-ss-composer-wrap" });
-    this.el = { list, reader, head, scroll, timeline, repo, composer };
+    const top = reader.createDiv({ cls: "aos-ss-head aos-ss-top" });
+    const body = reader.createDiv({ cls: "aos-ss-body" });
+    const scroll = body.createDiv({ cls: "aos-ss-scroll" });
+    const timeline = scroll.createDiv({ cls: "aos-ss-column aos-ss-timeline" });
+    const drawer = body.createDiv({ cls: "aos-ss-drawer", attr: { id: "aos-ss-drawer", role: "region", "aria-label": "Review changes" } });
+    drawer.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      e.preventDefault();
+      e.stopPropagation();   // Esc here closes the drawer; it does not stop the turn
+      this.toggleDrawer(false);
+    });
+    const composer = this.buildComposer(reader.createDiv({ cls: "aos-ss-composer-wrap" }));
+    this.r = { top, scroll, timeline, drawer, working: null, ...composer };
     this.renderHead();
     this.renderTimeline(true);
-    this.renderRepo();
-    this.renderComposer();
+    this.renderDrawer();
+    this.syncComposer();
   }
 
+  /** The bar above the conversation: `workspace / title`, the branch, Review changes with its +/−, Stop while a turn runs. */
   private renderHead(): void {
-    const head = this.el?.head;
-    if (!head || !this.active()) return;
-    head.empty();
-    if (this.selected === NEW) {
-      head.createDiv({ cls: "aos-reader-title", text: "New session" });
-      head.createDiv({ cls: "aos-reader-meta", text: "An agent works in a workspace folder, turn by turn; you review and commit what it changed." });
-      return;
-    }
-    const t = this.thread;
-    const row = head.createDiv({ cls: "aos-ss-headrow" });
-    const crumbs = row.createDiv({ cls: "aos-reader-title aos-ss-crumbs" });
-    crumbs.createSpan({ cls: "aos-ss-crumb-ws", text: t?.workspace ?? "" });
-    crumbs.createSpan({ cls: "aos-ss-sep", text: "›" });
-    crumbs.createSpan({ cls: "aos-ss-crumb-title", text: t?.title ?? "" });
-    if (t && turnOpen(this.events)) {
-      const stopping = this.stopping === t.id;
-      const stop = row.createEl("button", { cls: "aos-ws-action aos-ss-stop", text: stopping ? "Stopping…" : "Stop" });
-      stop.disabled = stopping;
-      stop.addEventListener("click", () => this.stop());
-    }
-    if (!t) return;
-    const meta = head.createDiv({ cls: "aos-reader-meta aos-ss-headmeta" });
-    meta.createSpan({ cls: `aos-pill aos-ss-host is-${t.host}`, text: HOST_LABEL[t.host] });
-    if (t.model) meta.createSpan({ cls: "aos-ss-model", text: t.model });
+    const top = this.r?.top;
+    if (!top || !this.active()) return;
+    this.keepFocus(top, () => {
+      top.empty();
+      if (this.selected === NEW) {
+        top.createDiv({ cls: "aos-reader-title aos-ss-toptitle", text: "New session" });
+        return;
+      }
+      const t = this.thread;
+      const crumbs = top.createDiv({ cls: "aos-ss-crumbs" });
+      crumbs.createSpan({ cls: "aos-ss-crumb-ws", text: t?.workspace ?? "" });
+      crumbs.createSpan({ cls: "aos-ss-sep", text: "/" });
+      crumbs.createSpan({ cls: "aos-ss-crumb-title", text: t?.title ?? "" });
+      if (!t) return;
+      const st = this.repoStatus();
+      if (st?.branch) {
+        const branch = top.createSpan({ cls: "aos-ss-topbranch", attr: { title: `Branch ${st.branch}` } });
+        const icon = branch.createSpan({ cls: "aos-ss-topbranchicon" });
+        setIcon(icon, "git-branch");
+        branch.createSpan({ cls: "aos-ss-topbranchname", text: st.branch });
+      }
+      const review = top.createEl("button", {
+        cls: `aos-ss-reviewbtn${this.drawer ? " is-open" : ""}`,
+        attr: { type: "button", "aria-expanded": String(this.drawer), "aria-controls": "aos-ss-drawer", "data-focus": "review" },
+      });
+      review.createSpan({ text: "Review changes" });
+      const totals = diffTotals(st);
+      if (totals.files > totals.unknown) {
+        review.createSpan({ cls: "aos-ss-plus", text: `+${totals.added}` });
+        review.createSpan({ cls: "aos-ss-minus", text: `−${totals.removed}` });
+      }
+      review.addEventListener("click", () => this.toggleDrawer());
+      if (turnOpen(this.events)) {
+        const stopping = this.stopping === t.id;
+        const stop = top.createEl("button", { cls: "aos-ss-stop", attr: { type: "button", title: "Stop this turn", "data-focus": "stop" } });
+        stop.createSpan({ cls: "aos-ss-stoplabel", text: stopping ? "Stopping…" : "Stop" });
+        if (!stopping) stop.createSpan({ cls: "aos-ss-kbd", text: "esc", attr: { "aria-hidden": "true" } });
+        stop.disabled = stopping;
+        stop.addEventListener("click", () => this.stop());
+      }
+    });
   }
 
   private renderTimeline(toEnd = false): void {
-    const el = this.el?.timeline;
-    const scroll = this.el?.scroll;
-    if (!el || !scroll || !this.active()) return;
+    const r = this.r;
+    if (!r || !this.active()) return;
+    const { timeline: el, scroll } = r;
     const atEnd = toEnd || scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 48;
-    el.empty();
-    if (this.selected === NEW) return;
-    if (this.loading) { el.createDiv({ cls: "aos-ss-note", text: "Reading the thread…" }); return; }
-    for (const r of timelineRows(this.events)) this.renderRow(el, r);
-    if (turnOpen(this.events)) el.createDiv({ cls: "aos-ss-working", text: this.stopping === this.selected ? "Stopping…" : "Working…" });
+    this.keepFocus(el, () => {
+      el.empty();
+      r.working = null;
+      if (this.selected === NEW) { this.renderIntro(el); return; }
+      if (this.loading) { el.createDiv({ cls: "aos-ss-note", text: "Reading the thread…" }); return; }
+      const host = this.thread?.host ?? "claude";
+      const ctx: RowContext = { host, entry: catalogHost(this.catalog, host), root: this.workspaceRoot(), choices: turnChoices(this.events) };
+      for (const row of threadRows(this.events, { host, catalog: ctx.entry, root: ctx.root })) this.renderRow(el, row, ctx);
+      if (turnOpen(this.events)) r.working = el.createDiv({ cls: "aos-ss-working", text: this.workingLine() });
+    });
+    this.syncTick();
     if (atEnd) scroll.scrollTop = scroll.scrollHeight;
   }
 
-  private renderRow(el: HTMLElement, r: TimelineRow): void {
+  private renderIntro(el: HTMLElement): void {
+    const intro = el.createDiv({ cls: "aos-ss-intro" });
+    intro.createDiv({ cls: "aos-ss-introtitle", text: "Start a session in a workspace" });
+    intro.createDiv({ cls: "aos-ss-introtext", text: "An agent works in a workspace folder, turn by turn; you review and commit what it changed." });
+  }
+
+  private workingLine(): string {
+    return workingText(turnElapsed(this.events, new Date()), this.stopping === this.selected);
+  }
+
+  /** The working line's clock runs while that line is on screen, and stops with it (or the tab). */
+  private syncTick(): void {
+    if (!this.r?.working) { this.stopTick(); return; }
+    if (this.tick !== null) return;
+    this.tick = window.setInterval(() => {
+      const w = this.r?.working;
+      if (!w || !this.active()) { this.stopTick(); return; }
+      w.setText(this.workingLine());
+    }, TICK_MS);
+  }
+
+  private stopTick(): void {
+    if (this.tick !== null) window.clearInterval(this.tick);
+    this.tick = null;
+  }
+
+  private renderRow(el: HTMLElement, r: ThreadRow, ctx: RowContext): void {
     if (r.kind === "prompt") {
       el.createDiv({ cls: "aos-ss-prompt" }).createDiv({ cls: "aos-ss-bubble", text: r.text });
     } else if (r.kind === "text") {
       const body = el.createDiv({ cls: "aos-ss-text" });
       if (this.md) void MarkdownRenderer.renderMarkdown(r.text, body, `workspaces/${this.thread?.workspace ?? ""}`, this.md);
     } else if (r.kind === "tool") {
-      const tone = r.result === null ? "is-pending" : r.result.ok ? "is-ok" : "is-failed";
-      const d = el.createEl("details", { cls: `aos-ss-tool ${tone}`, attr: { "data-kind": r.tool.toolKind || "other" } });
-      d.open = this.expanded.has(r.key);
-      d.addEventListener("toggle", () => { if (d.open) this.expanded.add(r.key); else this.expanded.delete(r.key); });
-      d.createEl("summary", { cls: "aos-ss-toolline", text: toolLine(r.tool) });
-      const body = d.createDiv({ cls: "aos-ss-toolbody" });
-      if (r.tool.summary) body.createEl("pre", { cls: "aos-ss-toolin", text: r.tool.summary });
-      if (r.result) {
-        body.createDiv({ cls: "aos-ss-toolstate", text: r.result.ok ? "Result" : "Failed" });
-        if (r.result.summary) body.createEl("pre", { cls: "aos-ss-toolout", text: r.result.summary });
-      } else body.createDiv({ cls: "aos-ss-toolstate", text: "No result yet" });
+      this.renderTool(el, r);
     } else if (r.kind === "patch") {
-      const p = el.createDiv({ cls: "aos-ss-patch" });
-      p.createDiv({ cls: "aos-ss-patchhead", text: `Changed ${r.files.length} file${r.files.length === 1 ? "" : "s"}` });
-      for (const f of r.files) {
-        const row = p.createDiv({ cls: "aos-ss-patchfile" });
-        row.createSpan({ cls: "aos-ss-change", text: f.change });
-        row.createSpan({ text: f.path });
+      this.renderPatch(el, r, ctx);
+    } else if (r.kind === "plan") {
+      const card = el.createDiv({ cls: "aos-ss-plan" });
+      card.createDiv({ cls: "aos-ss-planhead", text: "Plan" });
+      const list = card.createEl("ul", { cls: "aos-ss-planlist" });
+      for (const item of r.items) {
+        const li = list.createEl("li", { cls: `aos-ss-planitem is-${item.status}`, attr: { "data-status": item.status } });
+        li.createSpan({ cls: "aos-ss-planbox", text: item.status === "done" ? "☒" : "☐", attr: { "aria-hidden": "true" } });
+        const text = li.createSpan({ cls: "aos-ss-plantext" });
+        text.createSpan({ cls: "aos-ss-sronly", text: PLAN_STATE[item.status] });
+        text.appendText(item.text);
       }
+    } else if (r.kind === "change") {
+      el.createDiv({ cls: "aos-ss-turnchange", attr: { "data-turn": String(r.turn) } }).createSpan({ cls: "aos-ss-turnchangetext", text: r.text });
     } else if (r.kind === "error") {
       el.createDiv({ cls: "aos-ss-error", text: r.message });
     } else {
-      el.createDiv({ cls: `aos-ss-done${r.ok ? "" : " is-failed"}`, text: r.footer });
+      const c = ctx.choices.get(r.turn);
+      const choice = c ? choiceText(ctx.host, ctx.entry, c.model, c.effort) : null;
+      el.createDiv({ cls: `aos-ss-done${r.ok ? "" : " is-failed"}`, text: doneLine(r, choice) });
     }
   }
 
-  private renderRepo(): void {
-    const el = this.el?.repo;
-    if (!el || !this.active()) return;
-    el.empty();
+  /** `⏺ Verb(target)` and its `⎿` result; open, the full input and result and, for an edit, the file's diff (U10). */
+  private renderTool(el: HTMLElement, r: Extract<ThreadRow, { kind: "tool" }>): void {
+    const tone = r.result === null ? "is-pending" : r.result.ok ? "is-ok" : "is-failed";
+    const open = this.expanded.has(r.key);
+    const box = el.createDiv({ cls: `aos-ss-tool ${tone}${open ? " is-open" : ""}`, attr: { "data-kind": r.tool.toolKind || "other", "data-verb": r.verb } });
+    const file = r.tool.toolKind === "edit" && r.tool.filePath ? this.diffPath(r.tool.filePath) : null;
+    this.renderLine(box, r.verb, r.target, open, `tool:${r.key}`, () => this.toggleTool(r.key, file));
+    const result = toolResultText(r, file ? fileCounts(this.repoStatus(), file) : null);
+    if (result !== null) this.renderResult(box, result, r.result?.ok === false);
+    if (!open) return;
+    const body = box.createDiv({ cls: "aos-ss-toolbody" });
+    if (r.tool.summary) body.createEl("pre", { cls: "aos-ss-toolin", text: r.tool.summary });
+    if (r.result) {
+      body.createDiv({ cls: "aos-ss-toolstate", text: r.result.ok ? "Result" : "Failed" });
+      if (r.result.summary) body.createEl("pre", { cls: "aos-ss-toolout", text: r.result.summary });
+    } else body.createDiv({ cls: "aos-ss-toolstate", text: "No result yet" });
+    if (file) this.renderFileDiff(body, file);
+  }
+
+  /** A Codex patch as Claude Code shows edits: a line per file with its +/−, each opening to the file's diff. */
+  private renderPatch(el: HTMLElement, r: Extract<ThreadRow, { kind: "patch" }>, ctx: RowContext): void {
+    const box = el.createDiv({ cls: "aos-ss-patch" });
+    r.files.forEach((f, i) => {
+      const key = `patch:${r.turn}:${i}:${f.path}`;
+      const open = this.expanded.has(key);
+      const file = f.path ? this.diffPath(f.path) : null;
+      const item = box.createDiv({ cls: `aos-ss-patchfile is-ok${open ? " is-open" : ""}`, attr: { "data-file": file ?? f.path, "data-change": f.change } });
+      this.renderLine(item, PATCH_VERB[f.change] ?? "Update", relPath(f.path, ctx.root), open, key, () => this.toggleTool(key, file));
+      const counts = file ? fileCounts(this.repoStatus(), file) : null;
+      const c = counts ? countsText(counts) : "";
+      this.renderResult(item, c ? `${c} · open to see the file's diff` : "Done", false);
+      if (open && file) this.renderFileDiff(item.createDiv({ cls: "aos-ss-toolbody" }), file);
+    });
+  }
+
+  private renderLine(box: HTMLElement, verb: string, target: string, open: boolean, key: string, toggle: () => void): void {
+    const line = box.createEl("button", { cls: "aos-ss-toolline", attr: { type: "button", "aria-expanded": String(open), "data-focus": key } });
+    line.createSpan({ cls: "aos-ss-verb", text: verb });
+    if (target) line.createSpan({ cls: "aos-ss-target", text: `(${target})` });
+    line.addEventListener("click", toggle);
+  }
+
+  /** The `⎿` line; an edit's `+a −b` in their colours. */
+  private renderResult(box: HTMLElement, text: string, failed: boolean): void {
+    const out = box.createDiv({ cls: `aos-ss-toolresult${failed ? " is-failed" : ""}` });
+    const m = /^(\+\d+) (−\d+)( · .*)$/.exec(text);
+    if (!m) { out.setText(text); return; }
+    out.createSpan({ cls: "aos-ss-plus", text: m[1] });
+    out.appendText(" ");
+    out.createSpan({ cls: "aos-ss-minus", text: m[2] });
+    out.appendText(m[3]);
+  }
+
+  /** The file's diff against HEAD now (git:diff), the same for both hosts: Codex names only the files it changed. */
+  private renderFileDiff(parent: HTMLElement, file: string): void {
+    const wrap = parent.createDiv({ cls: "aos-ss-filediff" });
+    const d = this.diffs.get(file);
+    if (d === undefined) void this.loadDiff(file);   // read again after a turn or a commit
+    if (!d) { wrap.createDiv({ cls: "aos-ss-note", text: "Reading the file's diff…" }); return; }
+    if (d.error) { wrap.createDiv({ cls: "aos-ss-error", text: d.error }); return; }
+    if (!d.text.trim()) { wrap.createDiv({ cls: "aos-ss-note", text: "The file has no changes against HEAD." }); return; }
+    this.renderDiff(wrap, d.text, d.truncated, DIFF_LINES);
+  }
+
+  private renderDiff(parent: HTMLElement, text: string, truncated: boolean, max = Infinity): void {
+    const lines = text.replace(/\n$/, "").split("\n");
+    const pre = parent.createEl("pre", { cls: "aos-ss-diff" });
+    for (const line of lines.slice(0, max)) {
+      const kind = /^(diff |index |--- |\+\+\+ )/.test(line) ? " is-meta" : line.startsWith("@@") ? " is-hunk" : line.startsWith("+") ? " is-add" : line.startsWith("-") ? " is-del" : "";
+      pre.createSpan({ cls: `aos-ss-diffline${kind}`, text: line || " " });
+    }
+    if (lines.length > max) parent.createDiv({ cls: "aos-ss-note", text: `The first ${max} of ${lines.length} lines; Review changes shows them all.` });
+    if (truncated) parent.createDiv({ cls: "aos-ss-note", text: "The diff is longer than this; only its first 2 MB are shown." });
+  }
+
+  /** The Review changes drawer: the repository card (what changed, each file's +/− and diff, the commit). */
+  private renderDrawer(): void {
+    const d = this.r?.drawer;
+    if (!d || !this.active()) return;
+    this.keepFocus(d, () => {
+      d.empty();
+      d.toggleClass("is-open", this.drawer);
+      if (!this.drawer) return;
+      const head = d.createDiv({ cls: "aos-ss-drawerhead" });
+      head.createSpan({ cls: "aos-ss-drawertitle", text: "Review changes" });
+      const close = head.createEl("button", { cls: "aos-ss-drawerclose", attr: { type: "button", "aria-label": "Close the review", title: "Close (esc)", "data-focus": "drawer-close" } });
+      setIcon(close, "x");
+      close.addEventListener("click", () => this.toggleDrawer(false));
+      this.renderRepo(d.createDiv({ cls: "aos-ss-drawerbody" }));
+    });
+  }
+
+  private renderRepo(el: HTMLElement): void {
     const r = this.repo;
-    if (!r || this.selected === NEW || turnOpen(this.events)) return;
+    const running = turnOpen(this.events);
+    if (!r) { el.createDiv({ cls: "aos-ss-note", text: running ? "The changes show when the turn ends." : "Reading the repository…" }); return; }
     const card = el.createDiv({ cls: "aos-ss-repo" });
     const head = card.createDiv({ cls: "aos-ss-repohead" });
     if (r.error) { head.createSpan({ cls: "aos-ss-reposum", text: r.error }); return; }
@@ -485,98 +962,173 @@ export class SessionsTab {
     const st = r.status;
     head.createSpan({ cls: "aos-ss-reposum", text: st.repo ? statusSummary(st) : `workspaces/${r.workspace} is not a git repository, so there is nothing to review or commit` });
     if (st.branch) head.createSpan({ cls: "aos-ss-branch", text: st.branch });
+    const totals = diffTotals(st);
+    if (totals.files > totals.unknown) this.renderCounts(head, totals);
     if (r.result) card.createDiv({ cls: `aos-ss-commitresult ${r.result.ok ? "is-ok" : "is-failed"}`, text: r.result.text });
     if (!st.repo || !st.files.length) return;
 
     const files = card.createDiv({ cls: "aos-ss-files" });
     for (const f of st.files) {
-      const row = files.createDiv({ cls: `aos-ss-file${r.review?.file === f.path ? " is-open" : ""}`, attr: { "data-file": f.path } });
+      const on = r.review?.file === f.path;
+      const row = files.createDiv({ cls: `aos-ss-file${on ? " is-open" : ""}`, attr: { "data-file": f.path } });
       row.createSpan({ cls: "aos-ss-change", text: fileStatusLabel(f.status) });
-      row.createSpan({ cls: "aos-ss-path", text: f.path });
-      const b = row.createEl("button", { cls: "aos-ws-action aos-ss-review", text: r.review?.file === f.path ? "Close" : "Review" });
+      row.createSpan({ cls: "aos-ss-path", text: f.path, attr: { title: f.path } });
+      this.renderCounts(row, f);
+      const b = row.createEl("button", { cls: "aos-ws-action aos-ss-review", text: on ? "Close" : "Review", attr: { type: "button", "data-focus": `review:${f.path}`, "aria-expanded": String(on) } });
       b.addEventListener("click", () => void this.review(f.path));
     }
     if (r.review) {
       const pane = card.createDiv({ cls: "aos-ss-diffwrap" });
       if (r.review.error) pane.createDiv({ cls: "aos-ss-error", text: r.review.error });
       else if (!r.review.text) pane.createDiv({ cls: "aos-dim", text: "Reading the diff…" });
-      else {
-        pane.createEl("pre", { cls: "aos-ss-diff", text: r.review.text });
-        if (r.review.truncated) pane.createDiv({ cls: "aos-ss-note", text: "The diff is longer than this; only its first 2 MB are shown." });
-      }
+      else this.renderDiff(pane, r.review.text, r.review.truncated);
     }
+    if (running) { card.createDiv({ cls: "aos-ss-note", text: "The agent is still working: commit once the turn ends." }); return; }
     const form = card.createDiv({ cls: "aos-ss-commit" });
-    const msg = form.createEl("input", { cls: "aos-ss-message", attr: { type: "text", "aria-label": "Commit message", spellcheck: "false" } });
+    const msg = form.createEl("input", { cls: "aos-ss-message", attr: { type: "text", "aria-label": "Commit message", spellcheck: "false", "data-focus": "message" } });
     msg.value = r.message;
     msg.addEventListener("input", () => { r.message = msg.value; });
-    const go = form.createEl("button", { cls: "mod-cta aos-ss-commitbtn", text: r.committing ? "Committing…" : "Commit" });
+    msg.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); void this.commit(); } });
+    const go = form.createEl("button", { cls: "mod-cta aos-ss-commitbtn", text: r.committing ? "Committing…" : "Commit", attr: { type: "button", "data-focus": "commit" } });
     go.disabled = r.committing || st.detached || st.merging;
     if (st.detached) form.createDiv({ cls: "aos-ss-note", text: "HEAD is detached: check out a branch to commit." });
     else if (st.merging) form.createDiv({ cls: "aos-ss-note", text: "A merge is in progress: finish it in a terminal." });
     go.addEventListener("click", () => void this.commit());
   }
 
-  private renderComposer(): void {
-    const el = this.el?.composer;
-    if (!el || !this.active()) return;
-    el.empty();
+  /** `+a −b` for a file or the whole status; "binary" for a file git counts no lines of. */
+  private renderCounts(parent: HTMLElement, c: { added: number | null; removed: number | null }): void {
+    const el = parent.createSpan({ cls: "aos-ss-counts" });
+    if (c.added === null || c.removed === null) { el.addClass("is-binary"); el.setText("binary"); return; }
+    el.createSpan({ cls: "aos-ss-plus", text: `+${c.added}` });
+    el.createSpan({ cls: "aos-ss-minus", text: `−${c.removed}` });
+  }
+
+  /**
+   * The composer, drawn once per reader: the prompt, the access chip, a new session's workspace, the host and model chip
+   * (the host locked in a thread), Send, and the status line. syncComposer() and syncMenus() keep it current, so a live
+   * event never takes the textarea's focus, an open menu or the caret.
+   */
+  private buildComposer(wrap: HTMLElement): Pick<ReaderEls, "input" | "send" | "error" | "status"> {
+    const col = wrap.createDiv({ cls: "aos-ss-column" });
     const isNew = this.selected === NEW;
-    const box = el.createDiv({ cls: "aos-ss-composer" });
-    let host: SessionHost | null = this.thread?.host ?? null;
-    if (isNew) host = this.renderPickers(box);
-    const input = box.createEl("textarea", { cls: "aos-ss-input", attr: { rows: "3", placeholder: isNew ? "What should the agent do?" : "Reply…" } });
+    const box = col.createDiv({ cls: "aos-ss-composer" });
+    const input = box.createEl("textarea", { cls: "aos-ss-input", attr: { rows: "2", "aria-label": "Message" } });
     input.value = this.text;
     input.addEventListener("input", () => { this.text = input.value; });
     input.addEventListener("keydown", (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); void this.submit(); }
     });
-    const foot = box.createDiv({ cls: "aos-ss-foot" });
-    if (host === "claude") {
-      const allow = foot.createEl("label", { cls: "aos-ss-allow" });
-      const box2 = allow.createEl("input", { attr: { type: "checkbox" } });
-      box2.checked = this.draft.allowCommands;
-      box2.addEventListener("change", () => { this.draft.allowCommands = box2.checked; });
-      allow.appendText("Allow commands");
-    } else if (host === "codex") {
-      foot.createSpan({ cls: "aos-ss-sandbox", text: CODEX_SANDBOX_NOTE });
-    }
-    if (this.composerError) foot.createDiv({ cls: "aos-ss-composererror", text: this.composerError });
-    const running = !isNew && turnOpen(this.events);
-    const send = foot.createEl("button", { cls: "mod-cta aos-ss-send", text: this.sending ? "Sending…" : "Send (⌘↵)" });
-    send.disabled = this.sending || running || (isNew && (!this.draft.workspace || !host));
+    const bar = box.createDiv({ cls: "aos-ss-toolbar" });
+    const choices = hostChoices(readAgenticosJson(this.plugin.claudeConfigDir()), readProviderState(this.plugin.vaultRoot()));
+    const access = new AccessMenu(bar, { host: null, value: this.accessValue(), onChange: (level) => this.pickAccess(level) });
+    if (isNew) this.renderWorkspacePicker(bar);
+    bar.createSpan({ cls: "aos-ss-spacer" });
+    const hostMenu = new HostModelMenu(bar, {
+      mode: isNew ? "new" : "thread",
+      catalog: this.catalog,
+      choices,
+      value: this.menuValue(),
+      remembered: this.remembered(),
+      refreshing: this.refreshing,
+      onChange: (v) => this.pickModel(v),
+      onRefresh: () => void this.loadCatalog(true),
+      onNewSessionOn: isNew ? undefined : (h) => this.newSessionOn(h),
+    });
+    const send = bar.createEl("button", { cls: "aos-ss-send", attr: { type: "button", "aria-label": "Send", title: "Send (⌘↵)" } });
+    setIcon(send, "arrow-up");
     send.addEventListener("click", () => void this.submit());
-    input.disabled = this.sending;
+    const host = hostMenu.value().host;
+    const slash = new SlashMenu(input, box, { commands: this.commands(host), host: host ?? "claude" });
+    this.menus = { host: hostMenu, access, slash };
+    this.accessShown = "";
+    this.hostDisabled = false;
+    this.syncAccess();
+    const error = col.createDiv({ cls: "aos-ss-composererror", attr: { role: "alert" } });
+    const status = col.createDiv({ cls: "aos-ss-statusline" });
+    return { input, send, error, status };
   }
 
-  /** The new session's workspace, host and model; returns the host it will run on. */
-  private renderPickers(box: HTMLElement): SessionHost | null {
-    const opts = box.createDiv({ cls: "aos-ss-opts" });
+  /** The new session's workspace: a chip around the folder names under workspaces/. */
+  private renderWorkspacePicker(bar: HTMLElement): void {
     const names = this.workspaces();
-    if (!names.includes(this.draft.workspace)) this.draft.workspace = names[0] ?? "";
-    if (names.length) {
-      const sel = opts.createEl("select", { cls: "dropdown aos-ss-workspace", attr: { "aria-label": "Workspace" } });
-      for (const n of names) sel.createEl("option", { text: n, value: n });
-      sel.value = this.draft.workspace;
-      sel.addEventListener("change", () => { this.draft.workspace = sel.value; });
-    } else opts.createSpan({ cls: "aos-ss-note", text: "No workspaces yet: add a folder under workspaces/." });
+    if (!names.includes(this.workspace)) this.workspace = names[0] ?? "";
+    if (!names.length) { bar.createSpan({ cls: "aos-ss-note aos-ss-noworkspace", text: "No workspaces yet: add a folder under workspaces/." }); return; }
+    const chip = bar.createEl("label", { cls: "aos-ss-wschip", attr: { title: "Workspace" } });
+    const icon = chip.createSpan({ cls: "aos-ss-wschipicon" });
+    setIcon(icon, "folder");
+    const sel = chip.createEl("select", { cls: "dropdown aos-ss-workspace", attr: { "aria-label": "Workspace" } });
+    for (const n of names) sel.createEl("option", { text: n, value: n });
+    sel.value = this.workspace;
+    sel.addEventListener("change", () => { this.workspace = sel.value; this.syncComposer(); });
+  }
 
-    const choices = hostChoices(readAgenticosJson(this.plugin.claudeConfigDir()), readProviderState(this.plugin.vaultRoot()));
-    const ready = choices.filter((c) => c.ready).map((c) => c.host);
-    if (!this.draft.host || !ready.includes(this.draft.host)) this.draft.host = ready[0] ?? null;
-    const chips = opts.createDiv({ cls: "aos-ss-hosts" });
-    for (const c of choices) {
-      const b = chips.createEl("button", {
-        cls: `aos-nt-chip aos-ss-hostchip${this.draft.host === c.host ? " is-active" : ""}`, text: c.label,
-        attr: { "data-host": c.host, title: c.reason ?? `Run this session on ${c.label}` },
-      });
-      b.disabled = !c.ready;
-      b.addEventListener("click", () => { this.draft.host = c.host; this.renderComposer(); });
+  /** Hands the menus the catalog, the remembered choices and the value they start from. */
+  private syncMenus(): void {
+    const m = this.menus;
+    if (!m) return;
+    this.hostDisabled = this.sending;
+    m.host.update({ catalog: this.catalog, value: this.menuValue(), remembered: this.remembered(), refreshing: this.refreshing, disabled: this.sending });
+    const host = m.host.value().host;
+    m.slash.update(this.commands(host), host ?? "claude");
+    this.syncAccess();
+  }
+
+  /** The access chip follows the host (Codex's sandbox note) and the level; redrawn only when one of them changed. */
+  private syncAccess(): void {
+    const m = this.menus;
+    if (!m) return;
+    const host = m.host.value().host;
+    const value = this.accessValue();
+    const shown = `${host}|${value}|${this.sending}`;
+    if (shown === this.accessShown) return;
+    this.accessShown = shown;
+    m.access.update({ host, value, disabled: this.sending });
+  }
+
+  private syncComposer(): void {
+    const r = this.r;
+    if (!r || !this.active()) return;
+    const isNew = this.selected === NEW;
+    const host = this.menus?.host.value().host ?? null;
+    const running = !isNew && turnOpen(this.events);
+    r.input.disabled = this.sending;
+    r.input.setAttr("placeholder", isNew ? "What should the agent do?" : this.thread ? `Reply to ${HOST_LABEL[this.thread.host]}…   / for commands` : "Reply…");
+    r.send.disabled = this.sending || running || (isNew && (!this.workspace || !host));
+    r.send.toggleClass("is-busy", this.sending);
+    r.error.setText(this.composerError ?? "");
+    if (this.menus && this.hostDisabled !== this.sending) {
+      this.hostDisabled = this.sending;
+      this.menus.host.update({ disabled: this.sending });
     }
-    if (!ready.length) opts.createSpan({ cls: "aos-ss-note", text: "No host is ready: aos init --host turns one on." });
+    this.syncAccess();
+    this.renderStatus();
+  }
 
-    const model = opts.createEl("input", { cls: "aos-ss-modelinput", attr: { type: "text", placeholder: "Model (optional)", "aria-label": "Model", spellcheck: "false" } });
-    model.value = this.draft.model;
-    model.addEventListener("input", () => { this.draft.model = model.value; });
-    return this.draft.host;
+  /** The mono line under the composer: the next turn's model · effort · access, the spend, the branch and files. */
+  private renderStatus(): void {
+    const el = this.r?.status;
+    if (!el || !this.active()) return;
+    el.empty();
+    const v = this.menus?.host.value();
+    if (v?.host) el.createSpan({ cls: "aos-ss-statuschoice", text: `${choiceText(v.host, catalogHost(this.catalog, v.host), v.model, v.effort)} · ${accessLabel(this.accessValue())}` });
+    const thread = this.isThread(this.selected);
+    const spend: string[] = [];
+    const turn = thread ? lastTurnUsd(this.events) : null;
+    if (turn) spend.push(`turn ${turn.estimated ? "≈" : ""}${usdText(turn.usd)}`);
+    if (this.spend) spend.push(`today ${spendLine(this.spend.spent, this.spend.cap).text}`);
+    if (spend.length) el.createSpan({ cls: "aos-ss-statusspend", text: spend.join(" · ") });
+    const st = thread ? this.repoStatus() : null;
+    if (st?.repo) {
+      const n = st.files.length;
+      el.createSpan({ cls: "aos-ss-statusrepo", text: `${st.branch ?? "detached HEAD"} · ${n} file${n === 1 ? "" : "s"}` });
+    }
+  }
+
+  private destroyMenus(): void {
+    this.menus?.slash.destroy();
+    this.menus?.host.destroy();
+    this.menus?.access.destroy();
+    this.menus = null;
   }
 }
