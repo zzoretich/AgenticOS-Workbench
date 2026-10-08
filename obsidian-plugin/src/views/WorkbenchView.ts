@@ -302,7 +302,7 @@ export class WorkbenchView extends ItemView {
   }
 
   /** Starts `host` ("quick": the one ⌘T starts) and shows it. A host that is not ready opens the menu with why. */
-  async launchTerminal(host: TermHost | "quick", o: { picked?: Place | null; resume?: "last" | null } = {}): Promise<void> {
+  async launchTerminal(host: TermHost | "quick", o: { picked?: Place | null; resume?: "last" | { id: string } | null } = {}): Promise<void> {
     const launcher = this.plugin.termLauncher;
     const context = this.termContext();
     let h: TermHost;

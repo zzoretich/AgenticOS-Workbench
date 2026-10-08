@@ -2946,3 +2946,51 @@ button.aos-ntm-row.is-create:disabled { color: var(--udx-danger); }
 .aos-term-started { display: inline-flex; align-items: center; gap: 8px; margin: 0 8px; padding: 2px 4px 2px 10px; border-radius: 8px; background: var(--udx-ok-bg); font-size: 12px; color: var(--udx-text); }
 button.aos-term-started-change:not(.clickable-icon) { height: 22px; padding: 0 8px; border: 1px solid var(--udx-line-2); border-radius: 6px; background: var(--udx-bg); box-shadow: none; font-size: 11.5px; }
 .aos-ws-code { font-family: var(--udx-mono); }
+
+/* ══ Term: the deck (spec 2026-10-08-term-agent-deck T1) — the list beside the selected terminal ══════════════════════ */
+.aos-term.aos-term-deck { flex-direction: row; }
+.aos-tl { flex: 0 0 248px; min-width: 0; display: flex; flex-direction: column; gap: 6px; padding: 10px 8px; box-sizing: border-box; background: var(--udx-surface); border-right: 1px solid var(--udx-line); }
+.aos-tl-head { padding: 0 4px; }
+.aos-tl-new .aos-ntm, .aos-tl-new .aos-ntm-split { display: flex; width: 100%; }
+.aos-tl-new button.aos-ntm-main:not(.clickable-icon) { flex: 1; min-width: 0; }
+.aos-ntm.is-left .aos-ntm-pop { left: 0; right: auto; }
+.aos-tl input.aos-tl-filter { width: 100%; box-sizing: border-box; height: 28px; padding: 0 9px; border: 1px solid var(--udx-line); border-radius: 8px; background: var(--udx-bg); font-size: 12.5px; color: var(--udx-text); }
+.aos-tl-groups { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; }
+.aos-tl-group { display: flex; align-items: center; gap: 6px; padding: 10px 6px 3px; font-size: 12px; font-weight: 500; color: var(--udx-text-2); }
+.aos-tl-groupicon svg { width: 13px; height: 13px; }
+.aos-tl-grouplabel { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+button.aos-tl-plus:not(.clickable-icon) { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 6px; background: transparent; box-shadow: none; color: var(--udx-text-3); opacity: 0; }
+.aos-tl-group:hover button.aos-tl-plus, button.aos-tl-plus:focus-visible { opacity: 1; }
+button.aos-tl-plus:not(.clickable-icon):hover { background: var(--udx-raised-2); color: var(--udx-text); }
+.aos-tl-plus svg { width: 13px; height: 13px; }
+.aos-tl-row.aos-term-tab { display: flex; align-items: center; gap: 8px; max-width: none; padding: 6px 8px 6px 14px; border: 0; border-radius: 8px; background: transparent; font-size: 13px; color: var(--udx-text); cursor: pointer; }
+.aos-tl-row.aos-term-tab:hover { background: var(--udx-raised); }
+.aos-tl-row.aos-term-tab.aos-term-tab-active { background: var(--udx-raised-2); color: var(--udx-text); border-color: transparent; }
+.aos-tl-row.aos-term-tab.aos-term-tab-exited { opacity: 1; text-decoration: none; color: var(--udx-text-3); }
+.aos-tl-row:focus-visible { outline: 2px solid var(--udx-focus); outline-offset: -2px; }
+.aos-tl-text { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.3; }
+.aos-tl-origin { font-size: 11px; color: var(--udx-text-3); }
+.aos-tl-end { flex: none; font-size: 11.5px; }
+.aos-tl-end.is-done { color: var(--udx-ok); }
+.aos-tl-end.is-failed { color: var(--udx-danger); }
+button.aos-tl-close:not(.clickable-icon) { flex: none; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 5px; background: transparent; box-shadow: none; color: var(--udx-text-3); opacity: 0; }
+.aos-tl-row:hover button.aos-tl-close, button.aos-tl-close:focus-visible { opacity: 1; }
+.aos-tl-empty { padding: 10px 8px; font-size: 12.5px; color: var(--udx-text-3); }
+.aos-tl-foot { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 8px 4px 0; border-top: 1px solid var(--udx-line); font-size: 11.5px; color: var(--udx-text-3); }
+button.aos-tl-clear:not(.clickable-icon) { height: 22px; padding: 0 8px; border: 1px solid var(--udx-line-2); border-radius: 6px; background: var(--udx-bg); box-shadow: none; font-size: 11.5px; }
+.aos-term-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.aos-term-deck .aos-term-tabs:empty { display: none; }
+.aos-term-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-width: 0; }
+.aos-term-placewrap { position: relative; }
+button.aos-term-place:not(.clickable-icon) { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 8px; border: 0; border-radius: 7px; background: transparent; box-shadow: none; font-size: 12.5px; color: var(--udx-text-2); }
+button.aos-term-place:not(.clickable-icon):hover { background: var(--udx-raised); color: var(--udx-text); }
+.aos-term-placeicon svg, .aos-term-placecaret svg { width: 12px; height: 12px; }
+.aos-term-placemenu { position: absolute; left: 0; top: calc(100% + 4px); z-index: 40; min-width: 220px; padding: 5px; display: flex; flex-direction: column; border: 1px solid var(--udx-line-2); border-radius: 10px; background: var(--udx-bg); box-shadow: var(--udx-shadow); }
+button.aos-term-placeitem:not(.clickable-icon) { height: auto; padding: 6px 9px; border: 0; border-radius: 7px; background: transparent; box-shadow: none; font-size: 12.5px; text-align: left; color: var(--udx-text); }
+button.aos-term-placeitem:not(.clickable-icon):hover, button.aos-term-placeitem:focus-visible { background: var(--udx-raised-2); outline: none; }
+.aos-term-sep { color: var(--udx-text-3); }
+.aos-term-headtitle { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 500; color: var(--udx-text); }
+.aos-term-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.aos-term-chip { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: 999px; background: var(--udx-raised); font-size: 11.5px; color: var(--udx-text-2); }
+.aos-term-endbar { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 8px; background: var(--udx-raised); font-size: 12px; color: var(--udx-text-2); }
+button.aos-term-endbtn:not(.clickable-icon) { height: 24px; padding: 0 9px; border: 1px solid var(--udx-line-2); border-radius: 6px; background: var(--udx-bg); box-shadow: none; font-size: 12px; }

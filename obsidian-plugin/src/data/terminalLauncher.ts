@@ -25,7 +25,7 @@ export interface LaunchRequest {
   picked?: Place | null;
   context?: Place | null;
   /** Continue the last conversation in that place instead of starting one (⇧Enter in the menu). */
-  resume?: "last" | null;
+  resume?: "last" | { id: string } | null;
   /** Type `git init` first (a new workspace whose box is ticked). */
   gitInit?: boolean;
   /** What started it when it was not the deck (a skill's button…): such launches never change the remembered host. */
@@ -110,7 +110,7 @@ export class TerminalLauncher {
   }
 
   /** The agent line a launch would type, before the session id is known (the menu's preview). */
-  spec(host: "claude" | "codex", opts: { resume?: "last" | null; gitInit?: boolean; sessionId?: string | null } = {}): LaunchSpec {
+  spec(host: "claude" | "codex", opts: { resume?: "last" | { id: string } | null; gitInit?: boolean; sessionId?: string | null } = {}): LaunchSpec {
     const cfg = readAgenticosJson(this.plugin.claudeConfigDir());
     const bin = this.choices().find((c) => c.host === host)?.bin ?? null;
     const model = modelArg(host, sanitizeSessionChoice(this.plugin.settings.sessionChoice).models[host]);
@@ -220,7 +220,7 @@ export class TerminalLauncher {
   }
 
   /** The terminal itself: a fresh shell in the place, with the agent's line typed when it is an agent. */
-  private start(host: TermHost, place: Place, o: { resume: "last" | null; gitInit: boolean; origin: string | null }): TerminalSession {
+  private start(host: TermHost, place: Place, o: { resume: "last" | { id: string } | null; gitInit: boolean; origin: string | null }): TerminalSession {
     const pool = this.plugin.terminalPool;
     const shell = this.plugin.settings.terminalShell || pool.defaults.shell;
     const sessionId = host === "claude" && !o.resume ? newId() : null;
