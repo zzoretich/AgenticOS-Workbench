@@ -4,6 +4,8 @@ All notable changes to UniDeX (AgenticOS Workbench before 1.1). Versions follow 
 
 ## [Unreleased]
 
+## [1.4.0] — 2026-10-08
+
 ### Added
 - **Start Claude Code, Codex or a shell from anywhere, without picking a workspace.** ⌘T starts the host you used last, ⌥⌘1 Claude Code, ⌥⌘2 Codex and ⌥⌘3 a shell, from any tab. The Term tab's New button says what it will start and where ("New Claude Code · in Vault"); its ▾ menu lists every host, every place (what you have selected, the vault, Scratch, your workspaces, recent ones) and shows the exact command it will type. Terminals start next to what you are looking at (a selected workspace terminal, or the workspace open in Spaces), else in **your vault**. **Scratch**, a shared workspace at `workspaces/scratch`, is made the first time you pick it.
 - **New workspace in one step.** ⇧⌘N, or a new name typed in the ▾ menu, makes `workspaces/<name>` with its README, CLAUDE.md and AGENTS.md (and its own git repo, unless your vault's git tracks `workspaces/`) and starts the agent there. An existing name opens only when typed exactly.
@@ -430,7 +432,8 @@ The first public release: an `aos` CLI, the AgenticOS runtime, a Claude Code plu
 - Update notifications: a GitHub release check surfaced as a session-start notice.
 - Docs: README, install guide, and a release acceptance runbook.
 
-[Unreleased]: https://github.com/zzoretich/UniDeX-Agent-Harness/compare/v1.3.1...HEAD
+[Unreleased]: https://github.com/zzoretich/UniDeX-Agent-Harness/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v1.4.0
 [1.3.1]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v1.3.1
 [1.3.0]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v1.3.0
 [1.2.1]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v1.2.1
