@@ -60,6 +60,8 @@ export interface AgenticOSSettings {
   vaultChoice: VaultChoice;
   // Term (spec 2026-10-08-term-agent-deck): read through sanitizeTerminalChoice
   terminalChoice: TerminalChoice;
+  // The Term composer's saved prompts (T12): read through data/termComposer.ts sanitizeSnippets
+  terminalSnippets: Array<{ title: string; text: string; host: "claude" | "codex" | null }>;
 }
 
 /** Keys data.json may still hold from earlier versions; loadSettings prunes them (the two HUD-only toggles, D10). */
@@ -85,6 +87,7 @@ export const DEFAULT_SETTINGS: AgenticOSSettings = {
   vaultChoice: { host: null, models: { claude: null, codex: null }, efforts: { claude: null, codex: null } },
   // Term
   terminalChoice: { host: null, access: "host", agentPlace: "scratch", recent: [] },
+  terminalSnippets: [],
 };
 
 // ── remembered choices (U12) ──

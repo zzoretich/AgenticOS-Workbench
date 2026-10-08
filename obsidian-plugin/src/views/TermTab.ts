@@ -27,6 +27,7 @@ export class TermTab {
   /** The next or previous terminal (⇧⌘] / ⇧⌘[), and closing the selected one (⇧⌘W). */
   step(dir: 1 | -1): void { this.panel?.step(dir); }
   closeActive(): void { this.panel?.closeActive(); }
+  focusComposer(): boolean { return this.panel?.focusComposer() ?? false; }
   /** The New menu (⇧⌘T) or its New workspace sheet (⇧⌘N); `reason` says why ⌘T could not start at once. */
   openNewMenu(mode: "menu" | "create", reason: string | null = null): void { this.panel?.openNewMenu(mode, reason); }
 }

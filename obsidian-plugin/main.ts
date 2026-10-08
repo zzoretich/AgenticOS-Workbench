@@ -129,6 +129,7 @@ export default class AgenticOSPlugin extends Plugin {
     };
     this.addCommand({ id: "term-next", name: "Next terminal", hotkeys: [{ modifiers: ["Mod", "Shift"], key: "]" }], callback: onTerm((t) => t.step(1)) });
     this.addCommand({ id: "term-previous", name: "Previous terminal", hotkeys: [{ modifiers: ["Mod", "Shift"], key: "[" }], callback: onTerm((t) => t.step(-1)) });
+    this.addCommand({ id: "term-composer", name: "Write to the agent (composer)", hotkeys: [{ modifiers: ["Mod"], key: "l" }], callback: onTerm((t) => { t.focusComposer(); }) });
     this.addCommand({ id: "term-close", name: "Close terminal", hotkeys: [{ modifiers: ["Mod", "Shift"], key: "w" }], callback: onTerm((t) => t.closeActive()) });
     this.addCommand({ id: "new-workspace", name: "New workspace…", hotkeys: [{ modifiers: ["Mod", "Shift"], key: "n" }],
       callback: () => { void this.termCommand(async (v) => v.openTermMenu("create")); } });

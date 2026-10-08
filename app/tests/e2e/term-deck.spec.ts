@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { FX, command, content, openTab, useApp } from "./harness";
+import { FX, command, content, openTab, terminalText, useApp } from "./harness";
 
 // The Term deck (spec 2026-10-08-term-agent-deck T1): terminals grouped by where they run, the selected one's header,
 // and the Term keys. Read-only: shells start in the vault and Claude Code in an existing workspace, so nothing is written.
@@ -64,4 +64,23 @@ test("Clear ended removes the agents that ended; the filter narrows the list", a
   await C().locator(".aos-tl-clear").click();
   await expect(C().locator(".aos-tl-end")).toHaveCount(0);
   expect(FX.v("workspaces/harbor-map")).toContain("harbor-map");
+});
+
+test("the composer: hidden for a shell; for an agent ⌘L focuses it and Enter sends one paste that runs (T12)", async () => {
+  const { win } = app();
+  await openTab(win, "term");
+  expect(await command(win, "agentic-os:new-terminal-shell")).toBe(true);
+  await expect(C().locator(".aos-tc")).toHaveClass(/is-hidden/);
+  // A shell stands in for an agent (the fixture's agent stubs exit at once): the composer shows for a running agent row.
+  await win.evaluate(() => {
+    const p = (window as unknown as { aosHost: { plugin: { terminalPool: { selectedId(): string | null; get(id: string): { setMeta(m: object): void } | undefined } } } }).aosHost.plugin.terminalPool;
+    p.get(p.selectedId() ?? "")?.setMeta({ host: "claude" });
+  });
+  await expect(C().locator(".aos-tc")).not.toHaveClass(/is-hidden/);
+  expect(await command(win, "agentic-os:term-composer")).toBe(true);
+  await expect(C().locator(".aos-tc-input")).toBeFocused();
+  await C().locator(".aos-tc-input").fill("echo composer-$((6*7))");
+  await win.keyboard.press("Enter");
+  await expect.poll(() => terminalText(win), { timeout: 10_000 }).toContain("composer-42");
+  await expect(C().locator(".aos-tc-input")).toHaveValue("");
 });

@@ -14,6 +14,8 @@ import { TERMINAL_FONT, currentTheme, onThemeChange, xtermTheme } from "./theme"
 import { NewTerminalMenu, type NewTerminalActions } from "./NewTerminalMenu";
 import { Notice, setIcon } from "obsidian";
 import { TermList } from "./TermList";
+import { TermComposer } from "./TermComposer";
+import { shell } from "../host";
 import { ConfirmModal } from "./ConfirmModal";
 import { LinkRepoModal } from "./LinkRepoModal";
 import { groupTerminals, stepRow, type TermGroup, type TermRowInput } from "../data/termGroups";
@@ -55,6 +57,7 @@ export class TerminalPanel {
   private noteTimer: number | null = null;
   private newMenu: NewTerminalMenu | null = null;
   private list: TermList | null = null;
+  private composer: TermComposer | null = null;
   private headMainEl: HTMLElement | null = null;
   private placeMenu: HTMLElement | null = null;
   private groups: TermGroup[] = [];
@@ -120,6 +123,7 @@ export class TerminalPanel {
 
     // body
     this.bodyEl = frame.createDiv({ cls: "aos-term-body" });
+    if (this.opts.deck) this.composer = new TermComposer(frame, this.plugin, () => this.focus());
 
     // drag handle
     if (this.opts.resizable && !this.opts.fullPane) {
@@ -190,6 +194,7 @@ export class TerminalPanel {
     this.newMenu?.destroy();
     this.newMenu = null;
     this.list = null;
+    this.composer = null;
     this.headMainEl = null;
     this.placeMenu = null;
     // dispose xterm instances but DON'T touch PTYs in the pool
@@ -228,6 +233,9 @@ export class TerminalPanel {
     const next = stepRow(this.groups.length ? this.groups : groupTerminals(this.rowInputs()), this.activeId, dir);
     if (next) this.activate(next);
   }
+
+  /** Focuses the composer under an agent's terminal (⌘L); false when the selected terminal has none. */
+  focusComposer(): boolean { return this.composer?.focus() ?? false; }
 
   /** Closes the selected terminal (⇧⌘W), asking first while an agent runs in it. */
   closeActive(): void { if (this.activeId) this.closeSession(this.activeId); }
@@ -338,6 +346,7 @@ export class TerminalPanel {
     el.empty();
     this.placeMenu = null;
     const s = this.activeId ? this.plugin.terminalPool.get(this.activeId) : undefined;
+    this.composer?.setSession(s ?? null);
     if (!s) return;
     const place = this.placeOfSession(s);
     const wrap = el.createDiv({ cls: "aos-term-placewrap" });
@@ -416,7 +425,7 @@ export class TerminalPanel {
     // refit + focus next frame so layout settles; a menu or field the user is in keeps its focus
     requestAnimationFrame(() => {
       this.refit();
-      if (this.newMenu?.isOpen()) return;
+      if (this.newMenu?.isOpen() || this.composer?.isFocused()) return;
       b?.term.focus();
     });
   }
@@ -434,7 +443,17 @@ export class TerminalPanel {
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
-    term.loadAddon(new WebLinksAddon());
+    // Links: https opens in the browser; agenticos:// (the agents' status lines) opens its Workbench tab (spec §4).
+    term.loadAddon(new WebLinksAddon((_e, uri) => this.openLink(uri)));
+    term.options.linkHandler = { activate: (_e, text) => this.openLink(text) };
+    // Shift+Enter is a new line in Claude Code's prompt: Ctrl+J, which its docs say works in every terminal (T12).
+    term.attachCustomKeyEventHandler((e) => {
+      if (e.type === "keydown" && e.key === "Enter" && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && sess.meta.host === "claude" && !sess.isExited) {
+        sess.write("\n");
+        return false;
+      }
+      return true;
+    });
     term.open(container);
 
     // hydrate from cached scrollback
@@ -450,6 +469,16 @@ export class TerminalPanel {
     const binding: XtermBinding = { term, fit, container, detachData };
     this.bindings.set(sess.id, binding);
     return binding;
+  }
+
+  private openLink(uri: string): void {
+    let u: URL;
+    try { u = new URL(uri); } catch { return; }
+    if (u.protocol === "https:" || u.protocol === "http:") { void shell.openExternal(u.toString()); return; }
+    if (u.protocol === "agenticos:" && u.hostname === "workbench") {
+      const tab = u.searchParams.get("tab");
+      if (tab && /^[a-z-]+$/.test(tab)) void this.plugin.openWorkbenchTab(tab);
+    }
   }
 
   private refit(): void {
