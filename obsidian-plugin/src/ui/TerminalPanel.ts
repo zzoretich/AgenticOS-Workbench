@@ -6,6 +6,7 @@
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
+import { SearchAddon } from "@xterm/addon-search";
 import type AgenticOSPlugin from "../../main";
 import { TerminalSession } from "../data/terminalSession";
 import type { LaunchNote } from "../data/terminalLauncher";
@@ -15,6 +16,8 @@ import { NewTerminalMenu, type NewTerminalActions } from "./NewTerminalMenu";
 import { Notice, setIcon } from "obsidian";
 import { TermList } from "./TermList";
 import { TermComposer } from "./TermComposer";
+import { TermFind } from "./TermFind";
+import { FIND_LIMIT } from "../data/termFind";
 import { shell } from "../host";
 import { ConfirmModal } from "./ConfirmModal";
 import { LinkRepoModal } from "./LinkRepoModal";
@@ -24,6 +27,7 @@ import { TERM_ACCESS_LABEL, TERM_HOST_LABEL, placeOf, type Place, type PlaceWorl
 interface XtermBinding {
   term: Terminal;
   fit: FitAddon;
+  search: SearchAddon;
   container: HTMLElement;
   detachData: () => void;
 }
@@ -58,6 +62,7 @@ export class TerminalPanel {
   private newMenu: NewTerminalMenu | null = null;
   private list: TermList | null = null;
   private composer: TermComposer | null = null;
+  private finder: TermFind | null = null;
   private headMainEl: HTMLElement | null = null;
   private placeMenu: HTMLElement | null = null;
   private groups: TermGroup[] = [];
@@ -123,7 +128,10 @@ export class TerminalPanel {
 
     // body
     this.bodyEl = frame.createDiv({ cls: "aos-term-body" });
-    if (this.opts.deck) this.composer = new TermComposer(frame, this.plugin, () => this.focus());
+    if (this.opts.deck) {
+      this.composer = new TermComposer(frame, this.plugin, () => this.focus());
+      this.finder = new TermFind(this.bodyEl, () => this.focus());
+    }
 
     // drag handle
     if (this.opts.resizable && !this.opts.fullPane) {
@@ -153,6 +161,7 @@ export class TerminalPanel {
     this.disposeTheme?.();
     this.disposeTheme = onThemeChange((theme) => {
       for (const b of this.bindings.values()) b.term.options.theme = xtermTheme(theme);
+      this.finder?.refresh();
     });
 
     // listen for pool changes: owned by this panel and removed in unmount(), not plugin.registerEvent(), which kept
@@ -167,6 +176,7 @@ export class TerminalPanel {
         if (this.activeId === id) {
           this.activeId = pool.selectedId();
           if (this.activeId) this.ensureBindingForActive();
+          else this.finder?.retarget(null);
         }
         this.renderTabs();
       },
@@ -195,6 +205,8 @@ export class TerminalPanel {
     this.newMenu = null;
     this.list = null;
     this.composer = null;
+    this.finder?.close(false);
+    this.finder = null;
     this.headMainEl = null;
     this.placeMenu = null;
     // dispose xterm instances but DON'T touch PTYs in the pool
@@ -236,6 +248,14 @@ export class TerminalPanel {
 
   /** Focuses the composer under an agent's terminal (⌘L); false when the selected terminal has none. */
   focusComposer(): boolean { return this.composer?.focus() ?? false; }
+
+  /** Opens the find bar on the selected terminal (⌘F); false when there is no terminal to find in. */
+  openFind(): boolean {
+    const b = this.activeId ? this.bindings.get(this.activeId) : undefined;
+    if (!this.finder || !b) return false;
+    this.finder.open(b.search);
+    return true;
+  }
 
   /** Closes the selected terminal (⇧⌘W), asking first while an agent runs in it. */
   closeActive(): void { if (this.activeId) this.closeSession(this.activeId); }
@@ -422,10 +442,11 @@ export class TerminalPanel {
     for (const [id, binding] of this.bindings.entries()) {
       binding.container.style.display = id === this.activeId ? "block" : "none";
     }
+    this.finder?.retarget(b.search);
     // refit + focus next frame so layout settles; a menu or field the user is in keeps its focus
     requestAnimationFrame(() => {
       this.refit();
-      if (this.newMenu?.isOpen() || this.composer?.isFocused()) return;
+      if (this.newMenu?.isOpen() || this.composer?.isFocused() || this.finder?.isFocused()) return;
       b?.term.focus();
     });
   }
@@ -443,6 +464,9 @@ export class TerminalPanel {
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
+    // ⌘F finds in this terminal, scrollback included (the find bar draws the highlights: proposed API, allowed above).
+    const search = new SearchAddon({ highlightLimit: FIND_LIMIT });
+    term.loadAddon(search);
     // Links: https opens in the browser; agenticos:// (the agents' status lines) opens its Workbench tab (spec §4).
     term.loadAddon(new WebLinksAddon((_e, uri) => this.openLink(uri)));
     term.options.linkHandler = { activate: (_e, text) => this.openLink(text) };
@@ -466,7 +490,7 @@ export class TerminalPanel {
     term.onData((d) => sess.write(d));
     term.onResize(({ cols, rows }) => sess.resize(cols, rows));
 
-    const binding: XtermBinding = { term, fit, container, detachData };
+    const binding: XtermBinding = { term, fit, search, container, detachData };
     this.bindings.set(sess.id, binding);
     return binding;
   }

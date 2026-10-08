@@ -72,4 +72,11 @@ for (const name of ["light", "dark"] as const) {
       assert.ok(contrast(t[k], t.termBackground) >= 4.5, `${k}: ${contrast(t[k], t.termBackground).toFixed(2)}`);
     }
   });
+
+  test(`${name}: the terminal's text reads 4.5:1 on ⌘F's matches`, () => {
+    for (const k of ["termFindMatch", "termFindActive"] as const) {
+      assert.match(t[k], /^#[0-9a-f]{6}$/, `${k} is #rrggbb (xterm decorations take nothing else)`);
+      assert.ok(contrast(t.termForeground, t[k]) >= 4.5, `termForeground on ${k}: ${contrast(t.termForeground, t[k]).toFixed(2)}`);
+    }
+  });
 }
