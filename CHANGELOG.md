@@ -4,6 +4,12 @@ All notable changes to UniDeX (AgenticOS Workbench before 1.1). Versions follow 
 
 ## [Unreleased]
 
+### Upgrading
+- **Updating from 1.3.0 or earlier:** the fix below works from the version that has it, so this one update still needs a hand: after **Restart to Update**, quit UniDeX with ⌘Q (or the tray's Quit) if it has not closed, and leave it closed for about 20 seconds while it installs and reopens.
+
+### Fixed
+- **Restart to Update quits the app.** Electron closes an update's windows before it emits `before-quit`, so the main window, which hides instead of closing until the app quits, cancelled the quit: the app stayed running in the tray and the installer waited for it. The app now marks itself as quitting first (and on Squirrel's own `before-quit-for-update`), so the update installs and the app reopens by itself.
+
 ## [1.3.0] — 2026-10-07
 
 ### Upgrading
