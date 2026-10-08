@@ -7,6 +7,9 @@ All notable changes to UniDeX (AgenticOS Workbench before 1.1). Versions follow 
 ### Changed
 - **The composer (⌘L) sits under every running terminal,** a plain shell too: ⏎ runs what you wrote, ⇧⏎ adds a line, @ inserts a file and Snippets work; the / list stays with Claude Code and Codex.
 
+### Fixed
+- **Every tab keeps its own layout after a visit to the Term tab.** In 1.4.0 the Term tab left its layout on the Workbench's shared content area, so every tab opened after it was drawn in a row (lists beside their toolbars, Notifications and Proposals without their side list, To-Do in columns, Files' search and tree out of place) until the app restarted. Each tab now starts on a bare content area.
+
 ### Removed
 - **The terminal on the Pulse tab.** Terminals live in the Term tab; the Pulse tab's ❯_ buttons and Commands still open it. The Embedded terminal panel setting is gone with it.
 
