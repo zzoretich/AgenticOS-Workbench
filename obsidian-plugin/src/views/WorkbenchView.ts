@@ -23,6 +23,8 @@ import { readTeams, diskAdapter, gateBadge } from "../data/teams";
 import { CaptureModal } from "../ui/CaptureModal";
 import { HOST_APP_SETTINGS, HOST_TOGGLE_THEME, runHostCommand } from "../ui/hostCommands";
 import { currentTheme, onThemeChange } from "../ui/theme";
+import type { NewTerminalActions } from "../ui/NewTerminalMenu";
+import { TERM_HOST_LABEL, isContextPlace, placeOf, workspacePlace, type Place, type TermHost } from "../data/terminalLaunch";
 
 export const VIEW_TYPE_WORKBENCH = "agentic-os-workbench";
 
@@ -248,19 +250,84 @@ export class WorkbenchView extends ItemView {
     } catch { return { count: 0, breaking: false }; }   // no brain/notifications yet
   }
 
-  /** Opens a fresh Term session in the vault running `command`, and shows it (the Proposals tab's Review button). */
-  /** Runs `command` in a new Term session and shows it. False when no session could start (the Term tab then shows
-   *  its install hint), so a caller whose command must not be lost can say so. */
-  runInTerm(command: string): boolean {
+  /** Runs `command` in a new Term session in the vault and shows it (Skills, Agents, Proposals, Notifications, Agent
+   *  Teams, Settings). `host` is the agent the command starts, for its dot in the list; `origin` is the row's subtitle.
+   *  False when no session could start (the Term tab then shows its install hint), so a caller whose command must not
+   *  be lost can say so. */
+  runInTerm(command: string, o: { host?: TermHost; origin?: string } = {}): boolean {
     let id: string | null = null;
     try {
-      const sess = this.plugin.terminalPool.create({ cwd: this.plugin.vaultRoot() });
+      const vault = this.plugin.vaultRoot();
+      const sess = this.plugin.terminalPool.create({
+        cwd: vault,
+        meta: { host: o.host ?? "shell", origin: o.origin ?? null, place: placeOf(vault, this.plugin.termLauncher.world()), label: o.host && o.host !== "shell" ? null : command },
+      });
       sess.write(`${command}\r`);
       id = sess.id;
+      this.plugin.terminalPool.select(id);
     } catch { /* no terminal support: the Term tab renders its install hint */ }
     this.setTab("term");
     if (id) (this.tabs.term as TermTab | undefined)?.showSession(id);
     return id !== null;
+  }
+
+  // ── starting terminals from the deck (spec 2026-10-08-term-agent-deck T2–T6) ──
+
+  /** What the New button, its menu and the shortcuts start through. */
+  termActions(): NewTerminalActions {
+    return {
+      start: (req) => this.launchTerminal(req.host, { picked: req.picked ?? null, resume: req.resume ?? null }),
+      create: (name, host, gitInit) => this.createWorkspaceAndLaunch(name, host, gitInit),
+      context: () => this.termContext(),
+    };
+  }
+
+  /** What you are looking at, for a launch (T4): the selected terminal's workspace or Scratch while Term is shown, or
+   *  the workspace open in Spaces. Anything else (the vault, home, another folder, another tab) is no context. */
+  termContext(): Place | null {
+    const launcher = this.plugin.termLauncher;
+    if (this.activeTab === "term") {
+      const pool = this.plugin.terminalPool;
+      const s = pool.get(pool.selectedId() ?? "");
+      if (!s) return null;
+      const p = s.meta.place ?? placeOf(s.cwd, launcher.world());
+      return isContextPlace(p) ? p : null;
+    }
+    if (this.activeTab === "spaces") {
+      const name = (this.tabs.spaces as SpacesTab | undefined)?.selectedWorkspace() ?? null;
+      const w = launcher.world();
+      return name && w.workspaces.includes(name) ? workspacePlace(name, w) : null;
+    }
+    return null;
+  }
+
+  /** Starts `host` ("quick": the one ⌘T starts) and shows it. A host that is not ready opens the menu with why. */
+  async launchTerminal(host: TermHost | "quick", o: { picked?: Place | null; resume?: "last" | null } = {}): Promise<void> {
+    const launcher = this.plugin.termLauncher;
+    const context = this.termContext();
+    let h: TermHost;
+    if (host === "quick") {
+      const q = launcher.quickHost();
+      if (!q.host) { this.openTermMenu("menu", q.reason); return; }
+      h = q.host;
+    } else h = host;
+    const choice = launcher.choices().find((c) => c.host === h);
+    if (!choice || choice.hidden) throw new Error(`${TERM_HOST_LABEL[h]} is off on this Mac: run aos init --host ${h}`);
+    if (!choice.ready) { this.openTermMenu("menu", choice.reason); return; }
+    await launcher.launch({ host: h, picked: o.picked ?? null, context, resume: o.resume ?? null });
+    if (this.activeTab !== "term") this.setTab("term");
+  }
+
+  /** Makes a workspace and starts `host` there (T6), then shows it. */
+  async createWorkspaceAndLaunch(name: string, host: TermHost, gitInit: boolean): Promise<void> {
+    await this.plugin.termLauncher.createAndLaunch(name, host, gitInit);
+    if (this.activeTab !== "term") this.setTab("term");
+  }
+
+  /** Shows Term and opens its New menu (⇧⌘T), or the New workspace sheet (⇧⌘N). */
+  openTermMenu(mode: "menu" | "create", reason: string | null = null): void {
+    if (this.activeTab !== "term") this.setTab("term");
+    (this.tabs.term as TermTab | undefined)?.openNewMenu(mode, reason);
   }
 
   private onRailClick(tab: RailTab): void {

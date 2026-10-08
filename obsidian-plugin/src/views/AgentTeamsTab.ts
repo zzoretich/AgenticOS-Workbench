@@ -190,7 +190,7 @@ export class AgentTeamsTab {
       hostEnv: this.hostEnv(),
       busy: (k) => this.busyKeys.has(k), error: (k) => this.errors.get(k) ?? null,
       act: (k, args, confirm) => this.act(k, args, confirm),
-      term: (cmd) => { if (!this.wb.runInTerm(cmd)) this.noTerminal(cmd); },
+      term: (cmd, host) => { if (!this.wb.runInTerm(cmd, { host: host ?? "shell", origin: "Agent Teams" })) this.noTerminal(cmd); },
       render: () => this.render(),
       select: (id, view, item) => {
         if (id !== this.ui.team) { this.ui.channelItem = null; this.ui.openItem = null; }

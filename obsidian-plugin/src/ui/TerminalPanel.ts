@@ -1,15 +1,17 @@
 // TerminalPanel — embeddable terminal component.
-// Renders the panel chrome (header with tabs, body with xterm, optional drag handle)
-// inside a host element. Each session gets its own xterm; only the active one is visible.
+// Renders the panel chrome (header with tabs and the New button, body with xterm, optional drag handle) inside a host
+// element. Each session gets its own xterm; only the active one is visible. The pool keeps which one is selected, so a
+// tab switch, a launch from another tab or the Pulse strip all show the same terminal (spec 2026-10-08-term-agent-deck).
 
-import { Notice } from "obsidian";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import type AgenticOSPlugin from "../../main";
 import { TerminalSession } from "../data/terminalSession";
+import type { LaunchNote } from "../data/terminalLauncher";
 import { listen } from "../data/listen";
 import { TERMINAL_FONT, currentTheme, onThemeChange, xtermTheme } from "./theme";
+import { NewTerminalMenu, type NewTerminalActions } from "./NewTerminalMenu";
 
 interface XtermBinding {
   term: Terminal;
@@ -26,7 +28,12 @@ export interface TerminalPanelOptions {
   showMaximize?: boolean;
   onMaximize?: () => void;
   fullPane?: boolean;          // render in full-pane mode (no drag handle, fills container)
+  /** What the New button starts through (the Workbench view's launches); no New button without it. */
+  launch?: NewTerminalActions;
 }
+
+/** How long the "Started … · Change" note stays after a launch. */
+const STARTED_MS = 6000;
 
 export class TerminalPanel {
   private plugin: AgenticOSPlugin;
@@ -36,6 +43,9 @@ export class TerminalPanel {
   private headerEl!: HTMLElement;
   private tabsEl!: HTMLElement;
   private bodyEl!: HTMLElement;
+  private noteEl: HTMLElement | null = null;
+  private noteTimer: number | null = null;
+  private newMenu: NewTerminalMenu | null = null;
 
   private bindings = new Map<string, XtermBinding>();
   private activeId: string | null = null;
@@ -64,9 +74,7 @@ export class TerminalPanel {
     this.tabsEl = this.headerEl.createDiv({ cls: "aos-term-tabs" });
 
     const right = this.headerEl.createDiv({ cls: "aos-term-header-right" });
-    const newBtn = right.createEl("button", { cls: "aos-term-btn", text: "+ new" });
-    newBtn.setAttr("title", "New shell session (Cmd-Shift-N)");
-    newBtn.addEventListener("click", () => { void this.createNewSession(); });
+    if (this.opts.launch) this.newMenu = new NewTerminalMenu(right, this.plugin.termLauncher, this.opts.launch);
 
     if (this.opts.showMaximize && this.opts.onMaximize) {
       const max = right.createEl("button", { cls: "aos-term-btn", text: "⛶" });
@@ -88,7 +96,7 @@ export class TerminalPanel {
       this.bindDragResize(handle, host);
     }
 
-    // ensure at least one session
+    // ensure at least one session (an empty Term tab or Pulse strip opens a shell: spec T13)
     const pool = this.plugin.terminalPool;
     if (!pool || pool.list().length === 0) {
       if (pool) {
@@ -98,7 +106,7 @@ export class TerminalPanel {
     }
     if (!pool) { this.renderError(new Error("Terminal pool not initialized")); return; }
 
-    this.activeId = pool.list()[0]?.id || null;
+    this.activeId = pool.selectedId();
     this.renderTabs();
     if (this.activeId) this.ensureBindingForActive();
 
@@ -121,15 +129,25 @@ export class TerminalPanel {
         if (!this.host) return;
         const b = this.bindings.get(id);
         if (b) { b.detachData(); try { b.term.dispose(); } catch {} this.bindings.delete(id); }
-        this.renderTabs();
         if (this.activeId === id) {
-          const next = pool.list()[0];
-          this.activeId = next?.id || null;
+          this.activeId = pool.selectedId();
           if (this.activeId) this.ensureBindingForActive();
         }
+        this.renderTabs();
       },
       "session-exit": () => { if (this.host) this.renderTabs(); },
+      "session-update": () => { if (this.host) { this.renderTabs(); this.newMenu?.refresh(); } },
+      "session-select": (id: string | null) => {
+        if (!this.host || !id || id === this.activeId) return;
+        this.activeId = id;
+        this.renderTabs();
+        this.ensureBindingForActive();
+      },
+      "session-launched": (note: LaunchNote) => { if (this.host) this.showStarted(note); },
     });
+    // A launch from another tab switches here after it announced itself: show its note now.
+    const last = pool.lastLaunch;
+    if (last && last.id === this.activeId && Date.now() - last.at < STARTED_MS) this.showStarted(last as LaunchNote);
   }
 
   unmount(): void {
@@ -137,6 +155,9 @@ export class TerminalPanel {
     this.disposePool = null;
     this.disposeTheme?.();
     this.disposeTheme = null;
+    if (this.noteTimer !== null) { window.clearTimeout(this.noteTimer); this.noteTimer = null; }
+    this.newMenu?.destroy();
+    this.newMenu = null;
     // dispose xterm instances but DON'T touch PTYs in the pool
     for (const b of this.bindings.values()) {
       try { b.detachData(); } catch { /* ignore */ }
@@ -158,16 +179,21 @@ export class TerminalPanel {
   activate(id: string): void {
     if (!this.plugin.terminalPool.get(id)) return;
     this.activeId = id;
+    this.plugin.terminalPool.select(id);
     this.renderTabs();
     this.ensureBindingForActive();
   }
 
+  /** Opens the New menu (⇧⌘T), or its New workspace sheet (⇧⌘N); `reason` says why ⌘T could not start at once. */
+  openNewMenu(mode: "menu" | "create" = "menu", reason: string | null = null): void {
+    this.newMenu?.open(mode, reason);
+  }
+
+  /** A plain shell in the default place (the old "+ new"). */
   async createNewSession(): Promise<void> {
     try {
       const sess = this.plugin.terminalPool.create();
-      this.activeId = sess.id;
-      this.renderTabs();
-      this.ensureBindingForActive();
+      this.activate(sess.id);
     } catch (e) {
       this.renderError(e);
     }
@@ -188,10 +214,16 @@ export class TerminalPanel {
     this.tabsEl.empty();
     const sessions = this.plugin.terminalPool.list();
     for (const s of sessions) {
-      const tab = this.tabsEl.createDiv({ cls: "aos-term-tab" });
+      const tab = this.tabsEl.createDiv({ cls: "aos-term-tab", attr: { "data-session": s.id, "data-host": s.meta.host } });
       if (s.id === this.activeId) tab.addClass("aos-term-tab-active");
       if (s.isExited) tab.addClass("aos-term-tab-exited");
+      tab.createSpan({ cls: `aos-term-dot is-${s.meta.host}`, attr: { "aria-hidden": "true" } });
       tab.createSpan({ cls: "aos-term-tab-label", text: s.getTitle() });
+      const place = s.meta.place?.label ?? s.meta.origin;
+      if (place) tab.createSpan({ cls: "aos-term-tab-place", text: place });
+      if (s.isExited && s.exitCode) tab.createSpan({ cls: "aos-term-tab-exit", text: `Exited ${s.exitCode}` });
+      const why = [s.meta.origin ? `from ${s.meta.origin}` : null, s.meta.place ? `in ${s.meta.place.dir}` : `in ${s.cwd}`].filter(Boolean).join(" · ");
+      tab.setAttr("title", `${s.getTitle()} · ${why}`);
       const close = tab.createSpan({ cls: "aos-term-tab-close", text: "×" });
       close.setAttr("title", "Close session");
       close.addEventListener("click", (e) => {
@@ -200,6 +232,24 @@ export class TerminalPanel {
       });
       tab.addEventListener("click", () => { this.activate(s.id); });
     }
+  }
+
+  /** "Started Claude Code in Scratch · Change" for a few seconds; Change ends that terminal and reopens the menu. */
+  private showStarted(note: LaunchNote): void {
+    if (this.noteTimer !== null) window.clearTimeout(this.noteTimer);
+    this.noteEl?.detach();
+    const el = this.headerEl.createDiv({ cls: "aos-term-started", attr: { role: "status" } });
+    this.tabsEl.after(el);
+    el.createSpan({ text: note.text });
+    if (this.opts.launch && note.why !== "picked") {
+      const change = el.createEl("button", { cls: "aos-term-started-change", text: "Change", attr: { type: "button" } });
+      change.addEventListener("click", () => {
+        this.plugin.terminalPool.remove(note.id);
+        this.openNewMenu("menu");
+      });
+    }
+    this.noteEl = el;
+    this.noteTimer = window.setTimeout(() => { el.detach(); this.noteTimer = null; }, STARTED_MS);
   }
 
   private ensureBindingForActive(): void {
@@ -213,9 +263,10 @@ export class TerminalPanel {
     for (const [id, binding] of this.bindings.entries()) {
       binding.container.style.display = id === this.activeId ? "block" : "none";
     }
-    // refit + focus next frame so layout settles
+    // refit + focus next frame so layout settles; a menu or field the user is in keeps its focus
     requestAnimationFrame(() => {
       this.refit();
+      if (this.newMenu?.isOpen()) return;
       b?.term.focus();
     });
   }
@@ -290,3 +341,4 @@ export class TerminalPanel {
     });
   }
 }
+

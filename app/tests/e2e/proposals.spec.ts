@@ -165,5 +165,8 @@ test("Review in Claude ❯_ opens Term with a new session in the vault running t
   const after = await win.evaluate(() => (window as unknown as { aosHost: { plugin: { terminalPool: { list(): Array<{ id: string }> } } } }).aosHost.plugin.terminalPool.list().map((s) => s.id));
   expect(after.length).toBe(sessions + 1);
   // The new session is the one on screen.
-  await expect(win.locator(".aos-wb-content .aos-term-tab.aos-term-tab-active .aos-term-tab-label")).toHaveText(`t${after[after.length - 1]}`);
+  await expect(win.locator(".aos-wb-content .aos-term-tab.aos-term-tab-active")).toHaveAttribute("data-session", after[after.length - 1]);
+  // It is a Claude Code row, started from Proposals (spec 2026-10-08-term-agent-deck).
+  await expect(win.locator(".aos-wb-content .aos-term-tab.aos-term-tab-active")).toHaveAttribute("data-host", "claude");
+  await expect(win.locator(".aos-wb-content .aos-term-tab.aos-term-tab-active .aos-term-tab-place")).toHaveText("Vault");
 });

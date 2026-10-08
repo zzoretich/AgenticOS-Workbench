@@ -165,14 +165,15 @@ test.describe("Sessions and Term", () => {
     await openTab(win, "pulse");
   });
 
-  test("Term: a live shell in the vault; + new adds a session; typing runs in it", async () => {
+  test("Term: a live shell in the vault; New ▸ Shell adds a session; typing runs in it", async () => {
     const { win } = app();
     await openTab(win, "term");
     await expect(content(win).locator(".aos-term-title")).toHaveText("Terminal");
     await expect(content(win).locator(".aos-term-error")).toHaveCount(0);   // node-pty loads in the app: no install hint
     await expect.poll(() => terminalText(win), { timeout: 10_000 }).toContain("fixture %");
     const before = await content(win).locator(".aos-term-tab").count();
-    await content(win).locator(".aos-term-btn", { hasText: "+ new" }).click();
+    await content(win).locator(".aos-ntm-caret").click();
+    await content(win).locator(".aos-ntm-row[data-key='now-shell']").click();
     await expect(content(win).locator(".aos-term-tab")).toHaveCount(before + 1);
     await expect(content(win).locator(".aos-term-tab").last()).toHaveClass(/aos-term-tab-active/);
     await expect.poll(() => terminalText(win), { timeout: 10_000 }).toContain("fixture %");

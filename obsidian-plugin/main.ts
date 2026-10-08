@@ -4,12 +4,14 @@ import { BRAND } from "./src/brand";
 import { MemoryInspectorView, VIEW_TYPE_MEMORY_INSPECTOR, consumePendingMemory } from "./src/views/MemoryInspectorView";
 import { RunInspectorView, VIEW_TYPE_RUN_INSPECTOR, consumePendingRunId } from "./src/views/RunInspectorView";
 import { WorkbenchView, VIEW_TYPE_WORKBENCH, WORKBENCH_TAB_IDS } from "./src/views/WorkbenchView";
-import type { TermTab } from "./src/views/TermTab";
 import type { PulseTab } from "./src/views/PulseTab";
 import type { RunsTab } from "./src/views/RunsTab";
 import type { FilesTab } from "./src/views/FilesTab";
 import { QuickOpenModal } from "./src/ui/QuickOpenModal";
 import { TerminalPool } from "./src/data/terminalPool";
+import { TerminalLauncher } from "./src/data/terminalLauncher";
+import { sessionHosts } from "./src/data/aosConfig";
+import type { TermHost } from "./src/data/terminalLaunch";
 import { AgenticOSSettings, AgenticOSSettingTab, DEFAULT_SETTINGS } from "./src/settings";
 import { loadSnapshot, SNAPSHOT_PATH } from "./src/data/snapshot";
 import { loadRuns, RUNS_PATH, touchesRuns, formatRelative } from "./src/data/runs";
@@ -58,6 +60,7 @@ export default class AgenticOSPlugin extends Plugin {
   liveRuns: LiveRunsWatcher | null = null;
   bus: Events = new Events();    // intra-plugin event bus for live-run fan-out
   terminalPool!: TerminalPool;
+  termLauncher!: TerminalLauncher;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -70,12 +73,16 @@ export default class AgenticOSPlugin extends Plugin {
     this.hb.on("probe", () => { /* keep status bar's "ago" fresh */ });
     this.hb.start();
 
-    // terminal pool — defaults resolved here
+    // terminal pool — its defaults read the settings at each new terminal, so the Shell and Working directory settings
+    // apply without a restart (spec 2026-10-08-term-agent-deck)
     const adapter = this.app.vault.adapter as unknown as { getBasePath?: () => string };
     const vaultPath = adapter.getBasePath ? adapter.getBasePath() : env.cwd();
-    const defaultShell = this.settings.terminalShell || env.get("SHELL") || (env.platform() === "win32" ? "cmd.exe" : "/bin/zsh");
-    const defaultCwd = this.settings.terminalCwd || vaultPath;
-    this.terminalPool = new TerminalPool({ shell: defaultShell, cwd: defaultCwd });
+    const settings = () => this.settings;
+    this.terminalPool = new TerminalPool({
+      get shell() { return settings().terminalShell || env.get("SHELL") || (env.platform() === "win32" ? "cmd.exe" : "/bin/zsh"); },
+      get cwd() { return settings().terminalCwd || vaultPath; },
+    });
+    this.termLauncher = new TerminalLauncher(this);
 
     // views
     this.registerView(VIEW_TYPE_SIDEBAR_HUD, (leaf) => new SidebarHUDView(leaf, this));
@@ -97,13 +104,25 @@ export default class AgenticOSPlugin extends Plugin {
     this.addCommand({ id: "open-sidebar-hud",     name: "Open Sidebar HUD",     callback: () => { void this.activate(VIEW_TYPE_SIDEBAR_HUD, "right"); } });
     this.addCommand({ id: "open-memory-inspector", name: "Open Memory Inspector", callback: () => { void this.activate(VIEW_TYPE_MEMORY_INSPECTOR); } });
     this.addCommand({ id: "open-run-inspector",   name: "Open Run Inspector",    callback: () => { void this.activate(VIEW_TYPE_RUN_INSPECTOR); } });
-    this.addCommand({ id: "new-terminal", name: "New terminal session", callback: () => {
-      void this.openWorkbenchTab("term").then(() => {
-        const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_WORKBENCH)[0];
-        const view = leaf?.view;
-        if (view instanceof WorkbenchView) (view.getTab("term") as TermTab | null)?.newSession();
-      });
-    }});
+    // Starting terminals (spec 2026-10-08-term-agent-deck T2, T3, T6): ⌘T the host used last, ⌥⌘1-3 one host each (only
+    // for a host that is on), ⇧⌘T the menu, ⇧⌘N a new workspace. The menu and the keymap are built from these hotkeys.
+    this.addCommand({ id: "new-terminal", name: "New terminal", hotkeys: [{ modifiers: ["Mod"], key: "t" }],
+      callback: () => { void this.termCommand((v) => v.launchTerminal("quick")); } });
+    const on = sessionHosts(readAgenticosJson(this.claudeConfigDir()));
+    const perHost: Array<{ host: TermHost; id: string; name: string; key: string }> = [
+      { host: "claude", id: "new-terminal-claude", name: "New Claude Code terminal", key: "1" },
+      { host: "codex", id: "new-terminal-codex", name: "New Codex terminal", key: "2" },
+      { host: "shell", id: "new-terminal-shell", name: "New shell", key: "3" },
+    ];
+    for (const c of perHost) {
+      if (c.host !== "shell" && !on.includes(c.host)) continue;
+      this.addCommand({ id: c.id, name: c.name, hotkeys: [{ modifiers: ["Mod", "Alt"], key: c.key }],
+        callback: () => { void this.termCommand((v) => v.launchTerminal(c.host)); } });
+    }
+    this.addCommand({ id: "new-terminal-menu", name: "New terminal…", hotkeys: [{ modifiers: ["Mod", "Shift"], key: "t" }],
+      callback: () => { void this.termCommand(async (v) => v.openTermMenu("menu")); } });
+    this.addCommand({ id: "new-workspace", name: "New workspace…", hotkeys: [{ modifiers: ["Mod", "Shift"], key: "n" }],
+      callback: () => { void this.termCommand(async (v) => v.openTermMenu("create")); } });
     this.addCommand({
       id: "quick-capture",
       name: "Quick Capture (new memory)",
@@ -474,6 +493,16 @@ export default class AgenticOSPlugin extends Plugin {
     } catch (e) {
       console.warn("[agentic-os] runBrainScript error:", e);
     }
+  }
+
+  /** Runs a Term launch against the Workbench view (opening it first), and says why when it cannot. */
+  async termCommand(run: (view: WorkbenchView) => Promise<void>): Promise<void> {
+    await this.activate(VIEW_TYPE_WORKBENCH);
+    const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_WORKBENCH)[0];
+    if (leaf && typeof leaf.loadIfDeferred === "function") await leaf.loadIfDeferred();
+    const view = leaf?.view;
+    if (!(view instanceof WorkbenchView)) return;
+    try { await run(view); } catch (e) { new Notice(`Terminal: ${e instanceof Error ? e.message : String(e)}`); }
   }
 
   async openWorkbenchTab(tab: string): Promise<void> {

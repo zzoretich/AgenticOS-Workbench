@@ -71,7 +71,7 @@ export function renderGateCard(parent: HTMLElement, ctx: TeamsCtx, card: GateCar
           : next.plain ? `No enabled host has ${lead}'s agent, so a plain ${HOST_LABEL[next.host]} session opens as ${lead} to take it.`
             : `${lead} opens in ${HOST_LABEL[next.host]} to take it.`),
       cta: "Approve",
-    }).then((ok) => { if (ok && next) ctx.term(next.command); });
+    }).then((ok) => { if (ok && next) ctx.term(next.command, next.host); });
   });
   hostButtons(acts, ctx, "Redirect", (h) => redirectCommand(ctx, t, it, h),
     (h) => `Opens ${t.members.find((m) => m.id === t.lead)?.name ?? "the lead"} in ${HOST_LABEL[h]}: say what should change, and the lead records the redirect`,
@@ -210,7 +210,7 @@ function budgetEditor(parent: HTMLElement, ctx: TeamsCtx, t: Team, it: BoardItem
   apply.addEventListener("click", () => void ctx.act(key, budgetArgs(t.id, it, chosen)).then((ok) => {
     if (!ok) return;
     ctx.ui.budgetUsd.delete(itemKey(t, it));
-    if (resume) ctx.term(resume.command);
+    if (resume) ctx.term(resume.command, resume.host);
   }));
   const lead = t.members.find((m) => m.id === t.lead)?.name ?? t.lead;
   if (it.status === "paused") row.createSpan({ cls: "aos-at-hint", text: `paused at its budget: raising it lets work resume${ctx.hosts.length ? `, and opens ${lead} to take the next step` : ""}` });

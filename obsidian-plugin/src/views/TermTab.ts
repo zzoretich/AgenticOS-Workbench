@@ -16,12 +16,14 @@ export class TermTab {
     // a fresh one instead of leaking its xterm/canvas instances and duplicating
     // the pool's session-add/remove/exit listeners.
     if (this.panel) { this.panel.unmount(); this.panel = null; }
-    // Mirrors the old standalone Terminal view's onOpen() construction verbatim (fullPane, no drag handle).
-    this.panel = new TerminalPanel(this.plugin, { resizable: false, fullPane: true });
+    // Full pane, no drag handle; the New button launches through the view (spec 2026-10-08-term-agent-deck T3).
+    this.panel = new TerminalPanel(this.plugin, { resizable: false, fullPane: true, launch: this.view.termActions() });
     this.panel.mount(host);
   }
   async refresh(): Promise<void> { this.panel?.focus(); }
   unmount(): void { this.panel?.unmount(); this.panel = null; this.host = null; }
-  newSession(): void { this.panel?.createNewSession(); }
+  newSession(): void { void this.panel?.createNewSession(); }
   showSession(id: string): void { this.panel?.activate(id); }
+  /** The New menu (⇧⌘T) or its New workspace sheet (⇧⌘N); `reason` says why ⌘T could not start at once. */
+  openNewMenu(mode: "menu" | "create", reason: string | null = null): void { this.panel?.openNewMenu(mode, reason); }
 }

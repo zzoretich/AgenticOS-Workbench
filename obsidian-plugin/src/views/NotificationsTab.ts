@@ -206,7 +206,7 @@ export class NotificationsTab {
         for (const h of hosts) {
           const cmd = askCommand(a, h, cfg);
           const b = bar.createEl("button", { cls: "aos-ws-action", text: hosts.length > 1 ? `${a.label} ❯_ ${h}` : `${a.label} ❯_`, attr: { title: `Opens a ${HOST_LABEL[h]} session in the vault running: ${cmd}` } });
-          b.addEventListener("click", (e) => { e.stopPropagation(); this.wb.runInTerm(cmd); });
+          b.addEventListener("click", (e) => { e.stopPropagation(); this.wb.runInTerm(cmd, { host: h, origin: "Notifications" }); });
         }
       } else {
         const chosen = this.votes[`${r.id}|${a.ref}`] === a.value;

@@ -394,6 +394,7 @@ export class PulseTab {
         },
         showMaximize: true,
         onMaximize: async () => { await this.plugin.openWorkbenchTab("term"); },
+        launch: this.view.termActions(),
       });
       this.termPanel.mount(this.termHost);
     }
