@@ -119,15 +119,28 @@ const Prompt = z.string().max(64 * 1024).refine((s) => s.trim().length > 0 && !s
 /** A model, never one that could read as a flag. */
 const SessionModel = Model.refine((s) => !s.startsWith("-"), "a model name");
 
+/** Every level either host takes; the runtime passes a host only its own (headless.js SESSION_EFFORTS). */
+const SessionEffort = z.enum(["minimal", "low", "medium", "high", "xhigh", "max", "ultra"]);
+const SessionAccess = z.enum(["read", "edit", "run"]);
+
 export const SessionStartSchema: z.ZodType<SessionStartRequest> = z.object({
   workspace: WorkspaceName,
   host: z.enum(["claude", "codex"]),
   text: Prompt,
   model: SessionModel.nullable().optional(),
-  effort: z.enum(["minimal", "low", "medium", "high", "xhigh", "max"]).nullable().optional(),
+  effort: SessionEffort.nullable().optional(),
+  access: SessionAccess.optional(),
   allowCommands: z.boolean().optional(),
 }).strict();
-export const SessionSendSchema: z.ZodType<SessionSendRequest> = z.object({ thread: ThreadId, text: Prompt, allowCommands: z.boolean().optional() }).strict();
+export const SessionSendSchema: z.ZodType<SessionSendRequest> = z.object({
+  thread: ThreadId,
+  text: Prompt,
+  model: SessionModel.nullable().optional(),
+  effort: SessionEffort.nullable().optional(),
+  access: SessionAccess.optional(),
+  allowCommands: z.boolean().optional(),
+}).strict();
+export const SessionCatalogArgs = z.object({ refresh: z.literal(true).optional() }).strict();
 export const ThreadArgs = z.object({ thread: ThreadId }).strict();
 export const GitStatusArgs = z.object({ workspace: WorkspaceName }).strict();
 export const GitDiffArgs = z.object({ workspace: WorkspaceName, file: Text(4096).refine((f) => f.length > 0, "a file").optional() }).strict();

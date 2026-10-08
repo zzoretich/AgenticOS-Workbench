@@ -6,15 +6,16 @@
 //   3. `sessions.js events` turns the CLI's stdout into the runtime's event shape, which main appends to the thread's
 //      file (brain/_index/sessions/<workspace>/<thread>.jsonl) and sends to the page.
 // When the turn ends, `sessions.js record` ledgers its spend and writes its row in agent-runs/runs.jsonl. Nothing runs
-// while the Sessions surface is off. The page names a workspace, a host and a prompt; never a program, an argument or
-// a path.
+// while the Sessions surface is off. The page names a workspace, a host and a prompt, and each turn's model, effort and
+// access (spec 2026-10-07-sessions-ux U6, U7); never a program, an argument or a path. `catalog` asks the runtime for
+// each host's models and commands (`sessions.js catalog`, U3), which never calls a model.
 
 import * as childProcess from "node:child_process";
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { StringDecoder } from "node:string_decoder";
-import type { Result, SessionEvent, SessionEventRecord, SessionHost, SessionSendRequest, SessionStartRequest, SessionThread } from "../../shared/ipc";
+import type { HostCatalog, Result, SessionAccess, SessionEvent, SessionEventRecord, SessionHost, SessionSendRequest, SessionStartRequest, SessionThread } from "../../shared/ipc";
 import { programRefusal, spawnEnv, type ProgramContext } from "../policy/programs";
 import { refused } from "./fs";
 import type { WorkspaceDir } from "./git";
@@ -53,7 +54,27 @@ export interface SessionServiceOptions {
   graceMs?: number;
 }
 
-interface Meta { schema: 1; kind: "meta"; thread: string; workspace: string; host: SessionHost; model: string | null; effort: string | null; title: string; created: string }
+interface Meta { schema: 1; kind: "meta"; thread: string; workspace: string; host: SessionHost; model: string | null; effort: string | null; access?: SessionAccess; title: string; created: string }
+
+/** What one turn runs with (U6, U7); each `prompt` record keeps its own. */
+interface TurnOptions { model: string | null; effort: string | null; access: SessionAccess }
+
+const ACCESS: readonly SessionAccess[] = ["read", "edit", "run"];
+
+/** The options of the thread's latest turn: its last prompt that recorded them, else the thread's first (older files). */
+function lastOptions(meta: Meta, lines: Array<Record<string, unknown>>): TurnOptions {
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const r = lines[i];
+    if (r.kind === "prompt" && typeof r.access === "string" && ACCESS.includes(r.access as SessionAccess)) {
+      return { model: typeof r.model === "string" ? r.model : null, effort: typeof r.effort === "string" ? r.effort : null, access: r.access as SessionAccess };
+    }
+  }
+  return { model: meta.model, effort: meta.effort, access: meta.access ?? "edit" };
+}
+
+/** A request's level: `access`, else the older `allowCommands` flag, else `fallback`. */
+const accessOf = (req: { access?: SessionAccess; allowCommands?: boolean }, fallback: SessionAccess): SessionAccess =>
+  req.access ?? (req.allowCommands === true ? "run" : req.allowCommands === false ? "edit" : fallback);
 
 interface Running { agent: childProcess.ChildProcess | null; stopped: boolean; timer: NodeJS.Timeout | null }
 
@@ -136,7 +157,11 @@ export class SessionService {
     }
     let updated = meta.created;
     try { updated = fs.statSync(file).mtime.toISOString(); } catch { /* as created */ }
-    return { id: meta.thread, workspace: meta.workspace, host: meta.host, model: meta.model, title: meta.title, created: meta.created, updated, turns, running: this.running.has(meta.thread), usd: Math.round(usd * 1e6) / 1e6 };
+    const last = lastOptions(meta, lines);
+    return {
+      id: meta.thread, workspace: meta.workspace, host: meta.host, model: last.model, effort: last.effort, access: last.access, title: meta.title,
+      created: meta.created, updated, turns, running: this.running.has(meta.thread), usd: Math.round(usd * 1e6) / 1e6,
+    };
   }
 
   async start(req: SessionStartRequest): Promise<Result<SessionThread>> {
@@ -147,9 +172,10 @@ export class SessionService {
     if ("refusal" in w) return refused(w.refusal);
     if (!req.text.trim()) return refused("a turn needs a prompt");
     if (this.running.size >= MAX_RUNNING) return { ok: false, error: "too many sessions are running", code: "EAGAIN" };
+    const opts: TurnOptions = { model: req.model || null, effort: req.effort || null, access: accessOf(req, "edit") };
     const meta: Meta = {
-      schema: 1, kind: "meta", thread: randomUUID(), workspace: req.workspace, host: req.host, model: req.model || null,
-      effort: req.effort || null, title: titleOf(req.text), created: this.now().toISOString(),
+      schema: 1, kind: "meta", thread: randomUUID(), workspace: req.workspace, host: req.host, model: opts.model,
+      effort: opts.effort, access: opts.access, title: titleOf(req.text), created: this.now().toISOString(),
     };
     const file = path.join(this.sessionsDir(vault), req.workspace, `${meta.thread}.jsonl`);
     try {
@@ -158,7 +184,7 @@ export class SessionService {
     } catch (err) { return { ok: false, error: (err as NodeJS.ErrnoException).code ?? "failed", code: "EIO" }; }
     this.files.set(meta.thread, file);
     this.running.set(meta.thread, { agent: null, stopped: false, timer: null });
-    void this.turn(meta, file, w.dir, req.text, req.allowCommands === true);
+    void this.turn(meta, file, w.dir, req.text, opts);
     return { ok: true, data: this.threadOf(meta, readLines(file), file) };
   }
 
@@ -175,8 +201,14 @@ export class SessionService {
     if (!req.text.trim()) return refused("a turn needs a prompt");
     const w = workspaceDir(this.o.vaultRoot(), meta.workspace);
     if ("refusal" in w) return refused(w.refusal);
+    const last = lastOptions(meta, lines);
+    const opts: TurnOptions = {
+      model: req.model === undefined ? last.model : req.model || null,
+      effort: req.effort === undefined ? last.effort : req.effort || null,
+      access: accessOf(req, last.access),
+    };
     this.running.set(meta.thread, { agent: null, stopped: false, timer: null });
-    void this.turn(meta, file, w.dir, req.text, req.allowCommands === true);
+    void this.turn(meta, file, w.dir, req.text, opts);
     return { ok: true, data: this.threadOf(meta, lines, file) };
   }
 
@@ -222,6 +254,27 @@ export class SessionService {
     return { ok: true, data: readLines(file).filter((r) => r.kind !== "meta") as unknown as SessionEventRecord[] };
   }
 
+  private catalogRun: Promise<Result<HostCatalog>> | null = null;
+
+  /** Each host's models and commands, from the runtime (its cache, or the hosts again with `refresh`); one at a time. */
+  catalog(refresh = false): Promise<Result<HostCatalog>> {
+    const why = this.refusal();
+    if (why) return Promise.resolve(refused(why));
+    if (this.catalogRun) return this.catalogRun;
+    const run = (async (): Promise<Result<HostCatalog>> => {
+      const r = await this.runtime(["catalog", ...(refresh ? ["--refresh"] : [])]);
+      let cat: HostCatalog | null = null;
+      try { cat = JSON.parse(r.stdout.trim().split("\n").pop() || "null") as HostCatalog; } catch { cat = null; }
+      if (r.code !== 0 || !cat || cat.schema !== 1 || !cat.hosts || typeof cat.hosts !== "object") {
+        return { ok: false, error: r.stderr.trim().split("\n").pop() || "the runtime listed no models", code: "EIO" };
+      }
+      return { ok: true, data: cat };
+    })();
+    this.catalogRun = run;
+    void run.finally(() => { if (this.catalogRun === run) this.catalogRun = null; });
+    return run;
+  }
+
   /** On quit: every running turn is stopped (its file says so the next time it is read). */
   killAll(): void {
     for (const id of [...this.running.keys()]) this.stop(id);
@@ -261,7 +314,7 @@ export class SessionService {
     });
   }
 
-  private async turn(meta: Meta, file: string, dir: string, text: string, allowCommands: boolean): Promise<void> {
+  private async turn(meta: Meta, file: string, dir: string, text: string, opts: TurnOptions): Promise<void> {
     const before = readLines(file);
     const n = before.filter((r) => r.kind === "prompt").length + 1;
     const resume = [...before].reverse().find((r) => r.kind === "session" && typeof r.id === "string")?.id as string | undefined;
@@ -280,9 +333,9 @@ export class SessionService {
     let failure: string | null = null;
     const state = this.running.get(meta.thread) ?? { agent: null, stopped: false, timer: null };
     this.running.set(meta.thread, state);
-    append({ t: iso(), kind: "prompt", text });
+    append({ t: iso(), kind: "prompt", text, model: opts.model, effort: opts.effort, access: opts.access });
     try {
-      const req: Record<string, unknown> = { host: meta.host, prompt: text, model: meta.model, effort: meta.effort, allowCommands };
+      const req: Record<string, unknown> = { host: meta.host, prompt: text, model: opts.model, effort: opts.effort, access: opts.access };
       if (resume) req.resume = resume;
       else if (meta.host === "claude") req.sessionId = meta.thread;
       const planned = await this.runtime(["args", JSON.stringify(req)]);
@@ -304,7 +357,7 @@ export class SessionService {
         append({ t: iso(), kind: "done", ok: false, usd: null, estimated: meta.host === "codex" });
         return;
       }
-      const filter = this.runtimeSpawn(["events", "--host", meta.host, ...(meta.model ? ["--model", meta.model] : [])], ["pipe", "pipe", "pipe"]);
+      const filter = this.runtimeSpawn(["events", "--host", meta.host, ...(opts.model ? ["--model", opts.model] : [])], ["pipe", "pipe", "pipe"]);
       if ("refusal" in filter) {
         failure = filter.refusal;
         append({ t: iso(), kind: "error", message: failure });
@@ -365,7 +418,7 @@ export class SessionService {
       // The turn's spend and its run row land before the thread reads as idle.
       const status = state.stopped ? "stopped" : failure ? "error" : "ok";
       await this.runtime(["record", JSON.stringify({
-        host: meta.host, model: meta.model, usd, inputTokens, outputTokens, ms: this.now().getTime() - startedAt.getTime(),
+        host: meta.host, model: opts.model, usd, inputTokens, outputTokens, ms: this.now().getTime() - startedAt.getTime(),
         startedAt: startedAt.toISOString(), status, prompt: text, reply, toolCount, error: status === "ok" ? null : failure,
         workspace: meta.workspace, thread: meta.thread,
       })]);

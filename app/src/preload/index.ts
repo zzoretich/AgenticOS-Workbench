@@ -97,6 +97,7 @@ const api: AosBridge = {
     stop: (thread) => ipcRenderer.send(CH.sessionStop, { thread }),
     list: () => invoke(CH.sessionList, {}),
     read: (thread) => invoke(CH.sessionRead, { thread }),
+    catalog: (refresh) => invoke(CH.sessionCatalog, refresh ? { refresh: true } : {}),
     onEvent: (cb) => listen<SessionEvent>(CH.sessionEvent, cb),
   },
   git: {

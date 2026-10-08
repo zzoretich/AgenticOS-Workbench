@@ -126,10 +126,14 @@ export type HostResult<T> = { ok: true; data: T } | { ok: false; error: string; 
 
 export type HostSessionHost = "claude" | "codex";
 
-/** One event of a thread: prompt, session, text, tool, tool_result, patch, usage, error or done, and its turn. */
+/** What a turn may do (spec 2026-10-07-sessions-ux U7). */
+export type HostSessionAccess = "read" | "edit" | "run";
+
+/** One event of a thread: prompt (with its model, effort and access), session, text, tool, tool_result, patch, plan,
+ *  usage, error or done, and its turn. */
 export interface HostSessionEvent {
   t: string;
-  kind: "prompt" | "session" | "text" | "tool" | "tool_result" | "patch" | "usage" | "error" | "done";
+  kind: "prompt" | "session" | "text" | "tool" | "tool_result" | "patch" | "plan" | "usage" | "error" | "done";
   turn: number;
   [field: string]: unknown;
 }
@@ -138,7 +142,10 @@ export interface HostSessionThread {
   id: string;
   workspace: string;
   host: HostSessionHost;
+  /** The latest turn's choices; the next turn reuses them unless it names others. */
   model: string | null;
+  effort: string | null;
+  access: HostSessionAccess;
   title: string;
   created: string;
   updated: string;
@@ -147,14 +154,31 @@ export interface HostSessionThread {
   usd: number;
 }
 
+/** One host's models and the commands a prompt may start with (the runtime's lib/host-catalog.js). */
+export interface HostCatalogHost {
+  ok: boolean;
+  off?: boolean;
+  reason?: string;
+  version: string | null;
+  fetchedAt: string;
+  defaultModel: string | null;
+  defaultEffort: string | null;
+  models: { id: string; name: string; description: string; efforts: string[]; main: boolean }[];
+  commands: { name: string; insert: string; description: string; hint: string | null }[];
+}
+
+export interface HostCatalog { schema: 1; fetchedAt: string; hosts: Partial<Record<HostSessionHost, HostCatalogHost>> }
+
 export interface HostSessions {
   /** Opens a thread in a workspace and starts its first turn; events follow on onEvent. */
-  start(req: { workspace: string; host: HostSessionHost; text: string; model?: string | null; effort?: string | null; allowCommands?: boolean }): Promise<HostResult<HostSessionThread>>;
-  /** The thread's next turn. */
-  send(req: { thread: string; text: string; allowCommands?: boolean }): Promise<HostResult<HostSessionThread>>;
+  start(req: { workspace: string; host: HostSessionHost; text: string; model?: string | null; effort?: string | null; access?: HostSessionAccess; allowCommands?: boolean }): Promise<HostResult<HostSessionThread>>;
+  /** The thread's next turn; a field left out reuses the thread's last. */
+  send(req: { thread: string; text: string; model?: string | null; effort?: string | null; access?: HostSessionAccess; allowCommands?: boolean }): Promise<HostResult<HostSessionThread>>;
   stop(thread: string): void;
   list(): Promise<HostResult<HostSessionThread[]>>;
   read(thread: string): Promise<HostResult<HostSessionEvent[]>>;
+  /** Each host's models and commands; `refresh` asks the hosts again. */
+  catalog(refresh?: boolean): Promise<HostResult<HostCatalog>>;
   onEvent(cb: (ev: { thread: string; event: HostSessionEvent }) => void): () => void;
 }
 
@@ -164,7 +188,8 @@ export interface HostGitStatus {
   branch: string | null;
   detached: boolean;
   merging: boolean;
-  files: { path: string; status: string }[];
+  /** Lines added and removed against HEAD (null for a binary file). */
+  files: { path: string; status: string; added: number | null; removed: number | null }[];
 }
 
 export interface HostGit {
