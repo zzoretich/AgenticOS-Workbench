@@ -165,6 +165,40 @@ test('sessionArgs: a claude turn streams JSON, edits without prompts, and runs u
   assert.throws(() => H.sessionArgs('claude', { prompt: '  ', sessionId: 'a' }), /prompt/);
 });
 
+test('sessionArgs: access levels per host, on every turn (sessions-ux U7)', () => {
+  const claude = (o) => H.sessionArgs('claude', { prompt: 'p', resume: 'a1b2', ...o }).argv;
+  const mode = (argv) => argv[argv.indexOf('--permission-mode') + 1];
+  assert.equal(mode(claude({ access: 'read' })), 'plan');
+  assert.ok(!claude({ access: 'read' }).includes('--allowedTools'));
+  assert.equal(mode(claude({ access: 'edit' })), 'acceptEdits');
+  assert.ok(!claude({ access: 'edit' }).includes('--allowedTools'));
+  assert.deepEqual(claude({ access: 'run' }).slice(claude({ access: 'run' }).indexOf('--allowedTools'), claude({ access: 'run' }).indexOf('--allowedTools') + 2), ['--allowedTools', 'Bash']);
+  assert.ok(claude({ allowCommands: true }).includes('Bash'), 'allowCommands still reads as run');
+  assert.equal(mode(claude({ access: 'read', allowCommands: true })), 'plan', 'the level wins over the older flag');
+  assert.ok(!claude({ access: 'read', allowCommands: true }).includes('Bash'));
+  assert.equal(mode(claude({})), 'acceptEdits', 'edit is the default');
+  const codex = (o) => H.sessionArgs('codex', { prompt: 'p', ...o }).argv;
+  assert.ok(codex({ access: 'read' }).includes('sandbox_mode="read-only"'));
+  assert.ok(codex({ access: 'edit' }).includes('sandbox_mode="workspace-write"'));
+  assert.ok(codex({ access: 'run' }).includes('sandbox_mode="workspace-write"'));
+  assert.throws(() => codex({ access: 'admin' }), /no such access level/);
+});
+
+test('sessionArgs: each host gets the efforts its CLI takes; claude `default` passes no model', () => {
+  const effortOf = (host, effort) => {
+    const argv = H.sessionArgs(host, { prompt: 'p', resume: 'r', effort }).argv;
+    return host === 'claude' ? (argv.includes('--effort') ? argv[argv.indexOf('--effort') + 1] : null) : (argv.find((a) => a.startsWith('model_reasoning_effort=')) || null);
+  };
+  assert.equal(effortOf('claude', 'max'), 'max');
+  assert.equal(effortOf('claude', 'ultra'), null, 'claude takes no ultra');
+  assert.equal(effortOf('codex', 'max'), 'model_reasoning_effort="max"');
+  assert.equal(effortOf('codex', 'ultra'), 'model_reasoning_effort="ultra"');
+  assert.equal(effortOf('codex', 'turbo'), null);
+  assert.ok(!H.sessionArgs('claude', { prompt: 'p', resume: 'r', model: 'default' }).argv.includes('--model'));
+  const named = H.sessionArgs('claude', { prompt: 'p', resume: 'r', model: 'opus' }).argv;
+  assert.equal(named[named.indexOf('--model') + 1], 'opus');
+});
+
 test('sessionArgs: a codex turn runs exec --json in the workspace-write sandbox whatever allowCommands says, then exec resume', () => {
   const first = H.sessionArgs('codex', { prompt: 'fix the parser', model: 'gpt-5-mini', effort: 'low', allowCommands: false });
   assert.equal(first.stdin, null);

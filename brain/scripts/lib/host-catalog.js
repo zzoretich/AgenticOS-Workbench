@@ -34,8 +34,8 @@ const DESC_MAX = 200;
 /** How many of Codex's listed models are current; the rest fold under "Older models". */
 const CODEX_CURRENT = 3;
 
-/** The levels each host's CLI takes for a session turn (headless.js SESSION_EFFORTS). */
-const EFFORTS = { claude: ['low', 'medium', 'high', 'xhigh', 'max'], codex: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'] };
+/** The levels each host's CLI takes for a session turn. */
+const EFFORTS = H.SESSION_EFFORTS;
 
 /** A host's models when it does not answer: Claude's aliases always resolve; Codex falls back to its own default. */
 const FALLBACK = {

@@ -46,6 +46,15 @@ test('plan: refuses a host that is off or has no binary, a day at its cap, a cap
   assert.deepEqual(plan({ host: 'nohost', prompt: 'x' }), { ok: false, reason: 'no such host: nohost' });
 });
 
+test('plan: passes the access level on, and refuses one it does not know', () => {
+  const cfg = { hosts: { claude: { enabled: true, bin: process.execPath }, codex: { enabled: true, bin: process.execPath } } };
+  const read = S.plan({ cfg, req: { host: 'claude', prompt: 'p', sessionId: 's', access: 'read' }, env: {} });
+  assert.equal(read.argv[read.argv.indexOf('--permission-mode') + 1], 'plan');
+  const codexRead = S.plan({ cfg, req: { host: 'codex', prompt: 'p', access: 'read' }, env: {} });
+  assert.ok(codexRead.argv.includes('sandbox_mode="read-only"'));
+  assert.deepEqual(S.plan({ cfg, req: { host: 'claude', prompt: 'p', sessionId: 's', access: 'root' }, env: {} }), { ok: false, reason: 'no such access level root' });
+});
+
 test('caps: the config wins; a turn cap that is not positive falls back to the default', () => {
   assert.deepEqual(S.caps({}), { perTurnUsd: 1, perDayUsd: 10 });
   assert.deepEqual(S.caps({ sessions: { perTurnUsd: 2.5, perDayUsd: 20 } }), { perTurnUsd: 2.5, perDayUsd: 20 });

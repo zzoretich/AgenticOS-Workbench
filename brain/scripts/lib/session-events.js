@@ -15,6 +15,9 @@
  *     tool         { id, name, toolKind, summary, filePath } toolKind ∈ edit | read | bash | mcp | other (transcript.js)
  *     tool_result  { id, ok, summary }
  *     patch        { files: [{ path, change }] }             files a codex turn changed (claude edits are edit tools)
+ *     plan         { items: [{ text, status }] }             the agent's to-do list, whole each time it changes: claude's
+ *                                                            TodoWrite input, codex's todo_list item; status ∈ pending |
+ *                                                            active | done (spec 2026-10-07-sessions-ux U10)
  *     usage        { in, out, cached, usd, estimated }       claude's cost is its own; codex's is estimated (codex-pricing.js)
  *     error        { message }
  *     done         { ok, usd, estimated }                    always the last event of a turn
@@ -44,6 +47,20 @@ function summary(value) {
   try { return clip(JSON.stringify(value)); } catch { return ''; }
 }
 
+const PLAN_STATUS = { completed: 'done', in_progress: 'active', pending: 'pending' };
+
+/** Claude's TodoWrite input → plan items, or null when it holds no list. */
+function claudePlan(input) {
+  const todos = input && Array.isArray(input.todos) ? input.todos : null;
+  if (!todos) return null;
+  return todos.map((d) => ({ text: clip((d && (d.content || d.activeForm)) || '', 200), status: PLAN_STATUS[d && d.status] || 'pending' })).filter((i) => i.text);
+}
+
+/** Codex's todo_list item → plan items. */
+function codexPlan(item) {
+  return (Array.isArray(item.items) ? item.items : []).map((d) => ({ text: clip((d && d.text) || '', 200), status: d && d.completed ? 'done' : 'pending' })).filter((i) => i.text);
+}
+
 const filePathOf = (input) => (input && typeof input === 'object' && (input.file_path || input.notebook_path || input.path)) || null;
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 
@@ -55,7 +72,9 @@ function mapClaude(msg, st, t) {
   if (msg.type === 'assistant' && msg.message && Array.isArray(msg.message.content)) {
     for (const b of msg.message.content) {
       if (!b) continue;
+      const plan = b.type === 'tool_use' && b.name === 'TodoWrite' ? claudePlan(b.input) : null;
       if (b.type === 'text' && b.text) out.push({ t, kind: 'text', text: String(b.text) });
+      else if (plan) out.push({ t, kind: 'plan', items: plan });
       else if (b.type === 'tool_use') out.push({ t, kind: 'tool', id: b.id || null, name: String(b.name || ''), toolKind: kindOf(b.name), summary: summary(b.input), filePath: filePathOf(b.input) });
     }
   } else if (msg.type === 'user' && msg.message && Array.isArray(msg.message.content)) {
@@ -78,7 +97,10 @@ function mapClaude(msg, st, t) {
 function mapCodex(ev, st, t, model) {
   const out = [];
   const item = ev.item && typeof ev.item === 'object' ? ev.item : null;
-  if (ev.type === 'thread.started' && ev.thread_id) {
+  if (item && item.type === 'todo_list' && ['item.started', 'item.updated', 'item.completed'].includes(ev.type)) {
+    const items = codexPlan(item);
+    if (items.length) out.push({ t, kind: 'plan', items });
+  } else if (ev.type === 'thread.started' && ev.thread_id) {
     st.hostSessionId = String(ev.thread_id);
     out.push({ t, kind: 'session', id: st.hostSessionId });
   } else if (ev.type === 'item.started' && item) {

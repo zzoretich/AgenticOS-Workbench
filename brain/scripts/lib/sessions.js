@@ -5,7 +5,7 @@
  * names one:
  *
  *   node lib/sessions.js args '<json>'
- *     in:  { host, prompt, sessionId?, resume?, model?, effort?, allowCommands? }
+ *     in:  { host, prompt, sessionId?, resume?, model?, effort?, access?, allowCommands? }  (access: read | edit | run)
  *     out: { ok: true, host, bin, argv, env: { set, unset }, perTurnUsd }  or  { ok: false, reason }  (exit 0 / 3)
  *     Refuses a host that is off or has no binary, and a day whose session spend reached sessions.perDayUsd (0 turns
  *     sessions off). Claude gets sessions.perTurnUsd as its budget flag; a Codex turn is estimated after it ends.
@@ -51,7 +51,7 @@ function plan({ cfg, req, env = process.env, spentToday = 0, lookup, candidates 
   let args;
   try {
     args = H.sessionArgs(host, {
-      prompt: r.prompt, sessionId: r.sessionId, resume: r.resume, model: r.model, effort: r.effort,
+      prompt: r.prompt, sessionId: r.sessionId, resume: r.resume, model: r.model, effort: r.effort, access: r.access,
       allowCommands: r.allowCommands === true, budget: host === 'claude' ? perTurnUsd : undefined,
     });
   } catch (e) {
