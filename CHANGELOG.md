@@ -21,6 +21,7 @@ All notable changes to UniDeX (AgenticOS Workbench before 1.1). Versions follow 
 ### Fixed
 - "New terminal session" no longer opens two shells on an empty Term tab, and Spaces' terminal no longer hides behind the first session.
 - The Files tab's New note, Rename and Move forms put the cursor in their field at once, so typing straight after opening one can no longer land in the other field.
+- Editing a to-do no longer saves it halfway when TODO.md changes underneath (another HUD, `/todo` in a session, a sync): what you typed, the caret and the focus stay, and Enter saves onto the new file.
 
 ## [1.3.1] — 2026-10-07
 
