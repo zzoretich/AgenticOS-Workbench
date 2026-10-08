@@ -201,6 +201,7 @@ export function createBridgeHost(aos: AosBridge, info: BootInfo): BridgeHost {
     stop: (thread) => aos.sessions.stop(thread),
     list: () => settle(aos.sessions.list()),
     read: (thread) => settle(aos.sessions.read(thread)),
+    catalog: (refresh) => settle(aos.sessions.catalog(refresh)),
     onEvent: (cb) => aos.sessions.onEvent(cb),
   };
   const git: HostGit = {

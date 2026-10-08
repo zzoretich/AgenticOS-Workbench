@@ -56,7 +56,7 @@ test("window.aos is named functions only: no channel, no ipcRenderer, no generic
   expect(shape.setup).toEqual(["applyClaudeMd", "cancel", "chooseVault", "claudeMd", "finish", "fix", "input", "install", "noted", "onEvent", "preflight", "resize", "upgrade"]);
   expect(shape.update).toEqual(["check", "install", "onState", "state"]);
   expect(shape.theme).toEqual(["onChange", "set", "state"]);
-  expect(shape.sessions).toEqual(["list", "onEvent", "read", "send", "start", "stop"]);
+  expect(shape.sessions).toEqual(["catalog", "list", "onEvent", "read", "send", "start", "stop"]);
   expect(shape.git).toEqual(["commit", "diff", "status"]);
 });
 
@@ -85,14 +85,19 @@ test("setup names a fix by id only, and refuses each step outside its state", as
   expect(await call((aos) => (aos.theme.set as (s: string) => unknown)("sepia"))).toMatchObject({ ok: false, code: "EINVAL" });
   expect(await call((aos) => aos.theme.state())).toMatchObject({ source: "system" });
   // This run is read-only, Sessions included (spec 2026-10-07-unidex-sessions): nothing starts, nothing in git is read.
-  type Sess = { start(r: unknown): Promise<unknown>; list(): Promise<unknown> };
+  type Sess = { start(r: unknown): Promise<unknown>; list(): Promise<unknown>; catalog(refresh?: unknown): Promise<unknown> };
   type Git = { status(w: string): Promise<unknown> };
   expect(await call((aos) => (aos.sessions as unknown as Sess).start({ workspace: "harbor-map", host: "claude", text: "hi" }))).toMatchObject({ ok: false, code: "EROFS" });
   expect(await call((aos) => (aos.sessions as unknown as Sess).list())).toMatchObject({ ok: false, code: "EROFS" });
+  expect(await call((aos) => (aos.sessions as unknown as Sess).catalog())).toMatchObject({ ok: false, code: "EROFS" });
   expect(await call((aos) => (aos.git as unknown as Git).status("harbor-map"))).toMatchObject({ ok: false, code: "EROFS" });
   // A workspace that could leave the folder, or a host that is not one, never reaches main's service.
   expect(await call((aos) => (aos.sessions as unknown as Sess).start({ workspace: "../x", host: "claude", text: "hi" }))).toMatchObject({ ok: false, code: "EINVAL" });
   expect(await call((aos) => (aos.sessions as unknown as Sess).start({ workspace: "harbor-map", host: "sh", text: "hi" }))).toMatchObject({ ok: false, code: "EINVAL" });
+  // An access level or an effort that is not one, or a model that reads as a flag (sessions-ux U6, U7).
+  expect(await call((aos) => (aos.sessions as unknown as Sess).start({ workspace: "harbor-map", host: "claude", text: "hi", access: "root" }))).toMatchObject({ ok: false, code: "EINVAL" });
+  expect(await call((aos) => (aos.sessions as unknown as Sess).start({ workspace: "harbor-map", host: "codex", text: "hi", effort: "turbo" }))).toMatchObject({ ok: false, code: "EINVAL" });
+  expect(await call((aos) => (aos.sessions as unknown as Sess).start({ workspace: "harbor-map", host: "claude", text: "hi", model: "--dangerously-skip-permissions" }))).toMatchObject({ ok: false, code: "EINVAL" });
 });
 
 test("reads stay inside the vault and the hosts' folders, and never return a credential", async () => {

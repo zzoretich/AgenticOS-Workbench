@@ -109,7 +109,7 @@ function makeClaude(reason, budget, deps = {}) {
       }
       const schema = opts.schema || (opts.format === 'json' ? { type: 'object' } : undefined);
       // `effort` is only meaningful for the reasoner: the caller's dial, else the budget's default.
-      const effort = claudeCli.EFFORTS.includes(opts.think) ? opts.think : budget.effort;
+      const effort = !budget.fixedEffort && claudeCli.EFFORTS.includes(opts.think) ? opts.think : budget.effort;
       const r = await call({
         system: opts.system || '', prompt: messagesToPrompt(opts), schema,
         model: budget.model, maxBudgetUsd: budget.perCallUsd, effort,
@@ -167,7 +167,7 @@ function makeCodex(reason, budget, deps = {}) {
         throw new ProviderUnavailable('PROVIDER_CAP', `${budget.label} of ${budget.perDayUsd} USD reached (${budget.capKey})`, 'codex');
       }
       const schema = opts.schema || (opts.format === 'json' ? { type: 'object' } : undefined);
-      const effort = codexCli.EFFORTS.includes(opts.think) ? opts.think : budget.effort;
+      const effort = !budget.fixedEffort && codexCli.EFFORTS.includes(opts.think) ? opts.think : budget.effort;
       const r = await call({
         system: opts.system || '', prompt: messagesToPrompt(opts), schema,
         model: budget.model, effort,
@@ -280,7 +280,12 @@ async function resolveProvider({ mode, feature = 'unknown', deps = {} } = {}) {
  * state file's `name`/`reason` keep describing the global provider — only the claude login
  * cache is shared — so the HUD and `aos status` are not misled by a reasoner resolution.
  */
-async function resolveProviderForRole({ role: roleName, feature = 'unknown', deps = {} } = {}) {
+/**
+ * The provider for a role. For the reasoner the caller may name the host, model and effort (Vault chat's menu, spec
+ * 2026-10-07-sessions-ux U9): `prefer` is the only host tried (no silent move to the other), `model` replaces the
+ * role's model, and `effort` (a level that host's CLI takes) is fixed for every call, whatever `think` a caller passes.
+ */
+async function resolveProviderForRole({ role: roleName, feature = 'unknown', deps = {}, prefer = null, model = null, effort = null } = {}) {
   if (providerFor(roleName) !== 'claude') return resolveProvider({ feature, deps });
   const cfg = loadConfig();
   const mode = cfg.provider || 'auto';
@@ -289,28 +294,36 @@ async function resolveProviderForRole({ role: roleName, feature = 'unknown', dep
   const iso = new Date(now).toISOString();
   const state = readState();
   const reasoner = roleName === 'reasoner';
+  const chosen = reasoner && (prefer === 'claude' || prefer === 'codex') ? prefer : null;
+  const pin = (budget, host) => {
+    if (typeof model === 'string' && model.trim()) budget.model = model.trim();
+    const levels = host === 'codex' ? codexCli.EFFORTS : claudeCli.EFFORTS;
+    if (levels.includes(effort)) { budget.effort = effort; budget.fixedEffort = true; }
+    return budget;
+  };
   // Claude first unless the user chose Codex for background calls; Codex only for the reasoner, and only when configured.
-  const order = reasoner && mode === 'codex' ? ['codex', 'claude'] : ['claude', 'codex'];
+  const order = chosen ? [chosen] : reasoner && mode === 'codex' ? ['codex', 'claude'] : ['claude', 'codex'];
   const why = [];
   for (const host of order) {
     if (host === 'claude') {
       if (!claudeHostEnabled(cfg) && reasoner) { why.push('claude host disabled'); continue; }
-      const budget = reasoner ? reasonerBudget(cfg, deps) : hookBudget(cfg, deps);
+      const budget = reasoner ? pin(reasonerBudget(cfg, deps), 'claude') : hookBudget(cfg, deps);
       const { loggedIn, bin } = await resolveClaudeLogin(state, now, iso, deps);
       if (!loggedIn) { why.push(bin ? 'claude-not-logged-in' : 'no-provider'); continue; }
       writeState(state);
       if (budget.spent() >= budget.perDayUsd) return makeNone(`${roleName}-daily-cap`);
       return makeClaude(`role:${roleName}`, budget, deps);
     }
-    if (!reasoner || !codexConfigured(cfg)) continue;
+    if (!reasoner || !codexConfigured(cfg)) { if (chosen) why.push('codex-not-configured'); continue; }
     const { loggedIn, bin } = await resolveCodexLogin(state, now, iso, deps);
     if (!loggedIn) { why.push(bin ? 'codex-not-logged-in' : 'no-codex'); continue; }
     writeState(state);
-    const budget = reasonerCodexBudget(cfg, deps);
+    const budget = pin(reasonerCodexBudget(cfg, deps), 'codex');
     if (budget.spent() >= budget.perDayUsd) return makeNone(`${roleName}-daily-cap`);
     return makeCodex(`role:${roleName}`, budget, deps);
   }
   writeState(state);
+  if (chosen && why.length) return makeNone(why[0]);
   return makeNone(why.includes('claude-not-logged-in') ? 'claude-not-logged-in' : why.includes('codex-not-logged-in') ? 'codex-not-logged-in' : 'no-provider');
 }
 

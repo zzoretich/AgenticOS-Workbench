@@ -4,10 +4,10 @@ import {
   doneFooter, fileStatusLabel, groupThreads, hostChoices, mergeEvents, statusSummary, threadMeta, timelineRows, toolLine,
   turnOpen, usdText, workspaceNames,
 } from "./agentSessions";
-import type { HostSessionEvent, HostSessionThread } from "../host";
+import type { HostGitStatus, HostSessionEvent, HostSessionThread } from "../host";
 
 const thread = (id: string, workspace: string, updated: string, extra: Partial<HostSessionThread> = {}): HostSessionThread => ({
-  id, workspace, host: "claude", model: null, title: id, created: updated, updated, turns: 1, running: false, usd: 0, ...extra,
+  id, workspace, host: "claude", model: null, effort: null, access: "edit", title: id, created: updated, updated, turns: 1, running: false, usd: 0, ...extra,
 });
 const ev = (kind: HostSessionEvent["kind"], turn: number, fields: Record<string, unknown> = {}): HostSessionEvent => ({ t: "2026-10-07T10:00:00.000Z", kind, turn, ...fields });
 
@@ -98,10 +98,11 @@ test("mergeEvents: the read and the live events overlap; each record appears onc
 
 test("fileStatusLabel and statusSummary: the card's words for git's codes", () => {
   assert.deepEqual(["??", ".M", "M.", "A.", ".D", "R.", "UU", "AA"].map(fileStatusLabel), ["new", "modified", "modified", "added", "deleted", "renamed", "conflict", "conflict"]);
-  const st = { repo: true, branch: "main", detached: false, merging: false, files: [] as { path: string; status: string }[] };
+  const st = { repo: true, branch: "main", detached: false, merging: false, files: [] as HostGitStatus["files"] };
+  const f = (path: string, status: string) => ({ path, status, added: null, removed: null });
   assert.equal(statusSummary(st), "No changes");
-  assert.equal(statusSummary({ ...st, files: [{ path: "a", status: "??" }] }), "1 file changed");
-  assert.equal(statusSummary({ ...st, files: [{ path: "a", status: "??" }, { path: "b", status: ".M" }] }), "2 files changed");
+  assert.equal(statusSummary({ ...st, files: [f("a", "??")] }), "1 file changed");
+  assert.equal(statusSummary({ ...st, files: [f("a", "??"), f("b", ".M")] }), "2 files changed");
   assert.equal(statusSummary({ ...st, repo: false }), "Not a git repository");
 });
 

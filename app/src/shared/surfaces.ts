@@ -72,6 +72,10 @@ const ANY = /[\s\S]*/;                      // a value the runtime parses itself
 const USD = /\d+(\.\d+)?/;
 const JSON_OBJ = /\{[\s\S]*\}/;
 const SLUG = /[a-z0-9][a-z0-9-]{1,40}/;     // RoutinesTab's routine slug
+// Vault chat's chosen host, model and effort for ask.js (spec 2026-10-07-sessions-ux U9): one argument each.
+const ASK_HOST = /--host=(?:claude|codex)/;
+const ASK_MODEL = new RegExp(`--model=${WORD.source}`);
+const ASK_EFFORT = /--effort=(?:minimal|low|medium|high|xhigh|max)/;
 
 /** The refreshes the HUD starts by itself on load and on timers; they write only runtime-owned caches under the runtime's locks. */
 export const BACKGROUND: readonly SpawnRule[] = [
@@ -82,10 +86,11 @@ export const BACKGROUND: readonly SpawnRule[] = [
   { script: "team.js", args: /^list( --json)?$/ },
 ];
 
-/** `claude -p` exactly as data/claudeAsk.ts builds it: no tools, no settings, no MCP, no session, a budget cap, JSON out. */
+/** `claude -p` exactly as data/claudeAsk.ts builds it: no tools, no settings, no MCP, no session, a budget cap, JSON out.
+ *  The effort is any level `claude --effort` takes (Vault chat's menu, spec 2026-10-07-sessions-ux U9). */
 const claudeAsk = (effort: boolean): SpawnRule => ({
   bin: "claude",
-  args: argv("-p", ANY, "--model", WORD, ...(effort ? ["--effort", /low|medium|high/] : []), "--tools", "", "--setting-sources", "",
+  args: argv("-p", ANY, "--model", WORD, ...(effort ? ["--effort", /low|medium|high|xhigh|max/] : []), "--tools", "", "--setting-sources", "",
     "--strict-mcp-config", "--no-session-persistence", "--system-prompt", ANY, "--max-budget-usd", USD, "--output-format", "json"),
 });
 
@@ -234,6 +239,9 @@ export const SURFACES: readonly Surface[] = [
     spawns: [
       { script: "sdk/recall-cli.js", args: argv(QUESTION) },
       { script: "sdk/ask.js", args: argv("--local", QUESTION) },
+      { script: "sdk/ask.js", args: argv("--local", ASK_HOST, QUESTION) },
+      { script: "sdk/ask.js", args: argv("--local", ASK_HOST, ASK_MODEL, QUESTION) },
+      { script: "sdk/ask.js", args: argv("--local", ASK_HOST, ASK_MODEL, ASK_EFFORT, QUESTION) },
       claudeAsk(false),
       claudeAsk(true),
     ],
@@ -244,13 +252,15 @@ export const SURFACES: readonly Surface[] = [
     label: "Sessions",
     source: "main/services/sessions.ts and main/services/git.ts, for views/SessionsTab.ts (spec 2026-10-07-unidex-sessions): main runs each turn through the runtime's lib/sessions.js in a workspace folder, keeps the thread, and diffs and commits the workspace repository; the page only names a workspace, a host and a prompt",
     scope: "main",
-    writes: ["brain/_index/sessions/*/*.jsonl", "brain/_index/provider-spend.jsonl", "brain/_index/agent-runs/runs.jsonl"],
+    writes: ["brain/_index/sessions/*/*.jsonl", "brain/_index/provider-spend.jsonl", "brain/_index/agent-runs/runs.jsonl", "brain/_index/host-catalog.json"],
     folders: ["brain/_index/sessions", "brain/_index/sessions/*", "brain/_index/agent-runs"],
     spawns: [
       { script: "lib/sessions.js", args: argv("args", JSON_OBJ) },
       { script: "lib/sessions.js", args: argv("events", "--host", /claude|codex/) },
       { script: "lib/sessions.js", args: argv("events", "--host", /claude|codex/, "--model", WORD) },
       { script: "lib/sessions.js", args: argv("record", JSON_OBJ) },
+      { script: "lib/sessions.js", args: argv("catalog") },
+      { script: "lib/sessions.js", args: argv("catalog", "--refresh") },
     ],
     // Checked live on 2026-10-07 (plan 2026-10-07-unidex-sessions C3): a turn and a resume on each host through the runtime
     // and the real CLIs, recorded in the ledger and in Runs.

@@ -88,6 +88,7 @@ export const CH = {
   sessionSend: "session:send",
   sessionStop: "session:stop",
   sessionList: "session:list",
+  sessionCatalog: "session:catalog",
   sessionRead: "session:read",
   /** main → page: one event of a running turn. */
   sessionEvent: "session:event",
@@ -273,13 +274,17 @@ export type Result<T> = { ok: true; data: T } | { ok: false; error: string; code
 /** The hosts a session runs on. */
 export type SessionHost = "claude" | "codex";
 
+/** What a turn may do (spec 2026-10-07-sessions-ux U7): read only, edit files, or edit and run commands. */
+export type SessionAccess = "read" | "edit" | "run";
+
 /**
- * One event of a thread: the runtime's lib/session-events.js shape (session, text, tool, tool_result, patch, usage,
- * error, done), plus `prompt` (what the user sent) and `turn`, the turn it belongs to.
+ * One event of a thread: the runtime's lib/session-events.js shape (session, text, tool, tool_result, patch, plan, usage,
+ * error, done), plus `prompt` (what the user sent, with the turn's model, effort and access) and `turn`, the turn it
+ * belongs to.
  */
 export interface SessionEventRecord {
   t: string;
-  kind: "prompt" | "session" | "text" | "tool" | "tool_result" | "patch" | "usage" | "error" | "done";
+  kind: "prompt" | "session" | "text" | "tool" | "tool_result" | "patch" | "plan" | "usage" | "error" | "done";
   turn: number;
   [field: string]: unknown;
 }
@@ -289,7 +294,10 @@ export interface SessionThread {
   id: string;
   workspace: string;
   host: SessionHost;
+  /** The model, effort and access of its latest turn (the next one reuses them unless the page names others). */
   model: string | null;
+  effort: string | null;
+  access: SessionAccess;
   title: string;
   created: string;
   updated: string;
@@ -306,11 +314,42 @@ export interface SessionStartRequest {
   text: string;
   model?: string | null;
   effort?: string | null;
-  /** Claude only: lets the turn run commands (Codex always runs them inside its sandbox). */
+  /** Default edit. */
+  access?: SessionAccess;
+  /** Before access levels: true reads as access "run". */
   allowCommands?: boolean;
 }
 
-export interface SessionSendRequest { thread: string; text: string; allowCommands?: boolean }
+/** The thread's next turn. A field left out reuses the thread's last; the host never changes (U6). */
+export interface SessionSendRequest {
+  thread: string;
+  text: string;
+  model?: string | null;
+  effort?: string | null;
+  access?: SessionAccess;
+  allowCommands?: boolean;
+}
+
+/** One model a host offers (the runtime's lib/host-catalog.js). `main`: current; the rest are older. */
+export interface CatalogModel { id: string; name: string; description: string; efforts: string[]; main: boolean }
+
+/** One command a prompt may start with: `insert` is what the composer types (`/name ` or `$name `). */
+export interface CatalogCommand { name: string; insert: string; description: string; hint: string | null }
+
+/** What a host said it can run. `ok` false: it did not answer (or is `off`), and `models` are its aliases. */
+export interface CatalogHost {
+  ok: boolean;
+  off?: boolean;
+  reason?: string;
+  version: string | null;
+  fetchedAt: string;
+  defaultModel: string | null;
+  defaultEffort: string | null;
+  models: CatalogModel[];
+  commands: CatalogCommand[];
+}
+
+export interface HostCatalog { schema: 1; fetchedAt: string; hosts: Partial<Record<SessionHost, CatalogHost>> }
 
 /** main → page: one event of a running turn of `thread`. */
 export interface SessionEvent { thread: string; event: SessionEventRecord }
@@ -321,8 +360,9 @@ export interface GitStatus {
   branch: string | null;
   detached: boolean;
   merging: boolean;
-  /** `git status --porcelain=v2` codes: "M." staged, ".M" changed, "??" untracked, … */
-  files: { path: string; status: string }[];
+  /** `git status --porcelain=v2` codes: "M." staged, ".M" changed, "??" untracked, …; lines added and removed
+   *  against HEAD (an untracked file's lines are all added; null for a binary file). */
+  files: { path: string; status: string; added: number | null; removed: number | null }[];
 }
 
 export interface GitDiff { stat: string; text: string; truncated: boolean }
@@ -463,6 +503,8 @@ export interface AosBridge {
     stop(thread: string): void;
     list(): Promise<Result<SessionThread[]>>;
     read(thread: string): Promise<Result<SessionEventRecord[]>>;
+    /** Each host's models and commands (cached by the runtime for a day; `refresh` asks the hosts again). */
+    catalog(refresh?: boolean): Promise<Result<HostCatalog>>;
     onEvent(cb: (ev: SessionEvent) => void): () => void;
   };
   /** A workspace's repository: read, and commit on the user's word. Nothing is pushed. */

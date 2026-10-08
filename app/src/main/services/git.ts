@@ -47,19 +47,55 @@ export function parseStatus(out: string): Omit<GitStatus, "repo" | "merging"> {
       branch = detached ? null : head;
     } else if (line.startsWith("1 ")) {
       const f = line.split(" ");
-      files.push({ status: f[1], path: f.slice(8).join(" ") });
+      files.push({ status: f[1], path: f.slice(8).join(" "), added: null, removed: null });
     } else if (line.startsWith("2 ")) {
       const f = line.split(" ");
-      files.push({ status: f[1], path: f.slice(9).join(" ").split("\t")[0] });
+      files.push({ status: f[1], path: f.slice(9).join(" ").split("\t")[0], added: null, removed: null });
     } else if (line.startsWith("u ")) {
       const f = line.split(" ");
-      files.push({ status: f[1], path: f.slice(10).join(" ") });
+      files.push({ status: f[1], path: f.slice(10).join(" "), added: null, removed: null });
     } else if (line.startsWith("? ")) {
-      files.push({ status: "??", path: line.slice(2) });
+      files.push({ status: "??", path: line.slice(2), added: null, removed: null });
     }
   }
   return { branch, detached, files };
 }
+
+/** `git diff --numstat -z` → path → [added, removed], null for a binary file. A rename is keyed by its new path. */
+export function parseNumstat(out: string): Map<string, [number | null, number | null]> {
+  const counts = new Map<string, [number | null, number | null]>();
+  const parts = out.split("\0");
+  for (let i = 0; i < parts.length; i++) {
+    const m = /^(\d+|-)\t(\d+|-)\t(.*)$/s.exec(parts[i]);
+    if (!m) continue;
+    let file = m[3];
+    if (file === "") { file = parts[i + 2] ?? ""; i += 2; }   // a rename: "a\tr\t" NUL old NUL new
+    const n = (v: string): number | null => (v === "-" ? null : Number(v));
+    if (file) counts.set(file, [n(m[1]), n(m[2])]);
+  }
+  return counts;
+}
+
+/** An untracked file's lines, all added; null for a binary or unreadable one. Reads at most UNTRACKED_READ bytes. */
+export function untrackedLines(file: string): number | null {
+  try {
+    const fd = fs.openSync(file, "r");
+    try {
+      const buf = Buffer.alloc(Math.min(fs.fstatSync(fd).size, UNTRACKED_READ));
+      fs.readSync(fd, buf, 0, buf.length, 0);
+      if (buf.includes(0)) return null;
+      if (!buf.length) return 0;
+      let lines = 0;
+      for (const b of buf) if (b === 10) lines += 1;
+      return buf[buf.length - 1] === 10 ? lines : lines + 1;
+    } finally { fs.closeSync(fd); }
+  } catch { return null; }
+}
+
+/** git's empty tree: what a repository with no commit yet is compared with. */
+const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+const UNTRACKED_READ = 1024 * 1024;
+const UNTRACKED_COUNTED = 200;
 
 export class GitService {
   constructor(private readonly o: GitServiceOptions) {}
@@ -95,7 +131,22 @@ export class GitService {
     const s = await this.run(dir, ["status", "--porcelain=v2", "--branch", "--untracked-files=all"]);
     const mergeHead = await this.run(dir, ["rev-parse", "--git-path", "MERGE_HEAD"]);
     const merging = mergeHead.code === 0 && fs.existsSync(path.resolve(dir, mergeHead.stdout.trim()));
-    return { repo: true, merging, ...parseStatus(s.stdout) };
+    const st = parseStatus(s.stdout);
+    if (st.files.length) {
+      // +/- per file (spec 2026-10-07-sessions-ux U11): tracked changes against HEAD, staged or not; untracked files count
+      // their lines.
+      const head = await this.run(dir, ["rev-parse", "--verify", "--quiet", "HEAD"]);
+      const n = await this.run(dir, ["diff", "--numstat", "-z", head.code === 0 ? "HEAD" : EMPTY_TREE]);
+      const counts = n.code === 0 ? parseNumstat(n.stdout) : new Map<string, [number | null, number | null]>();
+      let untracked = 0;
+      for (const f of st.files) {
+        const c = counts.get(f.path);
+        if (c) [f.added, f.removed] = c;
+        else if (f.status === "??" && untracked++ < UNTRACKED_COUNTED) { f.added = untrackedLines(path.join(dir, f.path)); f.removed = f.added === null ? null : 0; }
+        else if (f.status !== "??" && n.code === 0) { f.added = 0; f.removed = 0; }
+      }
+    }
+    return { repo: true, merging, ...st };
   }
 
   async diff(workspace: string, file?: string): Promise<Result<GitDiff>> {

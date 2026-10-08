@@ -36,13 +36,16 @@
  *     the item's budget left, with the team folder added so the seat can post. codex: `exec -` in the workspace-write sandbox
  *     rooted at the worktree, the repository's git dir added so it can commit, network on for package installs, our hooks
  *     off, and the agent's instructions (`body`) inlined ahead of the prompt, since codex exec has no agent flag.
- *   sessionArgs(host, { prompt, sessionId, resume, model, effort, budget, allowCommands })  →  { argv, stdin: null }
- *     one turn of an app session (spec 2026-10-07-unidex-sessions S1, S5), run by the app with the workspace as cwd. The
- *     prompt is the last argument, after `--`, so nothing reads stdin. claude: stream-json events, acceptEdits with no
- *     one to answer a prompt (a tool not allowed is refused), Bash only when `allowCommands`; the first turn runs under
- *     the app's own `sessionId`, later turns `--resume` it; capped at `budget`. codex: `exec --json` (later
- *     `exec resume --json <resume>`) in the workspace-write sandbox without network whatever `allowCommands` says (it
- *     cannot edit read-only with no one to approve), our hooks off, never asking for approval.
+ *   sessionArgs(host, { prompt, sessionId, resume, model, effort, budget, access, allowCommands })  →  { argv, stdin: null }
+ *     one turn of an app session (spec 2026-10-07-unidex-sessions S1, S5; 2026-10-07-sessions-ux U6, U7), run by the app
+ *     with the workspace as cwd. The prompt is the last argument, after `--`, so nothing reads stdin. `access` is the
+ *     turn's level, read | edit | run (default edit; the older `allowCommands: true` reads as run). claude: stream-json
+ *     events with no one to answer a prompt (a tool not allowed is refused): read runs in plan mode, edit in
+ *     acceptEdits, run adds Bash; the first turn runs under the app's own `sessionId`, later turns `--resume` it; capped
+ *     at `budget`; the model `default` passes no --model (the user's own default). codex: `exec --json` (later
+ *     `exec resume --json <resume>`), read in the read-only sandbox, edit and run in workspace-write (commands always
+ *     run in the sandbox, without network: it cannot edit read-only with no one to approve), our hooks off, never
+ *     asking for approval. Efforts: SESSION_EFFORTS per host; any other level is left off.
  *   codexMcpServers(home)  →  the names of the [mcp_servers.<name>] tables in <home>/config.toml ([] when unreadable).
  *   CLI: node lib/headless.js --resolve [--kind persona|routines]  prints `host<TAB>bin<TAB>model<TAB>codex home`,
  *        exit 3 (reason on stderr) when no runner resolves. run-duty.sh reads it.
@@ -59,6 +62,10 @@ const CLAUDE_EFFORTS = ['low', 'medium', 'high'];
 const CODEX_EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh'];
 /** What `claude --effort` takes (Claude Code 2.1.281); runnerArgs keeps its narrower routine list. */
 const CROSS_CLAUDE_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
+/** What a session turn may pass as its effort, per host: the levels each CLI takes (claude 2.1.293, codex-cli 0.158.0). */
+const SESSION_EFFORTS = { claude: CROSS_CLAUDE_EFFORTS, codex: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'] };
+/** A session turn's access levels (spec 2026-10-07-sessions-ux U7). */
+const SESSION_ACCESS = ['read', 'edit', 'run'];
 const CROSS_MODES = ['review', 'consult', 'build'];
 /** The only tools a read-only claude child gets. */
 const READ_TOOLS = 'Read,Glob,Grep';
@@ -243,26 +250,29 @@ function seatArgs(host, { agent, prompt = '', body = '', model, effort, budget, 
 }
 
 /** { argv, stdin: null } for one turn of an app session on `host` (module comment). */
-function sessionArgs(host, { prompt = '', sessionId, resume, model, effort, budget, allowCommands = false } = {}) {
+function sessionArgs(host, { prompt = '', sessionId, resume, model, effort, budget, access, allowCommands = false } = {}) {
   const set = (v) => v !== undefined && v !== null && v !== '' && v !== 'inherit';
   if (!String(prompt).trim()) throw new Error('sessionArgs: a turn needs a prompt');
+  if (set(access) && !SESSION_ACCESS.includes(access)) throw new Error(`sessionArgs: no such access level ${access}`);
+  const level = set(access) ? access : allowCommands ? 'run' : 'edit';
   if (host === 'codex') {
     const argv = set(resume) ? ['exec', 'resume'] : ['exec'];
-    argv.push('--json', '--skip-git-repo-check', '-c', 'sandbox_mode="workspace-write"', '-c', 'features.hooks=false', '-c', 'approval_policy="never"');
+    const sandbox = level === 'read' ? 'read-only' : 'workspace-write';
+    argv.push('--json', '--skip-git-repo-check', '-c', `sandbox_mode="${sandbox}"`, '-c', 'features.hooks=false', '-c', 'approval_policy="never"');
     if (set(model)) argv.push('-m', String(model));
-    if (CODEX_EFFORTS.includes(effort)) argv.push('-c', `model_reasoning_effort="${effort}"`);
+    if (SESSION_EFFORTS.codex.includes(effort)) argv.push('-c', `model_reasoning_effort="${effort}"`);
     if (set(resume)) argv.push(String(resume));
     argv.push('--', String(prompt));
     return { argv, stdin: null };
   }
   if (host !== 'claude') throw new Error(`sessionArgs: no such host ${host}`);
   if (!set(resume) && !set(sessionId)) throw new Error('sessionArgs: a first claude turn needs its sessionId');
-  const argv = ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'acceptEdits', '--permission-prompts', 'none'];
+  const argv = ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', level === 'read' ? 'plan' : 'acceptEdits', '--permission-prompts', 'none'];
   argv.push(...(set(resume) ? ['--resume', String(resume)] : ['--session-id', String(sessionId)]));
-  if (allowCommands) argv.push('--allowedTools', 'Bash');
+  if (level === 'run') argv.push('--allowedTools', 'Bash');
   if (set(budget)) argv.push('--max-budget-usd', Number(budget).toFixed(2));
-  if (set(model)) argv.push('--model', String(model));
-  if (CROSS_CLAUDE_EFFORTS.includes(effort)) argv.push('--effort', effort);
+  if (set(model) && model !== 'default') argv.push('--model', String(model));
+  if (SESSION_EFFORTS.claude.includes(effort)) argv.push('--effort', effort);
   argv.push('--', String(prompt));
   return { argv, stdin: null };
 }
@@ -290,4 +300,4 @@ function main(argv) {
 
 if (require.main === module) process.exit(main(process.argv.slice(2)));
 
-module.exports = { resolveRunner, graphRunner, resolveBin, runnerArgs, crossArgs, seatArgs, sessionArgs, codexMcpServers, headlessEnv, hostEnabled, codexHomeOf, HEADLESS_UNSET, HOSTS, CODEX_EFFORTS, CLAUDE_EFFORTS, CROSS_CLAUDE_EFFORTS, CROSS_MODES, CODEX_OFF, SEAT_CODEX_TAIL };
+module.exports = { resolveRunner, graphRunner, resolveBin, runnerArgs, crossArgs, seatArgs, sessionArgs, codexMcpServers, headlessEnv, hostEnabled, codexHomeOf, HEADLESS_UNSET, HOSTS, CODEX_EFFORTS, CLAUDE_EFFORTS, CROSS_CLAUDE_EFFORTS, CROSS_MODES, CODEX_OFF, SEAT_CODEX_TAIL, SESSION_EFFORTS, SESSION_ACCESS };

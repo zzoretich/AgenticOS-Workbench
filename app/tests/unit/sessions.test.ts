@@ -10,7 +10,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { SessionEvent, SessionEventRecord } from "../../src/shared/ipc";
 import type { ProgramContext } from "../../src/main/policy/programs";
-import { GitService, parseStatus } from "../../src/main/services/git";
+import { GitService, parseNumstat, parseStatus, untrackedLines } from "../../src/main/services/git";
 import { SessionService, workspaceDir } from "../../src/main/services/sessions";
 
 const REPO = path.resolve(process.cwd(), "..");
@@ -151,7 +151,7 @@ test("git: status, a new file's diff, and a commit only with a message, on a bra
   const git = new GitService({ workspace: (n) => workspaceDir(vault, n), enabled: () => true, env: process.env });
   const st = await git.status("tide");
   assert.ok(st.ok);
-  assert.deepEqual([st.data.repo, st.data.branch, st.data.files], [true, "main", [{ status: "??", path: "a.txt" }]]);
+  assert.deepEqual([st.data.repo, st.data.branch, st.data.files], [true, "main", [{ status: "??", path: "a.txt", added: 1, removed: 0 }]], "a repository with no commit yet counts too");
   const d = await git.diff("tide", "a.txt");
   assert.ok(d.ok);
   assert.match(d.data.text, /\+one/);
@@ -160,6 +160,13 @@ test("git: status, a new file's diff, and a commit only with a message, on a bra
   const c = await git.commit("tide", "Add a");
   assert.ok(c.ok && /^[0-9a-f]{40}$/.test(c.data.commit), JSON.stringify(c));
   assert.deepEqual(await git.commit("tide", "again"), { ok: false, error: "nothing to commit", code: "EROFS" });
+  // +/- per file against HEAD (sessions-ux U11): a changed file, a new text file, a new binary file.
+  fs.writeFileSync(path.join(repo, "a.txt"), "uno\ntwo\nthree\n");
+  fs.writeFileSync(path.join(repo, "b.md"), "x\ny");
+  fs.writeFileSync(path.join(repo, "c.bin"), Buffer.from([1, 0, 2]));
+  const counted = await git.status("tide");
+  assert.ok(counted.ok);
+  assert.deepEqual(counted.data.files.map((f) => [f.path, f.added, f.removed]), [["a.txt", 3, 1], ["b.md", 2, 0], ["c.bin", null, null]]);
   assert.deepEqual((await git.status("harbor-map")).ok && (await git.status("harbor-map")), { ok: true, data: { repo: false, branch: null, detached: false, merging: false, files: [] } });
   const off = new GitService({ workspace: (n) => workspaceDir(vault, n), enabled: () => false, env: process.env });
   assert.deepEqual(await off.status("tide"), { ok: false, error: "the Sessions surface is off", code: "EROFS" });
@@ -167,9 +174,20 @@ test("git: status, a new file's diff, and a commit only with a message, on a bra
 
 test("parseStatus reads branch, detached HEAD, changed, renamed, unmerged and new files", () => {
   const out = ["# branch.head (detached)", "1 .M N... 100644 100644 100644 a b src/a b.js", "2 R. N... 100644 100644 100644 a b R100 new.js\told.js", "u UU N... 1 2 3 4 a b c conflict.js", "? notes.md"].join("\n");
-  assert.deepEqual(parseStatus(out), { branch: null, detached: true, files: [
-    { status: ".M", path: "src/a b.js" }, { status: "R.", path: "new.js" }, { status: "UU", path: "conflict.js" }, { status: "??", path: "notes.md" },
-  ] });
+  const f = (status: string, p: string) => ({ status, path: p, added: null, removed: null });
+  assert.deepEqual(parseStatus(out), { branch: null, detached: true, files: [f(".M", "src/a b.js"), f("R.", "new.js"), f("UU", "conflict.js"), f("??", "notes.md")] });
+});
+
+test("parseNumstat and untrackedLines: counts by path, a rename by its new path, a binary file as null", () => {
+  const out = ["3\t1\tsrc/a b.js", "-\t-\timg.png", "2\t0\t", "old.js", "new.js", ""].join("\0");
+  assert.deepEqual([...parseNumstat(out)], [["src/a b.js", [3, 1]], ["img.png", [null, null]], ["new.js", [2, 0]]]);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aos-numstat-"));
+  const w = (name: string, data: string | Buffer) => { fs.writeFileSync(path.join(dir, name), data); return path.join(dir, name); };
+  assert.equal(untrackedLines(w("a", "one\ntwo\n")), 2);
+  assert.equal(untrackedLines(w("b", "one\ntwo")), 2, "a last line without its newline counts");
+  assert.equal(untrackedLines(w("c", "")), 0);
+  assert.equal(untrackedLines(w("d", Buffer.from([0x61, 0]))), null);
+  assert.equal(untrackedLines(path.join(dir, "missing")), null);
 });
 
 test("git: a workspace folder inside another repository (a vault kept in git) is not a repository of its own: nothing to read or commit", async () => {
@@ -186,4 +204,50 @@ test("git: a workspace folder inside another repository (a vault kept in git) is
   assert.deepEqual(await git.diff("plain", "a.txt"), { ok: false, error: "not a git repository", code: "EROFS" });
   assert.deepEqual(await git.commit("plain", "Add a"), { ok: false, error: "not a git repository", code: "EROFS" });
   fs.rmSync(outer, { recursive: true, force: true });
+});
+
+test("each turn runs with its own model, effort and access; a send that names none reuses the thread's last (sessions-ux U6, U7)", async () => {
+  const { s } = service();
+  const log = path.join(tmp, "claude.argv");
+  const calls = (): string[][] => fs.readFileSync(log, "utf8").trim().split("\n").map((l) => (JSON.parse(l) as { argv: string[] }).argv);
+  const seen = calls().length;
+  const flag = (argv: string[], name: string) => (argv.includes(name) ? argv[argv.indexOf(name) + 1] : null);
+  const r = await s.start({ workspace: "harbor-map", host: "claude", text: "plan it", model: "sonnet", effort: "high", access: "read" });
+  assert.ok(r.ok);
+  assert.deepEqual([r.data.model, r.data.effort, r.data.access], ["sonnet", "high", "read"]);
+  await idle(s);
+  const sent = await s.send({ thread: r.data.id, text: "now do it", model: "opus", access: "run" });
+  assert.ok(sent.ok);
+  await idle(s);
+  assert.ok((await s.send({ thread: r.data.id, text: "and again" })).ok);
+  await idle(s);
+  const [first, second, third] = calls().slice(seen);
+  assert.deepEqual([flag(first, "--permission-mode"), flag(first, "--model"), flag(first, "--effort"), first.includes("Bash")], ["plan", "sonnet", "high", false]);
+  assert.deepEqual([flag(second, "--permission-mode"), flag(second, "--model"), flag(second, "--effort"), flag(second, "--allowedTools")], ["acceptEdits", "opus", "high", "Bash"]);
+  assert.deepEqual([flag(third, "--model"), flag(third, "--allowedTools")], ["opus", "Bash"], "the last turn's choices carry on");
+  const read = await s.read(r.data.id);
+  assert.ok(read.ok);
+  assert.deepEqual(read.data.filter((e) => e.kind === "prompt").map((e) => [e.model, e.effort, e.access]), [["sonnet", "high", "read"], ["opus", "high", "run"], ["opus", "high", "run"]]);
+  const list = await s.list();
+  assert.ok(list.ok);
+  const t = list.data.find((x) => x.id === r.data.id);
+  assert.deepEqual([t?.model, t?.effort, t?.access], ["opus", "high", "run"], "the list shows the latest choices");
+  const old = await s.send({ thread: r.data.id, text: "older page", allowCommands: false });
+  assert.ok(old.ok);
+  await idle(s);
+  assert.equal(flag(calls().at(-1) as string[], "--allowedTools"), null, "allowCommands false still reads as edit");
+});
+
+test("catalog: the runtime's answer for each host; a host that does not answer keeps its aliases; refused while Sessions is off", async () => {
+  const { s } = service();
+  const [a, b] = await Promise.all([s.catalog(), s.catalog()]);
+  assert.ok(a.ok, JSON.stringify(a));
+  assert.deepEqual(b, a, "one fetch at a time: the second call shares the first");
+  assert.equal(a.data.schema, 1);
+  const claude = a.data.hosts.claude;
+  assert.ok(claude && !claude.ok && claude.reason, "the stand-in claude never answers initialize");
+  assert.deepEqual(claude.models.map((m) => m.id), ["default", "opus", "fable", "sonnet", "haiku"]);
+  assert.ok(fs.existsSync(path.join(vault, "brain", "_index", "host-catalog.json")));
+  assert.ok((await s.catalog(true)).ok);
+  assert.deepEqual(await service(false).s.catalog(), { ok: false, error: "the Sessions surface is off", code: "EROFS" });
 });

@@ -106,3 +106,30 @@ test('summary: one line, clipped, from strings, content blocks or objects', () =
   assert.equal(E.summary('z'.repeat(1000)).length, E.SUMMARY_MAX);
   assert.equal(E.summary(undefined), '');
 });
+
+test('plans: claude TodoWrite and codex todo_list become one plan event each time the list changes (U10)', () => {
+  const claude = run('claude', jsonl([
+    { type: 'system', subtype: 'init', session_id: 'p1' },
+    { type: 'assistant', session_id: 'p1', message: { content: [{ type: 'tool_use', id: 'td1', name: 'TodoWrite', input: { todos: [
+      { content: 'Read the parser', status: 'completed', activeForm: 'Reading the parser' },
+      { content: 'Fix negative tides', status: 'in_progress' },
+      { content: '', status: 'pending' },
+      { content: 'Run the tests', status: 'pending' },
+    ] } }] } },
+    { type: 'user', session_id: 'p1', message: { content: [{ type: 'tool_result', tool_use_id: 'td1', content: 'ok' }] } },
+    { type: 'result', subtype: 'success', is_error: false, session_id: 'p1', total_cost_usd: 0.01, usage: {} },
+  ]));
+  assert.deepEqual(kinds(claude.events), ['session', 'plan', 'tool_result', 'usage', 'done'], 'the list is a plan, not a tool row');
+  assert.deepEqual(claude.events[1].items, [
+    { text: 'Read the parser', status: 'done' }, { text: 'Fix negative tides', status: 'active' }, { text: 'Run the tests', status: 'pending' },
+  ]);
+  const codex = run('codex', jsonl([
+    { type: 'thread.started', thread_id: 't9' },
+    { type: 'item.started', item: { id: 'l1', type: 'todo_list', items: [{ text: 'Reproduce', completed: false }, { text: 'Fix', completed: false }] } },
+    { type: 'item.updated', item: { id: 'l1', type: 'todo_list', items: [{ text: 'Reproduce', completed: true }, { text: 'Fix', completed: false }] } },
+    { type: 'item.completed', item: { id: 'l1', type: 'todo_list', items: [] } },
+    { type: 'turn.completed', usage: { input_tokens: 1, output_tokens: 1 } },
+  ]), { model: 'gpt-5-mini' });
+  assert.deepEqual(kinds(codex.events), ['session', 'plan', 'plan', 'usage', 'done'], 'an empty list adds nothing');
+  assert.deepEqual(codex.events[2].items, [{ text: 'Reproduce', status: 'done' }, { text: 'Fix', status: 'pending' }]);
+});
