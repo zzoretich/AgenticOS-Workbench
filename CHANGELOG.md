@@ -4,6 +4,8 @@ All notable changes to UniDeX (AgenticOS Workbench before 1.1). Versions follow 
 
 ## [Unreleased]
 
+## [1.4.1] — 2026-10-08
+
 ### Changed
 - **The composer (⌘L) sits under every running terminal,** a plain shell too: ⏎ runs what you wrote, ⇧⏎ adds a line, @ inserts a file and Snippets work; the / list stays with Claude Code and Codex.
 
@@ -441,7 +443,8 @@ The first public release: an `aos` CLI, the AgenticOS runtime, a Claude Code plu
 - Update notifications: a GitHub release check surfaced as a session-start notice.
 - Docs: README, install guide, and a release acceptance runbook.
 
-[Unreleased]: https://github.com/zzoretich/UniDeX-Agent-Harness/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/zzoretich/UniDeX-Agent-Harness/compare/v1.4.1...HEAD
+[1.4.1]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v1.4.1
 [1.4.0]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v1.4.0
 [1.3.1]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v1.3.1
 [1.3.0]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v1.3.0
