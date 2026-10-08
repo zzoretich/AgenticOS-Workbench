@@ -251,8 +251,9 @@ test.describe("a Codex-only machine", () => {
   test("Sessions: the host and model menu offers Codex alone, Claude Code a disabled button off on this Mac; Vault asks Codex", async () => {
     const { win } = app();
     await openTab(win, "chat");
-    // Vault: Codex is the one host ready for a question.
-    await expect(content(win).locator(".aos-asst-mode")).toHaveText(" · Codex via ask.js (Codex default, reasoner caps)");
+    // Vault: Codex is the one host ready for a question, so the chip reads Codex; until it is picked, a question takes
+    // today's route (ask.js on the codex provider, with its fallback), and the header says so.
+    await expect(content(win).locator(".aos-asst-mode")).toHaveText(" · codex via ask.js (reasoner caps)");
     await expect(content(win).locator('.aos-asst-tools .aos-hm[data-mode="vault"] .aos-hm-chiphost')).toHaveText("Codex");
     await content(win).locator(".aos-ss-newbtn").click();
     const menu = content(win).locator('.aos-ss-toolbar .aos-hm[data-mode="new"]');
@@ -263,7 +264,8 @@ test.describe("a Codex-only machine", () => {
     const claude = menu.locator('.aos-hm-pop .aos-hm-host[data-host="claude"]');
     await expect(claude).toBeDisabled();
     await expect(claude).toHaveAttribute("title", "Claude Code is off on this machine");
-    await expect(menu.locator('.aos-hm-offline[data-host="claude"]')).toHaveText("Claude Code is off on this Mac: aos init --host claude turns it on");
+    // `--host claude` would turn Codex off, so with Codex on the line names `--host both`.
+    await expect(menu.locator('.aos-hm-offline[data-host="claude"]')).toHaveText("Claude Code is off on this Mac: aos init --host both turns it on");
     await expect(menu.locator('.aos-hm-host[data-host="codex"]')).toHaveAttribute("aria-pressed", "true");
     await menu.locator(".aos-hm-search").press("Escape");
     await expect(menu.locator(".aos-hm-pop")).toHaveCount(0);

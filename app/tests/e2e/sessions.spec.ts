@@ -13,7 +13,7 @@ import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { ACCESS_LEVELS, CODEX_ACCESS_NOTE, accessHostLine } from "../../../obsidian-plugin/src/data/agentSessions";
-import { FX, content, expectNoErrors, openTab, providerState, rail, useApp } from "./harness";
+import { FX, USER_DATA, content, expectNoErrors, openTab, providerState, rail, useApp } from "./harness";
 
 // ── the host stand-ins ───────────────────────────────────────────────
 
@@ -281,6 +281,22 @@ async function reply(win: Page, text: string): Promise<void> {
 
 /** The open thread's id, once its row is selected in the list. */
 const openId = async (win: Page) => (await list(win).locator(".aos-ss-row.is-selected").getAttribute("data-thread")) ?? "";
+
+/** The HUD's saved settings: the app keeps the plugin's data.json as <userData>/plugins/agentic-os.json. */
+const savedSettings = (): Record<string, any> => {
+  try { return JSON.parse(fs.readFileSync(path.join(USER_DATA, "plugins", "agentic-os.json"), "utf8")) as Record<string, any>; } catch { return {}; }
+};
+
+/**
+ * The open thread's turn still runs after a key that should only have closed a menu or the drawer: stop() turns Stop
+ * into "Stopping…" and the working line into "Stopping…" at once, so a key that stopped the turn can never pass here.
+ */
+async function expectStillRunning(win: Page): Promise<void> {
+  const r = reader(win);
+  await expect(r.locator(".aos-ss-stop .aos-ss-stoplabel")).toHaveText("Stop");
+  await expect(r.locator(".aos-ss-working")).toHaveText(/esc to stop\)$/);
+  await expect(list(win).locator(".aos-ss-row.is-selected")).toHaveClass(/is-running/);
+}
 
 /** Review changes: the drawer over the conversation. */
 async function openReview(win: Page): Promise<void> {
@@ -623,8 +639,14 @@ test.describe("both hosts, the Sessions surface on", () => {
     const [c] = calls("claude").slice(claude0);
     expect([argOf(c.argv, "--model"), argOf(c.argv, "--effort")]).toEqual(["sonnet", "high"]);
 
-    // Codex: its listed models by priority, the hidden one never offered, "Reasoning" levels per model.
+    // The next New session starts where this one left off (U12): the last host, its model and effort, the access.
     await content(win).locator(".aos-ss-newbtn").click();
+    await expect(chip(win)).toHaveAttribute("data-host", "claude");
+    await expect(chip(win).locator(".aos-hm-chiprest")).toHaveText("· Sonnet · High");
+    await expect(r.locator(".aos-ss-statuschoice")).toHaveText("Sonnet · High · Edit files");
+    await expect.poll(() => savedSettings().sessionChoice).toMatchObject({ host: "claude", access: "edit", models: { claude: "sonnet" }, efforts: { claude: "high" } });
+
+    // Codex: its listed models by priority, the hidden one never offered, "Reasoning" levels per model.
     await r.locator("select.aos-ss-workspace").selectOption("harbor-map");
     await openMenu(win);
     await p.locator('.aos-hm-host[data-host="codex"]').click();
@@ -644,6 +666,7 @@ test.describe("both hosts, the Sessions surface on", () => {
     await p.locator('.aos-hm-effort[data-effort="xhigh"]').click();
     await closeMenu(win);
     await expect(chip(win).locator(".aos-hm-chiprest")).toHaveText("· GPT-Tide-3 · XHigh");
+    await pickAccess(win, "read");
     const codex0 = calls("codex").length;
     await reply(win, "Sound the channel");
     await expect(r.locator(".aos-ss-done")).toHaveText([codexDone("GPT-Tide-3 · XHigh")], { timeout: 30_000 });
@@ -656,11 +679,23 @@ test.describe("both hosts, the Sessions surface on", () => {
     expect(cache).toContain("claude-tide-7-20990101");
     expect(cache).not.toContain("example.invalid");
 
-    // ↻ asks the hosts again. A host that does not answer leaves its aliases and why the list is short, and still runs.
+    // Now New session starts on Codex, its model, its level and Read only; switching to Claude Code brings back
+    // Claude's own model and effort (U12). All of it is saved, so it outlives the app.
     await content(win).locator(".aos-ss-newbtn").click();
+    await expect(chip(win)).toHaveAttribute("data-host", "codex");
+    await expect(chip(win).locator(".aos-hm-chiprest")).toHaveText("· GPT-Tide-3 · XHigh");
+    await expect(access(win)).toHaveAttribute("data-access", "read");
+    await expect(r.locator(".aos-ss-statuschoice")).toHaveText("GPT-Tide-3 · XHigh · Read only");
+    await expect.poll(() => savedSettings().sessionChoice).toMatchObject({
+      host: "codex", access: "read", models: { claude: "sonnet", codex: "gpt-tide-3" }, efforts: { claude: "high", codex: "xhigh" },
+    });
+    await pickAccess(win, "edit");
+
+    // ↻ asks the hosts again. A host that does not answer leaves its aliases and why the list is short, and still runs.
     await r.locator("select.aos-ss-workspace").selectOption("harbor-map");
     await openMenu(win);
     await p.locator('.aos-hm-host[data-host="claude"]').click();
+    await expect(chip(win).locator(".aos-hm-chiprest")).toHaveText("· Sonnet · High");
     fs.writeFileSync(FLAG.claudeFails, "");
     try {
       await refreshCatalog(win, "claude");
@@ -710,6 +745,12 @@ test.describe("both hosts, the Sessions surface on", () => {
     await choose(win, { model: "opus", effort: "max" });
     await expect(r.locator(".aos-ss-statuschoice")).toHaveText("Opus · Max · Edit files");
     await expect(r.locator(".aos-ss-turnchange")).toHaveCount(0);   // nothing changed until the next turn runs
+    // The list tags the model the thread ran on so far, apart from its name, while another is picked.
+    await openMenu(win);
+    await expect(pop(win).locator(".aos-hm-modeltag")).toHaveText(["used so far"]);
+    await expect(pop(win).locator('.aos-hm-model[data-model="default"] .aos-hm-modeltag')).toHaveText("used so far");
+    await expect(pop(win).locator('.aos-hm-model[data-model="default"] .aos-hm-modelname')).toHaveText("Default (recommended)");
+    await closeMenu(win);
     await reply(win, "And the shoals");
     await expect(r.locator(".aos-ss-done")).toHaveCount(2, { timeout: 30_000 });
     const marker = r.locator(".aos-ss-turnchange");
@@ -853,15 +894,23 @@ test.describe("both hosts, the Sessions surface on", () => {
     await r.locator(".aos-ss-send").click();
     await expect(r.locator(".aos-ss-done")).toHaveCount(2, { timeout: 30_000 });
     expect(calls("claude").slice(claude0).map((c) => c.argv.at(-1))).toEqual(["/tide-report Monday"]);
-    // Escape closes the menu and keeps the text; it stops nothing.
+    // Escape closes the menu and keeps the text; it stops nothing, not even a running turn, which Esc in the tab would.
+    const prompt = "[sleep] Wait for the tide report";
+    await reply(win, prompt);
+    await expect(r.locator(".aos-ss-stop .aos-ss-stoplabel")).toHaveText("Stop", { timeout: 30_000 });
+    await expect.poll(() => calls("claude").some((c) => c.argv.at(-1) === prompt), { timeout: 15_000 }).toBe(true);
     await input(win).click();
     await input(win).pressSequentially("/re");
     await expect(names.first()).toHaveText("/review");
     await win.keyboard.press("Escape");
     await expect(menu).toHaveCount(0);
     await expect(input(win)).toHaveValue("/re");
+    await expectStillRunning(win);
     await expect(r.locator(".aos-ss-error")).toHaveCount(0);
     await input(win).fill("");
+    await r.locator(".aos-ss-stop").click();
+    await expect(r.locator(".aos-ss-error")).toHaveText(["the turn ended before the host finished it", "stopped"], { timeout: 30_000 });
+    await expect(r.locator(".aos-ss-stop")).toHaveCount(0);
 
     // Codex: $ lists its skills, and inserts $name, how Codex names a skill.
     await newSession(win, { workspace: "harbor-map", host: "codex", text: "Plot the shoals", model: "gpt-tide-3", effort: "medium" });
@@ -972,14 +1021,15 @@ test.describe("both hosts, the Sessions surface on", () => {
     await win.keyboard.press("Escape");
     await expect(drawer).not.toHaveClass(/is-open/);
     await expect(review).toBeFocused();
-    await expect(r.locator(".aos-ss-done")).toHaveCount(1);   // Esc in the drawer stopped nothing
 
     // The status line: the next turn's choice, the spend, the branch and files.
     await expect(r.locator(".aos-ss-statuschoice")).toHaveText("Default · Medium · Edit files");
     await expect(r.locator(".aos-ss-statusspend")).toHaveText(/^turn \$0\.02 · today \$\d+\.\d{2,4} of \$10$/);
     await expect(r.locator(".aos-ss-statusrepo")).toHaveText("main · 2 files");
 
-    // A running turn: the running mark, the working line, Stop with its key, Review's note; Esc in the tab stops it.
+    // A running turn: the running mark, the working line, Stop with its key, Review's note. Esc in the drawer, the
+    // access menu (from an item, and from its chip after Shift+Tab) or the slash menu only closes it: the turn runs on.
+    // Esc in the tab stops it.
     const prompt = "[sleep] Wait for the reef";
     await reply(win, prompt);
     await expect(row).toHaveClass(/is-running/, { timeout: 30_000 });
@@ -987,10 +1037,36 @@ test.describe("both hosts, the Sessions surface on", () => {
     await expect(row.locator(".aos-ss-age")).toHaveCount(0);
     await expect(r.locator(".aos-ss-working")).toHaveText(/^Working… \(\d+s · esc to stop\)$/);
     await expect(r.locator(".aos-ss-stop .aos-ss-kbd")).toHaveText("esc");
+    await expect.poll(() => calls("claude").some((c) => c.argv.at(-1) === prompt), { timeout: 15_000 }).toBe(true);
     await openReview(win);
     await expect(r.locator(".aos-ss-drawer .aos-ss-repo > .aos-ss-note")).toHaveText("The agent is still working: commit once the turn ends.");
-    await r.locator(".aos-ss-drawerclose").click();
-    await expect.poll(() => calls("claude").some((c) => c.argv.at(-1) === prompt), { timeout: 15_000 }).toBe(true);
+    await expect(drawer.locator(".aos-ss-drawerclose")).toBeFocused();
+    await win.keyboard.press("Escape");
+    await expect(drawer).not.toHaveClass(/is-open/);
+    await expect(review).toBeFocused();
+    await expectStillRunning(win);
+    const am = access(win);
+    await am.locator(".aos-am-trigger").click();
+    await expect(am.locator('.aos-am-item[data-level="edit"]')).toBeFocused();
+    await win.keyboard.press("Escape");
+    await expect(am.locator(".aos-am-menu")).toHaveCount(0);
+    await expect(am.locator(".aos-am-trigger")).toBeFocused();
+    await expectStillRunning(win);
+    await am.locator(".aos-am-trigger").click();
+    await win.keyboard.press("Shift+Tab");
+    await expect(am.locator(".aos-am-trigger")).toBeFocused();
+    await expect(am.locator(".aos-am-menu")).toHaveCount(1);
+    await win.keyboard.press("Escape");
+    await expect(am.locator(".aos-am-menu")).toHaveCount(0);
+    await expect(am.locator(".aos-am-trigger")).toBeFocused();
+    await expectStillRunning(win);
+    await input(win).click();
+    await input(win).pressSequentially("/");
+    await expect(r.locator(".aos-sm-menu")).toBeVisible();
+    await win.keyboard.press("Escape");
+    await expect(r.locator(".aos-sm-menu")).toHaveCount(0);
+    await expectStillRunning(win);
+    await input(win).fill("");
     await input(win).press("Escape");
     await expect(r.locator(".aos-ss-error")).toHaveText(["the turn ended before the host finished it", "stopped"], { timeout: 30_000 });
     await expect(r.locator(".aos-ss-done").last()).toHaveClass(/is-failed/);
@@ -1045,7 +1121,8 @@ test.describe("a Codex-only machine", () => {
     const codex = p.locator('.aos-hm-host[data-host="codex"]');
     await expect(claude).toBeDisabled();
     await expect(claude).toHaveAttribute("title", "Claude Code is off on this machine");
-    await expect(p.locator('.aos-hm-offline[data-host="claude"]')).toHaveText("Claude Code is off on this Mac: aos init --host claude turns it on");
+    // `--host claude` would turn Codex off, so with Codex on the line names `--host both`.
+    await expect(p.locator('.aos-hm-offline[data-host="claude"]')).toHaveText("Claude Code is off on this Mac: aos init --host both turns it on");
     await expect(codex).toBeEnabled();
     await expect(codex).toHaveClass(/is-active/);
     await expect(p.locator(".aos-hm-source")).toHaveText(/^From Codex 0\.158\.0 · /, { timeout: 30_000 });

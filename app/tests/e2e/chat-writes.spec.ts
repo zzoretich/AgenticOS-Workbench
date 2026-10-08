@@ -16,7 +16,7 @@ import * as path from "node:path";
 import { buildAskArgs } from "../../../obsidian-plugin/src/data/askSpawner";
 import { buildClaudeArgs, composePrompt, SPEND_LEDGER_PATH } from "../../../obsidian-plugin/src/data/claudeAsk";
 import {
-  CLAUDE_ANSWER, CODEX_ANSWER, FX, appEnv, chatReply, claudeCalls, codexCalls, content, expectNoErrors, guardWrites, installChatStubs,
+  CLAUDE_ANSWER, CODEX_ANSWER, FX, USER_DATA, appEnv, chatReply, claudeCalls, codexCalls, content, expectNoErrors, guardWrites, installChatStubs,
   openTab, providerState, useApp,
 } from "./harness";
 
@@ -104,6 +104,11 @@ function recall(q: string): string {
 async function reopen(win: Page): Promise<void> {
   await openTab(win, "pulse");
   await openTab(win, "chat");
+}
+
+/** The HUD's saved settings: the app keeps the plugin's data.json as <userData>/plugins/agentic-os.json. */
+function savedSettings(): Record<string, any> {
+  try { return JSON.parse(fs.readFileSync(path.join(USER_DATA, "plugins", "agentic-os.json"), "utf8")) as Record<string, any>; } catch { return {}; }
 }
 
 test.beforeEach(async () => { await openTab(app().win, "chat"); });
@@ -380,6 +385,12 @@ test("SE13 Vault chat's picker: a fixed Read only chip; a question on Claude pas
     await close();
     await expect(chip.locator(".aos-hm-chiprest")).toHaveText("· Sonnet · High");
     await expect(mode(win)).toHaveText(" · Claude Code (Sonnet, capped)");
+    // The pick is saved (U12): the host, and that host's model and effort. Back on the tab, the chip keeps it.
+    await expect.poll(() => savedSettings().vaultChoice).toMatchObject({ host: "claude", models: { claude: "sonnet" }, efforts: { claude: "high" } });
+    await reopen(win);
+    await expect(chip.locator(".aos-hm-chiphost")).toHaveText("Claude Code");
+    await expect(chip.locator(".aos-hm-chiprest")).toHaveText("· Sonnet · High");
+    await expect(mode(win)).toHaveText(" · Claude Code (Sonnet, capped)");
 
     const log0 = read(CHAT_LOG), ledger0 = read(LEDGER), claude0 = claudeCalls().length, codex0 = codexCalls().length;
     const q = "Which tide tables come first?";
@@ -413,6 +424,12 @@ test("SE13 Vault chat's picker: a fixed Read only chip; a question on Claude pas
     await expect(chip.locator(".aos-hm-chiphost")).toHaveText("Codex");
     await expect(chip.locator(".aos-hm-chiprest")).toHaveText("· gpt-tide-3 · High");
     await expect(mode(win)).toHaveText(" · Codex via ask.js (gpt-tide-3, reasoner caps)");
+    await expect.poll(() => savedSettings().vaultChoice).toMatchObject({
+      host: "codex", models: { claude: "sonnet", codex: "gpt-tide-3" }, efforts: { claude: "high", codex: "high" },
+    });
+    await reopen(win);
+    await expect(chip.locator(".aos-hm-chiphost")).toHaveText("Codex");
+    await expect(chip.locator(".aos-hm-chiprest")).toHaveText("· gpt-tide-3 · High");
 
     const log1 = read(CHAT_LOG), ledger1 = read(LEDGER), asks1 = ollama.asks.length, claude1 = claudeCalls().length, codex1 = codexCalls().length, t1 = Date.now();
     const q2 = "What is next on the harbour chart?";
@@ -437,9 +454,11 @@ test("SE13 Vault chat's picker: a fixed Read only chip; a question on Claude pas
     expect(JSON.parse(rows2[0])).toMatchObject({ feature: "reason:ask", provider: "codex" });
     await expect(turns(win).last().locator(".aos-asst-body strong")).toHaveText("next");
 
-    // Back to Claude Code's default, where the other tests start.
+    // Back to Claude Code: the switch starts from Claude's remembered Sonnet at High. Then its default, where the
+    // other tests start.
     await chip.click();
     await pop.locator('.aos-hm-host[data-host="claude"]').click();
+    await expect(chip.locator(".aos-hm-chiprest")).toHaveText("· Sonnet · High");
     await pop.locator('.aos-hm-model[data-model="default"]').click();
     await pop.locator('.aos-hm-effort[data-effort="medium"]').click();
     await close();
