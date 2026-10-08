@@ -83,7 +83,7 @@ interface RowContext {
  * chat about the vault, ChatTab, unchanged), then each workspace folder with its threads, and the day's session spend.
  * The reader, as Claude Code shows a session: `workspace / title`, the branch, Review changes and Stop above one centred
  * column; your prompts, the agent's text, its tool calls as `⏺ Verb(target)` lines with their `⎿` result, the turn's
- * plan, model changes and a footer per turn; the composer below it with the access, workspace and host-and-model menus,
+ * plan, model changes and a footer per turn; the composer below it with the workspace, access and host-and-model menus,
  * `/` for the host's commands, and a status line. The app's main process runs every turn and keeps every thread; this
  * tab only names a workspace, a host, a prompt and the turn's model, effort and access (host.ts sessions and git).
  * Without them, Vault alone works.
@@ -110,6 +110,8 @@ export class SessionsTab {
   private expanded = new Set<string>();
   private diffs = new Map<string, FileDiff>();
   private repo: RepoCard | null = null;
+  /** Each repository read; an older read that answers late is dropped. */
+  private repoSeq = 0;
   /** The Review changes drawer over the conversation. */
   private drawer = false;
   /** Each host's models and commands (U3); null until the app answers, when the menus show the aliases. */
@@ -126,6 +128,8 @@ export class SessionsTab {
    *  stays on the chip, though remembered() would drop it from the settings' choice. */
   private draft: HostModelValue | null = null;
   private text = "";
+  /** Messages whose send failed after the user moved to another thread (or off New session), kept for their return. */
+  private unsent = new Map<string, { text: string; error: string }>();
   private composerError: string | null = null;
   private sending = false;
   private stopping: string | null = null;
@@ -255,6 +259,8 @@ export class SessionsTab {
     this.loading = false;
     if (r.ok) this.events = mergeEvents(r.data, live);
     else { this.events = mergeEvents(this.events, live); this.composerError = r.error; }
+    // A done this tab did not hear (it was unmounted when it came) still ends the stop: the thread's file says so.
+    if (this.stopping === id && !turnOpen(this.events)) this.stopping = null;
     if (!this.active()) return;
     this.renderHead();
     this.renderTimeline(true);
@@ -263,14 +269,13 @@ export class SessionsTab {
   }
 
   private onEvent(thread: string, e: HostSessionEvent): void {
+    // A stop lasts until its turn's done, wherever that thread is (open, being read, or not shown); a prompt is a new turn.
+    if ((e.kind === "done" || e.kind === "prompt") && this.stopping === thread) this.stopping = null;
     if (thread === this.selected) {
       if (this.pending) this.pending.push(e);
       else {
         this.events.push(e);
-        if (e.kind === "done") {
-          if (this.stopping === thread) this.stopping = null;
-          this.diffs.clear();   // the turn may have changed the files a line shows
-        }
+        if (e.kind === "done") this.diffs.clear();   // the turn may have changed the files a line shows
         if (this.active()) {
           this.renderTimeline();
           if (e.kind === "prompt" || e.kind === "done") { this.renderHead(); this.syncComposer(); }
@@ -288,14 +293,22 @@ export class SessionsTab {
     const sh = sessionsHost();
     const t = this.thread;
     if (!sh || !t || this.selected !== t.id) return;
+    // The same workspace's card is read again in place: a commit on its way keeps its card, and reads again when it ends.
     const prev = this.repo?.workspace === t.workspace ? this.repo : null;
-    this.repo = { workspace: t.workspace, status: prev?.status ?? null, error: null, loading: true, review: null, message: prev?.message || t.title, result: prev?.result ?? null, committing: false };
+    if (prev?.committing) return;
+    const repo: RepoCard = prev ?? { workspace: t.workspace, status: null, error: null, loading: true, review: null, message: t.title, result: null, committing: false };
+    repo.loading = true;
+    repo.error = null;
+    repo.review = null;
+    if (!repo.message) repo.message = t.title;
+    this.repo = repo;
+    const seq = ++this.repoSeq;
     if (this.active()) this.renderDrawer();
     const r = await sh.git.status(t.workspace);
-    if (this.selected !== t.id || !this.repo) return;
-    this.repo.loading = false;
-    if (r.ok) this.repo.status = r.data;
-    else this.repo.error = r.error;
+    if (this.selected !== t.id || this.repo !== repo || seq !== this.repoSeq) return;   // moved away, or a later read
+    repo.loading = false;
+    if (r.ok) repo.status = r.data;
+    else repo.error = r.error;
     if (!this.active()) return;
     this.renderHead();
     this.renderDrawer();
@@ -400,6 +413,8 @@ export class SessionsTab {
       n.effort = v.effort;
     }
     this.remember({ host: v.host, model: v.model, effort: v.effort });
+    // The menu's host switch starts from each host's remembered choice: it hears this pick, or a switch back undoes it.
+    this.menus?.host.update({ remembered: this.remembered() });
     this.syncAccess();
     this.menus?.slash.update(this.commands(v.host), v.host);
     this.renderStatus();
@@ -436,6 +451,9 @@ export class SessionsTab {
     this.next = null;
     if (!keepText) this.text = "";
     this.composerError = null;
+    // A message that failed while another thread was shown comes back with its error.
+    const unsent = this.unsent.get(id);
+    if (unsent) { this.unsent.delete(id); this.text = unsent.text; this.composerError = unsent.error; }
     this.renderList();
     this.renderReader();
     if (this.isThread(id)) void this.openThread(id);
@@ -459,7 +477,9 @@ export class SessionsTab {
     const pick = this.menus?.host.value() ?? { host: null, model: null, effort: null };
     if (isNew && !this.workspace) { this.composerError = "Choose a workspace first."; this.syncComposer(); return; }
     if (isNew && !pick.host) { this.composerError = "No host is ready to run this session."; this.syncComposer(); return; }
-    const focused = !!this.r && document.activeElement === this.r.input;
+    // Focus goes back to the prompt after the send: Send itself is disabled while it sends, or replaced with the reader.
+    const focused = !!this.r && (document.activeElement === this.r.input || document.activeElement === this.r.send);
+    const raw = this.text;
     this.sending = true;
     this.composerError = null;
     this.syncComposer();
@@ -474,8 +494,9 @@ export class SessionsTab {
       const host = this.thread?.host;
       const opts = n && host ? { model: modelArg(host, n.model), effort: n.effort, access: n.access } : {};
       r = await sh.sessions.send({ thread, text, ...opts });
-      // The last turn has ended here, but main may still be recording it (its spend and run row): try again shortly.
-      for (let i = 0; i < BUSY_RETRIES && !r.ok && r.code === "EBUSY" && !turnOpen(this.events) && this.selected === thread; i++) {
+      // The last turn has ended here, but main may still be recording it (its spend and run row): try again shortly. The
+      // request names the thread, so it goes on after the user moves away; only its own events say a turn now runs.
+      for (let i = 0; i < BUSY_RETRIES && !r.ok && r.code === "EBUSY" && (this.selected !== thread || !turnOpen(this.events)); i++) {
         await new Promise((res) => window.setTimeout(res, BUSY_RETRY_MS));
         r = await sh.sessions.send({ thread, text, ...opts });
       }
@@ -485,8 +506,11 @@ export class SessionsTab {
     const here = isNew ? this.selected === NEW : this.selected === sent;
     if (!here && this.active()) this.syncComposer();   // its Send was off while this one was sending
     if (!r.ok) {
-      if (here) this.composerError = r.error;
-      if (here && this.active()) { this.syncComposer(); if (focused) this.r?.input.focus(); }
+      if (!here) { this.unsent.set(sent, { text: raw, error: r.error }); return; }
+      this.composerError = r.error;
+      // The user left and came back while it sent: the composer was cleared on the way, the message comes back.
+      if (!this.text) { this.text = raw; if (this.r) this.r.input.value = raw; }
+      if (this.active()) { this.syncComposer(); if (focused) this.r?.input.focus(); }
       return;
     }
     const t = r.data;
@@ -536,6 +560,7 @@ export class SessionsTab {
   /** Esc stops a running turn while focus is in the tab; the menus and the drawer keep their own Esc. */
   private onKey(e: KeyboardEvent): void {
     if (e.key !== "Escape" || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+    if (e.isComposing || e.keyCode === 229) return;   // the Esc that cancels an input method's candidate is the IME's
     if (!this.isThread(this.selected) || !turnOpen(this.events) || this.stopping === this.selected) return;
     e.preventDefault();
     this.stop();
@@ -583,10 +608,15 @@ export class SessionsTab {
     repo.result = null;
     this.renderDrawer();
     const r = await sh.git.commit(repo.workspace, repo.message);
-    if (this.repo !== repo) return;
     repo.committing = false;
-    repo.result = r.ok ? { ok: true, text: `Committed ${r.data.commit.slice(0, 7)}` } : { ok: false, text: r.error };
-    if (r.ok) { repo.review = null; this.diffs.clear(); await this.loadRepo(); }
+    // The user may have moved on: the result goes to the card now shown for that workspace, if one is.
+    const card = this.repo?.workspace === repo.workspace ? this.repo : null;
+    if (!card || (card !== repo && card.committing)) return;   // none, or it has a commit of its own on the way
+    card.committing = false;
+    card.result = r.ok ? { ok: true, text: `Committed ${r.data.commit.slice(0, 7)}` } : { ok: false, text: r.error };
+    if (r.ok) { card.review = null; this.diffs.clear(); }
+    // A read skipped while it committed happens now; never while a turn runs (git status may take the index lock).
+    if (!turnOpen(this.events)) await this.loadRepo();
     else if (this.active()) this.renderDrawer();
   }
 
@@ -613,12 +643,17 @@ export class SessionsTab {
   }
 
   /** Redraws `el`, then gives focus back to the control that had it (by its data-focus key), so a live event does not
-   *  pull focus out from under the keyboard. */
-  private keepFocus(el: HTMLElement, draw: () => void): void {
+   *  pull focus out from under the keyboard. When that control is gone or disabled (Stop as it stops, Commit as it
+   *  commits), focus goes to the first of `fallback` that can take it, not to the page. */
+  private keepFocus(el: HTMLElement, draw: () => void, fallback: string[] = []): void {
     const now = document.activeElement;
     const key = now instanceof HTMLElement && el.contains(now) ? now.getAttribute("data-focus") : null;
     draw();
-    if (key) el.querySelector<HTMLElement>(`[data-focus="${CSS.escape(key)}"]`)?.focus();
+    if (!key) return;
+    for (const k of [key, ...fallback]) {
+      const target = el.querySelector<HTMLElement>(`[data-focus="${CSS.escape(k)}"]`);
+      if (target && !target.matches(":disabled")) { target.focus(); return; }
+    }
   }
 
   private renderList(): void {
@@ -779,7 +814,7 @@ export class SessionsTab {
         stop.disabled = stopping;
         stop.addEventListener("click", () => this.stop());
       }
-    });
+    }, ["review"]);
   }
 
   private renderTimeline(toEnd = false): void {
@@ -948,7 +983,7 @@ export class SessionsTab {
       setIcon(close, "x");
       close.addEventListener("click", () => this.toggleDrawer(false));
       this.renderRepo(d.createDiv({ cls: "aos-ss-drawerbody" }));
-    });
+    }, ["message", "drawer-close"]);
   }
 
   private renderRepo(el: HTMLElement): void {
@@ -1005,7 +1040,7 @@ export class SessionsTab {
   }
 
   /**
-   * The composer, drawn once per reader: the prompt, the access chip, a new session's workspace, the host and model chip
+   * The composer, drawn once per reader: the prompt, a new session's workspace, the access chip, the host and model chip
    * (the host locked in a thread), Send, and the status line. syncComposer() and syncMenus() keep it current, so a live
    * event never takes the textarea's focus, an open menu or the caret.
    */
@@ -1021,8 +1056,8 @@ export class SessionsTab {
     });
     const bar = box.createDiv({ cls: "aos-ss-toolbar" });
     const choices = hostChoices(readAgenticosJson(this.plugin.claudeConfigDir()), readProviderState(this.plugin.vaultRoot()));
+    if (isNew) this.renderWorkspacePicker(bar);   // the workspace first, then what the agent may do in it
     const access = new AccessMenu(bar, { host: null, value: this.accessValue(), onChange: (level) => this.pickAccess(level) });
-    if (isNew) this.renderWorkspacePicker(bar);
     bar.createSpan({ cls: "aos-ss-spacer" });
     const hostMenu = new HostModelMenu(bar, {
       mode: isNew ? "new" : "thread",
@@ -1034,6 +1069,7 @@ export class SessionsTab {
       onChange: (v) => this.pickModel(v),
       onRefresh: () => void this.loadCatalog(true),
       onNewSessionOn: isNew ? undefined : (h) => this.newSessionOn(h),
+      usedModel: this.thread?.model,   // the thread's recorded model, tagged "used so far" when another is picked
     });
     const send = bar.createEl("button", { cls: "aos-ss-send", attr: { type: "button", "aria-label": "Send", title: "Send (⌘↵)" } });
     setIcon(send, "arrow-up");
@@ -1068,7 +1104,7 @@ export class SessionsTab {
     const m = this.menus;
     if (!m) return;
     this.hostDisabled = this.sending;
-    m.host.update({ catalog: this.catalog, value: this.menuValue(), remembered: this.remembered(), refreshing: this.refreshing, disabled: this.sending });
+    m.host.update({ catalog: this.catalog, value: this.menuValue(), remembered: this.remembered(), refreshing: this.refreshing, disabled: this.sending, usedModel: this.thread?.model });
     const host = m.host.value().host;
     m.slash.update(this.commands(host), host ?? "claude");
     this.syncAccess();

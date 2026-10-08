@@ -282,6 +282,32 @@ export function vaultRemembered(choice: VaultChoice, catalog: HostCatalog | null
   };
 }
 
+/** A Vault question's host, model and effort (HostModelMenu's value; a null host is today's route). */
+export interface VaultValue { host: SessionHost | null; model: string | null; effort: string | null }
+
+/**
+ * What Vault chat's menu starts from, and whether a host was chosen. A pick made in the menu this session is kept as it
+ * is, through a catalog refresh too, so a custom id the catalog never lists stays (as SessionsTab keeps its draft);
+ * else the stored host with its remembered model and effort. Only a chosen host is asked by name (U9: no fallback for
+ * a host the user picked); without one the question takes today's route, with its provider fallback.
+ */
+export function vaultStart(pick: VaultValue | null, stored: VaultChoice, remembered: Record<SessionHost, RememberedChoice>): { value: VaultValue; chosen: boolean } {
+  if (pick) return { value: pick, chosen: pick.host !== null };
+  const host = stored.host;
+  if (!host) return { value: { host: null, model: null, effort: null }, chosen: false };
+  return { value: { host, model: remembered[host].model ?? null, effort: remembered[host].effort ?? null }, chosen: true };
+}
+
+/**
+ * What a Vault question runs on, given the chip's value (menuValue) and whether its host was chosen (vaultStart).
+ * Claude answers as the chip says either way: it is ready for Vault only with the login chatRoute needs, so claude -p
+ * is today's route too, and it has no fallback to lose. Codex nobody chose is not named: ask.js --local keeps its
+ * provider fallback, so a Codex login never checked does not fail a question Ollama would answer.
+ */
+export function vaultAsked(value: VaultValue, chosen: boolean): VaultValue {
+  return chosen || value.host === "claude" ? value : { host: null, model: null, effort: null };
+}
+
 /**
  * The header's route line. A host from the menu names it and the model it runs: on Claude the configured reasoner for
  * `default`, capped per call; on Codex through ask.js, under the reasoner's caps. With no host ready the route is

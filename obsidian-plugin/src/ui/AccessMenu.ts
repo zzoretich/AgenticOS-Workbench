@@ -42,6 +42,14 @@ export class AccessMenu {
       const next = e.relatedTarget as Node | null;
       if (this.menu && (!next || !this.el.contains(next))) this.close(false);
     });
+    // Escape anywhere inside an open menu, the chip included (Shift+Tab from an item lands there), only closes it:
+    // the tab's own Escape (stop a running turn) must not see that key.
+    this.el.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape" || !this.menu) return;
+      e.preventDefault();
+      e.stopPropagation();
+      this.close();
+    });
     this.render();
   }
 
@@ -155,13 +163,7 @@ export class AccessMenu {
     const items = this.items();
     const i = items.indexOf(document.activeElement as HTMLElement);
     const n = items.length;
-    if (e.key === "Escape") {
-      // The tab's own Escape (stop a running turn) must not see the key that only closed the menu.
-      e.preventDefault();
-      e.stopPropagation();
-      this.close();
-      return;
-    }
+    // Escape bubbles to the container's listener, which closes the menu.
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
       if (i >= 0) this.pick(ACCESS_LEVELS[i].id);

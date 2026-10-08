@@ -7,7 +7,7 @@ import * as path from "node:path";
 import type { HostChild, HostSpawnOptions } from "../host";
 import {
   runClaudeAsk, buildClaudeArgs, claudeChatModel, composePrompt, parseClaudeJson, headlessEnv, resolveClaudeBin, chatRoute, ClaudeAskDeps, CHAT_SYSTEM_PROMPT,
-  ALIAS_REASON, aliasCatalog, readReasonSpendToday, reasonSpendToday, vaultHostChoices, vaultModeLine, vaultRemembered, vaultSpendLine,
+  ALIAS_REASON, aliasCatalog, readReasonSpendToday, reasonSpendToday, vaultAsked, vaultHostChoices, vaultModeLine, vaultRemembered, vaultSpendLine, vaultStart,
 } from "./claudeAsk";
 import { DEFAULT_SETTINGS } from "../settingsDefaults";
 
@@ -262,6 +262,38 @@ test("vaultRemembered: the stored pick, else the reasoner's; a model the host's 
   assert.deepEqual(vaultRemembered(stored, answered, reasoner), { claude: { model: "opus", effort: "max" }, codex: { model: null, effort: "low" } });
   // A host that did not answer keeps the id: its short list proves nothing.
   assert.deepEqual(vaultRemembered(stored, aliasCatalog(new Date()), reasoner).codex, { model: "gpt-old", effort: "low" });
+});
+
+test("vaultStart: a pick made in the menu is kept as it is, a custom id included; else the stored host's remembered choice", () => {
+  const answered = {
+    schema: 1 as const, fetchedAt: "",
+    hosts: {
+      claude: { ok: true, version: "2", fetchedAt: "", defaultModel: null, defaultEffort: null, models: [{ id: "opus", name: "Opus", description: "", efforts: ["low"], main: true }], commands: [] },
+      codex: { ok: true, version: "1", fetchedAt: "", defaultModel: "gpt-new", defaultEffort: "high", models: [], commands: [] },
+    },
+  };
+  const reasoner = { effort: "high", codexModel: null };
+  // The user typed an id the catalog never lists, and it was stored; a refresh brings an answered catalog.
+  const stored = { host: "claude" as const, models: { claude: "claude-sonnet-4-5-20250929", codex: null }, efforts: { claude: "high", codex: null } };
+  const remembered = vaultRemembered(stored, answered, reasoner);
+  assert.equal(remembered.claude.model, null, "the stored id alone is dropped by an answered list");
+  const pick = { host: "claude" as const, model: "claude-sonnet-4-5-20250929", effort: "high" };
+  assert.deepEqual(vaultStart(pick, stored, remembered), { value: pick, chosen: true }, "the pick made this session survives the refresh");
+  // No pick yet: the stored host with what the list still has.
+  assert.deepEqual(vaultStart(null, stored, remembered), { value: { host: "claude", model: null, effort: "high" }, chosen: true });
+  // Nothing stored and nothing picked: no host was chosen.
+  const none = DEFAULT_SETTINGS.vaultChoice;
+  assert.deepEqual(vaultStart(null, none, vaultRemembered(none, null, reasoner)), { value: { host: null, model: null, effort: null }, chosen: false });
+});
+
+test("vaultAsked: a Codex nobody chose is not named (ask.js keeps its fallback); a chosen host, or Claude, runs as the chip says", () => {
+  const codex = { host: "codex" as const, model: null, effort: "medium" };
+  const claude = { host: "claude" as const, model: "default", effort: "medium" };
+  assert.deepEqual(vaultAsked(codex, false), { host: null, model: null, effort: null });
+  assert.deepEqual(vaultAsked(codex, true), codex);
+  assert.deepEqual(vaultAsked(claude, false), claude);
+  assert.deepEqual(vaultAsked(claude, true), claude);
+  assert.deepEqual(vaultAsked({ host: null, model: null, effort: null }, true), { host: null, model: null, effort: null });
 });
 
 test("vaultModeLine names the menu's host and model, else today's route", () => {

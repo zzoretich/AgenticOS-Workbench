@@ -14,7 +14,7 @@ M._resolveFilename = function (request: string, ...rest: unknown[]) {
   return request === "obsidian" ? STUB : resolve.call(this, request, ...rest);
 };
 require.cache[STUB] = { id: STUB, filename: STUB, loaded: true, exports: { setIcon: () => {} } } as unknown as NodeJS.Module;
-const { menuHost, menuValue, switchHost, withModel, modelRows, hostOffLine, effortNote, customModelError } = require("./HostModelMenu") as typeof Menu;
+const { menuHost, menuValue, switchHost, withModel, modelRows, hostOffLine, noHostLine, effortNote, customModelError } = require("./HostModelMenu") as typeof Menu;
 
 const E5 = ["low", "medium", "high", "xhigh", "max"];
 const E6 = ["low", "medium", "high", "xhigh", "max", "ultra"];
@@ -114,9 +114,9 @@ test("modelRows: current models, older ones folded behind a count, and a search 
 test("modelRows: Claude's null model is its default; a custom id or Codex's own default leads the list, checked", () => {
   assert.equal(modelRows("claude", claudeCat, null, "", false).rows.find((r) => r.selected)?.id, "default");
   const custom = modelRows("codex", codexCat, "my-model", "", false).rows[0];
-  assert.deepEqual(custom, { id: "my-model", name: "my-model", description: "Custom model id", selected: true, custom: true });
+  assert.deepEqual(custom, { id: "my-model", name: "my-model", description: "Custom model id", selected: true, custom: true, tag: null });
   const own = modelRows("codex", codexDown, null, "", false);
-  assert.deepEqual(own.rows, [{ id: null, name: "Codex default", description: "Codex's own default model", selected: true, custom: true }]);
+  assert.deepEqual(own.rows, [{ id: null, name: "Codex default", description: "Codex's own default model", selected: true, custom: true, tag: null }]);
   assert.equal(own.foldable, false);
   // Claude's aliases when the host never answered: "default" still has a row.
   assert.equal(modelRows("claude", null, "default", "", false).rows[0].name, "Default");
@@ -124,10 +124,56 @@ test("modelRows: Claude's null model is its default; a custom id or Codex's own 
   assert.deepEqual(modelRows("codex", codexCat, "my-model", "astra", false).rows.map((r) => r.id), ["gpt-6-astra"]);
 });
 
-test("hostOffLine: how to turn an off host on; a host that is not logged in says so", () => {
+test("modelRows: an older model chosen through the search keeps its checked row once the search is cleared", () => {
+  const folded = modelRows("claude", claudeCat, "claude-opus-4-6", "", false);
+  assert.deepEqual(folded.rows.map((r) => r.id), ["default", "opus", "haiku", "claude-opus-4-6"]);
+  assert.equal(folded.rows.find((r) => r.selected)?.id, "claude-opus-4-6");
+  assert.equal(folded.olderCount, 2);
+  assert.equal(folded.foldable, true);
+  // Unfolded, it sits among the older ones, once.
+  assert.deepEqual(modelRows("claude", claudeCat, "claude-opus-4-6", "", true).rows.map((r) => r.id), ["default", "opus", "haiku", "claude-opus-4-6", "claude-haiku-4-5-20251001"]);
+});
+
+test("modelRows: Codex's configured model is tagged your default; a thread's earlier model used so far", () => {
+  const fresh = modelRows("codex", codexCat, "gpt-6-astra", "", false);
+  assert.deepEqual(fresh.rows.map((r) => [r.id, r.tag]), [["gpt-6-astra", null], ["gpt-6-sol", "your default"]]);
+  // Claude has no configured model to tag.
+  assert.deepEqual(modelRows("claude", claudeCat, "opus", "", false).rows.map((r) => r.tag), [null, null, null]);
+  // A thread that ran on Sol, with Astra picked for the next turn.
+  const thread = modelRows("codex", codexCat, "gpt-6-astra", "", false, "gpt-6-sol");
+  assert.deepEqual(thread.rows.map((r) => [r.id, r.tag]), [["gpt-6-astra", null], ["gpt-6-sol", "your default · used so far"]]);
+  // The model it ran on and still picked: no used-so-far tag.
+  assert.deepEqual(modelRows("codex", codexCat, "gpt-6-sol", "", false, "gpt-6-sol").rows.map((r) => r.tag), [null, "your default"]);
+  // An older model it ran on stays shown while the fold is shut; Claude's null is its default.
+  const olderUsed = modelRows("codex", codexCat, "gpt-6-astra", "", false, "gpt-5.6-terra");
+  assert.deepEqual(olderUsed.rows.map((r) => [r.id, r.tag]), [["gpt-6-astra", null], ["gpt-6-sol", "your default"], ["gpt-5.6-terra", "used so far"]]);
+  assert.equal(modelRows("claude", claudeCat, "opus", "", false, null).rows.find((r) => r.tag)?.id, "default");
+  // No used model given: no row is tagged used so far.
+  assert.equal(modelRows("claude", claudeCat, "opus", "", false).rows.some((r) => r.tag), false);
+});
+
+test("hostOffLine: how to turn an off host on without turning the other off; a host that is not logged in says so", () => {
   assert.equal(hostOffLine(CLAUDE_ONLY[0]), null);
+  // The other host is on: --host codex alone would turn Claude Code off.
+  assert.equal(hostOffLine(CLAUDE_ONLY[1], CLAUDE_ONLY), "Codex is off on this Mac: aos init --host both turns it on");
+  const codexOnly: HostChoice[] = [{ host: "claude", label: "Claude Code", ready: false, reason: "Claude Code is off on this machine" }, ready("codex")];
+  assert.equal(hostOffLine(codexOnly[0], codexOnly), "Claude Code is off on this Mac: aos init --host both turns it on");
+  // On but not logged in still counts as on.
+  assert.equal(hostOffLine(NONE[1], NONE), "Codex is off on this Mac: aos init --host both turns it on");
+  // No other host on (or none given): that host alone.
+  const allOff: HostChoice[] = [codexOnly[0], CLAUDE_ONLY[1]];
+  assert.equal(hostOffLine(allOff[1], allOff), "Codex is off on this Mac: aos init --host codex turns it on");
   assert.equal(hostOffLine(CLAUDE_ONLY[1]), "Codex is off on this Mac: aos init --host codex turns it on");
-  assert.equal(hostOffLine(NONE[0]), "Claude Code is not logged in");
+  assert.equal(hostOffLine(NONE[0], NONE), "Claude Code is not logged in");
+});
+
+test("noHostLine: the init commands only when every host is off", () => {
+  const allOff: HostChoice[] = [
+    { host: "claude", label: "Claude Code", ready: false, reason: "Claude Code is off on this machine" },
+    { host: "codex", label: "Codex", ready: false, reason: "Codex is off on this machine" },
+  ];
+  assert.match(noHostLine(allOff), /aos init --host claude or aos init --host codex/);
+  assert.equal(noHostLine(NONE), "No host is ready on this Mac.");
 });
 
 test("effortNote: Codex names its configured level; Claude has none", () => {

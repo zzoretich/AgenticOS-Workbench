@@ -3,7 +3,7 @@ import type AgenticOSPlugin from "../../main";
 import type { WorkbenchView } from "./WorkbenchView";
 import { runAsk, isAskBusy, AskHandle, AskResult } from "../data/askSpawner";
 import {
-  runClaudeAsk, chatRoute, CHAT_FEATURE, aliasCatalog, readReasonSpendToday, vaultHostChoices, vaultModeLine, vaultRemembered, vaultSpendLine,
+  runClaudeAsk, chatRoute, CHAT_FEATURE, aliasCatalog, readReasonSpendToday, vaultHostChoices, vaultModeLine, vaultRemembered, vaultSpendLine, vaultStart, vaultAsked,
 } from "../data/claudeAsk";
 import { readAgenticosJson, readProviderState, readVaultConfig, type ProviderName } from "../data/aosConfig";
 import { catalogHost, modelArg, modelName, type HostChoice } from "../data/agentSessions";
@@ -77,7 +77,9 @@ export class ChatTab {
   // kept in sync by an `input` listener and seeded back into every fresh <textarea> in render().
   private draftText = "";
   // Vault chat's host and model menu (spec 2026-10-07-sessions-ux U9): any host on any question, read only. The pick
-  // lives here and in settings.vaultChoice; the menus are rebuilt by every render(), the catalog is asked once.
+  // lives here and in settings.vaultChoice; the menus are rebuilt by every render(), the catalog is asked once. `pick`
+  // is only ever a pick made in the menu, so a catalog refresh keeps it (a custom id included); without one the menu
+  // starts from settings (data/claudeAsk.ts vaultStart).
   private pick: HostModelValue | null = null;
   private catalog: HostCatalog | null = null;
   private catalogAsked = false;
@@ -176,20 +178,28 @@ export class ChatTab {
     return vaultRemembered(sanitizeVaultChoice(this.plugin.settings.vaultChoice), this.catalog, { effort: r.effort, codexModel: r.codexModel });
   }
 
-  /** What the next question runs on: the menu's value, resolved to a ready host and a level its model takes; a null
-   *  host means no host is ready for Vault, and send() takes today's route. */
-  private choice(): HostModelValue {
+  /** Where the menu starts (the pick made in it, else the stored one) and whether that is a host the user chose. */
+  private start(): { value: HostModelValue; chosen: boolean; remembered: ReturnType<typeof vaultRemembered> } {
     const remembered = this.remembered();
-    if (!this.pick) {
-      const host = sanitizeVaultChoice(this.plugin.settings.vaultChoice).host;
-      this.pick = host ? { host, model: remembered[host].model ?? null, effort: remembered[host].effort ?? null } : { host: null, model: null, effort: null };
-    }
-    return menuValue({ mode: "vault", catalog: this.catalog, choices: this.choices(), value: this.pick, remembered });
+    return { ...vaultStart(this.pick, sanitizeVaultChoice(this.plugin.settings.vaultChoice), remembered), remembered };
   }
 
-  /** The header's route line for the current choice (data/claudeAsk.ts vaultModeLine). */
+  /** What the chip shows: the menu's value, resolved to a ready host and a level its model takes; a null host means no
+   *  host is ready for Vault. */
+  private choice(): HostModelValue {
+    const s = this.start();
+    return menuValue({ mode: "vault", catalog: this.catalog, choices: this.choices(), value: s.value, remembered: s.remembered });
+  }
+
+  /** What the next question runs on (data/claudeAsk.ts vaultAsked): the chip's value when its host was chosen (it then
+   *  answers with no fallback, U9) or is Claude; a Codex nobody chose gives a null host, and send() takes today's route. */
+  private asked(): HostModelValue {
+    return vaultAsked(this.choice(), this.start().chosen);
+  }
+
+  /** The header's route line for what the next question runs on (data/claudeAsk.ts vaultModeLine). */
   private modeText(): string {
-    const v = this.choice();
+    const v = this.asked();
     const label = v.host === "claude" ? (modelArg("claude", v.model) ? modelName("claude", catalogHost(this.catalog, "claude"), v.model) : null)
       : v.host === "codex" ? modelName("codex", catalogHost(this.catalog, "codex"), v.model) : null;
     const reasonerModel = readVaultConfig(this.plugin.vaultRoot(), this.plugin.claudeConfigDir()).reasoner.model;
@@ -214,9 +224,9 @@ export class ChatTab {
     this.catalogChanged();
   }
 
-  /** A new catalog: the menu, its starting points and the header follow it in place, so a draft keeps its caret. */
+  /** A new catalog: the menu, its starting points and the header follow it in place, so a draft keeps its caret. A pick
+   *  made in the menu stays as it is; menuValue fits its effort to the new list. */
   private catalogChanged(): void {
-    this.pick = null;
     if (!this.onScreen()) return;
     this.hostMenu?.update({ catalog: this.catalog, value: this.choice(), remembered: this.remembered(), refreshing: this.catalogBusy });
     if (this.modeEl) this.modeEl.textContent = this.modeText();
@@ -489,9 +499,9 @@ export class ChatTab {
     const vaultRoot = this.plugin.vaultRoot();
     const node = this.plugin.nodeBin();
     const cfg = readVaultConfig(vaultRoot, this.plugin.claudeConfigDir());
-    // The menu's host answers (U9): Claude through claude -p with the chosen model ("default" is the reasoner's) and
-    // effort; Codex through ask.js on that host only. With no host ready for Vault, today's route.
-    const v = this.choice();
+    // The chosen host answers (U9): Claude through claude -p with the chosen model ("default" is the reasoner's) and
+    // effort; Codex through ask.js on that host only. With no host chosen, or none ready for Vault, today's route.
+    const v = this.asked();
     const claude = (model: string | undefined, effort: string | undefined): AskHandle =>
       runClaudeAsk({ vault: vaultRoot, node, question: q, claudeBin: this.plugin.claudeBin(), model: cfg.reasoner.model, chosenModel: model, maxBudgetUsd: cfg.reasoner.perCallUsd, effort, feature: CHAT_FEATURE });
     const handle = v.host === "claude" ? claude(v.model ?? undefined, v.effort ?? undefined)

@@ -37,11 +37,14 @@ export interface HostModelMenuOptions {
   onRefresh?(): void;
   /** Thread mode: start a new session on the other host. Without it the menu offers none. */
   onNewSessionOn?(host: SessionHost): void;
+  /** Thread mode: the model the thread ran on so far (null: the host's default), tagged "used so far" while another is
+   *  picked. Left out, no row is tagged. */
+  usedModel?: string | null;
   now?: () => Date;
 }
 
 /** What update() may change: everything but the callbacks. */
-export type HostModelMenuState = Partial<Pick<HostModelMenuOptions, "mode" | "catalog" | "choices" | "value" | "remembered" | "refreshing" | "disabled">>;
+export type HostModelMenuState = Partial<Pick<HostModelMenuOptions, "mode" | "catalog" | "choices" | "value" | "remembered" | "refreshing" | "disabled" | "usedModel">>;
 
 type ValueInputs = Pick<HostModelMenuOptions, "mode" | "catalog" | "choices" | "value" | "remembered">;
 
@@ -84,34 +87,69 @@ export interface ModelRow {
   selected: boolean;
   /** Not in the catalog: an id typed in, or the host's default when the host listed nothing. */
   custom: boolean;
+  /** A note after the name: "your default" (Codex's configured model), "used so far" (a thread's earlier model). */
+  tag: string | null;
 }
 
 /**
  * The models the list shows: the current ones, then the older ones when they are unfolded; a search looks through all
- * of them. The chosen model leads when the catalog does not list it, so the check always has a row.
+ * of them. While the fold is shut the chosen model and the thread's earlier one (`used`) still show when they are older
+ * ones, so a pick made through the search keeps its check once the search is cleared. The chosen model leads when the
+ * catalog does not list it, so the check always has a row. `used` undefined: not a thread, or its model is unknown.
  */
-export function modelRows(host: SessionHost, entry: HostCatalogHost | null, model: string | null, query: string, older: boolean): { rows: ModelRow[]; olderCount: number; foldable: boolean } {
+export function modelRows(host: SessionHost, entry: HostCatalogHost | null, model: string | null, query: string, older: boolean, used?: string | null): { rows: ModelRow[]; olderCount: number; foldable: boolean } {
   const split = splitModels(entry);
   const q = query.trim();
-  const listed = q ? searchModels(entry?.models ?? [], q) : older ? [...split.current, ...split.older] : split.current;
-  const chosen = model ?? (host === "claude" ? "default" : null);
-  const rows: ModelRow[] = listed.map((m) => ({ id: m.id, name: m.name, description: m.description, selected: m.id === chosen, custom: false }));
+  const own = (id: string | null): string | null => id ?? (host === "claude" ? "default" : null);
+  const chosen = own(model);
+  const usedId = used === undefined ? undefined : own(used);
+  const listed = q ? searchModels(entry?.models ?? [], q)
+    : older ? [...split.current, ...split.older]
+    : [...split.current, ...split.older.filter((m) => m.id === chosen || m.id === usedId)];
+  const tag = (id: string | null, selected: boolean): string | null => {
+    const tags = [
+      host === "codex" && id !== null && id === entry?.defaultModel ? "your default" : null,
+      !selected && usedId !== undefined && id === usedId ? "used so far" : null,
+    ].filter((t): t is string => !!t);
+    return tags.length ? tags.join(" · ") : null;
+  };
+  const rows: ModelRow[] = listed.map((m) => {
+    const selected = m.id === chosen;
+    return { id: m.id, name: m.name, description: m.description, selected, custom: false, tag: tag(m.id, selected) };
+  });
   if (!findModel(entry, chosen)) {
-    const own = chosen === null || (host === "claude" && chosen === "default");
+    const isOwn = chosen === null || (host === "claude" && chosen === "default");
     const extra: ModelRow = {
-      id: chosen, name: modelName(host, entry, chosen), selected: true, custom: true,
-      description: own ? `${HOST_LABEL[host]}'s own default model` : "Custom model id",
+      id: chosen, name: modelName(host, entry, chosen), selected: true, custom: true, tag: tag(chosen, true),
+      description: isOwn ? `${HOST_LABEL[host]}'s own default model` : "Custom model id",
     };
     if (!q || `${extra.name}\n${extra.id ?? ""}`.toLowerCase().includes(q.toLowerCase())) rows.unshift(extra);
   }
   return { rows, olderCount: split.older.length, foldable: !q && split.older.length > 0 };
 }
 
-/** The line under the host switch for a host that is not ready: how to turn it on, or why it cannot run. */
-export function hostOffLine(c: HostChoice): string | null {
+/** A host that is on in agenticos.json: ready, or on but not logged in. */
+function hostOn(c: HostChoice): boolean {
+  return c.ready || (!!c.reason && / not logged in$/.test(c.reason));
+}
+
+/**
+ * The line under the host switch for a host that is not ready: how to turn it on, or why it cannot run. `aos init
+ * --host <h>` sets up that host alone and turns the other off, so while another host is on (in `choices`) the command
+ * is `--host both`, as the settings say it.
+ */
+export function hostOffLine(c: HostChoice, choices: HostChoice[] = []): string | null {
   if (c.ready) return null;
-  if (c.reason && / not logged in$/.test(c.reason)) return c.reason;
-  return `${c.label} is off on this Mac: aos init --host ${c.host} turns it on`;
+  if (hostOn(c)) return c.reason;
+  const both = choices.some((o) => o.host !== c.host && hostOn(o));
+  return `${c.label} is off on this Mac: aos init --host ${both ? "both" : c.host} turns it on`;
+}
+
+/** What the menu says when no host is ready: with every host off, how to turn one on; else the lines say why. */
+export function noHostLine(choices: HostChoice[]): string {
+  return choices.some(hostOn)
+    ? "No host is ready on this Mac."
+    : "No host is ready on this Mac. Run aos init --host claude or aos init --host codex, then reopen this menu.";
 }
 
 /** The effort row's note: Codex's configured level, which a turn without one runs at. */
@@ -280,7 +318,8 @@ export class HostModelMenu {
     if (!key) return;
     const el = Array.from(pop.querySelectorAll<HTMLElement>("[data-hm-key]")).find((x) => x.getAttribute("data-hm-key") === key);
     if (el && !(el as HTMLButtonElement).disabled) el.focus();
-    else if (focus) pop.querySelector<HTMLElement>("input, button:not(:disabled)")?.focus();
+    // The control is gone or disabled now (↻ while it asks): focus stays in the menu, so its keys keep working.
+    else (pop.querySelector<HTMLElement>(".aos-hm-search") ?? pop.querySelector<HTMLElement>("input, button:not(:disabled)"))?.focus();
   }
 
   /** Thread mode: the host, locked, and a new session on the other host when that one is ready. */
@@ -323,11 +362,12 @@ export class HostModelMenu {
       });
     }
     if (!host) {
-      pop.createDiv({ cls: "aos-hm-nohost", text: "No host is ready on this Mac. Run aos init --host claude or aos init --host codex, then reopen this menu." });
-      return;
+      pop.createDiv({ cls: "aos-hm-nohost", text: noHostLine(this.opts.choices) });
+      // With every host off the line above says it all; else each host says why it is not ready.
+      if (!this.opts.choices.some(hostOn)) return;
     }
     for (const c of this.opts.choices) {
-      const line = hostOffLine(c);
+      const line = hostOffLine(c, this.opts.choices);
       if (line) pop.createDiv({ cls: "aos-hm-offline", text: line, attr: { "data-host": c.host } });
     }
   }
@@ -356,7 +396,8 @@ export class HostModelMenu {
     const host = v.host;
     wrap.empty();
     const entry = this.entry(host);
-    const { rows, olderCount, foldable } = modelRows(host, entry, v.model, this.query, this.older);
+    const used = this.opts.mode === "thread" ? this.opts.usedModel : undefined;
+    const { rows, olderCount, foldable } = modelRows(host, entry, v.model, this.query, this.older, used);
     const list = wrap.createDiv({ cls: "aos-hm-models", attr: { id: `${this.id}-models`, role: "listbox", "aria-label": `${HOST_LABEL[host]} models` } });
     for (const r of rows) {
       const b = list.createEl("button", {
@@ -364,7 +405,10 @@ export class HostModelMenu {
         attr: { type: "button", role: "option", "aria-selected": String(r.selected), "data-model": r.id ?? "", "data-hm-key": `model:${r.id ?? ""}` },
       });
       const text = b.createSpan({ cls: "aos-hm-modeltext" });
-      text.createSpan({ cls: "aos-hm-modelname", text: r.name });
+      // The name and its tag on one line; the tag stays out of the name, which the chip and the tests read.
+      const line = text.createSpan({ cls: "aos-hm-modelline" });
+      line.createSpan({ cls: "aos-hm-modelname", text: r.name });
+      if (r.tag) { line.appendText(" "); line.createSpan({ cls: "aos-hm-modeltag", text: r.tag }); }
       if (r.description) text.createSpan({ cls: "aos-hm-modeldesc", text: r.description });
       if (r.selected) {
         const check = b.createSpan({ cls: "aos-hm-check" });

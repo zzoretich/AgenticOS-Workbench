@@ -2623,6 +2623,8 @@ button.aos-hm-customuse { flex: none; padding: 5px 10px; border-radius: 7px; fon
 .aos-ss-hostdot.is-claude { background: var(--udx-info); }
 .aos-ss-hostdot.is-codex { background: var(--udx-gate); }
 .aos-ss-age { flex: none; font-size: 11.5px; color: var(--udx-text-3); font-variant-numeric: tabular-nums; }
+/* text-3 on raised-2 falls just under 4.5:1 in light theme; step the selected row's age up to text-2. */
+.aos-ss-row.is-selected .aos-ss-age { color: var(--udx-text-2); }
 .aos-ss-runmark { flex: none; font-size: 11.5px; line-height: 1; color: var(--udx-warn); }
 .aos-ss-ws {
   display: flex; align-items: center; gap: 6px; padding: 12px 10px 4px; font-size: 12.5px; font-weight: 500;
@@ -2698,14 +2700,15 @@ button.aos-hm-customuse { flex: none; padding: 5px 10px; border-radius: 7px; fon
 .aos-ss button.aos-ss-toolline:hover:not(:disabled) { background: none; }
 .aos-ss button.aos-ss-toolline:hover .aos-ss-target { text-decoration: underline; text-underline-offset: 2px; }
 .aos-ss button.aos-ss-toolline:focus-visible { outline: 2px solid var(--udx-focus); outline-offset: 2px; }
-.aos-ss-toolline::before { content: "⏺"; flex: none; margin-right: 0.6em; color: var(--udx-text-3); }
+/* The glyphs are decoration: the `/ ""` alt text keeps them out of the accessible name (the first `content` is the fallback). */
+.aos-ss-toolline::before { content: "⏺"; content: "⏺" / ""; flex: none; margin-right: 0.6em; color: var(--udx-text-3); }
 .aos-ss-tool.is-ok > .aos-ss-toolline::before, .aos-ss-patchfile > .aos-ss-toolline::before { color: var(--udx-ok-dot); }
 .aos-ss-tool.is-failed > .aos-ss-toolline::before { color: var(--udx-danger-dot); }
 .aos-ss-tool.is-pending > .aos-ss-toolline::before { animation: aos-ss-blink 1.2s ease-in-out infinite; }
 .aos-ss-verb { flex: none; font-weight: 600; }
 .aos-ss-target { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .aos-ss-toolresult { padding-left: 18px; color: var(--udx-text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.aos-ss-toolresult::before { content: "⎿  "; white-space: pre; }
+.aos-ss-toolresult::before { content: "⎿  "; content: "⎿  " / ""; white-space: pre; }
 .aos-ss-toolresult.is-failed { color: var(--udx-danger); }
 .aos-ss-toolbody { display: flex; flex-direction: column; gap: 4px; margin: 4px 0 2px 18px; font-family: var(--udx-sans); }
 .aos-ss-toolstate { margin-top: 2px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; color: var(--udx-text-3); }
@@ -2741,7 +2744,7 @@ button.aos-hm-customuse { flex: none; padding: 5px 10px; border-radius: 7px; fon
 .aos-ss-done { font-size: 12px; color: var(--udx-text-3); }
 .aos-ss-done.is-failed { color: var(--udx-danger); }
 .aos-ss-working { font-family: var(--udx-mono); font-size: 12.5px; color: var(--udx-text-2); }
-.aos-ss-working::before { content: "✻"; display: inline-block; margin-right: 0.5em; color: var(--udx-warn); animation: aos-ss-spin 2.4s linear infinite; }
+.aos-ss-working::before { content: "✻"; content: "✻" / ""; display: inline-block; margin-right: 0.5em; color: var(--udx-warn); animation: aos-ss-spin 2.4s linear infinite; }
 @keyframes aos-ss-blink { 50% { opacity: 0.3; } }
 @keyframes aos-ss-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
