@@ -98,3 +98,19 @@ test('CLI: events turns a raw codex stream on stdin into normalised events on st
   assert.equal(cli(['events', '--host', 'nohost'], process.env, '').status, 2);
   assert.equal(cli(['nope'], process.env).status, 2);
 });
+
+test('CLI: catalog asks no host that is off, saves the answer, then serves the cache while it is fresh', () => {
+  const { v, env } = vault({ hosts: { claude: { enabled: false }, codex: { enabled: false } } });
+  const r = cli(['catalog'], env);
+  assert.equal(r.status, 0, r.stderr);
+  const cat = JSON.parse(r.stdout);
+  assert.deepEqual(Object.keys(cat.hosts).sort(), ['claude', 'codex']);
+  assert.deepEqual([cat.hosts.claude.off, cat.hosts.codex.off], [true, true]);
+  const file = path.join(v, 'brain', '_index', 'host-catalog.json');
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), cat);
+  // A fresh cache is read back as it is, so a marker written into it shows.
+  fs.writeFileSync(file, JSON.stringify({ ...cat, marker: 'cached' }));
+  assert.equal(JSON.parse(cli(['catalog'], env).stdout).marker, 'cached');
+  assert.equal(JSON.parse(cli(['catalog', '--refresh'], env).stdout).marker, undefined, '--refresh asks again');
+  assert.equal(cli(['catalog', '--host', 'nohost'], env).status, 2);
+});

@@ -11,6 +11,10 @@
  *     sessions off). Claude gets sessions.perTurnUsd as its budget flag; a Codex turn is estimated after it ends.
  *   node lib/sessions.js events --host claude|codex [--model <m>]
  *     stdin: the turn's raw stdout; stdout: one session-events.js event per line, as they arrive.
+ *   node lib/sessions.js catalog [--refresh] [--host claude|codex]
+ *     stdout: the host catalog (host-catalog.js), one JSON line. Served from brain/_index/host-catalog.json while it is
+ *     fresh (a day, every host answered or off); --refresh asks the hosts again, --host only that one (merged into the
+ *     cache, which keeps its older date). Never calls a model (spec 2026-10-07-sessions-ux U3).
  *   node lib/sessions.js record '<json>'
  *     { host, model?, usd, inputTokens?, outputTokens?, ms?, startedAt?, status?, prompt?, reply?, toolCount?, error?,
  *       workspace?, thread? } → the turn's ledger row (feature session:<host>, when it cost anything) and its row in
@@ -18,6 +22,7 @@
  *
  *   plan({ cfg, req, env, spentToday, ... }) is `args` as a function, with the config and today's spend passed in.
  */
+const path = require('path');
 const H = require('./headless.js');
 const { dayCap } = require('./settings-schema.js');
 const { createParser } = require('./session-events.js');
@@ -91,6 +96,21 @@ async function main(argv) {
     write(p.end());
     return 0;
   }
+  if (verb === 'catalog') {
+    const C = require('./host-catalog.js');
+    const { loadConfig } = require('./config.js');
+    const { VAULT, PATHS } = require('./paths.js');
+    const file = path.join(PATHS.INDEX, 'host-catalog.json');
+    const only = flag(argv, '--host');
+    if (only !== undefined && !H.HOSTS.includes(only)) { process.stderr.write('sessions: catalog --host takes claude or codex\n'); return 2; }
+    const cached = C.loadCatalog(file);
+    if (!argv.includes('--refresh') && C.isFresh(cached)) { process.stdout.write(`${JSON.stringify(cached)}\n`); return 0; }
+    const fresh = await C.fetchCatalog({ cfg: loadConfig(), hosts: only ? [only] : H.HOSTS, cwd: VAULT });
+    const cat = only && cached ? { ...cached, hosts: { ...cached.hosts, ...fresh.hosts } } : fresh;
+    try { C.saveCatalog(file, cat); } catch (e) { process.stderr.write(`sessions: could not save the catalog: ${e.message}\n`); }
+    process.stdout.write(`${JSON.stringify(cat)}\n`);
+    return 0;
+  }
   if (verb === 'record') {
     let r;
     try { r = JSON.parse(arg || (await readStdin())); } catch { process.stderr.write('sessions: record takes one JSON argument\n'); return 2; }
@@ -114,7 +134,7 @@ async function main(argv) {
     });
     return 0;
   }
-  process.stderr.write('usage: sessions.js args <json> | events --host claude|codex [--model m] | record <json>\n');
+  process.stderr.write('usage: sessions.js args <json> | events --host claude|codex [--model m] | catalog [--refresh] [--host h] | record <json>\n');
   return 2;
 }
 
