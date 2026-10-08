@@ -84,3 +84,42 @@ test("the composer: hidden for a shell; for an agent ⌘L focuses it and Enter s
   await expect.poll(() => terminalText(win), { timeout: 10_000 }).toContain("composer-42");
   await expect(C().locator(".aos-tc-input")).toHaveValue("");
 });
+
+test("⌘F finds in the selected terminal: a count, Enter and ⇧Enter step, Escape closes and clears; ⌘F reopens", async () => {
+  const { win } = app();
+  await openTab(win, "term");
+  expect(await command(win, "agentic-os:new-terminal-shell")).toBe(true);
+  // Two matches in the output and none in the typed line: only the shell works out $((6*7)).
+  await win.evaluate(() => {
+    const p = (window as unknown as { aosHost: { plugin: { terminalPool: { selectedId(): string | null; get(id: string): { write(d: string): void } | undefined } } } }).aosHost.plugin.terminalPool;
+    p.get(p.selectedId() ?? "")?.write("echo find-$((6*7))-me; echo find-$((6*7))-me\r");
+  });
+  await expect.poll(() => terminalText(win), { timeout: 10_000 }).toContain("find-42-me");
+  const bar = C().locator(".aos-tf");
+  const count = bar.locator(".aos-tf-count");
+  await expect(bar).toBeHidden();
+  expect(await command(win, "agentic-os:term-find")).toBe(true);
+  await expect(bar.locator(".aos-tf-input")).toBeFocused();
+  await bar.locator(".aos-tf-input").fill("find-42-me");
+  await expect(count).toHaveText("1 of 2");
+  await expect(C().locator(".xterm-find-active-result-decoration")).toHaveCount(1);
+  await win.keyboard.press("Enter");
+  await expect(count).toHaveText("2 of 2");
+  await win.keyboard.press("Shift+Enter");
+  await expect(count).toHaveText("1 of 2");
+  await bar.locator(".aos-tf-input").fill("zzz-nowhere");
+  await expect(count).toHaveText("No results");
+  await bar.locator(".aos-tf-input").fill("find-42-me");
+  await expect(count).toHaveText("1 of 2");
+  // Escape closes the bar, clears the highlights and gives the keys back to the terminal.
+  await win.keyboard.press("Escape");
+  await expect(bar).toBeHidden();
+  await expect(C().locator(".xterm-find-result-decoration")).toHaveCount(0);
+  await expect(C().locator(".aos-term-xterm:visible .xterm-helper-textarea")).toBeFocused();
+  // The real key, from inside the terminal: the bar comes back with the last words selected and found again.
+  await win.keyboard.press("Meta+f");
+  await expect(bar.locator(".aos-tf-input")).toBeFocused();
+  await expect(count).toHaveText("1 of 2");
+  await win.keyboard.press("Escape");
+  await expect(bar).toBeHidden();
+});

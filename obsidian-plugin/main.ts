@@ -122,7 +122,7 @@ export default class AgenticOSPlugin extends Plugin {
     }
     this.addCommand({ id: "new-terminal-menu", name: "New terminal…", hotkeys: [{ modifiers: ["Mod", "Shift"], key: "t" }],
       callback: () => { void this.termCommand(async (v) => v.openTermMenu("menu")); } });
-    // On the Term tab only (they do nothing elsewhere): ⇧⌘] / ⇧⌘[ the next or previous terminal, ⇧⌘W close it.
+    // On the Term tab only (they do nothing elsewhere): ⇧⌘] / ⇧⌘[ the next or previous terminal, ⇧⌘W close it, ⌘F find in it.
     const onTerm = (fn: (t: TermTab) => void) => () => {
       const view = this.app.workspace.getLeavesOfType(VIEW_TYPE_WORKBENCH)[0]?.view;
       if (view instanceof WorkbenchView && view.isTabActive("term")) { const t = view.getTab("term") as TermTab | null; if (t) fn(t); }
@@ -131,6 +131,7 @@ export default class AgenticOSPlugin extends Plugin {
     this.addCommand({ id: "term-previous", name: "Previous terminal", hotkeys: [{ modifiers: ["Mod", "Shift"], key: "[" }], callback: onTerm((t) => t.step(-1)) });
     this.addCommand({ id: "term-composer", name: "Write to the agent (composer)", hotkeys: [{ modifiers: ["Mod"], key: "l" }], callback: onTerm((t) => { t.focusComposer(); }) });
     this.addCommand({ id: "term-close", name: "Close terminal", hotkeys: [{ modifiers: ["Mod", "Shift"], key: "w" }], callback: onTerm((t) => t.closeActive()) });
+    this.addCommand({ id: "term-find", name: "Find in the terminal", hotkeys: [{ modifiers: ["Mod"], key: "f" }], callback: onTerm((t) => { t.openFind(); }) });
     this.addCommand({ id: "new-workspace", name: "New workspace…", hotkeys: [{ modifiers: ["Mod", "Shift"], key: "n" }],
       callback: () => { void this.termCommand(async (v) => v.openTermMenu("create")); } });
     this.addCommand({

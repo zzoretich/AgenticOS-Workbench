@@ -324,6 +324,7 @@ see below).
 | TM4 | Spaces link code folder… and Claude Code here | covered in part | `term-writes › ⌥⌘3's command…` covers Claude Code here; the link needs a folder outside the vault, which the sandboxed page cannot check: manual. |
 | TM6 | The deck: groups, the header's place menu, an ended agent's Restart / Resume, ⇧⌘[ ⇧⌘] ⇧⌘W | covered in part | `term-deck` (groups, Done and Restart, selection across tabs, the Term keys as commands, Clear ended, filter); Resume of a real conversation and the keys through the menu accelerators with the xterm focused: manual. |
 | TM7 | The composer: ⌘L, @ files, / commands, one paste, snippets; ⇧⏎ in Claude Code; links | covered in part | `term-deck › the composer…` (⌘L, one paste that runs, hidden for a shell); @, /, snippets, ⇧⏎ and links in a real Claude Code or Codex: manual. |
+| TM8 | ⌘F finds in the selected terminal: highlights and a count, ⏎ / ⇧⏎, Esc clears, the real key from inside the terminal | covered in part | `term-deck › ⌘F finds…` (a shell; the count, stepping, No results, Esc back to the terminal, ⌘F reopening); a real agent's screen, and the colours by eye: manual. The colours' contrast is unit-tested (`tokens.test.ts`). |
 | TM5 | A Finder-launched app finds npm-installed CLIs | not covered | The login-shell PATH is unit-tested (`main-services › terminals start with the login shell's PATH`); e2e stands in for it with `$AOS_SETUP_PATH`. |
 
 ## Telemetry switch

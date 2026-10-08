@@ -247,6 +247,7 @@ On by default since 1.2.0 (plan 2026-10-07-unidex-sessions C3). Run these in a w
 - [ ] From the Dock or Finder (not a terminal), an npm-installed `codex` or `claude` starts from the Term tab.
 - [ ] The composer, per host: ⌘L focuses it under a running agent; @ lists the place's files (a vault workspace); / lists Claude Code's commands or Codex's `$skills`; a two-line message with ⇧⏎ arrives as one message; Save as snippet, then Snippets inserts it. In Claude Code's prompt ⇧⏎ adds a line. A status-line link in a Claude Code terminal opens its Workbench tab.
 - [ ] The deck: terminals group by place (workspaces and Scratch above the vault); the header's place menu offers Start here / Open a shell here / Make this a workspace… (Scratch) / Link a code folder… (a workspace); an agent you quit shows ✓ Done and Restart / Resume (Claude Code resumes the same conversation; Codex the latest); ⇧⌘[ ⇧⌘] and ⇧⌘W work with the terminal focused, per host.
+- [ ] Find, per host: in a Claude Code or Codex terminal with a long answer, ⌘F with the terminal focused opens the find bar over the card; typing highlights the matches (scrollback included) and counts them; ⏎ / ⇧⏎ walk them and scroll the terminal; Esc closes the bar, clears the highlights and the agent takes your typing again. In light and dark the highlighted text stays readable.
 
 ## Telemetry switch
 
