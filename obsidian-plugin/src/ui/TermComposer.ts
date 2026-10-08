@@ -31,8 +31,10 @@ export class TermComposer {
   private hits: string[] = [];
   private hi = 0;
   private catalog: HostCatalog | null = null;
+  private hint: HTMLElement;
+  private shownHost: string | null = null;
 
-  constructor(parent: HTMLElement, private plugin: AgenticOSPlugin, private focusTerminal: () => void) {
+  constructor(parent: HTMLElement, private plugin: AgenticOSPlugin, private focusTerminal: () => void, private bracketed: () => boolean = () => true) {
     this.el = parent.createDiv({ cls: "aos-tc is-hidden" });
     const box = this.el.createDiv({ cls: "aos-tc-box" });
     this.suggest = box.createDiv({ cls: "aos-tc-suggest", attr: { role: "listbox", "aria-label": "Files" } });
@@ -43,7 +45,7 @@ export class TermComposer {
     setIcon(snipIcon, "bookmark");
     snip.createSpan({ text: "Snippets" });
     snip.addEventListener("click", () => this.toggleSnippets(bar));
-    bar.createSpan({ cls: "aos-tc-hint", text: "⏎ send · ⇧⏎ new line · @ file · / commands · esc terminal" });
+    this.hint = bar.createSpan({ cls: "aos-tc-hint", text: "⏎ send · ⇧⏎ new line · @ file · / commands · esc terminal" });
     const send = bar.createEl("button", { cls: "aos-tc-send", attr: { type: "button", "aria-label": "Send to the terminal" } });
     const sendIcon = send.createSpan({ cls: "aos-tc-icon" });
     setIcon(sendIcon, "arrow-up");
@@ -53,17 +55,22 @@ export class TermComposer {
     this.input.addEventListener("keydown", (e) => this.onKey(e));
   }
 
-  /** Shows the composer for an agent that runs, else hides it. */
+  /** Shows the composer under a terminal that runs (an agent or a shell), else hides it. */
   setSession(s: TerminalSession | null): void {
-    const agent = !!s && s.meta.host !== "shell" && !s.isExited;
-    this.el.toggleClass("is-hidden", !agent);
-    if (!agent || !s) { this.session = null; return; }
-    if (this.session?.id === s.id) return;
+    const live = !!s && !s.isExited;
+    this.el.toggleClass("is-hidden", !live);
+    if (!live || !s) { this.session = null; return; }
+    if (this.session?.id === s.id && this.shownHost === s.meta.host) return;
     this.session = s;
+    this.shownHost = s.meta.host;
     this.files = null;
     this.closeSuggest();
-    this.input.setAttr("placeholder", `Write to ${TERM_HOST_LABEL[s.meta.host]}…`);
-    void this.loadCommands(s.meta.host as "claude" | "codex");
+    const shell = s.meta.host === "shell";
+    this.input.setAttr("placeholder", shell ? "Write a command…" : `Write to ${TERM_HOST_LABEL[s.meta.host]}…`);
+    this.hint.setText(shell ? "⏎ run · ⇧⏎ new line · @ file · esc terminal" : "⏎ send · ⇧⏎ new line · @ file · / commands · esc terminal");
+    // A shell has no / commands: the list stays empty, so / is just a character.
+    if (shell) this.slash.update([], "claude");
+    else void this.loadCommands(s.meta.host as "claude" | "codex");
   }
 
   focus(): boolean {
@@ -89,7 +96,7 @@ export class TermComposer {
     const s = this.session;
     const text = this.input.value;
     if (!s || !text.trim()) return;
-    for (const w of composerWrites(text)) s.write(w);
+    for (const w of composerWrites(text, undefined, this.bracketed())) s.write(w);
     this.input.value = "";
     this.closeSuggest();
     this.focusTerminal();

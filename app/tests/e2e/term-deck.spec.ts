@@ -66,23 +66,26 @@ test("Clear ended removes the agents that ended; the filter narrows the list", a
   expect(FX.v("workspaces/harbor-map")).toContain("harbor-map");
 });
 
-test("the composer: hidden for a shell; for an agent ⌘L focuses it and Enter sends one paste that runs (T12)", async () => {
+test("the composer sits under every running terminal, a shell too: ⌘L focuses it and Enter runs what was written (T12)", async () => {
   const { win } = app();
   await openTab(win, "term");
   expect(await command(win, "agentic-os:new-terminal-shell")).toBe(true);
-  await expect(C().locator(".aos-tc")).toHaveClass(/is-hidden/);
-  // A shell stands in for an agent (the fixture's agent stubs exit at once): the composer shows for a running agent row.
-  await win.evaluate(() => {
-    const p = (window as unknown as { aosHost: { plugin: { terminalPool: { selectedId(): string | null; get(id: string): { setMeta(m: object): void } | undefined } } } }).aosHost.plugin.terminalPool;
-    p.get(p.selectedId() ?? "")?.setMeta({ host: "claude" });
-  });
   await expect(C().locator(".aos-tc")).not.toHaveClass(/is-hidden/);
+  await expect(C().locator(".aos-tc-input")).toHaveAttribute("placeholder", "Write a command…");
+  await expect(C().locator(".aos-tc-hint")).not.toContainText("/ commands");
   expect(await command(win, "agentic-os:term-composer")).toBe(true);
   await expect(C().locator(".aos-tc-input")).toBeFocused();
   await C().locator(".aos-tc-input").fill("echo composer-$((6*7))");
   await win.keyboard.press("Enter");
   await expect.poll(() => terminalText(win), { timeout: 10_000 }).toContain("composer-42");
   await expect(C().locator(".aos-tc-input")).toHaveValue("");
+  // An agent's composer names it and offers its / commands.
+  await win.evaluate(() => {
+    const p = (window as unknown as { aosHost: { plugin: { terminalPool: { selectedId(): string | null; get(id: string): { setMeta(m: object): void } | undefined } } } }).aosHost.plugin.terminalPool;
+    p.get(p.selectedId() ?? "")?.setMeta({ host: "claude" });
+  });
+  await C().locator(".aos-tl-row.aos-term-tab-active").click();
+  await expect(C().locator(".aos-tc-input")).toHaveAttribute("placeholder", "Write to Claude Code…");
 });
 
 test("⌘F finds in the selected terminal: a count, Enter and ⇧Enter step, Escape closes and clears; ⌘F reopens", async () => {

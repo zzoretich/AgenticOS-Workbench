@@ -159,11 +159,11 @@ test("SYSTEM drawer: inventory counts and lists, the DISK donut and the COST DET
   await expect(d).not.toHaveClass(/is-open/);
 });
 
-test("the embedded terminal panel sits under Pulse", async () => {
+test("Pulse has no terminal: terminals live in the Term tab", async () => {
   const { win } = app();
-  const term = win.locator(".aos-pulse-term");
-  await expect(term.locator(".aos-term-title")).toHaveText("Terminal");
-  await expect(term.locator(".xterm")).toHaveCount(1);
+  await openTab(win, "pulse");
+  await expect(content(win)).toContainText("Fix queue");
+  await expect(content(win).locator(".xterm, .aos-term, .aos-term-collapsed")).toHaveCount(0);
 });
 
 test("listener leak: switching Pulse → Memory → Pulse → Term → Pulse does not add terminal-pool listeners", async () => {
@@ -178,7 +178,7 @@ test("listener leak: switching Pulse → Memory → Pulse → Term → Pulse doe
   const once = await count();
   for (let i = 0; i < 4; i++) await cycle();
   expect(await count()).toBe(once);
-  expect(once).toBeLessThanOrEqual(2);   // the Pulse panel on screen, plus the Term tab's panel kept for its next visit
+  expect(once).toBeLessThanOrEqual(1);   // the Term tab's panel, kept for its next visit (Pulse has none)
   await expect(content(win)).toContainText("Fix queue");
   await expect(rail(win, "pulse")).toHaveClass(/is-active/);
 });

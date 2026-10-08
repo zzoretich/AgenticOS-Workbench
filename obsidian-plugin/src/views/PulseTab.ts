@@ -13,7 +13,6 @@ import { buildMonthlyBudget, formatUSD, BudgetConfig } from "../data/cost";
 import { loadRunsForMonth, AgentRun } from "../data/runs";
 import { AnchorModal } from "../ui/AnchorModal";
 import { personaName, readVaultConfig, invocationHint, readAgenticosJson } from "../data/aosConfig";
-import { TerminalPanel } from "../ui/TerminalPanel";
 import { COMMAND_REGISTRY, executeCommand } from "../data/commandRegistry";
 import { sweepLine } from "../data/maintenance";
 import { renderSystemDrawer } from "./SystemDrawer";
@@ -43,9 +42,6 @@ function codexRolloutExists(sid: string, codexHome: string): boolean {
 export class PulseTab {
   private host: HTMLElement | null = null;
   private bodyHost: HTMLElement | null = null;
-  private termHost: HTMLElement | null = null;
-  private termPanel: TerminalPanel | null = null;
-  private termCollapsed = false;
   private refreshDebounce: number | null = null;
   private snapshot: Snapshot | null = null;
   private statuses: PipelineStatus[] = [];
@@ -77,16 +73,7 @@ export class PulseTab {
       );
     }
 
-    // Persistent bottom slot for the embedded terminal — created once per mount
-    // cycle, kept outside render()'s host.empty() wipe so refresh cycles never
-    // tear down the live xterm session (see renderTerminalSlot()). setTab() wipes
-    // contentHost on every tab switch without calling our unmount(), so a panel
-    // surviving from a prior visit is left pointing at now-detached DOM — drop it
-    // here so renderTerminalSlot()'s `if (!this.termPanel)` guard rebuilds fresh
-    // into the new termHost instead of silently reusing an orphaned panel.
-    if (this.termPanel) { this.termPanel.unmount(); this.termPanel = null; }
     this.bodyHost = host.createDiv();
-    this.termHost = host.createDiv({ cls: "aos-pulse-term" });
 
     void this.refresh();
   }
@@ -322,10 +309,6 @@ export class PulseTab {
         });
       }
     }
-
-    // ── embedded terminal — lives in the persistent termHost slot created in
-    // mount(), outside this method's host.empty() wipe (see mount()). ──
-    this.renderTerminalSlot();
   }
 
   // PORT of the old Mission Control view's renderCommandDeck (~655-668; that view was retired in Task 9).
@@ -345,58 +328,6 @@ export class PulseTab {
       btn.setAttr("title", `${cmd.kind} · ${cmd.desc}`);
       btn.addClass(`aos-deck-btn-${cmd.kind}`);
       btn.addEventListener("click", () => { void executeCommand(this.plugin.app, cmd); });
-    }
-  }
-
-  // Ported from the old Mission Control view's buildTerminalSlot() (~670-695; that view
-  // was retired in Task 9) — same gating on settings.terminalEmbedded, same collapsed-link
-  // and TerminalPanel-options markup. Restructured per the brief: Mission Control tore
-  // down and rebuilt the panel on every render() call; here it's constructed once
-  // (guarded by `if (!this.termPanel)`) and left alone across the refresh()/render()
-  // cycles triggered by unrelated Pulse data changing, so the live xterm session is
-  // never disrupted by a background snapshot/pipeline refresh. Only an explicit
-  // collapse/expand or the terminalEmbedded setting toggling off tears it down —
-  // the same two triggers Mission Control tore down on.
-  private renderTerminalSlot(): void {
-    if (!this.termHost) return;
-
-    if (!this.plugin.settings.terminalEmbedded) {
-      if (this.termPanel) { this.termPanel.unmount(); this.termPanel = null; }
-      this.termHost.empty();
-      return;
-    }
-
-    if (this.termCollapsed) {
-      if (this.termPanel) { this.termPanel.unmount(); this.termPanel = null; }
-      this.termHost.empty();
-      const collapsed = this.termHost.createDiv({ cls: "aos-term-collapsed" });
-      const open = collapsed.createEl("a", { cls: "aos-link", text: "▸ open terminal", href: "#" });
-      open.addEventListener("click", (e) => {
-        e.preventDefault();
-        this.termCollapsed = false;
-        this.renderTerminalSlot();
-      });
-      return;
-    }
-
-    if (!this.termPanel) {
-      this.termHost.empty();
-      this.termPanel = new TerminalPanel(this.plugin, {
-        resizable: true,
-        initialHeight: this.plugin.settings.terminalEmbedHeight,
-        onHeightChange: async (h) => {
-          this.plugin.settings.terminalEmbedHeight = h;
-          await this.plugin.saveSettings();
-        },
-        onClose: () => {
-          this.termCollapsed = true;
-          this.renderTerminalSlot();
-        },
-        showMaximize: true,
-        onMaximize: async () => { await this.plugin.openWorkbenchTab("term"); },
-        launch: this.view.termActions(),
-      });
-      this.termPanel.mount(this.termHost);
     }
   }
 
@@ -426,11 +357,8 @@ export class PulseTab {
 
   unmount(): void {
     if (this.refreshDebounce !== null) window.clearTimeout(this.refreshDebounce);
-    this.termPanel?.unmount();
-    this.termPanel = null;
     this.host?.empty();
     this.host = null;
     this.bodyHost = null;
-    this.termHost = null;
   }
 }

@@ -1294,13 +1294,6 @@ body {
   white-space: pre-wrap;
 }
 
-.aos-term-collapsed {
-  padding: 8px 12px;
-  background: var(--aos-panel);
-  border: 1px solid var(--aos-border);
-  border-left: 3px solid var(--aos-cyan);
-  font-size: 11px;
-}
 
 /* xterm inside the panel: nudge sizing so cursor + scrollbar fit nicely */
 .aos-term .xterm {
@@ -1410,7 +1403,6 @@ body {
    with BRIEFING below it. Disclosed in the task report. */
 .aos-pulse-deck { margin-bottom: 12px; }
 .aos-pulse-fix-detail { font-size: 11px; color: var(--aos-dim); margin: 2px 0 6px; }
-.aos-pulse-term { margin-top: 14px; }
 
 /* Recently auto-promoted trail (Task 7) — not in the brief's literal CSS block beyond
    the aos-trail-* prefix; rows are lightweight list lines (mono chip + text) rather
@@ -2360,7 +2352,6 @@ a.aos-at-itemid:hover { text-decoration: underline; text-underline-offset: 2px; 
 .aos-root button:not(.aos-deck-btn) { font-family: var(--udx-sans); letter-spacing: 0; }
 .aos-deck-btn, .aos-term-btn, .aos-ws-action, .aos-rt-btn, .aos-td-prio-btn { border-radius: 8px; }
 .aos-term { border-left: 1px solid var(--udx-line); border-radius: 12px; overflow: hidden; }
-.aos-term-collapsed { border-left: 1px solid var(--udx-line); border-radius: 12px; }
 
 /* Chat, composer first (UniDeX D5): one column, user turns as bubbles, the brain's answers as text, the run's steps
    as quiet rows, and the composer a rounded box at the foot (the log above it scrolls on its own). */

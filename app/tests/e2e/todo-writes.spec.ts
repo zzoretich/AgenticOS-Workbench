@@ -212,16 +212,24 @@ test("stale guard: a line changed underneath is reported, nothing is written, an
   const e = expected().todo;
   await td(win).locator("input.aos-td-input").fill("Keep this draft");
   // Hold back the vault's events so the tab still shows the old line, as when the other HUD's write has not reached
-  // this one yet; then tick here what was just ticked there.
+  // this one yet; then tick here what was just ticked there. A refresh the tab scheduled before the hold (a late event,
+  // as an earlier test's writes can leave one) would read the new file and move the item away: one is forced here, and
+  // the hold cancels it.
   await win.evaluate(() => {
-    const v = (window as unknown as { aosHost: { app: { vault: Record<string, unknown> } } }).aosHost.app.vault;
+    const host = (window as unknown as { aosHost: { app: { vault: Record<string, unknown> & { getAbstractFileByPath(p: string): unknown }; workspace: { getLeavesOfType(t: string): Array<{ view: { getTab(id: string): Record<string, unknown> | null } }> } } } }).aosHost;
+    const v = host.app.vault;
+    (v.trigger as (name: string, f: unknown) => void).call(v, "modify", v.getAbstractFileByPath("TODO.md"));
     v.__trigger = v.trigger;
     v.trigger = () => undefined;
+    const tab = host.app.workspace.getLeavesOfType("agentic-os-workbench")[0]?.view.getTab("todo");
+    if (tab && tab.refreshDebounce != null) window.clearTimeout(tab.refreshDebounce as number);
   });
   try {
     const call = `- [ ] Call the chart vendor 📅 ${T} #harbor\n`;
     const theirs = ticked(pristine(), call);
     fs.writeFileSync(FILE, theirs);
+    // As a loaded runner can: any refresh still pending (250 ms debounce) would land before the click.
+    await win.waitForTimeout(400);
     await row(win, "Call the chart vendor").locator(".aos-td-check").click();
     await expect(win.locator(".notice-container")).toContainText("TODO.md changed underneath — reloaded, try again");
     // The tab re-read the file: the item is done there, the draft is still in the box, and this HUD wrote nothing.

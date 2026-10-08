@@ -45,8 +45,6 @@ export interface AgenticOSSettings {
   autoOpenSidebarOnStart: boolean;
   liveTailPollMs: number;
   // Terminal
-  terminalEmbedded: boolean;
-  terminalEmbedHeight: number;
   terminalShell: string;
   terminalCwd: string;
   terminalFontSize: number;
@@ -72,8 +70,6 @@ export const DEFAULT_SETTINGS: AgenticOSSettings = {
   autoOpenSidebarOnStart: false,
   liveTailPollMs: 300,
   // Terminal — shell + cwd auto-resolve at plugin load if blank
-  terminalEmbedded: true,
-  terminalEmbedHeight: 280,
   terminalShell: "",
   terminalCwd: "",
   terminalFontSize: 13,

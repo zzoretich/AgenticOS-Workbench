@@ -129,7 +129,7 @@ export class TerminalPanel {
     // body
     this.bodyEl = frame.createDiv({ cls: "aos-term-body" });
     if (this.opts.deck) {
-      this.composer = new TermComposer(frame, this.plugin, () => this.focus());
+      this.composer = new TermComposer(frame, this.plugin, () => this.focus(), () => this.bracketedPaste());
       this.finder = new TermFind(this.bodyEl, () => this.focus());
     }
 
@@ -248,7 +248,13 @@ export class TerminalPanel {
     if (next) this.activate(next);
   }
 
-  /** Focuses the composer under an agent's terminal (⌘L); false when the selected terminal has none. */
+  /** Whether the selected terminal's program asked for bracketed paste (zsh, Claude Code and Codex do). */
+  private bracketedPaste(): boolean {
+    const b = this.activeId ? this.bindings.get(this.activeId) : undefined;
+    return b ? b.term.modes.bracketedPasteMode : true;
+  }
+
+  /** Focuses the composer under the selected terminal (⌘L); false when it has none (it ended). */
   focusComposer(): boolean { return this.composer?.focus() ?? false; }
 
   /** Opens the find bar on the selected terminal (⌘F); false when there is no terminal to find in. */

@@ -144,16 +144,6 @@ export function renderPluginSettings(containerEl: HTMLElement, plugin: AgenticOS
 
   new Setting(containerEl).setName("Terminal").setHeading();
 
-  new Setting(containerEl)
-    .setName("Embedded terminal panel")
-    .setDesc("Show the embedded terminal strip on the Pulse tab. Disable to hide; the Term tab still offers a full-pane terminal. Consumed by PulseTab.renderTerminalSlot() on its next render.")
-    .addToggle((t) =>
-      t.setValue(plugin.settings.terminalEmbedded).onChange(async (v) => {
-        plugin.settings.terminalEmbedded = v;
-        await plugin.saveSettings();
-      })
-    );
-
   picker(new Setting(containerEl)
     .setName("Shell")
     .setDesc("Default shell for new terminal sessions; system default is $SHELL. Read once by Plugin.onload() to build the shared TerminalPool — applies after the app restarts."),
