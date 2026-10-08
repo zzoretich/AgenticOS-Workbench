@@ -9,6 +9,11 @@ test("a message is one bracketed paste with CR line ends, then Enter, in pieces 
   assert.deepEqual(composerWrites("a\x1b[201~b"), ["\x1b[200~", "ab", "\x1b[201~", "\r"]);
 });
 
+test("without bracketed paste (a program that did not ask for it) the lines are typed, each ending in a carriage return", () => {
+  assert.deepEqual(composerWrites("ls\npwd", undefined, false), ["ls\rpwd", "\r"]);
+  assert.deepEqual(composerWrites("abcdef", 4, false), ["abcd", "ef", "\r"]);
+});
+
 test("mentionAt finds the @token under the caret, not an @ inside a word", () => {
   assert.deepEqual(mentionAt("look at @src/ti", 15), { query: "src/ti", start: 8 });
   assert.deepEqual(mentionAt("@", 1), { query: "", start: 0 });

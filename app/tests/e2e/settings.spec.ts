@@ -133,7 +133,8 @@ test("WORKBENCH section: the plugin's own rows as pickers, the same rows Obsidia
   const { win } = app();
   const section = C().locator(".aos-st-plugin");
   const names = (await section.locator(".setting-item-name").allTextContents()).map((t) => t.trim());
-  expect(names).toEqual(expect.arrayContaining(["Status bar enabled", "Vault root", "Claude config dir", "Node binary", "Embedded terminal panel", "Shell", "Font size"]));
+  expect(names).toEqual(expect.arrayContaining(["Status bar enabled", "Vault root", "Claude config dir", "Node binary", "Shell", "Font size"]));
+  expect(names).not.toContain("Embedded terminal panel");   // the Pulse terminal is gone (1.4.1)
   const item = (name: string) => section.locator(".setting-item", { has: win.locator(".setting-item-name", { hasText: new RegExp(`^${name}$`) }) });
   await expect(item("Vault root").locator("select option:checked")).toHaveText(/^this vault \(/);
   await expect(item("Claude config dir").locator("select option:checked")).toHaveText(/^auto/);

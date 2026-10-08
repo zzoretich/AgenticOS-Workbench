@@ -12,13 +12,13 @@ test("the contract §5 settings exist with their defaults", () => {
   assert.equal(DEFAULT_SETTINGS.nodePath, "");
 });
 
-test("the nine pre-existing settings are unchanged", () => {
-  assert.deepEqual(Object.keys(DEFAULT_SETTINGS).slice(0, 9), [
+test("the seven pre-existing settings are unchanged (the Pulse terminal's two are gone)", () => {
+  assert.deepEqual(Object.keys(DEFAULT_SETTINGS).slice(0, 7), [
     "statusBarEnabled", "autoOpenSidebarOnStart", "liveTailPollMs",
-    "terminalEmbedded", "terminalEmbedHeight", "terminalShell", "terminalCwd", "terminalFontSize", "terminalScrollback",
+    "terminalShell", "terminalCwd", "terminalFontSize", "terminalScrollback",
   ]);
   assert.equal(DEFAULT_SETTINGS.liveTailPollMs, 300);
-  assert.equal(DEFAULT_SETTINGS.terminalEmbedHeight, 280);
+  assert.ok(!("terminalEmbedded" in DEFAULT_SETTINGS) && !("terminalEmbedHeight" in DEFAULT_SETTINGS));
 });
 
 test("cost and telemetry are the system's switches, not plugin settings (spec 2026-09-24-settings-tab D10)", () => {

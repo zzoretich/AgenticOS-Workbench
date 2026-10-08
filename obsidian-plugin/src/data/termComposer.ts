@@ -9,11 +9,12 @@ export const COMPOSER_CHUNK = 64 * 1024;
  * The writes that send `text` to an agent's prompt: a bracketed paste (so its newlines stay newlines instead of
  * sending), its line ends as carriage returns as a terminal pastes them, then Enter.
  */
-export function composerWrites(text: string, chunk = COMPOSER_CHUNK): string[] {
+export function composerWrites(text: string, chunk = COMPOSER_CHUNK, bracketed = true): string[] {
   const body = text.replace(/\r?\n/g, "\r").replace(/\x1b\[20[01]~/g, "");
   const parts: string[] = [];
   for (let i = 0; i < body.length; i += chunk) parts.push(body.slice(i, i + chunk));
-  return ["\x1b[200~", ...parts, "\x1b[201~", "\r"];
+  // A program that has not turned bracketed paste on (a REPL in a shell, say) would print the markers: type the lines.
+  return bracketed ? ["\x1b[200~", ...parts, "\x1b[201~", "\r"] : [...parts, "\r"];
 }
 
 /** The @token the caret is in (after `@`, up to the caret), with where it starts, or null. */

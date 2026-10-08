@@ -4,6 +4,12 @@ All notable changes to UniDeX (AgenticOS Workbench before 1.1). Versions follow 
 
 ## [Unreleased]
 
+### Changed
+- **The composer (⌘L) sits under every running terminal,** a plain shell too: ⏎ runs what you wrote, ⇧⏎ adds a line, @ inserts a file and Snippets work; the / list stays with Claude Code and Codex.
+
+### Removed
+- **The terminal on the Pulse tab.** Terminals live in the Term tab; the Pulse tab's ❯_ buttons and Commands still open it. The Embedded terminal panel setting is gone with it.
+
 ## [1.4.0] — 2026-10-08
 
 ### Added
