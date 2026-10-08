@@ -125,10 +125,14 @@ function attachSessions(workspaces, byCwd, opts = {}) {
   for (const ws of list) ws.sessions = { claude: 0, codex: 0, total: 0, lastAt: null };
   const outside = [];
   for (const [cwd, e] of Object.entries(byCwd || {})) {
+    // The longest match over each workspace's own folder and its linked code folder (repoPath, spec 2026-10-08 T8).
     let best = null;
+    let bestLen = -1;
     for (const ws of list) {
-      if (!ws.absPath || !insideDir(cwd, ws.absPath)) continue;
-      if (!best || ws.absPath.length > best.absPath.length) best = ws;
+      for (const root of [ws.absPath, ws.repoPath]) {
+        if (!root || !insideDir(cwd, root)) continue;
+        if (root.length > bestLen) { best = ws; bestLen = root.length; }
+      }
     }
     if (best) {
       const s = best.sessions;

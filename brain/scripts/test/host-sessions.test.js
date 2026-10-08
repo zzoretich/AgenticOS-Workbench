@@ -87,3 +87,11 @@ test('firstLine and insideDir helpers', () => {
   assert.equal(insideDir('/a/b', '/a/b'), true);
   assert.equal(insideDir('C:\\Users\\x\\p', 'C:\\Users\\x'), true);
 });
+
+test('attachSessions credits a session run in a workspace\'s linked code folder to that workspace (spec 2026-10-08 T8)', () => {
+  const code = path.join(path.sep, 'code', 'app');
+  const workspaces = [{ name: 'notes', absPath: WS('notes'), repoPath: code }, { name: 'other', absPath: WS('other') }];
+  const outside = attachSessions(workspaces, { [path.join(code, 'src')]: { claude: 2, codex: 1, lastAt: '2026-10-08T09:00:00.000Z' } }, { vault: VAULT, ignore: [] });
+  assert.deepEqual(workspaces[0].sessions, { claude: 2, codex: 1, total: 3, lastAt: '2026-10-08T09:00:00.000Z' });
+  assert.deepEqual(outside, []);
+});
