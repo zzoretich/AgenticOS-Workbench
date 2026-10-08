@@ -14,6 +14,15 @@ All notable changes to UniDeX (AgenticOS Workbench before 1.1). Versions follow 
 - Plans: Claude's to-do list and Codex's `todo_list` become one `plan` event in the thread.
 - The changes card's files carry lines added and removed (`git diff --numstat`, and an untracked file's lines).
 - `ask.js --local --host=claude|codex --model=<id> --effort=<level>` answers a vault question on that host only, with no fallback to another provider.
+- **A `/` menu in the Sessions composer** lists the host's commands (Claude Code's, inserted as `/name`) or skills (Codex's, inserted as `$name`); ↑↓ and Enter pick one, and the host runs it as typed.
+- **A status line under the composer:** the next turn's model, effort and access, the turn's and today's session spend against the cap, and the workspace's branch and files changed.
+- **Review changes +a −b** in the thread's top bar counts the lines added and removed and opens the changes card in a drawer; each file shows its own counts, and an edit line in the timeline its file's.
+
+### Changed
+- **The Sessions tab is laid out like Claude Code.** The list starts with **New session** and **Vault**, then each workspace with its threads (a host dot, a running mark, the age) and today's session spend. A thread reads as one column: your prompt, the agent's text, each tool call as a mono `Update(file)` / `Bash(command)` line with its result under it (click to open the input, the result and the file's diff), the plan as a card that ticks off, and `Working… (12s · esc to stop)`. **Stop** sits in the top bar, and Esc stops a running turn too.
+- **One menu picks the host and the model.** `Claude Code · Opus 5.5 · High ▾` opens a host switch (a host that is off is greyed with why), search, the host's current models with older ones folded, the model's effort levels, **Custom model id…**, and where the list came from with ↻. In a thread the host is locked, the model and effort apply from the next message (the timeline marks the change), and **New session on <other host>** starts one there. The app remembers the last host, access and each host's model and effort.
+- **An access menu replaces Allow commands:** Read only, Edit files or Edit and run commands, with what each runs as on each host; on Codex the menu says commands always run inside its sandbox.
+- **Vault chat has the same menu, always read only:** each question can go to any ready host and model (Claude Code through `claude -p`, Codex through `ask.js`), and the footer shows today's reasoner spend against its cap.
 
 ## [1.2.1] — 2026-10-07
 

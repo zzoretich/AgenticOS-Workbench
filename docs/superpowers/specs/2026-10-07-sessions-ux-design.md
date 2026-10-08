@@ -27,7 +27,7 @@ host's commands; the same picker in Vault chat; and a layout closer to Claude Co
 | U4 | **A host that does not answer still works.** The menu shows its aliases (Claude: `default`, `opus`, `fable`, `sonnet`, `haiku`; Codex: "Codex default"), a line saying why the list is short, and **Custom model id…**, which is always there. | Refusing to start: one CLI hiccup would block every session. |
 | U5 | **The cache keeps models and commands only.** `initialize` also answers the account (email, organisation): the runtime drops it before writing, and a test pins that. | Caching the whole answer. |
 | U6 | **The host is fixed per thread; model, effort and access change on any turn.** `session:send` takes `model`, `effort` and `access`; each `prompt` event records them, and the timeline marks a change ("Next turn on GPT-6-Astra · Max"). In a thread the chip shows a lock on the host and the menu offers **New session on <other host>**. | Switching host mid-thread: each host resumes only its own sessions. |
-| U7 | **Access levels replace Allow commands:** `access: "read" \| "edit" \| "run"` (default `edit`). Claude: `--permission-mode plan` / `acceptEdits` / `acceptEdits --allowedTools Bash`. Codex: `sandbox_mode="read-only"` / `"workspace-write"` / `"workspace-write"`. `allowCommands: true` still reads as `run` for one release. | Keeping the checkbox: Claude only, and no read-only mode. |
+| U7 | **Access levels replace Allow commands:** `access: "read" \| "edit" \| "run"` (default `edit`). Claude: `--permission-mode plan` / `acceptEdits` / `acceptEdits --allowedTools Bash`. Codex: `sandbox_mode="read-only"` / `"workspace-write"` / `"workspace-write"`. `allowCommands: true` still reads as `run` for one release. Checked live on 2026-10-07 (§5): read only writes nothing in the workspace on either host. | Keeping the checkbox: Claude only, and no read-only mode. |
 | U8 | **`/` opens the host's commands.** Claude: `initialize`'s `commands` (name, description, argument hint), inserted as `/name `. Codex: the skills `codex debug prompt-input` renders, inserted as `$name ` (how Codex invokes a skill). The prompt goes to the host unchanged; the host expands it. | Expanding commands in the app: a second implementation of each host. |
 | U9 | **Vault chat gets the same chip, always read only, and any host on any question** (each is one call; nothing resumes). Claude: `runClaudeAsk` with the chosen model and effort (its surface rule widens to the five Claude levels). Codex: `ask.js --local --host=codex --model=<m> --effort=<e>`, through `provider.js` `resolveProviderForRole({ prefer, model, effort })`, with no fallback to another provider. Its efforts are the ones its one-shot path takes (Claude `low…max`, Codex up to `xhigh`). Spend stays on the `reasoner.*` caps. | Making Vault a session in the vault root: widens S4 (sessions run only in `workspaces/<slug>`) to the whole vault, with tools. |
 | U10 | **Edits are host-neutral.** An edit or patch line shows the file's `+a −b`; opening it shows that file's current diff from git (`git:diff`). Plans become a `plan` event from Claude's `TodoWrite` input and Codex's `todo_list` item. | Per-edit snippets from Claude's tool input: Codex reports only paths, so one host would get less. |
@@ -89,6 +89,11 @@ sidebar's spend line reads the ledger's `session:*` rows against `sessions.perDa
 (commands always run inside the sandbox, without network), and the menu says so; a Codex turn has no per-turn dollar
 cap (its cost is estimated after). **New:** both Codex lists come from `codex debug` subcommands; if a release changes
 them, U4's fallback applies.
+
+**Live findings (2026-10-07).** Claude's **Read only** (`--permission-mode plan`) ended cleanly in a headless turn and
+wrote nothing in the workspace: its plan went to Claude Code's own plans folder, never the workspace. Codex's
+`read-only` sandbox refused the write. A Read only turn on Haiku 5.5 at low effort cost about $0.16, mostly Claude Code's
+own context; one on GPT-6-Luna at low about $0.03 (estimated).
 
 ## 6. Testing
 
