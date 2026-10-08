@@ -264,7 +264,11 @@ export class FilesTab {
         });
       });
       update();
-      window.setTimeout(() => { const last = inputs[inputs.length - 1]; last.focus(); last.select(); }, 0);
+      // At once, not on a timer: the drawer is already in the page, and a late timer would take the focus from a field
+      // the user (or a test driver) has started typing in.
+      const last = inputs[inputs.length - 1];
+      last.focus();
+      last.select();
     });
   }
 
