@@ -4,6 +4,8 @@ All notable changes to UniDeX (AgenticOS Workbench before 1.1). Versions follow 
 
 ## [Unreleased]
 
+## [1.3.0] — 2026-10-07
+
 ### Upgrading
 - Accept the runtime update the app offers (or run `aos upgrade`): the model lists, access levels and Vault's host choice come from the runtime's `lib/host-catalog.js`, `lib/sessions.js catalog` and `sdk/ask.js`.
 
@@ -400,7 +402,8 @@ The first public release: an `aos` CLI, the AgenticOS runtime, a Claude Code plu
 - Update notifications: a GitHub release check surfaced as a session-start notice.
 - Docs: README, install guide, and a release acceptance runbook.
 
-[Unreleased]: https://github.com/zzoretich/UniDeX-Agent-Harness/compare/v1.2.1...HEAD
+[Unreleased]: https://github.com/zzoretich/UniDeX-Agent-Harness/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v1.3.0
 [1.2.1]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v1.2.1
 [1.2.0]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v1.2.0
 [1.1.0]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v1.1.0
