@@ -7,6 +7,9 @@
  *   --context (default)  print the assembled prompt; Claude answers in-session
  *   --write <file>       print the answer file (ask has no persistent target)
  *   --local              answer through the provider; telemetry run-id on stderr
+ *     --host=claude|codex  with --local: that host only, never another (Vault chat's menu, spec 2026-10-07-sessions-ux U9)
+ *     --model=<id>         with --local: that model instead of the reasoner's
+ *     --effort=<level>     with --local: that effort, when the host's CLI takes it
  *
  * Usage:
  *   node brain/scripts/sdk/ask.js "what did I decide about model routing?"
@@ -23,8 +26,21 @@ const pathx = require('path');
 const { VAULT } = require('../lib/paths.js');
 const { parseMode, printContext, readWriteFile, localProvider } = require('./lib/interactive.js');
 
-function readQuestion() {
-  const argv = process.argv.slice(2);
+/** --host=, --model= and --effort= (one argument each, so a question never swallows their values) and the rest. */
+function askOptions(argv) {
+  const opts = {};
+  const rest = [];
+  for (const a of argv) {
+    const m = /^--(host|model|effort)=(.*)$/.exec(a);
+    if (m) opts[m[1]] = m[2];
+    else rest.push(a);
+  }
+  if (opts.host !== undefined && !['claude', 'codex'].includes(opts.host)) throw new Error('--host takes claude or codex');
+  if (opts.model !== undefined && (!opts.model.trim() || opts.model.startsWith('-'))) throw new Error('--model takes a model id');
+  return { opts, rest };
+}
+
+function readQuestion(argv) {
   const flagless = argv.filter((a) => !a.startsWith('--'));
   if (flagless.length) return Promise.resolve(flagless.join(' ').trim());
   return new Promise((resolve) => {
@@ -104,10 +120,12 @@ async function buildAskPrompt(question) {
 const ASK_FORMAT = 'A markdown answer under ~200 words: lead with the answer, cite vault files in backticks.';
 
 async function main() {
-  const { mode, writeFile, rest } = parseMode(process.argv.slice(2));
+  let asked;
+  try { asked = askOptions(process.argv.slice(2)); } catch (e) { process.stderr.write(`[ask] ${e.message}\n`); process.exit(2); }
+  const { mode, writeFile, rest } = parseMode(asked.rest);
   if (mode === 'write') { process.stdout.write(readWriteFile(writeFile)); return; }
 
-  const question = rest.length ? rest.join(' ').trim() : await readQuestion();
+  const question = rest.length ? rest.join(' ').trim() : await readQuestion(asked.rest);
   if (!question) {
     process.stderr.write('Usage: node ask.js [--context|--local|--write <file>] "your question"\n');
     process.exit(2);
@@ -115,7 +133,15 @@ async function main() {
   const { system } = await buildAskPrompt(question);
   if (mode === 'context') { printContext({ feature: 'ask', system, context: question, format: ASK_FORMAT }); return; }
 
-  const p = await localProvider('reason:ask', { role: 'reasoner' });
+  const chosen = asked.opts.host || asked.opts.model || asked.opts.effort;
+  let p;
+  try {
+    p = await localProvider('reason:ask', { role: 'reasoner', prefer: asked.opts.host, model: asked.opts.model, effort: asked.opts.effort });
+  } catch (err) {
+    if (!chosen) throw err;
+    process.stderr.write(`[ask] ${err.message}\n`);
+    process.exit(1);
+  }
   let run = null;
   try {
     run = telemetry.startRun({ script: 'ask', prompt: `len=${question.length}` });
@@ -124,7 +150,7 @@ async function main() {
   }
   try {
     const answer = await reason(question, {
-      system, effort: 'medium', numPredict: 1024, feature: 'reason:ask',
+      system, effort: 'medium', numPredict: 1024, feature: 'reason:ask', noFallback: !!chosen,
       chatFn: (o) => p.chat({ ...o, feature: 'reason:ask' }), providerName: p.name,
     });
     try { await telemetry.endRun(run, { status: 'ok', reply: `len=${answer ? answer.length : 0}` }); } catch { /* fail-soft */ }
@@ -143,4 +169,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { buildAskPrompt, buildContext, ASK_FORMAT };
+module.exports = { buildAskPrompt, buildContext, ASK_FORMAT, askOptions };

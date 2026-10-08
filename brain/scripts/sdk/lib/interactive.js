@@ -46,8 +46,16 @@ function readWriteFile(file) {
  * unavailable and the global provider is Ollama, the Ollama provider comes back instead with
  * `degraded` set to the reason, and reason() then sends it the workhorse request.
  */
-async function localProvider(feature, { role } = {}) {
+async function localProvider(feature, { role, prefer, model, effort } = {}) {
   const prov = require('./provider.js');
+  if (role && (prefer || model || effort)) {
+    // A host, model or effort the user chose: resolved for this call only, and no other provider stands in for it.
+    const p = await prov.resolveProviderForRole({ role, feature, prefer, model, effort });
+    if (p.name !== 'none') return p;
+    const e = new Error(`${prefer || 'the chosen host'} cannot answer (${p.reason})`);
+    e.code = 'PROVIDER_NONE';
+    throw e;
+  }
   const p = role ? await prov.getProviderForRole(role, feature) : await prov.getProvider(feature);
   if (p.name !== 'none') return p;
   if (role && require('./models.js').providerFor(role) === 'claude') {

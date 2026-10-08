@@ -64,6 +64,19 @@ test('ask --write prints the answer file; ask --local with provider none exits 1
   assert.match(l.stderr, /no model provider/);
 });
 
+test('ask --host/--model/--effort are single arguments, never part of the question; a chosen host that cannot answer exits 1', () => {
+  const { askOptions } = require('../sdk/ask.js');
+  assert.deepEqual(askOptions(['--local', '--host=codex', '--model=gpt-6-luna', '--effort=low', '- what', 'is due?']), {
+    opts: { host: 'codex', model: 'gpt-6-luna', effort: 'low' }, rest: ['--local', '- what', 'is due?'],
+  });
+  assert.throws(() => askOptions(['--host=ollama']), /--host takes claude or codex/);
+  assert.throws(() => askOptions(['--model=--danger']), /--model takes a model id/);
+  const r = run('ask.js', ['--local', '--host=codex', 'anything']);
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /codex cannot answer \(forced\)/, 'provider none here, and no other provider is tried');
+  assert.equal(run('ask.js', ['--local', '--host=nope', 'anything']).status, 2);
+});
+
 test('compress --context wraps the input text; --write echoes the file', () => {
   const src = path.join(TMP, 'big.log');
   fs.writeFileSync(src, 'line one\nline two\n');

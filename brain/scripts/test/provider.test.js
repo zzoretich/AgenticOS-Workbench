@@ -387,3 +387,32 @@ test('a daily cap of 0 means no spend (spec 2026-09-24-aos-config D10): codex an
   assert.equal(r.name, 'none');
   assert.equal(r.reason, 'reasoner-daily-cap');
 });
+
+test('reasoner with a chosen host, model and effort (Vault chat, sessions-ux U9): only that host, and the effort is fixed', async () => {
+  fs.writeFileSync(CONFIG, JSON.stringify({ hosts: { claude: { enabled: true }, codex: { enabled: true } }, reasoner: { model: 'claude-opus-5', codexModel: 'gpt-5', effort: 'medium' } }));
+  const calls = [];
+  let p = await resolveProviderForRole({ role: 'reasoner', prefer: 'codex', model: 'gpt-6-luna', effort: 'xhigh', deps: { resolveClaudeBin: never, loginProbe: never, ...codexLoggedIn, codexCall: replyCall(calls) } });
+  assert.equal(p.name, 'codex', 'Codex although Claude is the usual first choice');
+  assert.equal(p.model, 'gpt-6-luna');
+  await p.chat({ prompt: 'x', think: 'low' });
+  assert.deepEqual([calls[0].model, calls[0].effort], ['gpt-6-luna', 'xhigh'], 'a caller\'s think never overrides the chosen effort');
+
+  const claudeCalls = [];
+  p = await resolveProviderForRole({ role: 'reasoner', prefer: 'claude', model: 'sonnet', effort: 'high', deps: { ...loggedIn, resolveCodexBin: never, codexLoginProbe: never, claudeCall: replyCall(claudeCalls) } });
+  await p.chat({ prompt: 'x', think: 'low' });
+  assert.deepEqual([p.name, claudeCalls[0].model, claudeCalls[0].effort], ['claude', 'sonnet', 'high']);
+
+  fs.unlinkSync(STATE_PATH);   // the login checks above are cached for a day
+  p = await resolveProviderForRole({ role: 'reasoner', prefer: 'claude', deps: { resolveClaudeBin: () => '/x/claude', loginProbe: async () => false, ...codexLoggedIn } });
+  assert.deepEqual([p.name, p.reason], ['none', 'claude-not-logged-in'], 'a chosen host that cannot answer is not swapped for the other');
+
+  fs.writeFileSync(CONFIG, JSON.stringify({ hosts: { claude: { enabled: true } } }));
+  p = await resolveProviderForRole({ role: 'reasoner', prefer: 'codex', deps: { resolveClaudeBin: never, loginProbe: never, resolveCodexBin: never, codexLoginProbe: never } });
+  assert.deepEqual([p.name, p.reason], ['none', 'codex-not-configured']);
+
+  const ignored = [];
+  fs.writeFileSync(CONFIG, JSON.stringify({ hosts: { codex: { enabled: true } } }));
+  p = await resolveProviderForRole({ role: 'reasoner', prefer: 'codex', effort: 'ultra', deps: { resolveClaudeBin: never, loginProbe: never, ...codexLoggedIn, codexCall: replyCall(ignored) } });
+  await p.chat({ prompt: 'x' });
+  assert.notEqual(ignored[0].effort, 'ultra', 'a level the wrapper does not take is not forced through');
+});
