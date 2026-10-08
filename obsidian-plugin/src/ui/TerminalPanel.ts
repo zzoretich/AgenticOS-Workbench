@@ -196,6 +196,8 @@ export class TerminalPanel {
   }
 
   unmount(): void {
+    // The host is shared (the Workbench's content area): take back the classes mount() put on it.
+    this.host?.removeClass("aos-term", "aos-term-fullpane", "aos-term-deck");
     this.disposePool?.();
     this.disposePool = null;
     this.disposeTheme?.();

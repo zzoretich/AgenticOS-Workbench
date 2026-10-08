@@ -360,7 +360,10 @@ export class WorkbenchView extends ItemView {
     });
     const tab = (this.tabs[id] ??= this.makeTab(id) ?? undefined);
     if (!tab) return;
+    // Each tab starts on a bare content area: a class one tab put on it (Term's deck lays it out as a row) must never
+    // shape the next one. 1.4.0 kept them, and every tab after a visit to Term was drawn in a row.
     this.contentHost.empty();
+    this.contentHost.className = "aos-wb-content";
     tab.mount(this.contentHost);
     void tab.refresh();
   }
