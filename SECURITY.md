@@ -39,7 +39,9 @@ output. The design treats the page that shows them as untrusted (design D7,
     executable outside the vault and the app's data, which the page cannot create. The child's environment is main's,
     plus a few named variables with fixed or trusted values: never `NODE_OPTIONS`, `PATH` or `DYLD_*`, and a Claude
     or Codex folder only when it is one main trusts.
-  - *Terminals:* a shell listed in `/etc/shells` (or your `$SHELL`), with no arguments.
+  - *Terminals:* a shell listed in `/etc/shells` (or your `$SHELL`), with no arguments. Main starts it with its own
+    environment, `PATH` replaced by your login shell's (asked once, as the setup wizard does) and `CLAUDECODE` removed;
+    the page still cannot set `PATH`. The Term tab starts an agent by typing its command into that shell.
   - *Appearance:* the page may set the theme to `system`, `light` or `dark` and nothing else; main saves the choice in
     the app's data (`app-settings.json`), never in the vault, and hands it to macOS's `nativeTheme`.
   - *Setup (phase 5):* the wizard names a fix by id; main runs that fix's fixed command (`app/src/main/policy/setup.ts`:

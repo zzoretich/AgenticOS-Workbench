@@ -31,7 +31,7 @@ import { SCHEME, parseAgenticosUrl, urlFromArgv } from "./protocol";
 import { FsService } from "./services/fs";
 import { ProcService } from "./services/proc";
 import { GitService } from "./services/git";
-import { PtyService, type PtyLib } from "./services/pty";
+import { PtyService, terminalBaseEnv, type PtyLib } from "./services/pty";
 import { SessionService, workspaceDir } from "./services/sessions";
 import { attachInfo } from "./setup/attach";
 import { SetupController, type AgenticosJson } from "./setup/controller";
@@ -97,17 +97,22 @@ let fsService = vault.root ? new FsService({ vaultRoot: vault.root, userData: co
 let attached: AttachInfo | null = null;
 const procService = new ProcService({ policy: () => policy, context: () => context, env: process.env, emit: (ev) => send(CH.procEvent, ev) });
 // The app's own node-pty: in a packaged build its JavaScript is in the archive and its native parts are unpacked beside it.
-const ptyService = new PtyService({ context: () => context, env: process.env, emit: (ev) => send(CH.ptyEvent, ev), load: () => require("node-pty") as PtyLib });
+// Its terminals start with the login shell's PATH (T14), worked out once and shared with sessionNode.
+const ptyService = new PtyService({ context: () => context, env: () => terminalBaseEnv(process.env, termPATH()), emit: (ev) => send(CH.ptyEvent, ev), load: () => require("node-pty") as PtyLib });
 // Agent sessions (UniDeX phase 2) and the workspace repositories they change: main's own services, behind the Sessions
 // surface. A turn outlives a page reload; quitting stops every one.
 const sessionsOn = (): boolean => policy.ids.includes("sessions");
 let loginPATH: string | null = null;
+/** The login shell's PATH, asked once (setup/env.ts loginPath; $AOS_SETUP_PATH stands in for it under e2e). */
+function termPATH(): string {
+  loginPATH ??= loginPath(defaultLoginPathDeps(process.env, os.homedir()));
+  return loginPATH;
+}
 /** The node the runtime's scripts run with: agenticos.json's (aos init records it), else the login shell's. */
 function sessionNode(): string | null {
   const recorded = agenticos?.node;
   if (typeof recorded === "string" && isExecutable(recorded)) return recorded;
-  loginPATH ??= loginPath(defaultLoginPathDeps(process.env, os.homedir()));
-  return findOnPath("node", loginPATH);
+  return findOnPath("node", termPATH());
 }
 const sessionService = new SessionService({ vaultRoot: () => context.vaultRoot ?? null, enabled: sessionsOn, context: () => context, env: process.env, node: sessionNode, emit: (ev) => send(CH.sessionEvent, ev) });
 const gitService = new GitService({ workspace: (name) => workspaceDir(context.vaultRoot ?? null, name), enabled: sessionsOn, env: process.env });
