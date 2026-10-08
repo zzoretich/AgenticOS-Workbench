@@ -20,7 +20,7 @@ function rowIcon(r: MenuRow): string {
 /** What the menu asks its owner to start; the owner checks readiness, resolves the place and shows the terminal. */
 export interface NewTerminalActions {
   /** Start `host` ("quick" = the one ⌘T starts) in `picked`, else wherever the context or the default says. */
-  start(req: { host: TermHost | "quick"; picked?: Place | null; resume?: "last" | null }): Promise<void>;
+  start(req: { host: TermHost | "quick"; picked?: Place | null; resume?: "last" | { id: string } | null }): Promise<void>;
   /** Make workspaces/<slug> and start `host` there. */
   create(name: string, host: TermHost, gitInit: boolean): Promise<void>;
   /** What you are looking at (a selected workspace or Scratch terminal), for the "Same as selected" row. */
@@ -72,11 +72,11 @@ export class NewTerminalMenu {
   }
 
   /** Opens the menu, or the New workspace sheet; `reason` explains why ⌘T could not start straight away. */
-  open(mode: "menu" | "create" = "menu", reason: string | null = null): void {
+  open(mode: "menu" | "create" = "menu", reason: string | null = null, name = ""): void {
     this.mode = mode;
     this.reason = reason;
     this.query = "";
-    this.createName = "";
+    this.createName = name;
     this.createGit = null;
     this.error = null;
     const quick = this.launcher.quickHost();

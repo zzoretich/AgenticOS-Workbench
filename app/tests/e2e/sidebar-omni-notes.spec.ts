@@ -175,7 +175,8 @@ test.describe("Sessions and Term", () => {
     await content(win).locator(".aos-ntm-caret").click();
     await content(win).locator(".aos-ntm-row[data-key='now-shell']").click();
     await expect(content(win).locator(".aos-term-tab")).toHaveCount(before + 1);
-    await expect(content(win).locator(".aos-term-tab").last()).toHaveClass(/aos-term-tab-active/);
+    // The deck lists the newest first within its place: the new shell is the selected row.
+    await expect(content(win).locator(".aos-term-tab.aos-term-tab-active")).toHaveAttribute("data-host", "shell");
     await expect.poll(() => terminalText(win), { timeout: 10_000 }).toContain("fixture %");
     await content(win).locator(".xterm").filter({ visible: true }).click();
     await win.keyboard.type("pwd; echo e2e-$((6*7))");

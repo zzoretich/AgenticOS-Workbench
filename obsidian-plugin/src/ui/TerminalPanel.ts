@@ -12,6 +12,12 @@ import type { LaunchNote } from "../data/terminalLauncher";
 import { listen } from "../data/listen";
 import { TERMINAL_FONT, currentTheme, onThemeChange, xtermTheme } from "./theme";
 import { NewTerminalMenu, type NewTerminalActions } from "./NewTerminalMenu";
+import { Notice, setIcon } from "obsidian";
+import { TermList } from "./TermList";
+import { ConfirmModal } from "./ConfirmModal";
+import { LinkRepoModal } from "./LinkRepoModal";
+import { groupTerminals, stepRow, type TermGroup, type TermRowInput } from "../data/termGroups";
+import { TERM_ACCESS_LABEL, TERM_HOST_LABEL, placeOf, type Place, type PlaceWorld } from "../data/terminalLaunch";
 
 interface XtermBinding {
   term: Terminal;
@@ -30,6 +36,8 @@ export interface TerminalPanelOptions {
   fullPane?: boolean;          // render in full-pane mode (no drag handle, fills container)
   /** What the New button starts through (the Workbench view's launches); no New button without it. */
   launch?: NewTerminalActions;
+  /** The Term tab's deck (spec 2026-10-08-term-agent-deck T1): a grouped list beside the terminal instead of tabs. */
+  deck?: boolean;
 }
 
 /** How long the "Started … · Change" note stays after a launch. */
@@ -46,6 +54,11 @@ export class TerminalPanel {
   private noteEl: HTMLElement | null = null;
   private noteTimer: number | null = null;
   private newMenu: NewTerminalMenu | null = null;
+  private list: TermList | null = null;
+  private headMainEl: HTMLElement | null = null;
+  private placeMenu: HTMLElement | null = null;
+  private groups: TermGroup[] = [];
+  private worldCache: { at: number; w: PlaceWorld } | null = null;
 
   private bindings = new Map<string, XtermBinding>();
   private activeId: string | null = null;
@@ -67,14 +80,32 @@ export class TerminalPanel {
     if (this.opts.fullPane) host.addClass("aos-term-fullpane");
     if (!this.opts.fullPane) host.style.height = `${this.height}px`;
 
-    // header
-    this.headerEl = host.createDiv({ cls: "aos-term-header" });
+    // header (the deck: the list on the left, then the selected terminal's header over its body)
+    let frame: HTMLElement = host;
+    if (this.opts.deck) {
+      host.addClass("aos-term-deck");
+      const aside = host.createDiv({ cls: "aos-tl" });
+      aside.createDiv({ cls: "aos-tl-head" }).createSpan({ cls: "aos-term-title", text: "Terminal" });
+      if (this.opts.launch) {
+        this.newMenu = new NewTerminalMenu(aside.createDiv({ cls: "aos-tl-new" }), this.plugin.termLauncher, this.opts.launch);
+        this.newMenu.el.addClass("is-left");
+      }
+      this.list = new TermList(aside, {
+        select: (id) => this.activate(id),
+        close: (id) => this.closeSession(id),
+        startIn: (g) => this.startIn(g.place, "quick"),
+        clearEnded: () => { for (const s of this.plugin.terminalPool.list()) if (s.isExited) this.plugin.terminalPool.remove(s.id); },
+      }, () => this.renderTabs());
+      frame = host.createDiv({ cls: "aos-term-main" });
+    }
+    this.headerEl = frame.createDiv({ cls: "aos-term-header" });
     const left = this.headerEl.createDiv({ cls: "aos-term-header-left" });
-    left.createSpan({ cls: "aos-term-title", text: "Terminal" });
+    if (this.opts.deck) this.headMainEl = left.createDiv({ cls: "aos-term-head" });
+    else left.createSpan({ cls: "aos-term-title", text: "Terminal" });
     this.tabsEl = this.headerEl.createDiv({ cls: "aos-term-tabs" });
 
     const right = this.headerEl.createDiv({ cls: "aos-term-header-right" });
-    if (this.opts.launch) this.newMenu = new NewTerminalMenu(right, this.plugin.termLauncher, this.opts.launch);
+    if (this.opts.launch && !this.opts.deck) this.newMenu = new NewTerminalMenu(right, this.plugin.termLauncher, this.opts.launch);
 
     if (this.opts.showMaximize && this.opts.onMaximize) {
       const max = right.createEl("button", { cls: "aos-term-btn", text: "⛶" });
@@ -88,7 +119,7 @@ export class TerminalPanel {
     }
 
     // body
-    this.bodyEl = host.createDiv({ cls: "aos-term-body" });
+    this.bodyEl = frame.createDiv({ cls: "aos-term-body" });
 
     // drag handle
     if (this.opts.resizable && !this.opts.fullPane) {
@@ -158,6 +189,9 @@ export class TerminalPanel {
     if (this.noteTimer !== null) { window.clearTimeout(this.noteTimer); this.noteTimer = null; }
     this.newMenu?.destroy();
     this.newMenu = null;
+    this.list = null;
+    this.headMainEl = null;
+    this.placeMenu = null;
     // dispose xterm instances but DON'T touch PTYs in the pool
     for (const b of this.bindings.values()) {
       try { b.detachData(); } catch { /* ignore */ }
@@ -189,6 +223,15 @@ export class TerminalPanel {
     this.newMenu?.open(mode, reason);
   }
 
+  /** The next or previous terminal in the list (⇧⌘] / ⇧⌘[). */
+  step(dir: 1 | -1): void {
+    const next = stepRow(this.groups.length ? this.groups : groupTerminals(this.rowInputs()), this.activeId, dir);
+    if (next) this.activate(next);
+  }
+
+  /** Closes the selected terminal (⇧⌘W), asking first while an agent runs in it. */
+  closeActive(): void { if (this.activeId) this.closeSession(this.activeId); }
+
   /** A plain shell in the default place (the old "+ new"). */
   async createNewSession(): Promise<void> {
     try {
@@ -211,6 +254,12 @@ export class TerminalPanel {
   }
 
   private renderTabs(): void {
+    if (this.opts.deck && this.list) {
+      this.groups = groupTerminals(this.rowInputs(), this.list.query());
+      this.list.render(this.groups, this.activeId, this.plugin.terminalPool.list().filter((s) => !s.isExited).length);
+      this.renderHead();
+      return;
+    }
     this.tabsEl.empty();
     const sessions = this.plugin.terminalPool.list();
     for (const s of sessions) {
@@ -250,6 +299,107 @@ export class TerminalPanel {
     }
     this.noteEl = el;
     this.noteTimer = window.setTimeout(() => { el.detach(); this.noteTimer = null; }, STARTED_MS);
+  }
+
+  /** The workspaces and links, read at most every two seconds: rows without a recorded place need them. */
+  private world(): PlaceWorld {
+    const now = Date.now();
+    if (!this.worldCache || now - this.worldCache.at > 2000) this.worldCache = { at: now, w: this.plugin.termLauncher.world() };
+    return this.worldCache.w;
+  }
+
+  private placeOfSession(s: TerminalSession): Place { return s.meta.place ?? placeOf(s.cwd, this.world()); }
+
+  private rowInputs(): TermRowInput[] {
+    return this.plugin.terminalPool.list().map((s) => ({
+      id: s.id, host: s.meta.host, title: s.getTitle(), place: this.placeOfSession(s), origin: s.meta.origin,
+      startedAt: s.meta.startedAt, exited: s.isExited, exitCode: s.exitCode,
+    }));
+  }
+
+  private closeSession(id: string): void {
+    const s = this.plugin.terminalPool.get(id);
+    if (!s) return;
+    if (s.meta.host === "shell" || s.isExited) { this.plugin.terminalPool.remove(id); return; }
+    new ConfirmModal(this.plugin.app, "Close this terminal?", `${s.getTitle()} is still running in it; closing ends it.`, "Close", (ok) => {
+      if (ok) this.plugin.terminalPool.remove(id);
+    }).open();
+  }
+
+  private startIn(place: Place, host: "quick" | "shell" | "claude" | "codex", resume: "last" | { id: string } | null = null): void {
+    this.opts.launch?.start({ host, picked: place, resume }).catch((e) => new Notice(`Terminal: ${e instanceof Error ? e.message : String(e)}`));
+  }
+
+  /** The deck's header for the selected terminal: its place (with a menu), title, host, model and access, and when it
+   *  has ended, how it ended and how to go on. */
+  private renderHead(): void {
+    const el = this.headMainEl;
+    if (!el) return;
+    el.empty();
+    this.placeMenu = null;
+    const s = this.activeId ? this.plugin.terminalPool.get(this.activeId) : undefined;
+    if (!s) return;
+    const place = this.placeOfSession(s);
+    const wrap = el.createDiv({ cls: "aos-term-placewrap" });
+    const chip = wrap.createEl("button", { cls: "aos-term-place", attr: { type: "button", "aria-haspopup": "menu", title: place.dir } });
+    const placeIcon = chip.createSpan({ cls: "aos-term-placeicon" });
+    setIcon(placeIcon, "folder");
+    chip.createSpan({ text: place.linked ? `${place.label} (code)` : place.label });
+    const caret = chip.createSpan({ cls: "aos-term-placecaret" });
+    setIcon(caret, "chevron-down");
+    chip.addEventListener("click", () => this.togglePlaceMenu(wrap, s, place));
+    el.createSpan({ cls: "aos-term-sep", text: "/" });
+    el.createSpan({ cls: "aos-term-headtitle", text: s.getTitle() });
+    const chips = el.createDiv({ cls: "aos-term-chips" });
+    const hostChip = chips.createSpan({ cls: "aos-term-chip" });
+    hostChip.createSpan({ cls: `aos-term-dot is-${s.meta.host}` });
+    hostChip.createSpan({ text: s.meta.host === "shell" ? "Shell" : TERM_HOST_LABEL[s.meta.host] });
+    if (s.meta.host !== "shell") {
+      chips.createSpan({ cls: "aos-term-chip", text: s.meta.model ?? "default model" });
+      if (s.meta.access) chips.createSpan({ cls: "aos-term-chip", text: TERM_ACCESS_LABEL[s.meta.access] });
+    }
+    if (s.isExited) {
+      const end = el.createDiv({ cls: "aos-term-endbar", attr: { role: "status" } });
+      end.createSpan({ text: s.exitCode ? `Ended · Exited ${s.exitCode}` : "Ended" });
+      const btn = (label: string, fn: () => void) => { const b = end.createEl("button", { cls: "aos-term-endbtn", text: label, attr: { type: "button" } }); b.addEventListener("click", fn); };
+      if (s.meta.host !== "shell") {
+        btn("Restart", () => this.startIn(place, s.meta.host));
+        btn(s.meta.host === "claude" && s.meta.claudeSessionId ? "Resume" : "Resume latest", () => this.startIn(place, s.meta.host, s.meta.host === "claude" && s.meta.claudeSessionId ? { id: s.meta.claudeSessionId } : "last"));
+      }
+      btn("Open a shell here", () => this.startIn(place, "shell"));
+    }
+  }
+
+  private togglePlaceMenu(wrap: HTMLElement, s: TerminalSession, place: Place): void {
+    if (this.placeMenu) { this.placeMenu.detach(); this.placeMenu = null; return; }
+    const menu = wrap.createDiv({ cls: "aos-term-placemenu", attr: { role: "menu" } });
+    this.placeMenu = menu;
+    const item = (label: string, fn: () => void) => {
+      const b = menu.createEl("button", { cls: "aos-term-placeitem", text: label, attr: { type: "button", role: "menuitem" } });
+      b.addEventListener("click", () => { menu.detach(); this.placeMenu = null; fn(); });
+    };
+    const quick = this.plugin.termLauncher.quickHost().host;
+    if (quick && quick !== "shell") item(`Start ${TERM_HOST_LABEL[quick]} here`, () => this.startIn(place, quick));
+    item("Open a shell here", () => this.startIn(place, "shell"));
+    if (place.kind === "scratch") {
+      const named = s.getTitle() !== TERM_HOST_LABEL[s.meta.host] ? s.getTitle() : "";
+      item("Make this a workspace…", () => this.newMenu?.open("create", null, named));
+    }
+    if (place.kind === "workspace" && place.workspace) {
+      const name = place.workspace;
+      item(place.linked ? "Change the code folder…" : "Link a code folder…", () => {
+        new LinkRepoModal(this.plugin.app, name, this.plugin.termLauncher.world().links[name] ?? null, (typed) => {
+          const abs = this.plugin.termLauncher.linkRepo(name, typed);
+          this.worldCache = null;
+          new Notice(abs ? `${name} is linked to ${abs}` : `${name} is no longer linked`);
+          this.renderTabs();
+          return abs;
+        }).open();
+      });
+    }
+    item("Copy path", () => { void navigator.clipboard?.writeText(place.dir).then(() => new Notice(`Copied ${place.dir}`)); });
+    (menu.querySelector("button") as HTMLElement | null)?.focus();
+    menu.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); menu.detach(); this.placeMenu = null; } });
   }
 
   private ensureBindingForActive(): void {

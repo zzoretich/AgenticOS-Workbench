@@ -17,13 +17,16 @@ export class TermTab {
     // the pool's session-add/remove/exit listeners.
     if (this.panel) { this.panel.unmount(); this.panel = null; }
     // Full pane, no drag handle; the New button launches through the view (spec 2026-10-08-term-agent-deck T3).
-    this.panel = new TerminalPanel(this.plugin, { resizable: false, fullPane: true, launch: this.view.termActions() });
+    this.panel = new TerminalPanel(this.plugin, { resizable: false, fullPane: true, launch: this.view.termActions(), deck: true });
     this.panel.mount(host);
   }
   async refresh(): Promise<void> { this.panel?.focus(); }
   unmount(): void { this.panel?.unmount(); this.panel = null; this.host = null; }
   newSession(): void { void this.panel?.createNewSession(); }
   showSession(id: string): void { this.panel?.activate(id); }
+  /** The next or previous terminal (⇧⌘] / ⇧⌘[), and closing the selected one (⇧⌘W). */
+  step(dir: 1 | -1): void { this.panel?.step(dir); }
+  closeActive(): void { this.panel?.closeActive(); }
   /** The New menu (⇧⌘T) or its New workspace sheet (⇧⌘N); `reason` says why ⌘T could not start at once. */
   openNewMenu(mode: "menu" | "create", reason: string | null = null): void { this.panel?.openNewMenu(mode, reason); }
 }
