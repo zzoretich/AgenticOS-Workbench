@@ -144,3 +144,43 @@ test("with the Files surface off, a new note is refused and a trash refused: not
   await row(win, "workspaces").click();
   expect(fs.existsSync(path.join(FX.home, ".Trash"))).toBe(false);
 });
+
+test("the new-note form defers nothing: a field filled at once keeps its text, however late the page's timers run", async () => {
+  const { win } = app();
+  // fill() is a focus and a select-all, then the typing. Hold this page's zero-delay timers, as a loaded runner can,
+  // and run them in between: a focus the form deferred to one would move the folder's typing into the name field.
+  await win.evaluate(() => {
+    const w = window as unknown as Record<string, unknown>;
+    const real = window.setTimeout.bind(window);
+    const held: (() => void)[] = [];
+    w.__held = held;
+    w.__setTimeout = window.setTimeout;
+    w.setTimeout = (fn: (...a: unknown[]) => void, ms?: number, ...args: unknown[]) => {
+      if (ms) return real(fn, ms, ...args);
+      held.push(() => fn(...args));
+      return 0;
+    };
+  });
+  const d = drawer(win);
+  try {
+    await content(win).locator(".aos-rt-actions button", { hasText: "+ note" }).click();
+    await expect(d.locator(".aos-wb-drawertitle")).toHaveText("New note");
+    const [folder, name] = [d.locator(".aos-rt-input").nth(0), d.locator(".aos-rt-input").nth(1)];
+    await name.fill("first idea");
+    await folder.focus();
+    await folder.selectText();
+    await win.evaluate(() => { for (const f of ((window as unknown as Record<string, unknown>).__held as (() => void)[]).splice(0)) f(); });
+    await win.keyboard.insertText("inbox");
+    await expect(d.locator(".aos-rt-errors")).toHaveText("→ inbox/first idea.md");
+  } finally {
+    await win.evaluate(() => {
+      const w = window as unknown as Record<string, unknown>;
+      w.setTimeout = w.__setTimeout;
+      for (const f of (w.__held as (() => void)[]).splice(0)) f();
+      delete w.__setTimeout;
+      delete w.__held;
+    });
+  }
+  await d.locator(".aos-wb-draweractions a", { hasText: "✕" }).click();
+  expect(fs.existsSync(FX.v("inbox/first idea.md"))).toBe(false);
+});
