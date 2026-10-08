@@ -65,10 +65,10 @@ export class NewTerminalMenu {
 
   isOpen(): boolean { return !!this.pop; }
 
-  /** Redraws the button (after a launch, a login, a setting change). */
+  /** Redraws the button (after a launch, a login, a setting change). An open menu is left alone: redrawing it would
+   *  take the focus from what the user is typing, and focus leaving the menu closes it. */
   refresh(): void {
     this.renderButton();
-    if (this.pop) this.renderPop();
   }
 
   /** Opens the menu, or the New workspace sheet; `reason` explains why ⌘T could not start straight away. */

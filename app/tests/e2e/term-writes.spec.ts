@@ -87,8 +87,13 @@ test("New workspace (⇧⌘N): reserved names are refused, an existing one is of
 test("⌥⌘3's command opens a shell next to the selected workspace terminal; Spaces' Claude Code here starts in its workspace (T4)", async () => {
   const { win } = app();
   await openTab(win, "term");
+  // Select the tide-chart agent from the earlier test: a workspace is context, so the shell starts there.
+  await win.evaluate((dir) => {
+    const p = (window as unknown as { aosHost: { plugin: { terminalPool: { list(): Array<{ id: string; cwd: string }>; select(id: string): void } } } }).aosHost.plugin.terminalPool;
+    const s = p.list().find((x) => x.cwd === dir);
+    if (s) p.select(s.id);
+  }, FX.v("workspaces/tide-chart"));
   const before = (await pool()).count;
-  // The selected terminal is the tide-chart agent from the last test: a workspace is context, so the shell starts there.
   expect(await command(win, "agentic-os:new-terminal-shell")).toBe(true);
   await expect.poll(async () => (await pool()).count).toBe(before + 1);
   const { selected } = await pool();
