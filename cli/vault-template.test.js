@@ -111,10 +111,19 @@ test('.graphifyignore keeps code, caches, the graph itself and templates out of 
   assert.deepEqual(rules, ['workspaces/', 'brain/scripts/', 'brain/_index/', 'brain/graphify-out/', 'brain/graphify-out.pre-aos/', 'brain/archive/', 'templates/', '.obsidian/']);
 });
 
-test('brain/routines seeds the three duty routines (valid, guarded, enabled) and a README', () => {
+test('brain/routines seeds the three duty routines (valid, guarded, enabled), the briefing command and a README', () => {
   const store = require('../brain/scripts/lib/routines-store.js');
-  const all = store.list({ dir: path.join(T, 'brain', 'routines') });
-  assert.deepEqual(all.map((r) => r.slug), ['monitor', 'reflect', 'sitrep']);
+  const listed = store.list({ dir: path.join(T, 'brain', 'routines') });
+  assert.deepEqual(listed.map((r) => r.slug), ['briefing', 'monitor', 'reflect', 'sitrep']);
+  // Pulse's briefing writer (spec 2026-10-08-pulse-cockpit-design P6): a model-gated command, every 30 minutes in the day.
+  const briefing = listed[0];
+  assert.deepEqual(briefing.errors, []);
+  assert.equal(briefing.kind, 'command');
+  assert.equal(briefing.guarded, false);
+  assert.equal(briefing.enabled, true);
+  assert.equal(briefing.schedule, '*/30 7-22 * * *');
+  assert.deepEqual(briefing.argv, ['{{NODE}}', '{{VAULT}}/brain/scripts/persona/briefing.js']);
+  const all = listed.slice(1);
   for (const r of all) {
     assert.deepEqual(r.errors, [], r.slug);
     assert.equal(r.kind, 'duty', r.slug);

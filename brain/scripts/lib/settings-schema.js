@@ -143,6 +143,10 @@ const SETTINGS = [
     help: 'Corrections in a day that trigger an early reflection.' },
   { key: 'persona.tick.earlyReflect.dutyFailures', section: 'persona', label: 'Early reflect: duty failures', type: 'number', int: true, min: 1, applies: 'next-duty',
     help: 'Duty failures in a day that trigger an early reflection.' },
+  { key: 'persona.briefing.enabled', section: 'persona', label: 'Pulse briefing', type: 'bool', risk: 'spend', applies: 'next-duty',
+    help: 'The Chief of Staff writes the paragraph at the top of Pulse (the briefing routine, every 30 minutes from 7:00 to 22:00, only when the facts changed), as a duty:briefing call against the daily duty cap. Off: Pulse composes it from the same facts.' },
+  { key: 'persona.briefing.staleHours', section: 'persona', label: 'Pulse briefing shown for', type: 'number', int: true, min: 1, applies: 'next-session',
+    help: 'Hours a written briefing stays on Pulse; after that, or when the last run failed, Pulse composes the paragraph from the facts.' },
   { key: 'persona.autoapply.minVerified', section: 'persona', label: 'Autoapply threshold', type: 'number', int: true, min: 1, risk: 'autonomy', applies: 'next-duty',
     help: 'Verified outcomes a proposal class needs before the Chief of Staff may apply it without asking. Lower means more autonomy.' },
 
@@ -286,6 +290,7 @@ const PICKS = {
   'scan.fileMapBudgetUnderClaude': { choices: [0, 10, 20, 40, 80], unit: 'files' }, 'scan.fileMapBudgetUnderCodex': { choices: [0, 10, 20, 40, 80], unit: 'files' },
   'summary.everyPrompts': { choices: [3, 5, 10, 15, 20, 30] }, 'summary.minMinutes': { choices: [0, 5, 10, 15, 30, 60], unit: 'min' },
   'persona.watchdog.graceMinutes': { choices: [15, 30, 45, 60, 90, 120], unit: 'min' }, 'persona.tick.flagAgeDays': { choices: [3, 5, 7, 14, 30], unit: 'days' },
+  'persona.briefing.staleHours': { choices: [1, 2, 3, 6, 12], unit: 'h' },
   'persona.tick.earlyReflect.corrections': { choices: [1, 2, 3, 5, 10] }, 'persona.tick.earlyReflect.dutyFailures': { choices: [1, 2, 3, 5, 10] },
   'persona.autoapply.minVerified': { choices: [1, 2, 3, 5, 10] },
   'routines.tools': { pick: 'many', choices: ['Read', 'Glob', 'Grep', 'WebFetch', 'WebSearch', 'Write', 'Edit', 'Bash'] },

@@ -4,6 +4,9 @@ All notable changes to UniDeX (AgenticOS Workbench before 1.1). Versions follow 
 
 ## [Unreleased]
 
+### Added
+- **The Chief of Staff writes a short briefing for Pulse.** A new `briefing` routine (every 30 minutes from 7:00 to 22:00) reads what Pulse knows: errors, decisions waiting on you, stale or failing work, unread notifications, to-dos, memories to review, routines and spend. When something changed, it asks the background model for two or three sentences in your Chief of Staff's name and saves them to `brain/_index/briefing.json`. It writes nothing when nothing changed. The call is a `duty:briefing` row paid from the daily duty cap (`persona.perDayUsd`), with `claude.model` (Haiku by default) or `codex.model`. Ollama is used first and free when it answers. Nothing runs while the Chief of Staff is off; `persona.briefing.enabled: false` turns just the briefing off. New vaults get the routine; the Workbench will offer it to existing vaults.
+
 ## [1.4.1] — 2026-10-08
 
 ### Changed
