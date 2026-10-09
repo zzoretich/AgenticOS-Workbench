@@ -4,6 +4,8 @@ All notable changes to UniDeX (AgenticOS Workbench before 1.1). Versions follow 
 
 ## [Unreleased]
 
+## [1.6.0] — 2026-10-09
+
 ### Changed
 - **The rail reads in three sections, with a light line between them.** Notifications, Pulse, Code and Sessions come first; then To-Do, Spaces, Files, Routines and Proposals; then Memory, Agent Teams, Agents, Skills and Runs. Light and dark, App settings and ⚙ Settings stay at the foot. Pulse is still Home.
   - Pulse's icon is neon blue in the dark theme and navy in the light one, and stays readable on its selected chip.
@@ -468,7 +470,8 @@ The first public release: an `aos` CLI, the AgenticOS runtime, a Claude Code plu
 - Update notifications: a GitHub release check surfaced as a session-start notice.
 - Docs: README, install guide, and a release acceptance runbook.
 
-[Unreleased]: https://github.com/zzoretich/UniDeX-Agent-Harness/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/zzoretich/UniDeX-Agent-Harness/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v1.6.0
 [1.5.0]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v1.5.0
 [1.4.1]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v1.4.1
 [1.4.0]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v1.4.0
