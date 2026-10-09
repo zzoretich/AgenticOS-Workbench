@@ -227,7 +227,7 @@ change only through `persona/proposals/YYYY-MM-DD-<slug>.md` with a `recheck` re
 premise table; approval applies the change exactly as written and re-runs the recipe expecting
 the finding to be gone. See `persona/proposals/README.md` in your vault. The Workbench's Proposals tab
 shows the pending files, the backlog and the ledger history read-only; its **Review in Claude** button starts
-this review in the Term tab (on a Codex-only setup, where Claude Code is not enabled, it reads **Review in Codex** and runs `codex '$agenticos:persona-flag-closer'`).
+this review in the Code tab (on a Codex-only setup, where Claude Code is not enabled, it reads **Review in Codex** and runs `codex '$agenticos:persona-flag-closer'`).
 
 Every proposal shares one format — frontmatter, a `# ` title, the link line
 `**[Open the proposal in browser](file:///…)**`, then What / Why / Risk / Premises — and exists as an HTML page.
