@@ -4,6 +4,8 @@ All notable changes to UniDeX (AgenticOS Workbench before 1.1). Versions follow 
 
 ## [Unreleased]
 
+## [1.5.0] — 2026-10-08
+
 ### Changed
 - **Pulse is Home, and it is now a no-scroll cockpit.** Your Chief of Staff's briefing sits on top. Each underlined phrase opens what it names. "Since you last looked" says what arrived while you were away, and the Commands row sits underneath. Below are ten tiles: what needs you, system health, agents, workspaces, to-dos, decisions, notifications, routines, spend and memory.
   - A tile shows its count and as many rows as fit, and the rest read "+N more". Nothing scrolls, even at the smallest window.
@@ -457,7 +459,8 @@ The first public release: an `aos` CLI, the AgenticOS runtime, a Claude Code plu
 - Update notifications: a GitHub release check surfaced as a session-start notice.
 - Docs: README, install guide, and a release acceptance runbook.
 
-[Unreleased]: https://github.com/zzoretich/UniDeX-Agent-Harness/compare/v1.4.1...HEAD
+[Unreleased]: https://github.com/zzoretich/UniDeX-Agent-Harness/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v1.5.0
 [1.4.1]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v1.4.1
 [1.4.0]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v1.4.0
 [1.3.1]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v1.3.1
