@@ -49,7 +49,7 @@ export function clip(s: string, max: number): string {
 
 /** The words for an item (briefing.js sayOf). */
 export function sayOf(n: Pick<NeedItem, "kind" | "title">): string {
-  if (n.kind === "proposal") return /\bproposal$/i.test(n.title) ? `the ${clip(n.title, 60)}` : `the ${clip(n.title, 60)} proposal`;
+  if (n.kind === "proposal") return /\bproposal$/i.test(n.title) ? `the “${clip(n.title, 60)}”` : `the “${clip(n.title, 60)}” proposal`;
   return clip(n.title, n.kind === "flag" ? 70 : 80);
 }
 
@@ -117,12 +117,15 @@ export function chooseParagraph(file: BriefingFile | null, facts: PulseFacts, no
   return { ...t, source: "template", at: null, reason };
 }
 
+/** Text folded for finding a phrase (briefing.js fold): any case, any double quote as `"`, one character for one. */
+const fold = (s: string): string => s.toLowerCase().replace(/[“”„‟″"]/g, '"');
+
 /** The text cut into plain runs and mention runs, in order: each mention at its first place not already taken. */
 export function mentionParts(text: string, mentions: Mention[]): { text: string; area: Area | null }[] {
-  const lower = text.toLowerCase();
+  const lower = fold(text);
   const spans: { at: number; len: number; area: Area }[] = [];
   for (const m of mentions) {
-    const p = m.phrase.toLowerCase();
+    const p = fold(m.phrase);
     let at = lower.indexOf(p);
     while (at >= 0 && spans.some((s) => at < s.at + s.len && s.at < at + p.length)) at = lower.indexOf(p, at + 1);
     if (at >= 0 && p) spans.push({ at, len: p.length, area: m.area });

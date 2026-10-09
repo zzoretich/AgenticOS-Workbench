@@ -22,10 +22,10 @@ test("the words for items and what is fine match the writer's (brain/scripts/per
 
 test("the composed paragraph: the first item and its wait, two more, the rest as a count; each mention is a span of it", () => {
   const t = templateParagraph(facts, NOW);
-  assert.equal(t.text, "Good evening. 2 hook references in settings.json point to non-existent files. Also the Tidy the memory index proposal, Duty writes denied in unattended runs, and 12 more. $0.41 spent today.");
+  assert.equal(t.text, "Good evening. 2 hook references in settings.json point to non-existent files. Also the “Tidy the memory index” proposal, Duty writes denied in unattended runs, and 12 more. $0.41 spent today.");
   assert.deepEqual(t.mentions, [
     { phrase: "2 hook references in settings.json point to non-existent files", area: "health" },
-    { phrase: "the Tidy the memory index proposal", area: "proposals" },
+    { phrase: "the “Tidy the memory index” proposal", area: "proposals" },
     { phrase: "Duty writes denied in unattended runs", area: "proposals" },
     { phrase: "12 more", area: "needs" },
     { phrase: "$0.41 spent today", area: "spend" },
@@ -63,6 +63,11 @@ test("mention parts: plain and mention runs in order, any case, each at its firs
     { text: ".", area: null },
   ]);
   assert.deepEqual(mentionParts("plain", [{ phrase: "absent", area: "todo" }]), [{ text: "plain", area: null }]);
+  // Any quote style finds a quoted title, and the run keeps the text's own quotes.
+  assert.deepEqual(mentionParts('The "Weekly digest" proposal waits.', [{ phrase: "the “Weekly digest” proposal", area: "proposals" }]), [
+    { text: 'The "Weekly digest" proposal', area: "proposals" },
+    { text: " waits.", area: null },
+  ]);
 });
 
 test("since you last looked: notifications, memories, decisions and failed routines after the last visit", () => {
