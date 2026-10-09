@@ -161,4 +161,4 @@ function main(argv) {
 }
 
 if (require.main === module) process.exit(main(process.argv.slice(2)));
-module.exports = { parseClaudeJson, parseCodexEvents, rowFrom, rowFromCodex, check, dutySpendFrom };
+module.exports = { parseClaudeJson, parseCodexEvents, rowFrom, rowFromCodex, check, dutySpendFrom, dutySpendToday, caps };
