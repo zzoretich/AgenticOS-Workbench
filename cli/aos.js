@@ -1054,9 +1054,14 @@ async function init(flags) {
 }
 
 // ── upgrade / uninstall / terminal / persona / cost ───────────────────────────
+/** Routines a release added to the vault template after brain/routines/ existed, with that release. */
+const NEW_ROUTINES = [{ slug: 'briefing', since: '1.5.0' }];
+
 /** Upgrade: the three duties become routine files the first time brain/routines/ is absent (spec D10), and any
  *  installed schedule — legacy per-duty plists included — is re-rendered from the routine files so the old
- *  plists cannot fire a duty twice. A vault that already has brain/routines/ is the owner's; only the sync runs. */
+ *  plists cannot fire a duty twice. A vault that already has brain/routines/ is the owner's; only the sync runs,
+ *  except that an upgrade from before a NEW_ROUTINES release adds that routine when the vault lacks it (pulse-cockpit
+ *  A5). Once the vault is on that release, a routine its owner deleted stays deleted. */
 function migrateRoutines(ctx) {
   const { repo, vault } = ctx;
   const S = require('./schedule.js');
@@ -1065,6 +1070,16 @@ function migrateRoutines(ctx) {
   if (!isDir(dir) && isDir(seed)) {
     copyTree(seed, dir, { written: ctx.written });
     out.log(`   seeded brain/routines/ (${fs.readdirSync(seed).filter((f) => f.endsWith('.md') && f !== 'README.md').map((f) => f.slice(0, -3)).join(', ')})`);
+  }
+  const { cmpSemver } = require('./update-check.js');
+  for (const { slug, since } of NEW_ROUTINES) {
+    const src = path.join(seed, `${slug}.md`);
+    const dest = path.join(dir, `${slug}.md`);
+    // An unreadable or missing recorded version counts as older.
+    if (exists(dest) || !exists(src) || !isDir(dir) || (ctx.from && cmpSemver(ctx.from, since) !== null && cmpSemver(ctx.from, since) >= 0)) continue;
+    fs.copyFileSync(src, dest);
+    ctx.written.push(dest);
+    out.log(`   added the ${slug} routine (new in ${since}): brain/routines/${slug}.md`);
   }
   const platform = process.platform;
   if (!S.isInstalled({ platform, vault })) { out.log('   no schedules installed; nothing to re-render (aos routines sync installs them)'); return; }
@@ -1178,7 +1193,8 @@ async function upgrade(flags) {
   const version = productVersion(repo);
   const written = [];
   const act = async (what, fn) => { out.log(`- ${what}`); await fn(); };
-  const ctx = { flags, repo, vault, written, act, dry: false, yes: true, version };
+  // `from`: the version this vault was last installed or upgraded at, before this upgrade records the new one.
+  const ctx = { flags, repo, vault, written, act, dry: false, yes: true, version, from: cfg.version };
   out.log(`upgrading ${vault} from ${repo} (v${version})`);
   await act('re-vendor brain/scripts (force) and reinstall its dependencies', () => vendorRuntime(ctx, { force: true }));
   await act('seed brain/routines/ and re-render the installed schedules', () => migrateRoutines(ctx));

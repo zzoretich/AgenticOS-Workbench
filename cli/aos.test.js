@@ -757,6 +757,43 @@ test('upgrade seeds brain/routines/ once and re-renders installed legacy duty pl
   }
 });
 
+test('upgrade from before 1.5.0 adds the briefing routine to an owned brain/routines/ and schedules it; a later deletion sticks', () => {
+  const sb = initialized();
+  const dir = path.join(sb.vault, 'brain', 'routines');
+  const cfgFile = path.join(sb.cfg, 'agenticos.json');
+  const recorded = (version) => fs.writeFileSync(cfgFile, JSON.stringify({ ...readJson(cfgFile), version }, null, 2));
+  // A vault last upgraded at 1.4.1: brain/routines/ is the owner's, and it has no briefing routine (1.5.0 added it).
+  fs.unlinkSync(path.join(dir, 'briefing.md'));
+  recorded('1.4.1');
+  const agents = path.join(sb.home, 'Library', 'LaunchAgents');
+  fs.mkdirSync(agents, { recursive: true });
+  fs.writeFileSync(path.join(agents, 'com.agenticos.monitor.plist'), '<plist/>\n');   // its schedules are installed
+  const fakeLaunchctl = path.join(sb.dir, 'fake-launchctl');
+  fs.writeFileSync(fakeLaunchctl, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  const fakeCrontab = path.join(sb.dir, 'fake-crontab');
+  fs.writeFileSync(fakeCrontab, '#!/bin/sh\n[ "$1" = "-l" ] && { echo "no crontab for test" >&2; exit 1; }\ncat > /dev/null\n', { mode: 0o755 });
+  const env = { AOS_LAUNCHCTL_BIN: fakeLaunchctl, AOS_CRONTAB_BIN: fakeCrontab };
+
+  const r = aos(sb, ['upgrade', '--no-obsidian', '--from-local', ROOT], env);
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  assert.match(r.stdout, /added the briefing routine \(new in 1\.5\.0\): brain\/routines\/briefing\.md/);
+  assert.equal(fs.readFileSync(path.join(dir, 'briefing.md'), 'utf8'), fs.readFileSync(path.join(ROOT, 'vault-template', 'brain', 'routines', 'briefing.md'), 'utf8'));
+  if (process.platform === 'darwin') {
+    assert.match(r.stdout, /schedules re-rendered: com\.agenticos\.briefing, /);
+    assert.match(fs.readFileSync(path.join(agents, 'com.agenticos.briefing.plist'), 'utf8'), /run-routine\.js/);
+  } else {
+    assert.match(r.stdout, /no schedules installed/);
+  }
+
+  // A vault already on 1.5.0 whose owner deleted the routine keeps it deleted.
+  fs.unlinkSync(path.join(dir, 'briefing.md'));
+  recorded('1.5.0');
+  const again = aos(sb, ['upgrade', '--no-obsidian', '--from-local', ROOT], env);
+  assert.equal(again.status, 0, again.stderr + again.stdout);
+  assert.doesNotMatch(again.stdout, /added the briefing routine/);
+  assert.ok(!fs.existsSync(path.join(dir, 'briefing.md')), 'the owner\'s deletion sticks');
+});
+
 // A marketplace added from a local checkout (`aos init --from-local`) has no clone under plugins/marketplaces/: plain
 // `aos upgrade` vendors from the directory the claude CLI reports and refreshes the plugin from it.
 test('plain aos upgrade through the vendored CLI follows a directory marketplace, and refreshes the plugin from it', () => {

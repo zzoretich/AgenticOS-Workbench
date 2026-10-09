@@ -12,10 +12,11 @@ All notable changes to UniDeX (AgenticOS Workbench before 1.1). Versions follow 
   - The rail starts with Pulse, and its badge counts what needs you (rose when one is an error). Sessions is one click below.
 
 ### Added
-- **The Chief of Staff writes a short briefing for Pulse.** A new `briefing` routine (every 30 minutes from 7:00 to 22:00) reads what Pulse knows: errors, decisions waiting on you, stale or failing work, unread notifications, to-dos, memories to review, routines and spend. When something changed, it asks the background model for two or three sentences in your Chief of Staff's name and saves them to `brain/_index/briefing.json`. It writes nothing when nothing changed. The call is a `duty:briefing` row paid from the daily duty cap (`persona.perDayUsd`), with `claude.model` (Haiku by default) or `codex.model`. Ollama is used first and free when it answers. Nothing runs while the Chief of Staff is off; `persona.briefing.enabled: false` turns just the briefing off. New vaults get the routine.
+- **The Chief of Staff writes a short briefing for Pulse.** A new `briefing` routine (every 30 minutes from 7:00 to 22:00) reads what Pulse knows: errors, decisions waiting on you, stale or failing work, unread notifications, to-dos, memories to review, routines and spend. When something changed, it asks the background model for two or three sentences in your Chief of Staff's name and saves them to `brain/_index/briefing.json`. It writes nothing when nothing changed. The call is a `duty:briefing` row paid from the daily duty cap (`persona.perDayUsd`), with `claude.model` (Haiku by default) or `codex.model`. Ollama is used first and free when it answers. Nothing runs while the Chief of Staff is off; `persona.briefing.enabled: false` turns just the briefing off. New vaults get the routine, and the upgrade turns it on for existing ones.
 
 ### Upgrading
-- On a vault from before 1.5.0, Pulse offers **Turn on <name>'s briefing**, which adds `brain/routines/briefing.md` and schedules it. Until then, and whenever the Chief of Staff is off, Pulse composes the paragraph itself.
+- `aos upgrade` (and the runtime upgrade the app offers after it updates) adds the briefing routine, `brain/routines/briefing.md`, to a vault from before 1.5.0 and schedules it with your other routines. It spends only while the Chief of Staff is on. To keep it off, run `aos routines disable briefing`, or delete the file: a later upgrade does not add it back. If your routines were never scheduled, `aos routines sync` schedules them all.
+- Whenever the routine is missing or the Chief of Staff is off, Pulse composes the paragraph itself, and **Turn on <name>'s briefing** in Pulse adds the routine back.
 
 ## [1.4.1] — 2026-10-08
 
