@@ -16,6 +16,8 @@ import { SettingsTab } from "./SettingsTab";
 import { NotificationsTab } from "./NotificationsTab";
 import { AgentTeamsTab } from "./AgentTeamsTab";
 import { PROPOSALS_DIR } from "../data/proposals";
+import { gatherPulseInputs, pulseFacts } from "../data/pulseFacts";
+import { touchesPulse } from "./pulse/meta";
 import { NOTIFICATIONS_DIR, STATE_PATH, notificationId, parseNotification, parseState, unreadBadge, Level } from "../data/notifications";
 import { badgeText, proposalBadge, todoBadge, touchesBadges } from "../data/badges";
 import { TODO_PATH, localDay } from "../data/todos";
@@ -31,11 +33,11 @@ export const VIEW_TYPE_WORKBENCH = "agentic-os-workbench";
 /** A rail button: its tab id, its lucide icon, and the name its tooltip and screen readers give. */
 interface RailTab { id: string; icon: string; label: string }
 
-/** The rail (UniDeX D3): Sessions first, as the Home tab when a provider is set up (D5), then every other tab. Sessions
- *  keeps the id "chat" it had as the Chat tab, so links and commands that name it still open it. */
+/** The rail (UniDeX D3): Pulse first, as Home (spec 2026-10-08-pulse-cockpit-design P5), then Sessions and every other
+ *  tab. Sessions keeps the id "chat" it had as the Chat tab, so links and commands that name it still open it. */
 const RAIL: RailTab[] = [
-  { id: "chat", icon: "message-square", label: "Sessions" },
   { id: "pulse", icon: "activity", label: "Pulse" },
+  { id: "chat", icon: "message-square", label: "Sessions" },
   { id: "files", icon: "file-text", label: "Files" },
   { id: "todo", icon: "square-check", label: "To-Do" },
   { id: "proposals", icon: "inbox", label: "Proposals" },
@@ -135,7 +137,8 @@ export class WorkbenchView extends ItemView {
     // rail badges (spec 2026-09-22-todo-and-proposals-tabs D7): recomputed on any vault event under a watched
     // path, whichever tab is active — tabs are built lazily, so they cannot own this.
     const onPath = (f: TAbstractFile, oldPath?: string) => {
-      if (touchesBadges(f.path) || (oldPath !== undefined && touchesBadges(oldPath))) this.scheduleBadges();
+      const hit = (p: string) => touchesBadges(p) || touchesPulse(p);
+      if (hit(f.path) || (oldPath !== undefined && hit(oldPath))) this.scheduleBadges();
     };
     this.registerEvent(this.app.vault.on("create", (f) => onPath(f)));
     this.registerEvent(this.app.vault.on("modify", (f) => onPath(f)));
@@ -146,8 +149,8 @@ export class WorkbenchView extends ItemView {
     void this.refreshBadges();
   }
 
-  /** Home (UniDeX D5): Sessions when a provider is set up, else Pulse. */
-  homeTab(): string { return this.plugin.chatAvailable() ? "chat" : "pulse"; }
+  /** Home is Pulse (spec 2026-10-08-pulse-cockpit-design P5; it was Sessions under UniDeX D5). */
+  homeTab(): string { return "pulse"; }
 
   /** The mark at the rail's head: it opens Home. */
   private railMark(parent: HTMLElement): void {
@@ -208,6 +211,15 @@ export class WorkbenchView extends ItemView {
     const n = await this.notificationBadge();
     this.setBadge("notifications", n.count, n.breaking);
     await this.refreshTeamsBadge();
+    await this.refreshPulseBadge();
+  }
+
+  /** Pulse's badge (P5): how many items need the user; rose while one of them is an error. */
+  private async refreshPulseBadge(): Promise<void> {
+    try {
+      const f = pulseFacts(await gatherPulseInputs(this.app, this.plugin.vaultRoot(), new Date()));
+      this.setBadge("pulse", f.needsYou.length, f.needsYou.some((x) => x.tone === "danger"));
+    } catch { /* unreadable: no badge */ }
   }
 
   /** Gates waiting on the user across every team (spec 2026-09-28-agent-teams-design D12), read from boards only, in the

@@ -6,7 +6,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { FX, closeNotes, content, guardWrites, notePath, openTab, readVaultJson, useApp } from "./harness";
+import { closeNotes, closePulse, content, FX, guardWrites, notePath, openTab, pulseArea, readVaultJson, useApp } from "./harness";
 
 const app = useApp({ env: { AOS_APP_WRITE: "pulse" } });
 
@@ -16,9 +16,9 @@ const read = (rel: string): string | null => (fs.existsSync(FX.v(rel)) ? fs.read
 const pristine = (rel: string) => fs.readFileSync(path.join(FX.pristine, "vault", rel), "utf8");
 const INDEX_LINE = "- [Release checklist](brain/memory/reference/release-checklist.md) — tag, build, smoke-test, publish\n";
 
-const trailRows = (win: Page) => content(win).locator(".aos-trail .aos-trail-row");
+const trailRows = (win: Page) => win.locator(".aos-trail .aos-trail-row");
 const pendingRow = (win: Page) => trailRows(win).filter({ has: win.locator(".aos-trail-actions") });
-const fixCard = (win: Page, title: string | RegExp) => content(win).locator(".aos-pulse-fixq .aos-pulse-fix", { has: win.locator(".aos-pulse-fix-title", { hasText: title }) });
+const fixCard = (win: Page, title: string | RegExp) => win.locator(".aos-pulse-fixq .aos-pulse-fix", { has: win.locator(".aos-pulse-fix-title", { hasText: title }) });
 const deck = (win: Page, name: string) => content(win).locator(".aos-deck-btn", { hasText: new RegExp(`^${name.replace("/", "\\/")}\\b`) });
 
 /**
@@ -41,11 +41,12 @@ function expectAppended(action: string): void {
 /** Puts the unreviewed memory, its index line and the trail back, and waits for the row to offer its actions again. */
 async function resetTrail(win: Page): Promise<void> {
   for (const rel of [MEMORY, "MEMORY.md", TRAIL]) fs.writeFileSync(FX.v(rel), pristine(rel));
+  await pulseArea(win, "memory");
   await expect(pendingRow(win)).toHaveCount(1);
   await expect(pendingRow(win).locator(".aos-trail-name")).toHaveText("Release checklist");
 }
 
-test.beforeEach(async () => { await openTab(app().win, "pulse"); });
+test.beforeEach(async () => { await closePulse(app().win); await openTab(app().win, "pulse"); });
 
 test.afterEach(async () => {
   // Every write in this file is Pulse's own, and every spawn it made ran.
@@ -57,11 +58,12 @@ test("Pulse is the one surface on: the status bar names it and what it may touch
   const { win } = app();
   const mode = win.locator(".aos-host-status .aos-host-mode");
   await expect(mode).toHaveText("WRITES: Pulse");
-  await expect(mode).toHaveAttribute("title", /^Pulse: brain\/memory\/\*\*\/\*\.md, MEMORY\.md, brain\/_index\/promote-log\.jsonl, auto-cost\.js, heartbeat-writer\.js, graph-build\.js, build-brain-md\.js, map-workspace\.js, cost-budget\.js, sdk\/reflect-week\.js\n/);
+  await expect(mode).toHaveAttribute("title", /^Pulse: brain\/memory\/\*\*\/\*\.md, MEMORY\.md, brain\/_index\/promote-log\.jsonl, auto-cost\.js, heartbeat-writer\.js, graph-build\.js, build-brain-md\.js, map-workspace\.js, cost-budget\.js, sdk\/reflect-week\.js, persona\/briefing\.js\n/);
 });
 
 test("trail keep marks the memory reviewed and records a kept line; the row's actions go", async () => {
   const { win } = app();
+  await pulseArea(app().win, "memory");
   await resetTrail(win);
   await pendingRow(win).locator(".aos-trail-actions a", { hasText: "keep" }).click();
   await expect.poll(() => read(MEMORY)).toBe(pristine(MEMORY).replace("reviewed: false", "reviewed: true"));
@@ -75,6 +77,7 @@ test("trail keep marks the memory reviewed and records a kept line; the row's ac
 
 test("trail edit records an edited line and opens the memory in the note pane; the file is not touched", async () => {
   const { win } = app();
+  await pulseArea(app().win, "memory");
   await resetTrail(win);
   await pendingRow(win).locator(".aos-trail-actions a", { hasText: "edit" }).click();
   await expect(notePath(win)).toHaveText(MEMORY);
@@ -84,6 +87,7 @@ test("trail edit records an edited line and opens the memory in the note pane; t
   expect(read("MEMORY.md")).toBe(pristine("MEMORY.md"));
   await closeNotes(win);
   await openTab(win, "pulse");
+  await pulseArea(win, "memory");   // the edit closed the popup to open the note
   // Still unreviewed: the written row keeps its actions, under the new EDITED line.
   await expect(trailRows(win).first().locator(".aos-trail-chip")).toHaveText("EDITED");
   await expect(pendingRow(win)).toHaveCount(1);
@@ -91,11 +95,12 @@ test("trail edit records an edited line and opens the memory in the note pane; t
 
 test("trail revert deletes the memory and its MEMORY.md line and records a reverted line, without asking (upstream finding 4)", async () => {
   const { win } = app();
+  await pulseArea(app().win, "memory");
   await resetTrail(win);
   expect(pristine("MEMORY.md")).toContain(INDEX_LINE);
   await pendingRow(win).locator(".aos-trail-actions a", { hasText: "revert" }).click();
   await expect.poll(() => read(MEMORY)).toBeNull();
-  await expect(win.locator(".modal")).toHaveCount(0);
+  await expect(win.locator(".modal:not(.mod-pulse)")).toHaveCount(0);   // no confirm dialog; the popup stays
   await expect.poll(() => read("MEMORY.md")).toBe(pristine("MEMORY.md").replace(INDEX_LINE, ""));
   await expect.poll(() => read(TRAIL)!.length).toBeGreaterThan(pristine(TRAIL).length);
   expectAppended("reverted");
@@ -106,6 +111,7 @@ test("trail revert deletes the memory and its MEMORY.md line and records a rever
 
 test("Fix Queue: the uncosted-sessions card runs the auto-cost backfill, which costs them, and the card goes", async () => {
   const { win } = app();
+  await pulseArea(app().win, "health");
   const card = fixCard(win, "2 session(s) missing cost");
   await expect(card.locator("a")).toHaveText("▶ run auto-cost.js --backfill");
   const costs = read("brain/_index/agent-runs/costs.jsonl") ?? "";
@@ -117,6 +123,7 @@ test("Fix Queue: the uncosted-sessions card runs the auto-cost backfill, which c
 
 test("Fix Queue: the stale-artifacts card rebuilds the brain artifacts with build-brain-md.js", async () => {
   const { win } = app();
+  await pulseArea(app().win, "health");
   const card = fixCard(win, /^\d+ stale artifact\(s\)$/);
   await expect(card.locator("a")).toHaveText("▶ run build-brain-md.js");
   const brain = FX.v("brain/_index/BRAIN.md");
@@ -128,6 +135,7 @@ test("Fix Queue: the stale-artifacts card rebuilds the brain artifacts with buil
 
 test("Fix Queue: re-anchor asks for the billed figure, refuses a bad one, and cost-budget.js stamps the anchor", async () => {
   const { win } = app();
+  await pulseArea(app().win, "health");
   const card = fixCard(win, "Cost tracking not yet anchored");
   expect(read("brain/_index/cost-budget.json")).toBeNull();
   await card.locator("a", { hasText: "▶ re-anchor…" }).click();

@@ -165,7 +165,7 @@ export const SURFACES: readonly Surface[] = [
   {
     id: "pulse",
     label: "Pulse",
-    source: "data/promoteTrail.ts (trail keep, edit, revert), views/PulseTab.ts with data/fixQueue.ts and data/pipelines.ts (Fix Queue), ui/AnchorModal.ts (cost anchor), data/commandRegistry.ts (/scan, /reflect-week)",
+    source: "data/promoteTrail.ts (trail keep, edit, revert), views/PulseTab.ts and ui/PulsePopup.ts with data/fixQueue.ts and data/pipelines.ts (Fix Queue), ui/AnchorModal.ts (cost anchor), data/commandRegistry.ts (/scan, /reflect-week), the briefing band's ↻ (persona/briefing.js --force)",
     writes: ["brain/memory/**/*.md", "MEMORY.md", "brain/_index/promote-log.jsonl"],
     spawns: [
       { script: "auto-cost.js", args: /^--backfill$/ },
@@ -175,6 +175,8 @@ export const SURFACES: readonly Surface[] = [
       { script: "map-workspace.js", args: argv(NAME) },
       { script: "cost-budget.js", args: argv("--anchor", USD) },
       { script: "sdk/reflect-week.js", args: /^--local$/ },
+      // The ↻ on the briefing band (spec 2026-10-08-pulse-cockpit-design P13): one paragraph now, under the daily duty cap.
+      { script: "persona/briefing.js", args: /^--force$/ },
     ],
     verified: true,
   },

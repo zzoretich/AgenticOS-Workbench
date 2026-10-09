@@ -16,16 +16,16 @@ list at the top of app-smoke.md is the release process, not app behaviour: it is
 
 | Status | Items |
 |---|---|
-| covered | 105 |
-| covered in part | 20 |
-| N/A in the app | 39 |
+| covered | 106 |
+| covered in part | 25 |
+| N/A in the app | 40 |
 | not covered | 6 |
-| **total** | **170** |
+| **total** | **177** |
 
-Of the 125 items about the app (164 minus the 39 N/A), 120 are asserted (103 fully, 17 in part); the other 5 are not
+Of the 137 items about the app (177 minus the 40 N/A), 131 are asserted (106 fully, 25 in part); the other 6 are not
 covered, for the reasons below. Every write surface is enabled and tested. The
 "in part" rows need something the fixture or the app lacks (a dispatched seat, a Codex database, the clipboard, the
-OS handing over an `agenticos://` link, a published update). The writes, each surface on through `AOS_APP_WRITE`:
+OS handing over an `agenticos://` link, a published update, a vault without the briefing routine, a host's model run). The writes, each surface on through `AOS_APP_WRITE`:
 - To-Do (T1, T2, T4, T5, T7) in `todo-writes.spec.ts`;
 - Notifications (N4, N5, N6) in `notifications-writes.spec.ts`;
 - Capture (P7, P8) in `capture-writes.spec.ts`;
@@ -41,9 +41,10 @@ OS handing over an `agenticos://` link, a published update). The writes, each su
 - the note editor, the app's own Notes surface (beyond the checklist), in `notes-writes.spec.ts`;
 - the settings window (I3, S1, S11) in `settings-window.spec.ts`.
 
-The 4 not covered: the To-Do midnight roll-over (needs a controllable clock), a duty run recorded outside the runtime
-(needs a real duty run), a killed dispatcher (needs a dispatched seat), and the vault-root picker's Notices (need a
-second vault in its list).
+The 6 not covered: the To-Do midnight roll-over (needs a controllable clock), a duty run recorded outside the runtime
+(needs a real duty run), a killed dispatcher (needs a dispatched seat), the vault-root picker's Notices (need a
+second vault in its list), a Finder-launched app's PATH (unit-tested; e2e stands in with `$AOS_SETUP_PATH`), and
+timestamps in the OS locale (the suite runs in one locale).
 
 Tests beyond the checklist: boot and the write guard with every surface off (`shell`), every verified surface on by
 default with no write-mode item and no Write Access menu (`variants`), a refused To-Do tick with the surface off (`todo`), other surfaces still
@@ -73,7 +74,7 @@ see below).
 
 | # | Item | Status | Covered by / reason |
 |---|---|---|---|
-| I1 | The app opens the vault on Pulse with no error; a dev run logs `[host] AgenticOS HUD <version> loaded` | covered | `shell › boots the Workbench…` (the HUD's version loaded), `shell › a tour … raises no renderer or main-process error`. |
+| I1 | The app opens the vault on Home, which is Pulse (first in the rail), with no error; a dev run logs `[host] AgenticOS HUD <version> loaded` | covered | `shell › boots the Workbench…` (the HUD's version loaded, Pulse active), `pulse › the cockpit…` and `variants › a provider on record › Pulse heads the rail and is Home…` (Home is Pulse with and without a provider), `shell › a tour … raises no renderer or main-process error`. |
 | I2 | Paths section as pickers (this vault / auto / auto with nodes listed); Probe picks a path | covered | `settings › WORKBENCH section…` (the three pickers and the Probe button), `settings-writes › Probe resolves node again and saves it in the app's own settings` |
 | I3 | Provider row reflects `provider-state.json` (name + reason); refresh re-reads it | covered | `settings-window › the plugin's tab…` in the app's settings window: `none (forced) — checked …` and its refresh button; `settings › WORKBENCH section…` renders the same tab directly. |
 
@@ -134,8 +135,12 @@ see below).
 
 | # | Item | Status | Covered by / reason |
 |---|---|---|---|
-| P1 | LEDs: every manifest pipeline, EMBED off, never-ran / disabled gray with the reason, nothing red | covered | `pulse › LEDs…` |
-| P2 | Briefing label is the persona's name; BRIEFING without a persona; `aos persona rename` | covered | `pulse › briefing row…`, `variants › an empty vault › Pulse: … BRIEFING`. The rename is a CLI write. |
+| P1 | LEDs in the popup's Health area: every manifest pipeline, EMBED off, never-ran / disabled gray with the reason, nothing red | covered | `pulse › LEDs…` |
+| P2 | Briefing band: the persona's name heads it (Briefing without a persona); composed from the facts with no `briefing.json`; Turn on adds the routine; each phrase opens its area | covered in part | `pulse › briefing row…` (the name, "composed from the facts", a phrase opens its area in the popup, ↻ offered), `variants › an empty vault › Pulse: with no persona the band reads Briefing…`. **Turn on** needs a vault with a persona and no briefing routine: the fixture's template seeds the routine. |
+| P11 | Cockpit: ten tiles with no scrollbar at full size and at 960×600, where rows become "+N more"; the rail badge counts what needs you, rose with an error | covered | `pulse › the cockpit…` (ten tiles; no scroll at the suite's 1480×920 and at 960×600; every headline kept and a "+N more"; the badge equals the Needs-you count), `pulse › the tiles refit when the band grows…` (no row cut at a list's foot), `shell › rail badges count the fixture…` (rose: the fixture has a health error). |
+| P12 | Popup: a tile opens its area; the list switches areas (↑↓ too) and Esc closes; safe actions act in place, decisions jump | covered in part | `pulse › the popup…` (opened from a tile, switched from the list, ↓, Esc), `pulse › a decision jumps…` (Review → opens the review in Term). Done, Mark read and Run now reuse the To-Do, Notifications and Routines writes, tested from their tabs (T4, N4, RT5); a gate opening Agent Teams is not asserted. |
+| P13 | Claude Code host: `aos routines run briefing` writes `briefing.json` (`provider: claude`) and a `duty:briefing` spend row; Pulse shows it; ↻ writes it again | N/A in the app | A host model run (it spends). Which paragraph the band shows for a written `briefing.json` (fresh, stale, failed, skipped) is unit-tested in `obsidian-plugin` `briefingBand.test.ts`; ↻'s spawn rule (`persona/briefing.js --force`, nothing wider) in `write-policy.test.ts`. |
+| P14 | Codex host: the same run writes it with `provider: codex` (or `ollama`); Pulse's Review → buttons start Codex | covered in part | `variants › a Codex-only machine › Pulse: Review → on a proposal runs the same flag-closer skill through codex`. The run itself is a host model call (it spends). |
 | P3 | COST row absent while cost is off, present with cost on and a budget | covered | `pulse › COST row…`, `variants › session costing off › Pulse…`. Switching it on is a write. |
 | P4 | No anchor / backfill cards while cost is off; open-health still shows | covered | `variants › session costing off › Pulse…`, `pulse › Fix Queue…` |
 | P5 | Deck `/scan` spawns scan-vault.js | covered | `pulse-writes › deck /scan runs scan-vault.js…`. `scan-vault.js` with no argument is one of the background refreshes, so it runs whatever surface is on. |
