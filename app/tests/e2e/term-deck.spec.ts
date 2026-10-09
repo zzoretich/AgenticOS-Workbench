@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { FX, closeNotes, command, content, notePath, openTab, terminalText, useApp } from "./harness";
+import { FX, closeNotes, command, content, notePath, openTab, resizeHud, terminalText, useApp } from "./harness";
 
 // The Term deck (spec 2026-10-08-term-agent-deck T1): terminals grouped by where they run, the selected one's header,
 // and the Term keys. Read-only: shells start in the vault and Claude Code in an existing workspace, so nothing is written.
@@ -203,7 +203,7 @@ test("links an app prints in a terminal open: an agenticos:// note in the Workbe
   await expect(win.locator(".aos-wb-railbtn[data-tab='todo']")).toHaveClass(/is-active/, { timeout: 10_000 });
 });
 
-test("opening Term defers nothing that takes the focus: the list filter keeps its typing, however late the page's frames run", async () => {
+test("opening Code defers nothing that takes the focus: the list filter keeps its typing, however late the page's frames run", async () => {
   const { win } = app();
   await openTab(win, "pulse");
   // fill() is a focus and a select-all, then the typing. Hold this page's animation frames, as a loaded runner can, and
@@ -234,4 +234,58 @@ test("opening Term defers nothing that takes the focus: the list filter keeps it
   }
   await expect(C().locator(".aos-tl-empty")).toHaveText("No terminal matches.");
   await filter.fill("");
+});
+
+test("Code fits its pane: no page scroll at 1480×920 or 960×600, the composer whole and twice its 1.5.0 height; a wheel scrolls the terminal only (spec 2026-10-09 D8, D9)", async () => {
+  const h = app();
+  const { win } = h;
+  await openTab(win, "term");
+  expect(await command(win, "agentic-os:new-terminal-shell")).toBe(true);
+  await expect(C().locator(".aos-tc-input")).toBeVisible();
+  // Every element from the content area up that overflows or has scrolled: 1.5.0 had two (.aos-wb-body and
+  // .view-content, 50px each), with the composer's foot under the window's edge.
+  const layout = () => win.evaluate(() => {
+    const c = document.querySelector(".aos-wb-content") as HTMLElement;
+    const scrolled: string[] = [];
+    for (let el: HTMLElement | null = c; el; el = el.parentElement) {
+      if (el.scrollHeight > el.clientHeight + 1 || el.scrollTop > 0) scrolled.push(`${el.className} ${el.scrollHeight}>${el.clientHeight}`);
+    }
+    const rect = (sel: string) => (document.querySelector(sel) as HTMLElement).getBoundingClientRect();
+    return {
+      scrolled, bottom: rect(".aos-wb-content").bottom, box: rect(".aos-tc-box"), foot: rect(".aos-tl-foot").bottom, term: rect(".aos-term-body").height,
+      font: getComputedStyle(document.querySelector(".aos-tc-input") as HTMLElement).fontSize,
+    };
+  });
+  try {
+    for (const size of [{ width: 1480, height: 920 }, { width: 960, height: 600 }]) {
+      await resizeHud(h.app, size);
+      await expect.poll(() => win.evaluate(() => window.innerWidth)).toBe(size.width);
+      await expect.poll(async () => (await layout()).scrolled).toEqual([]);
+      const l = await layout();
+      expect(l.box.bottom).toBeLessThanOrEqual(l.bottom);
+      expect(l.foot).toBeLessThanOrEqual(l.bottom);
+      expect(l.box.height).toBeGreaterThanOrEqual(2 * 96);
+      expect(l.font).toBe("15px");
+      expect(l.term).toBeGreaterThan(200);
+    }
+    // Scrollback in the terminal: the wheel moves xterm's viewport, and the page stays put.
+    await win.evaluate(() => {
+      const p = (window as unknown as { aosHost: { plugin: { terminalPool: { selectedId(): string | null; get(id: string): { write(d: string): void } | undefined } } } }).aosHost.plugin.terminalPool;
+      p.get(p.selectedId() ?? "")?.write("seq 1 400\r");
+    });
+    // Wait for what xterm drew, not the bytes: seq's last line and the next prompt (the echoed command cannot match),
+    // then for the viewport to read the same twice, so the rest of the output cannot scroll it after `before` is read.
+    const rows = () => C().locator(".aos-term-xterm:visible .xterm-rows").evaluate((el) => Array.from(el.children).map((r) => (r.textContent ?? "").trimEnd()).join("\n"));
+    await expect.poll(rows, { timeout: 10_000 }).toMatch(/^400\nfixture %$/m);
+    const viewport = C().locator(".aos-term-xterm:visible .xterm-viewport");
+    let before = -1;
+    await expect.poll(async () => { const t = await viewport.evaluate((el) => el.scrollTop); const same = t > 0 && t === before; before = t; return same; }).toBe(true);
+    const body = (await C().locator(".aos-term-body").boundingBox())!;
+    await win.mouse.move(body.x + body.width / 2, body.y + body.height / 2);
+    await win.mouse.wheel(0, -600);
+    await expect.poll(() => viewport.evaluate((el) => el.scrollTop)).toBeLessThan(before);
+    expect((await layout()).scrolled).toEqual([]);
+  } finally {
+    await resizeHud(h.app, { width: 1480, height: 920 });
+  }
 });

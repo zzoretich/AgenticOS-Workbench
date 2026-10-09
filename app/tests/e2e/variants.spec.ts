@@ -6,7 +6,7 @@ import { expect, test } from "@playwright/test";
 import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { FX, appEnv, badge, claudeCalls, codexCalls, command, content, drawer, guardWrites, installChatStubs, openTab, rail, terminalText, useApp, closePulse, pulseArea } from "./harness";
+import { FX, RAIL_SECTIONS, appEnv, badge, claudeCalls, codexCalls, command, content, drawer, guardWrites, installChatStubs, openTab, rail, terminalText, useApp, closePulse, pulseArea } from "./harness";
 import { SURFACES } from "../../src/shared/surfaces";
 
 const editJson = (file: string, fn: (j: Record<string, any>) => void) => {
@@ -126,10 +126,14 @@ test.describe("a provider on record", () => {
   // The chat stubs only prove that no CLI runs: Chat's surface is off here.
   const app = useApp({ prepare: () => { installChatStubs(); state("claude", true)(); } });
 
-  test("Pulse heads the rail and is Home with a provider too; Sessions comes next; the mark returns to Pulse", async () => {
+  test("Pulse is Home with a provider too; Sessions closes the first section, after Code; the mark returns to Pulse", async () => {
     const { win } = app();
     const ids = await win.locator(".aos-wb-railtabs .aos-wb-railbtn").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.tab));
-    expect(ids.slice(0, 2)).toEqual(["pulse", "chat"]);
+    expect(ids.slice(0, 4)).toEqual(["notifications", "pulse", "term", "chat"]);
+    // All fourteen buttons and the two lines, Sessions included (spec 2026-10-09-rail-sections-code D1, D5).
+    const seq = await win.locator(".aos-wb-railtabs > *").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.tab ?? (e.classList.contains("aos-wb-railsep") ? "|" : "?")));
+    expect(seq).toEqual(RAIL_SECTIONS.map((s) => s.join(",")).join(",|,").split(","));
+    await expect(win.locator(".aos-wb-railsep[role='separator']")).toHaveCount(2);
     await expect(rail(win, "pulse")).toHaveClass(/is-active/);
     await openTab(win, "chat");
     await win.locator(".aos-wb-mark").click();
@@ -214,7 +218,7 @@ test.describe("a Codex-only machine", () => {
     await openTab(win, "proposals");
     const review = content(win).locator(".aos-rt-actions button");
     await expect(review).toHaveText("Review in Codex ❯_");
-    await expect(review).toHaveAttribute("title", "Opens a Term session in the vault running: codex '$agenticos:persona-flag-closer'");
+    await expect(review).toHaveAttribute("title", "Opens a terminal in Code, in the vault, running: codex '$agenticos:persona-flag-closer'");
     await review.click();
     await expect(rail(win, "term")).toHaveClass(/is-active/);
     await expect.poll(() => terminalText(win), { timeout: 10_000 }).toContain("[fixture codex stub] $agenticos:persona-flag-closer");

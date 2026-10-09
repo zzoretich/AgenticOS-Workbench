@@ -19,7 +19,7 @@ test("head, review button and the 28-day rates line (matching ledger.js summary)
   await expect(P().locator(".aos-rt-count")).toHaveText(`${e.pending.length} pending · ${e.backlog.length} in backlog`);
   const review = P().locator(".aos-rt-actions button");
   await expect(review).toHaveText("Review in Claude ❯_");
-  await expect(review).toHaveAttribute("title", 'Opens a Term session in the vault running: claude "review persona flags"');
+  await expect(review).toHaveAttribute("title", 'Opens a terminal in Code, in the vault, running: claude "review persona flags"');
   const pct = (r: number | null | undefined) => (r == null ? "n/a" : `${Math.round(r * 100)}%`);
   await expect(P().locator(".aos-pr-rates")).toHaveText(`last 28 d · approval ${pct(e.ledger?.approvalRate)} · accept ${pct(e.ledger?.acceptRate)}`);
 });
@@ -156,7 +156,7 @@ test("badge: a proposal copied in shows within a second with another tab active,
   await expect(badge(win, "proposals")).toHaveText("3", { timeout: 2000 });
 });
 
-test("Review in Claude ❯_ opens Term with a new session in the vault running the review", async () => {
+test("Review in Claude ❯_ opens Code with a new session in the vault running the review", async () => {
   const { win } = app();
   const sessions = await win.evaluate(() => (window as unknown as { aosHost: { plugin: { terminalPool: { list(): unknown[] } } } }).aosHost.plugin.terminalPool.list().length);
   await P().locator(".aos-rt-actions button", { hasText: "Review in Claude" }).click();

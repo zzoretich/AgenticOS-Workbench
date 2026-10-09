@@ -157,7 +157,7 @@ async function liveRows(plugin: AgenticOSPlugin): Promise<LiveRow[]> {
     for (const s of plugin.terminalPool.list()) {
       if (s.isExited || s.meta.host === "shell") continue;
       const place = s.meta.place ? s.meta.place.label : path.basename(s.cwd);
-      out.push({ title: s.getTitle(), sub: `${TERM_HOST_LABEL[s.meta.host]} · ${place} · Term`, host: s.meta.host });
+      out.push({ title: s.getTitle(), sub: `${TERM_HOST_LABEL[s.meta.host]} · ${place} · Code`, host: s.meta.host });
     }
   } catch { /* no terminals */ }
   return out;

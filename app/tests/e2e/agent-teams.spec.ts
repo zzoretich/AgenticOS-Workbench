@@ -18,8 +18,11 @@ const view = (name: string) => C().locator(".aos-at-view", { hasText: name });
 
 test.beforeEach(async () => { await openTab(app().win, "agent-teams"); });
 
-test("rail: Agent Teams right after Agents with a count of pending gates", async () => {
+test("rail: Agent Teams between Memory and Agents with a count of pending gates", async () => {
   const { win } = app();
+  const ids = await win.locator(".aos-wb-railtabs .aos-wb-railbtn").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.tab));
+  expect(ids.indexOf("agent-teams")).toBe(ids.indexOf("memory") + 1);
+  expect(ids.indexOf("agents")).toBe(ids.indexOf("agent-teams") + 1);
   await expect(rail(win, "agent-teams").locator(".aos-wb-raillabel")).toHaveText("Agent Teams");
   await expect(badge(win, "agent-teams")).toHaveText("2");
   await expect(badge(win, "agent-teams")).not.toHaveClass(/is-urgent/);
@@ -222,7 +225,7 @@ test("manage: seat pickers, the running switch, add and remove, and no text box"
   await view("Board").click();
 });
 
-test("Redirect ❯_ opens Term running the lead's agent with the gate and the line that records the redirect", async () => {
+test("Redirect ❯_ opens Code running the lead's agent with the gate and the line that records the redirect", async () => {
   const { win } = app();
   const btn = gate("harbor-01").locator(".aos-at-gateacts button", { hasText: "Redirect" });
   await btn.click();

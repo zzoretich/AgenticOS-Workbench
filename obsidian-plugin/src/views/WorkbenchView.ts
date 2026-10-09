@@ -33,24 +33,33 @@ export const VIEW_TYPE_WORKBENCH = "agentic-os-workbench";
 /** A rail button: its tab id, its lucide icon, and the name its tooltip and screen readers give. */
 interface RailTab { id: string; icon: string; label: string }
 
-/** The rail (UniDeX D3): Pulse first, as Home (spec 2026-10-08-pulse-cockpit-design P5), then Sessions and every other
- *  tab. Sessions keeps the id "chat" it had as the Chat tab, so links and commands that name it still open it. */
-const RAIL: RailTab[] = [
-  { id: "pulse", icon: "activity", label: "Pulse" },
-  { id: "chat", icon: "message-square", label: "Sessions" },
-  { id: "files", icon: "file-text", label: "Files" },
-  { id: "todo", icon: "square-check", label: "To-Do" },
-  { id: "proposals", icon: "inbox", label: "Proposals" },
-  { id: "notifications", icon: "bell", label: "Notifications" },
-  { id: "spaces", icon: "folder", label: "Spaces" },
-  { id: "memory", icon: "brain", label: "Memory" },
-  { id: "runs", icon: "list", label: "Runs" },
-  { id: "routines", icon: "repeat", label: "Routines" },
-  { id: "skills", icon: "sparkles", label: "Skills" },
-  { id: "agents", icon: "bot", label: "Agents" },
-  { id: "agent-teams", icon: "users", label: "Agent Teams" },
-  { id: "term", icon: "terminal", label: "Term" },
+/** The rail in three sections with a line between them (spec 2026-10-09-rail-sections-code D1): what reaches you and
+ *  where you work, then what you keep and do, then the brain and its agents. Pulse is still Home (D4) though
+ *  Notifications heads the rail. Sessions keeps the id "chat" it had as the Chat tab, and Code the id "term" it had as
+ *  Term (D7), so links and commands that name them still open them. */
+const RAIL_SECTIONS: RailTab[][] = [
+  [
+    { id: "notifications", icon: "bell", label: "Notifications" },
+    { id: "pulse", icon: "activity", label: "Pulse" },
+    { id: "term", icon: "terminal", label: "Code" },
+    { id: "chat", icon: "message-square", label: "Sessions" },
+  ],
+  [
+    { id: "todo", icon: "square-check", label: "To-Do" },
+    { id: "spaces", icon: "folder", label: "Spaces" },
+    { id: "files", icon: "file-text", label: "Files" },
+    { id: "routines", icon: "repeat", label: "Routines" },
+    { id: "proposals", icon: "inbox", label: "Proposals" },
+  ],
+  [
+    { id: "memory", icon: "brain", label: "Memory" },
+    { id: "agent-teams", icon: "users", label: "Agent Teams" },
+    { id: "agents", icon: "bot", label: "Agents" },
+    { id: "skills", icon: "sparkles", label: "Skills" },
+    { id: "runs", icon: "list", label: "Runs" },
+  ],
 ];
+const RAIL: RailTab[] = RAIL_SECTIONS.flat();
 /** Pinned to the rail's foot, below the scrolling tab list (spec 2026-09-24-settings-tab D1). */
 const SETTINGS_TAB: RailTab = { id: "settings", icon: "settings", label: "Settings" };
 
@@ -112,10 +121,14 @@ export class WorkbenchView extends ItemView {
     this.railAction(head, { action: "capture", icon: "plus", label: "Quick Capture" }, () => { new CaptureModal(this.app).open(); });
     // The tab buttons scroll inside .aos-wb-railtabs so a short pane never pushes the ⚙ footer out of reach (D1).
     const tabsEl = this.railEl.createDiv({ cls: "aos-wb-railtabs" });
-    for (const tab of RAIL) {
-      if (tab.id === "chat" && !this.plugin.chatAvailable()) continue; // no provider → no Sessions tab (hint lives in ChatTab.render)
-      this.railButton(tabsEl, tab);
-    }
+    RAIL_SECTIONS.forEach((section, i) => {
+      // The line between sections (D5) scrolls with the buttons.
+      if (i > 0) tabsEl.createDiv({ cls: "aos-wb-railsep", attr: { role: "separator", "aria-orientation": "horizontal" } });
+      for (const tab of section) {
+        if (tab.id === "chat" && !this.plugin.chatAvailable()) continue; // no provider → no Sessions tab (hint lives in ChatTab.render)
+        this.railButton(tabsEl, tab);
+      }
+    });
     const foot = this.railEl.createDiv({ cls: "aos-wb-railfoot" });
     const theme = this.railAction(foot, { action: "theme", icon: "moon", label: "Switch to dark" }, () => { runHostCommand(this.app, HOST_TOGGLE_THEME); });
     const showTheme = (): void => {

@@ -23,6 +23,12 @@ body.theme-light {
   --udx-scrim: rgba(0, 0, 0, 0.28);
   --udx-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 12px 32px rgba(0, 0, 0, 0.12);
 
+  /* the rail (spec 2026-10-09-rail-sections-code D5, D6): the line between its sections, and Pulse's colour at rest
+     and on the selected chip, which is inverted, so there the two themes' colours swap */
+  --udx-rail-line: #d4d4d4;
+  --udx-pulse: #1e3a8a;
+  --udx-pulse-on-inv: #00b3ff;
+
   /* status tones: text (fg), tinted background, and the dot or bar */
   --udx-ok: #15803d;
   --udx-ok-bg: #eaf7ee;
@@ -96,6 +102,10 @@ body.theme-dark {
   --udx-focus: #3b82f6;
   --udx-scrim: rgba(0, 0, 0, 0.6);
   --udx-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 16px 40px rgba(0, 0, 0, 0.6);
+
+  --udx-rail-line: rgba(255, 255, 255, 0.24);
+  --udx-pulse: #00b3ff;
+  --udx-pulse-on-inv: #1e3a8a;
 
   --udx-ok: #5bd98a;
   --udx-ok-bg: #12301d;
@@ -1315,7 +1325,7 @@ body {
 }
 .aos-wb-railhead {
   display: flex; flex-direction: column; align-items: center; gap: 2px;
-  padding-bottom: 6px; margin-bottom: 4px; border-bottom: 1px solid var(--udx-line);
+  padding-bottom: 6px; margin-bottom: 4px; border-bottom: 1px solid var(--udx-rail-line);
 }
 .aos-wb-mark {
   width: 32px; height: 32px; margin-bottom: 6px; border-radius: 9px; cursor: pointer;
@@ -1330,14 +1340,20 @@ body {
 }
 .aos-wb-railfoot {
   flex: none; display: flex; flex-direction: column; align-items: center; gap: 2px;
-  padding-top: 6px; border-top: 1px solid var(--udx-line);
+  padding-top: 6px; border-top: 1px solid var(--udx-rail-line);
 }
+/* The line between the rail's sections (spec 2026-10-09-rail-sections-code D5): as wide as the head's and foot's, with
+   the same 6px either side once the list's 2px gap is counted. */
+.aos-wb-railsep { flex: none; width: 36px; height: 1px; margin: 4px 0; background: var(--udx-rail-line); }
 .aos-wb-railbtn, .aos-wb-railact {
   position: relative; flex: none; width: 36px; height: 36px; border-radius: 9px; cursor: pointer;
   display: flex; align-items: center; justify-content: center; color: var(--udx-text-2);
 }
 .aos-wb-railbtn:hover, .aos-wb-railact:hover { color: var(--udx-text); background: var(--udx-raised); }
 .aos-wb-railbtn.is-active { color: var(--udx-inv-text); background: var(--udx-inv); }
+/* Pulse in its own colour (D6): neon blue in dark, navy in light; on the inverted chip each theme takes the other's. */
+.aos-wb-railbtn[data-tab="pulse"], .aos-wb-railbtn[data-tab="pulse"]:hover { color: var(--udx-pulse); }
+.aos-wb-railbtn[data-tab="pulse"].is-active { color: var(--udx-pulse-on-inv); }
 .aos-wb-railbtn:focus-visible, .aos-wb-railact:focus-visible, .aos-wb-mark:focus-visible { outline: 2px solid var(--udx-focus); outline-offset: 1px; }
 .aos-wb-railicon { display: flex; }
 .aos-wb-railbtn svg, .aos-wb-railact svg { width: 18px; height: 18px; stroke-width: 1.75; }
@@ -2945,6 +2961,11 @@ button.aos-term-started-change:not(.clickable-icon) { height: 22px; padding: 0 8
 
 /* ══ Term: the deck (spec 2026-10-08-term-agent-deck T1) — the list beside the selected terminal ══════════════════════ */
 .aos-term.aos-term-deck { flex-direction: row; }
+/* Code fills the pane and never scrolls it (spec 2026-10-09-rail-sections-code D8), like Sessions and the Pulse cockpit.
+   The deck mounts on the content area itself, whose 20/28px padding and borders sat on top of .aos-term-fullpane's
+   100% height: the page scrolled 50px and the composer's foot hid under the window's edge. Only the terminal, the
+   list and the composer's text scroll. */
+.aos-wb-content.aos-term-deck { box-sizing: border-box; padding: 0; border: 0; border-radius: 0; overflow: hidden; }
 .aos-tl { flex: 0 0 248px; min-width: 0; display: flex; flex-direction: column; gap: 6px; padding: 10px 8px; box-sizing: border-box; background: var(--udx-surface); border-right: 1px solid var(--udx-line); }
 .aos-tl-head { padding: 0 4px; }
 .aos-tl-new .aos-ntm, .aos-tl-new .aos-ntm-split { display: flex; width: 100%; }
@@ -2997,7 +3018,9 @@ button.aos-term-endbtn:not(.clickable-icon) { height: 24px; padding: 0 9px; bord
 .aos-tc { padding: 10px 12px 12px; }
 .aos-tc.is-hidden { display: none; }
 .aos-tc-box { position: relative; padding: 8px 8px 6px 12px; border: 1px solid var(--udx-line-2); border-radius: 14px; background: var(--udx-bg); box-shadow: var(--udx-shadow); }
-.aos-tc textarea.aos-tc-input { width: 100%; box-sizing: border-box; min-height: 44px; max-height: 200px; padding: 2px 0; border: 0; background: transparent; box-shadow: none; resize: vertical; font-family: var(--udx-sans); font-size: 13.5px; line-height: 1.5; color: var(--udx-text); outline: none; }
+/* Twice the 1.5.0 box (96 → 192px): six lines of 15px text (spec 2026-10-09-rail-sections-code D9). Longer text scrolls
+   inside it; its corner drags it taller, up to 320px. */
+.aos-tc textarea.aos-tc-input { width: 100%; box-sizing: border-box; min-height: 141px; max-height: 320px; padding: 2px 0; border: 0; background: transparent; box-shadow: none; resize: vertical; font-family: var(--udx-sans); font-size: 15px; line-height: 1.5; color: var(--udx-text); outline: none; }
 .aos-tc-bar { position: relative; display: flex; align-items: center; gap: 8px; }
 button.aos-tc-btn:not(.clickable-icon) { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border: 1px solid var(--udx-line); border-radius: 999px; background: transparent; box-shadow: none; font-size: 12px; color: var(--udx-text-2); }
 .aos-tc-icon { display: inline-flex; }

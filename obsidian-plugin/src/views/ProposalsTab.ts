@@ -110,7 +110,7 @@ export class ProposalsTab {
     // The persona-flag-closer skill in the user's first host (Claude Code, else Codex): data/aosConfig.ts reviewCommand.
     const rc = reviewCommand(readAgenticosJson());
     const review = actions.createEl("button", { cls: "aos-ws-action", text: rc.label });
-    review.setAttr("title", `Opens a Term session in the vault running: ${rc.command}`);
+    review.setAttr("title", `Opens a terminal in Code, in the vault, running: ${rc.command}`);
     review.addEventListener("click", () => this.view.runInTerm(rc.command, { host: rc.host, origin: "Proposals" }));
 
     if (!this.personaPresent) {

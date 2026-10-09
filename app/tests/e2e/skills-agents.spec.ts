@@ -60,7 +60,7 @@ test.describe("Skills and Agents", () => {
     await filter.fill("");
   });
 
-  test("Skills: open hands the SKILL.md to the OS; ❯_ claude runs the skill in a new Term session", async () => {
+  test("Skills: open hands the SKILL.md to the OS; ❯_ claude runs the skill in a new terminal in Code", async () => {
     const h = app();
     await openTab(h.win, "skills");
     await skillRow("tide-report").locator(".aos-sk-actions a", { hasText: "open" }).click();

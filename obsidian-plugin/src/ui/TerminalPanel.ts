@@ -93,7 +93,7 @@ export class TerminalPanel {
     if (this.opts.deck) {
       host.addClass("aos-term-deck");
       const aside = host.createDiv({ cls: "aos-tl" });
-      aside.createDiv({ cls: "aos-tl-head" }).createSpan({ cls: "aos-term-title", text: "Terminal" });
+      aside.createDiv({ cls: "aos-tl-head" }).createSpan({ cls: "aos-term-title", text: "Code" });
       if (this.opts.launch) {
         this.newMenu = new NewTerminalMenu(aside.createDiv({ cls: "aos-tl-new" }), this.plugin.termLauncher, this.opts.launch);
         this.newMenu.el.addClass("is-left");
