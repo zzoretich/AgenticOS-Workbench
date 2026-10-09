@@ -13,7 +13,7 @@ Run before tagging a release, in the UniDeX app on a vault created by `aos init`
 
 ## Install paths
 
-- [ ] Open the app on the vault: the Workbench draws on Home (Sessions once a model provider is set up, else Pulse) with no error, and a dev run (`npm start` in `app/`) logs `[host] AgenticOS HUD <version> loaded` in its developer tools.
+- [ ] Open the app on the vault: the Workbench draws on Home (Pulse, first in the rail) with no error, and a dev run (`npm start` in `app/`) logs `[host] AgenticOS HUD <version> loaded` in its developer tools.
 - [ ] The settings window's Runtime tab (App settings at the Workbench rail's foot, or UniDeX ▸ App Settings… ⌘⇧,) shows the Paths section as pickers: Vault root on "this vault (…)", Claude config dir on "auto (…)", Node binary on "auto" with the installed nodes listed; **Probe** picks a path and shows a notice.
 - [ ] Provider row reflects `provider-state.json` (name + reason); the refresh icon re-reads it.
 
@@ -55,8 +55,12 @@ Run before tagging a release, in the UniDeX app on a vault created by `aos init`
 
 ## Pulse
 
-- [ ] LEDs: every manifest pipeline appears (incl. `EMBED`, which reads `EMBED off` under `claude`/`none`); never-ran and `disabled` stages are gray (`is-neutral`) with the reason in the tooltip; nothing red on a fresh vault.
-- [ ] Briefing row label is the persona's name from `persona/IDENTITY.md` (upper-cased); with no persona layer it reads `BRIEFING`. `aos persona rename <name>` changes it on the next refresh.
+- [ ] LEDs (the Health area of the popup): every manifest pipeline appears (incl. `EMBED`, which reads `EMBED off` under `claude`/`none`); never-ran and `disabled` stages are gray (`is-neutral`) with the reason in the tooltip; nothing red on a fresh vault.
+- [ ] Briefing band: the persona's name from `persona/IDENTITY.md` heads it (with no persona layer it reads `Briefing`); with no `brain/_index/briefing.json` the paragraph is composed from the facts ("composed from the facts") and **Turn on <name>'s briefing** adds `brain/routines/briefing.md`; each underlined phrase opens its area in the popup.
+- [ ] Cockpit: ten tiles fill the pane with no scrollbar at 1440×900 and at the smallest window (960×600), where each tile keeps its number and its rows become "+N more"; the rail's Pulse badge counts what needs you (rose with an error).
+- [ ] Popup: a tile opens it on its area; the list on the left switches areas without closing (↑↓ too) and Esc closes it. Safe actions act in place (To-Do **Done** ticks `TODO.md`, Notifications **Mark read**, Routines **Run now**); decisions jump (**Review →** opens the flag-closer in Term, a gate opens Agent Teams).
+- [ ] Claude Code host: with the routine on, `aos routines run briefing` (it spends: ask first) writes `brain/_index/briefing.json` with `"provider":"claude"` and a `duty:briefing` row in `provider-spend.jsonl`; Pulse shows it as "briefing · <time>"; ↻ on the band writes it again.
+- [ ] Codex host: on a Codex-only vault the same run writes it with `"provider":"codex"` (or `ollama` when Ollama answers), and Pulse's **Review →** buttons start Codex.
 - [ ] COST row absent while `cost.enabled` is false or `cost.monthlyBudget` is null; present on the next render after `aos cost enable --budget 100` (or Session costing on in ⚙ Settings) — the HUD reads the system switch, there is no HUD-only toggle.
 - [ ] Fix Queue shows no anchor/backfill cards while cost is off; `open-health` still appears when health.md has errors.
 - [ ] Command deck `/scan` spawns `scan-vault.js` with the resolved node (notice `▶ /scan`, then `✓ /scan: …`).

@@ -5,17 +5,18 @@
 
 import { expect, test } from "@playwright/test";
 import * as fs from "node:fs";
-import { FX, closeNotes, content, drawer, expected, guardWrites, noteBody, notePath, openTab, rail, readVaultJson, useApp } from "./harness";
+import { FX, closeNotes, closePulse, content, drawer, expected, guardWrites, noteBody, notePath, openTab, pulseArea, rail, readVaultJson, resizeHud, useApp } from "./harness";
 
 const app = useApp();
 
 interface Snapshot { health: { issues: Array<{ severity: string; area: string }> } }
 interface Ledger { pipelines: Record<string, { lastRun: { status: string; reason?: string | null } | null }> }
 
-test.beforeEach(async () => { await openTab(app().win, "pulse"); });
+test.beforeEach(async () => { await closePulse(app().win); await openTab(app().win, "pulse"); });
 
 test("LEDs: every manifest pipeline; never-ran and disabled stages are gray with the reason on hover; nothing red", async () => {
   const { win } = app();
+  await pulseArea(win, "health");
   const strip = win.locator(".aos-pulse-strip .aos-pulse-chip");
   const labels = (await strip.allTextContents()).map((t) => t.trim());
   for (const short of ["SCAN", "WRAP", "COST", "BACKFILL", "STAFF", "MAP", "AWRAP", "BRAIN", "EMBED", "GRAPH", "SEM"]) {
@@ -40,12 +41,28 @@ test("LEDs: every manifest pipeline; never-ran and disabled stages are gray with
 
 test("briefing row is labelled with the persona's name from persona/IDENTITY.md", async () => {
   const { win } = app();
-  await expect(win.locator(".aos-pulse-briefing .aos-briefing-label")).toHaveText(expected().persona.toUpperCase());
-  await expect(win.locator(".aos-pulse-briefing .aos-briefing-text")).toContainText("health");
+  await expect(win.locator(".aos-pulse-briefing .aos-briefing-label")).toHaveText(expected().persona);
+  // No briefing.json in the fixture: the paragraph is composed from the facts, and each phrase opens what it names.
+  await expect(win.locator(".aos-pulse-band-src")).toHaveText("Chief of Staff · composed from the facts");
+  await expect(win.locator(".aos-pulse-briefing .aos-briefing-text")).toContainText(/^Good (morning|afternoon|evening)\./);
+  const chip = win.locator(".aos-briefing-text .aos-pulse-ent").first();
+  const area = await chip.getAttribute("data-area");
+  await chip.click();
+  await expect(win.locator(".modal.mod-pulse .aos-pp-navbtn.is-on")).toHaveAttribute("data-area", area!);
+  await closePulse(win);
+  // The fixture's vault has the briefing routine (vault-template seeds it): the band offers ↻, not "Turn on".
+  await expect(win.locator(".aos-pulse-iconbtn[aria-label='Write the briefing now']")).toBeVisible();
+  await expect(win.locator(".aos-pulse-turnon")).toHaveCount(0);
+  // The band's two buttons, one per top item, never read alike (meta.test.ts: two of a kind name their items).
+  const acts = win.locator(".aos-pulse-band-side .aos-pulse-act");
+  await expect(acts).toHaveCount(2);
+  const [first, second] = await acts.allTextContents();
+  expect(first).not.toBe(second);
 });
 
 test("COST row (cost on, a $175 budget) and HEALTH row counts", async () => {
   const { win } = app();
+  await pulseArea(win, "health");
   const cost = win.locator(".aos-pulse-row", { has: win.locator(".aos-pulse-rowlabel", { hasText: /^COST$/ }) });
   await expect(cost).toContainText(/\$[\d.]+ this month · [\d.]+% of \$175\.00/);
   const issues = readVaultJson<Snapshot>("brain/_index/snapshot.json").health.issues;
@@ -58,6 +75,7 @@ test("COST row (cost on, a $175 budget) and HEALTH row counts", async () => {
 
 test("Fix Queue: health errors, stale artifacts, the cost anchor and the uncosted sessions, errors first", async () => {
   const { win } = app();
+  await pulseArea(win, "health");
   const issues = readVaultJson<Snapshot>("brain/_index/snapshot.json").health.issues;
   const errs = issues.filter((i) => i.severity === "error").length;
   const stale = issues.filter((i) => i.area === "artifacts").length;
@@ -78,6 +96,7 @@ test("Fix Queue: health errors, stale artifacts, the cost anchor and the uncoste
 
 test("Fix Queue: ▸ open on the health card opens brain/_index/health.md", async () => {
   const { win } = app();
+  await pulseArea(win, "health");
   await win.locator(".aos-pulse-fix", { hasText: "health error(s)" }).locator("a", { hasText: "▸ open" }).click();
   await expect(win.locator(".aos-host-tab.is-active .aos-host-tab-title")).toHaveText("health");
   await expect(notePath(win)).toHaveText("brain/_index/health.md");
@@ -121,6 +140,7 @@ test("command deck: /brain opens BRAIN.md; /remember and /pattern open their for
 
 test("recently auto-promoted: newest first; the unreviewed memory offers keep / edit / revert", async () => {
   const { win } = app();
+  await pulseArea(win, "memory");
   const rows = win.locator(".aos-trail .aos-trail-row");
   await expect(rows).toHaveCount(3);
   await expect(rows.nth(0).locator(".aos-trail-chip")).toHaveText("WRITTEN");
@@ -134,6 +154,7 @@ test("recently auto-promoted: newest first; the unreviewed memory offers keep / 
 
 test("SYSTEM drawer: inventory counts and lists, the DISK donut and the COST DETAIL sparkline as SVG", async () => {
   const { win } = app();
+  await pulseArea(win, "health");
   await win.locator(".aos-pulse-row a", { hasText: "SYSTEM ▸" }).click();
   const d = drawer(win);
   await expect(d).toHaveClass(/is-open/);
@@ -162,7 +183,7 @@ test("SYSTEM drawer: inventory counts and lists, the DISK donut and the COST DET
 test("Pulse has no terminal: terminals live in the Term tab", async () => {
   const { win } = app();
   await openTab(win, "pulse");
-  await expect(content(win)).toContainText("Fix queue");
+  await expect(content(win)).toContainText("Needs you");
   await expect(content(win).locator(".xterm, .aos-term, .aos-term-collapsed")).toHaveCount(0);
 });
 
@@ -179,7 +200,7 @@ test("listener leak: switching Pulse → Memory → Pulse → Term → Pulse doe
   for (let i = 0; i < 4; i++) await cycle();
   expect(await count()).toBe(once);
   expect(once).toBeLessThanOrEqual(1);   // the Term tab's panel, kept for its next visit (Pulse has none)
-  await expect(content(win)).toContainText("Fix queue");
+  await expect(content(win)).toContainText("Needs you");
   await expect(rail(win, "pulse")).toHaveClass(/is-active/);
 });
 
@@ -189,6 +210,7 @@ test("with the Pulse surface off, keep and a Fix Queue run are refused: the memo
   const trail = FX.v("brain/_index/promote-log.jsonl");
   const before = [fs.readFileSync(memory, "utf8"), fs.readFileSync(trail, "utf8")];
   const errors = h.errors.length;
+  await pulseArea(h.win, "memory");
   const row = h.win.locator(".aos-trail .aos-trail-row", { has: h.win.locator(".aos-trail-actions") });
   await row.locator(".aos-trail-actions a", { hasText: "keep" }).click();
   await expect.poll(() => guardWrites(h)).toContain("write brain/memory/reference/release-checklist.md");
@@ -196,9 +218,69 @@ test("with the Pulse surface off, keep and a Fix Queue run are refused: the memo
   await expect.poll(() => h.errors.slice(errors).join("\n")).toContain("brain/memory/reference/release-checklist.md refused");
   h.errors.splice(errors);
   await expect(row).toHaveCount(1);
+  await pulseArea(h.win, "health");
   await h.win.locator(".aos-pulse-fixq .aos-pulse-fix", { hasText: "session(s) missing cost" }).locator("a").click();
   await expect(h.win.locator(".notice-container")).toContainText("spawn failed: brain/scripts/auto-cost.js");
   await expect.poll(async () => (await h.guard()).filter((e) => e.kind === "spawn").map((e) => e.what)).toEqual([expect.stringMatching(/\/auto-cost\.js --backfill$/)]);
   expect([fs.readFileSync(memory, "utf8"), fs.readFileSync(trail, "utf8")]).toEqual(before);
   await h.win.evaluate(() => { (window as unknown as { aosHost: { guard: { log: unknown[] } } }).aosHost.guard.log.length = 0; });
+});
+
+test("the cockpit: Pulse heads the rail and is Home; ten tiles; the badge counts what needs you; no scrollbar at 960×600", async () => {
+  const h = app();
+  const { win } = h;
+  const ids = await win.locator(".aos-wb-railtabs .aos-wb-railbtn").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.tab));
+  expect(ids[0]).toBe("pulse");
+  if (ids.includes("chat")) expect(ids[1]).toBe("chat");
+  await openTab(win, "todo");
+  await win.locator(".aos-wb-mark").click();
+  await expect(rail(win, "pulse")).toHaveClass(/is-active/);
+  await expect(content(win).locator(".aos-pulse-grid > .aos-pulse-tile")).toHaveCount(10);
+  const needs = await content(win).locator(".aos-pulse-tile[data-area='needs'] .aos-pulse-pill").textContent();
+  await expect(win.locator('.aos-wb-railbtn[data-tab="pulse"] .aos-wb-railbadge')).toHaveText(needs!.trim());
+  const noScroll = () => win.evaluate(() => { const c = document.querySelector(".aos-wb-content") as HTMLElement; return c.scrollHeight <= c.clientHeight; });
+  expect(await noScroll()).toBe(true);
+  await resizeHud(h.app, { width: 960, height: 600 });
+  await expect.poll(() => win.evaluate(() => window.innerWidth)).toBe(960);
+  await expect.poll(noScroll).toBe(true);
+  // Every tile keeps its headline; rows that do not fit become "+N more".
+  await expect(content(win).locator(".aos-pulse-tile .aos-pulse-tile-label")).toHaveCount(10);
+  await expect(content(win).locator(".aos-pulse-more:not(.is-empty)").first()).toHaveText(/^\+\d+ more/);
+  await resizeHud(h.app, { width: 1480, height: 920 });
+});
+
+test("the tiles refit when the band grows after they were fitted: no row is cut at a list's foot", async () => {
+  const { win } = app();
+  const cut = () => win.evaluate(() => Array.from(document.querySelectorAll<HTMLElement>(".aos-pulse-cockpit .aos-pulse-list")).flatMap((list) =>
+    (Array.from(list.children) as HTMLElement[]).filter((r) => r.style.display !== "none" && r.offsetTop + r.offsetHeight > list.clientHeight + 1).map((r) => r.textContent)));
+  await expect.poll(cut).toEqual([]);
+  // A paragraph that wraps once more, or a font that loads late, makes the band taller while the pane keeps its size.
+  const band = win.locator(".aos-pulse-cockpit .aos-pulse-band");
+  await band.evaluate((el) => { (el as HTMLElement).style.paddingBottom = "120px"; });
+  await expect.poll(cut).toEqual([]);
+  await band.evaluate((el) => { (el as HTMLElement).style.paddingBottom = ""; });
+  await expect.poll(cut).toEqual([]);
+});
+
+test("the popup: a tile opens its area, the list switches areas without closing, ↑↓ walk it, Esc closes", async () => {
+  const { win } = app();
+  const modal = await pulseArea(win, "notifications");
+  await expect(modal.locator(".aos-pp-title")).toHaveText("Notifications");
+  await expect(modal.locator(".aos-pp-navbtn")).toHaveCount(10);
+  await modal.locator('.aos-pp-navbtn[data-area="routines"]').click();
+  await expect(modal.locator(".aos-pp-title")).toHaveText("Routines");
+  await expect(modal.locator(".aos-pp-row").first()).toBeVisible();
+  await modal.locator(".aos-pp-navbtn.is-on").press("ArrowDown");
+  await expect(modal.locator(".aos-pp-title")).toHaveText("Spend");
+  await win.keyboard.press("Escape");
+  await expect(win.locator(".modal.mod-pulse")).toHaveCount(0);
+});
+
+test("a decision jumps: Review → on a proposal opens its review in a Term session", async () => {
+  const { win } = app();
+  const modal = await pulseArea(win, "proposals");
+  await modal.locator(".aos-pp-row", { hasText: "proposal" }).first().locator("button", { hasText: "Review →" }).click();
+  await expect(win.locator(".modal.mod-pulse")).toHaveCount(0);
+  await expect(rail(win, "term")).toHaveClass(/is-active/);
+  await openTab(win, "pulse");
 });

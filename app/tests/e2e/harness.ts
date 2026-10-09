@@ -7,7 +7,7 @@
 // runtime refresh or an edit in one file never leaks into the next. The copy is restored to the same paths the
 // generator used, because the runtime's caches (snapshot.json, agenticos.json, routine plists) hold absolute paths.
 
-import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
+import { _electron as electron, expect, test, type ElectronApplication, type Locator, type Page } from "@playwright/test";
 import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -344,6 +344,27 @@ export const content = (win: Page) => win.locator(".aos-wb-content");
 export const drawer = (win: Page) => win.locator(".aos-wb-drawer");
 
 /** Clicks a rail button and waits until the tab is the active one and has drawn something. */
+/** Opens the Pulse popup on an area (spec 2026-10-08-pulse-cockpit-design P3): its tile, or the popup's list when it is
+ *  already open. Returns the popup. */
+export async function pulseArea(win: Page, area: string): Promise<Locator> {
+  const modal = win.locator(".modal.mod-pulse");
+  if (await modal.count()) await modal.locator(`.aos-pp-navbtn[data-area="${area}"]`).click();
+  else await win.locator(area === "needs" ? `.aos-pulse-tile[data-area="needs"] .aos-pulse-tile-headbtn` : `.aos-pulse-tile[data-area="${area}"]`).click();
+  await expect(modal.locator(".aos-pp-navbtn.is-on")).toHaveAttribute("data-area", area);
+  return modal;
+}
+
+/** Closes the Pulse popup when it is open (Esc). */
+export async function closePulse(win: Page): Promise<void> {
+  if (await win.locator(".modal.mod-pulse").count()) await win.keyboard.press("Escape");
+  await expect(win.locator(".modal.mod-pulse")).toHaveCount(0);
+}
+
+/** Sets the HUD window's content size, as launchApp does. */
+export async function resizeHud(app: ElectronApplication, size: { width: number; height: number }): Promise<void> {
+  await app.evaluate(({ BrowserWindow }, s) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().startsWith("app://hud/"))?.setContentSize(s.width, s.height), size);
+}
+
 export async function openTab(win: Page, id: string): Promise<void> {
   await rail(win, id).click();
   await expect(rail(win, id)).toHaveClass(/is-active/);

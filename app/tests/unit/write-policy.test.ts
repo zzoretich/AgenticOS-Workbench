@@ -149,8 +149,8 @@ const COMMANDS: Record<string, { ok: Array<[string, string[]]>; no: Array<[strin
   },
   pulse: {
     ok: [[NODE, [`${S}/auto-cost.js`, "--backfill"]], [NODE, [`${S}/heartbeat-writer.js`]], [NODE, [`${S}/graph-build.js`, "--quiet"]], [NODE, [`${S}/build-brain-md.js`]],
-      [NODE, [`${S}/cost-budget.js`, "--anchor", "12.5"]], [NODE, [`${S}/sdk/reflect-week.js`, "--local"]], [NODE, [`${S}/map-workspace.js`, "harbor app"]]],
-    no: [[NODE, [`${S}/cost-budget.js`, "--anchor", "-3"]], [NODE, [`${S}/cost-budget.js`, "--reset"]], [NODE, [`${S}/sdk/reflect-week.js`]]],
+      [NODE, [`${S}/cost-budget.js`, "--anchor", "12.5"]], [NODE, [`${S}/sdk/reflect-week.js`, "--local"]], [NODE, [`${S}/map-workspace.js`, "harbor app"]], [NODE, [`${S}/persona/briefing.js`, "--force"]]],
+    no: [[NODE, [`${S}/cost-budget.js`, "--anchor", "-3"]], [NODE, [`${S}/cost-budget.js`, "--reset"]], [NODE, [`${S}/sdk/reflect-week.js`]], [NODE, [`${S}/persona/briefing.js`, "--root", "/tmp"]]],
   },
   spaces: {
     ok: [[NODE, [`${S}/map-workspace.js`, "harbor"]], [NODE, [`${S}/map-workspace.js`, "harbor", "--file", "src/tide.ts"]], [NODE, [`${S}/regen-workspace-insight.js`, "harbor"]]],

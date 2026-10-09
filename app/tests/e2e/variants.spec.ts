@@ -6,7 +6,7 @@ import { expect, test } from "@playwright/test";
 import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { FX, appEnv, badge, claudeCalls, codexCalls, command, content, drawer, guardWrites, installChatStubs, openTab, rail, terminalText, useApp } from "./harness";
+import { FX, appEnv, badge, claudeCalls, codexCalls, command, content, drawer, guardWrites, installChatStubs, openTab, rail, terminalText, useApp, closePulse, pulseArea } from "./harness";
 import { SURFACES } from "../../src/shared/surfaces";
 
 const editJson = (file: string, fn: (j: Record<string, any>) => void) => {
@@ -38,10 +38,12 @@ test.describe("an empty vault: no persona, to-dos, notifications or teams", () =
     await expect(win.locator(".aos-host-status .aos-statusbar")).toContainText("· all clear");
   });
 
-  test("Pulse: the briefing row falls back to BRIEFING", async () => {
+  test("Pulse: with no persona the band reads Briefing, offers no Turn on, and composes the paragraph", async () => {
     const { win } = app();
     await openTab(win, "pulse");
-    await expect(win.locator(".aos-briefing-label")).toHaveText("BRIEFING");
+    await expect(win.locator(".aos-briefing-label")).toHaveText("Briefing");
+    await expect(win.locator(".aos-pulse-turnon")).toHaveCount(0);
+    await expect(win.locator(".aos-briefing-text")).toContainText(/^Good (morning|afternoon|evening)\./);
   });
 
   test("To-Do: nothing open, with the /todo hint", async () => {
@@ -89,17 +91,20 @@ test.describe("session costing off", () => {
   test("Pulse: no COST row and no anchor or backfill cards; the health card stays", async () => {
     const { win } = app();
     await openTab(win, "pulse");
+    await pulseArea(win, "health");
     await expect(win.locator(".aos-pulse-rowlabel", { hasText: /^HEALTH$/ })).toBeVisible();
     await expect(win.locator(".aos-pulse-rowlabel", { hasText: /^COST$/ })).toHaveCount(0);
     const titles = win.locator(".aos-pulse-fixq .aos-pulse-fix-title");
     await expect(titles.filter({ hasText: "health error(s)" })).toHaveCount(1);
     await expect(titles.filter({ hasText: "not yet anchored" })).toHaveCount(0);
     await expect(titles.filter({ hasText: "missing cost" })).toHaveCount(0);
+    await closePulse(win);
   });
 
   test("SYSTEM drawer: no COST DETAIL panel", async () => {
     const { win } = app();
     await openTab(win, "pulse");
+    await pulseArea(win, "health");
     await win.locator(".aos-pulse-row a", { hasText: "SYSTEM ▸" }).click();
     await expect(drawer(win).locator(".aos-panel-title", { hasText: "DISK" })).toBeVisible();
     await expect(drawer(win).locator(".aos-panel-title", { hasText: "COST DETAIL" })).toHaveCount(0);
@@ -121,15 +126,14 @@ test.describe("a provider on record", () => {
   // The chat stubs only prove that no CLI runs: Chat's surface is off here.
   const app = useApp({ prepare: () => { installChatStubs(); state("claude", true)(); } });
 
-  test("Sessions (rail id chat) heads the rail and is Home: the Workbench opens on it, and the mark returns to it", async () => {
+  test("Pulse heads the rail and is Home with a provider too; Sessions comes next; the mark returns to Pulse", async () => {
     const { win } = app();
     const ids = await win.locator(".aos-wb-railtabs .aos-wb-railbtn").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.tab));
-    expect(ids[0]).toBe("chat");
-    expect(ids.indexOf("pulse")).toBe(1);
-    await expect(rail(win, "chat")).toHaveClass(/is-active/);
-    await openTab(win, "pulse");
+    expect(ids.slice(0, 2)).toEqual(["pulse", "chat"]);
+    await expect(rail(win, "pulse")).toHaveClass(/is-active/);
+    await openTab(win, "chat");
     await win.locator(".aos-wb-mark").click();
-    await expect(rail(win, "chat")).toHaveClass(/is-active/);
+    await expect(rail(win, "pulse")).toHaveClass(/is-active/);
   });
 
   test("Vault chat under claude names the reasoner and its cap; a local provider reads local ask.js", async () => {
@@ -214,6 +218,18 @@ test.describe("a Codex-only machine", () => {
     await review.click();
     await expect(rail(win, "term")).toHaveClass(/is-active/);
     await expect.poll(() => terminalText(win), { timeout: 10_000 }).toContain("[fixture codex stub] $agenticos:persona-flag-closer");
+  });
+
+  test("Pulse: Review → on a proposal runs the same flag-closer skill through codex", async () => {
+    const { win } = app();
+    // The Proposals test's session is still in the pool: count the stub's lines rather than look for one.
+    const runs = async () => (await terminalText(win)).split("[fixture codex stub] $agenticos:persona-flag-closer").length - 1;
+    const before = await runs();
+    await openTab(win, "pulse");
+    const modal = await pulseArea(win, "proposals");
+    await modal.locator(".aos-pp-row", { hasText: "proposal" }).first().locator("button", { hasText: "Review →" }).click();
+    await expect(rail(win, "term")).toHaveClass(/is-active/);
+    await expect.poll(runs, { timeout: 10_000 }).toBeGreaterThan(before);
   });
 
   test("Notifications: the ask buttons open Codex sessions", async () => {

@@ -18,7 +18,7 @@ test("boots the Workbench on Pulse against the fixture vault, read-only", async 
   // The harness runs it read-only (AOS_APP_WRITE=""); the default, every surface on, is in variants.spec.ts.
   expect(info.writeSurfaces).toEqual([]);
   expect(info.writeSource).toBe("AOS_APP_WRITE");
-  // No top bar (UniDeX D3): the mark heads the rail and opens Home, which is Pulse without a chat provider.
+  // No top bar (UniDeX D3): the mark heads the rail and opens Home, which is Pulse (spec 2026-10-08-pulse-cockpit-design).
   await expect(win.locator(".aos-wb-mark")).toHaveAttribute("aria-label", "Home");
   await expect(win.locator(".aos-wb-topbar")).toHaveCount(0);
   // The unmodified HUD from this repo loaded ("[agentic-os] loaded" in Obsidian).
@@ -91,7 +91,7 @@ test("rail: Enter or Space on a focused button opens its tab", async () => {
   await openTab(win, "pulse");
 });
 
-test("rail badges count the fixture: to-do, proposals, notifications (rose for breaking), agent teams", async () => {
+test("rail badges count the fixture: Pulse, to-do, proposals, notifications (rose for breaking), agent teams", async () => {
   const { win } = app();
   const e = expected();
   await expect(badge(win, "todo")).toHaveText(String(e.todo.badge));
@@ -100,7 +100,10 @@ test("rail badges count the fixture: to-do, proposals, notifications (rose for b
   await expect(badge(win, "notifications")).toHaveClass(/is-urgent/);
   await expect(badge(win, "proposals")).not.toHaveClass(/is-urgent/);
   await expect(badge(win, "agent-teams")).toHaveText("2");
-  for (const id of ["pulse", "spaces", "memory", "runs", "routines", "skills", "agents", "term", "settings"]) {
+  // Pulse counts what needs the user (spec 2026-10-08-pulse-cockpit-design P5): the fixture has a health error, so it is rose.
+  await expect(badge(win, "pulse")).toHaveText(/^\d+$/);
+  await expect(badge(win, "pulse")).toHaveClass(/is-urgent/);
+  for (const id of ["spaces", "memory", "runs", "routines", "skills", "agents", "term", "settings"]) {
     await expect(badge(win, id)).toHaveClass(/is-empty/);
   }
 });

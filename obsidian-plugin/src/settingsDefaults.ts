@@ -60,6 +60,8 @@ export interface AgenticOSSettings {
   terminalChoice: TerminalChoice;
   // The Term composer's saved prompts (T12): read through data/termComposer.ts sanitizeSnippets
   terminalSnippets: Array<{ title: string; text: string; host: "claude" | "codex" | null }>;
+  // Pulse (spec 2026-10-08-pulse-cockpit-design P10): when Pulse was last left; "since you last looked" counts from it
+  pulseSeenAt: string | null;
 }
 
 /** Keys data.json may still hold from earlier versions; loadSettings prunes them (the two HUD-only toggles, D10). */
@@ -84,6 +86,7 @@ export const DEFAULT_SETTINGS: AgenticOSSettings = {
   // Term
   terminalChoice: { host: null, access: "host", agentPlace: "vault", recent: [] },
   terminalSnippets: [],
+  pulseSeenAt: null,
 };
 
 // ── remembered choices (U12) ──

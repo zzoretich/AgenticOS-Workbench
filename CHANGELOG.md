@@ -4,8 +4,18 @@ All notable changes to UniDeX (AgenticOS Workbench before 1.1). Versions follow 
 
 ## [Unreleased]
 
+### Changed
+- **Pulse is Home, and it is now a no-scroll cockpit.** Your Chief of Staff's briefing sits on top. Each underlined phrase opens what it names. "Since you last looked" says what arrived while you were away, and the Commands row sits underneath. Below are ten tiles: what needs you, system health, agents, workspaces, to-dos, decisions, notifications, routines, spend and memory.
+  - A tile shows its count and as many rows as fit, and the rest read "+N more". Nothing scrolls, even at the smallest window.
+  - A tile opens one popup with every area in a list on its left. Safe actions act right there: run a fix or a routine, mark read, tick a to-do, keep a memory. Decisions jump to their review (a proposal or flag to the flag-closer, a team gate to Agent Teams).
+  - The pipeline LEDs, the Fix Queue, the cost and health rows and the auto-promote trail moved into the popup's Health and Memory areas.
+  - The rail starts with Pulse, and its badge counts what needs you (rose when one is an error). Sessions is one click below.
+
 ### Added
-- **The Chief of Staff writes a short briefing for Pulse.** A new `briefing` routine (every 30 minutes from 7:00 to 22:00) reads what Pulse knows: errors, decisions waiting on you, stale or failing work, unread notifications, to-dos, memories to review, routines and spend. When something changed, it asks the background model for two or three sentences in your Chief of Staff's name and saves them to `brain/_index/briefing.json`. It writes nothing when nothing changed. The call is a `duty:briefing` row paid from the daily duty cap (`persona.perDayUsd`), with `claude.model` (Haiku by default) or `codex.model`. Ollama is used first and free when it answers. Nothing runs while the Chief of Staff is off; `persona.briefing.enabled: false` turns just the briefing off. New vaults get the routine; the Workbench will offer it to existing vaults.
+- **The Chief of Staff writes a short briefing for Pulse.** A new `briefing` routine (every 30 minutes from 7:00 to 22:00) reads what Pulse knows: errors, decisions waiting on you, stale or failing work, unread notifications, to-dos, memories to review, routines and spend. When something changed, it asks the background model for two or three sentences in your Chief of Staff's name and saves them to `brain/_index/briefing.json`. It writes nothing when nothing changed. The call is a `duty:briefing` row paid from the daily duty cap (`persona.perDayUsd`), with `claude.model` (Haiku by default) or `codex.model`. Ollama is used first and free when it answers. Nothing runs while the Chief of Staff is off; `persona.briefing.enabled: false` turns just the briefing off. New vaults get the routine.
+
+### Upgrading
+- On a vault from before 1.5.0, Pulse offers **Turn on <name>'s briefing**, which adds `brain/routines/briefing.md` and schedules it. Until then, and whenever the Chief of Staff is off, Pulse composes the paragraph itself.
 
 ## [1.4.1] — 2026-10-08
 
