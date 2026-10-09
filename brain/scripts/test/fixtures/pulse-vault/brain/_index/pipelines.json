@@ -1,0 +1,7 @@
+{"version":1,"pipelines":{
+"scan-vault":{"lastRun":{"startedAt":"2026-10-08T19:10:00","endedAt":"2026-10-08T19:10:05","durationMs":5000,"status":"ok","error":null,"wrote":[],"counts":{}},"history":[]},
+"build-brain-md":{"lastRun":{"startedAt":"2026-10-08T17:00:00","endedAt":"2026-10-08T17:00:01","durationMs":1000,"status":"ok","error":null,"wrote":[],"counts":{}},"history":[]},
+"auto-cost":{"lastRun":{"startedAt":"2026-10-08T15:00:00","endedAt":"2026-10-08T15:00:01","durationMs":1000,"status":"error","error":"no transcript","wrote":[],"counts":{}},"history":[]},
+"embed-vault":{"lastRun":{"startedAt":"2026-10-08T15:00:00","endedAt":"2026-10-08T15:00:01","durationMs":1000,"status":"disabled","reason":"no-embed","error":null,"wrote":[],"counts":{}},"history":[]},
+"routine:monitor":{"lastRun":{"startedAt":"2026-10-08T13:00:00","endedAt":"2026-10-08T13:02:00","durationMs":120000,"status":"ok","error":null,"wrote":[],"counts":{}},"history":[]}
+}}

@@ -1,0 +1,2 @@
+{"schema":1,"ts":"2026-10-07T08:00:00.000Z","by":"lead","id":"site-01","title":"Landing page","stage":"build","owner":"lead","status":"working"}
+{"schema":1,"ts":"2026-10-07T09:00:00.000Z","by":"lead","id":"site-02","title":"Ship the landing page","stage":"ship","owner":"lead","status":"gate","gate":{"name":"ship","state":"pending"}}

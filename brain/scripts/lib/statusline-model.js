@@ -84,19 +84,23 @@ function alertsOf(vault) {
   return { alerts, breaking };
 }
 
-/** Open flags in persona/STATE.md: `- [ ]` and bare `- ` bullets under `## Flags`, never `- [x]` or "none" (D5). */
-function countFlags(text) {
-  if (!text) return 0;
+/** Open flags in persona/STATE.md: `- [ ]` and bare `- ` bullets under `## Flags`, never `- [x]` or "none" (D5). Each is
+ *  its text without the bullet and checkbox, and the `YYYY-MM-DD` the tick puts first when there is one (Pulse lists them). */
+function openFlags(text) {
+  if (!text) return [];
   let inFlags = false;
-  let n = 0;
+  const out = [];
   for (const line of text.split(/\r?\n/)) {
     if (/^##\s/.test(line)) { inFlags = /^##\s+Flags\b/.test(line); continue; }
     if (!inFlags || !/^[-*]\s+\S/.test(line)) continue;
     if (/^[-*]\s+\[[xX]\]/.test(line) || /^[-*]\s+\(?none\)?\.?\s*$/i.test(line)) continue;
-    n++;
+    const body = line.replace(/^[-*]\s+(\[ \]\s*)?/, '').trim();
+    const d = /^(\d{4}-\d{2}-\d{2})\s+(.*)$/.exec(body);
+    out.push({ date: d ? d[1] : null, text: d ? d[2] : body });
   }
-  return n;
+  return out;
 }
+function countFlags(text) { return openFlags(text).length; }
 
 function familyOf(feature) {
   for (const [re, fam] of FAMILY_OF) if (re.test(feature)) return fam;
@@ -264,6 +268,6 @@ function refresh(vault, opts = {}) {
 }
 
 module.exports = {
-  SCHEMA, STALE_MS, SPEND_SHOW_RATIO, modelPath, pidAlive, countFlags, familyOf, spendToday, capsOf, spendOf,
+  SCHEMA, STALE_MS, SPEND_SHOW_RATIO, modelPath, pidAlive, readTeams, openFlags, countFlags, familyOf, spendToday, capsOf, spendOf,
   gatesOf, runsOf, alertsOf, healthOf, ledgerToday, normalize, build, read, write, isStale, refresh,
 };

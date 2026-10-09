@@ -1,0 +1,1 @@
+{"schema":1,"routines":{"monitor":{"lastRunAt":"2026-10-08T13:00:00","lastExit":0,"failStreak":0,"lastError":null},"sitrep":{"lastRunAt":"2026-10-08T07:45:00","lastExit":1,"failStreak":2,"lastError":"Bash denied"}},"synced":{},"syncedAt":null}
