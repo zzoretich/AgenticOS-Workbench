@@ -89,7 +89,8 @@ function lock(vault, now) {
     } catch (e) {
       if (e.code !== 'EEXIST') throw e;
       let age = Infinity;
-      try { age = now.getTime() - fs.statSync(file).mtimeMs; } catch { /* vanished: retry */ }
+      // Wall-clock age: a lock's mtime is the OS clock's, whatever `now` the run was given.
+      try { age = Date.now() - fs.statSync(file).mtimeMs; } catch { /* vanished: retry */ }
       if (age < LOCK_STALE_MS) return null;
       try { fs.unlinkSync(file); } catch { /* raced: retry */ }
     }
