@@ -22,7 +22,7 @@ const FACTS = {
   needsYou: [{ tier: 0, area: 'proposals', kind: 'proposal', tone: 'gate', title: 'Tidy the memory index', since: '2026-09-22', ref: 'x.md' }],
   summary: { routines: { total: 12, failing: 0 } },
 };
-const REPLY = { text: 'Good evening. The Tidy the memory index proposal has waited 16 days, and 2 more need you. 12 routines green.' };
+const REPLY = { text: 'Good evening. The “Tidy the memory index” proposal has waited 16 days, and 2 more need you. 12 routines green.' };
 
 /** Deps with a fake provider; `over` replaces any of them. Records the chat calls. */
 function deps(over = {}) {
@@ -49,13 +49,13 @@ test('writes the paragraph: one duty:briefing call asking only for text; the men
   assert.deepEqual(d.calls[0].schema, B.REPLY_SCHEMA);
   assert.match(d.calls[0].system, /You are Beacon, the user's Chief of Staff/);
   assert.match(d.calls[0].prompt, /Time: evening\./);
-  assert.match(d.calls[0].prompt, /"say":"the Tidy the memory index proposal","area":"proposals","waiting":"16 days"/);
+  assert.match(d.calls[0].prompt, /"say":"the “Tidy the memory index” proposal","area":"proposals","waiting":"16 days"/);
   assert.match(d.calls[0].prompt, /fine: \[\{"say":"12 routines green","area":"routines"\}\]/);
   const o = out();
   assert.equal(o.status, 'ok');
   assert.equal(o.text, REPLY.text);
   assert.deepEqual(o.mentions, [
-    { phrase: 'The Tidy the memory index proposal', area: 'proposals' },
+    { phrase: 'The “Tidy the memory index” proposal', area: 'proposals' },
     { phrase: '2 more', area: 'needs' },
     { phrase: '12 routines green', area: 'routines' },
   ]);
@@ -140,9 +140,10 @@ test('parseReply: plain JSON, JSON inside other text, and nothing usable', () =>
   assert.equal(B.parseReply('no json here'), null);
 });
 
-test('the words for an item: a proposal named "... Proposal" is not doubled; a long flag is cut at a word', () => {
-  assert.equal(B.sayOf({ kind: 'proposal', title: 'Workbench 1.0 Proposal' }), 'the Workbench 1.0 Proposal');
-  assert.equal(B.sayOf({ kind: 'proposal', title: 'Weekly digest' }), 'the Weekly digest proposal');
+test('the words for an item: a proposal\'s title is quoted, one named "... Proposal" not doubled; a long flag is cut at a word', () => {
+  assert.equal(B.sayOf({ kind: 'proposal', title: 'Workbench 1.0 Proposal' }), 'the “Workbench 1.0 Proposal”');
+  assert.equal(B.sayOf({ kind: 'proposal', title: 'Weekly digest' }), 'the “Weekly digest” proposal');
+  assert.equal(B.sayOf({ kind: 'proposal', title: 'An idea with loose ends' }), 'the “An idea with loose ends” proposal');
   const flag = B.sayOf({ kind: 'flag', title: 'Bash denied in unattended runs drops duty writes and reads; root cause: no tools allowlist for the duty' });
   assert.ok(flag.length <= 71 && flag.endsWith('…'), flag);
   assert.equal(B.sayOf({ kind: 'error', title: '2 hook paths are missing' }), '2 hook paths are missing');
@@ -154,6 +155,13 @@ test('mentions: any case, in text order, overlapping finds keep the first, missi
     { phrase: '3 others', area: 'needs' },
     { phrase: 'The Weekly Digest proposal', area: 'proposals' },
   ]);
+});
+
+test('mentions: a quoted title matches with straight quotes or none, as the model wrote it', () => {
+  const items = [{ say: 'the “Weekly digest” proposal', area: 'proposals' }];
+  assert.deepEqual(B.mentionsFor('Good morning. The "Weekly digest" proposal waits.', items, []), [{ phrase: 'The "Weekly digest" proposal', area: 'proposals' }]);
+  assert.deepEqual(B.mentionsFor('Good morning. The Weekly digest proposal waits.', items, []), [{ phrase: 'The Weekly digest proposal', area: 'proposals' }]);
+  assert.deepEqual(B.mentionsFor('Good morning. The “weekly digest” proposal waits.', items, []), [{ phrase: 'The “weekly digest” proposal', area: 'proposals' }]);
 });
 
 test('mentions: a count the model spelled out still matches ("Two hook paths", "three more")', () => {

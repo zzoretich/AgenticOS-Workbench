@@ -110,9 +110,9 @@ function clip(s, max) {
 }
 
 /** The words the paragraph uses for an item. Written here, not by the model, so it only joins them and Pulse can find
- *  them again in the text. */
+ *  them again in the text. A proposal's title is quoted, so "the “An idea with loose ends” proposal" still reads. */
 function sayOf(n) {
-  if (n.kind === 'proposal') return /\bproposal$/i.test(n.title) ? `the ${clip(n.title, 60)}` : `the ${clip(n.title, 60)} proposal`;
+  if (n.kind === 'proposal') return /\bproposal$/i.test(n.title) ? `the “${clip(n.title, 60)}”` : `the “${clip(n.title, 60)}” proposal`;
   return clip(n.title, n.kind === 'flag' ? 70 : 80);
 }
 
@@ -143,7 +143,7 @@ function systemPrompt(name) {
     'Rules:',
     '- Two or three sentences, under 70 words, plain prose: no lists, headings, markdown or emoji.',
     '- Start with "Good morning", "Good afternoon" or "Good evening", as the time says.',
-    '- Use each "say" text exactly as written; only its first letter may change case.',
+    '- Use each "say" text exactly as written, quotation marks included; only its first letter may change case.',
     '- First sentence: the first item, with its "waiting" when it has one.',
     '- Then the other items, then "and N more" when "more" is above 0.',
     '- End with what is fine, from the "fine" texts, when there are any.',
@@ -168,15 +168,21 @@ const NUMBER_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'sev
   'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty'];
 const MORE_RE = new RegExp(`\\b(?:\\d+|${NUMBER_WORDS.slice(1).join('|')}) (?:more|others?)\\b`, 'i');
 
+/** Text folded for finding a phrase: any case, and any double quote as `"`, one character for one so an index into the
+ *  folded text is an index into the text. */
+const fold = (s) => s.toLowerCase().replace(/[“”„‟″"]/g, '"');
+
 function mentionsFor(text, items, fine) {
-  const lower = text.toLowerCase();
+  const lower = fold(text);
   const found = [];
   const add = (say, area) => {
     // A model may spell a leading count out ("Two hook paths" for "2 hook paths"): both are the same words.
     const lead = /^(\d+)(\s.*)$/.exec(say);
     const forms = lead && NUMBER_WORDS[Number(lead[1])] ? [say, NUMBER_WORDS[Number(lead[1])] + lead[2]] : [say];
+    // It may also drop a title's quotes ("the Weekly digest proposal"), or write straight ones (folded above).
+    if (/[“”"]/.test(say)) forms.push(say.replace(/[“”"]/g, ''));
     for (const w of forms) {
-      const at = lower.indexOf(w.toLowerCase());
+      const at = lower.indexOf(fold(w));
       if (at < 0) continue;
       if (!found.some((m) => at < m.at + m.len && m.at < at + w.length)) found.push({ at, len: w.length, area });
       return;
