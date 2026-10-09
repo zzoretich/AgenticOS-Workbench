@@ -41,7 +41,7 @@ output. The design treats the page that shows them as untrusted (design D7,
     or Codex folder only when it is one main trusts.
   - *Terminals:* a shell listed in `/etc/shells` (or your `$SHELL`), with no arguments. Main starts it with its own
     environment, `PATH` replaced by your login shell's (asked once, as the setup wizard does) and `CLAUDECODE` removed;
-    the page still cannot set `PATH`. The Term tab starts an agent by typing its command into that shell.
+    the page still cannot set `PATH`. The Code tab starts an agent by typing its command into that shell.
   - *Appearance:* the page may set the theme to `system`, `light` or `dark` and nothing else; main saves the choice in
     the app's data (`app-settings.json`), never in the vault, and hands it to macOS's `nativeTheme`.
   - *Setup (phase 5):* the wizard names a fix by id; main runs that fix's fixed command (`app/src/main/policy/setup.ts`:
@@ -69,7 +69,7 @@ output. The design treats the page that shows them as untrusted (design D7,
 
 | Risk | Why it stays | What limits it |
 |---|---|---|
-| The Term tab is a shell | It is the feature: what you type runs as you. A compromised page could type into a terminal it opens | Nothing in the page can run code (CSP, sanitized Markdown, no remote content), so a page must first be compromised; the terminal starts only a listed shell |
+| The Code tab is a shell | It is the feature: what you type runs as you. A compromised page could type into a terminal it opens | Nothing in the page can run code (CSP, sanitized Markdown, no remote content), so a page must first be compromised; the terminal starts only a listed shell |
 | The page can do what the Workbench's buttons do | Routines run agent prompts, Settings changes settings, Agent Teams approves gates | Each is a named command with an argument rule; nothing outside the surfaces runs |
 | The page can make the Chief of Staff write a briefing now | Pulse's ↻ (spec 2026-10-08-pulse-cockpit-design P13) | One rule on the Pulse surface: `persona/briefing.js --force` and nothing else. It makes one model call through `provider.js`, under the daily duty cap (`persona.perDayUsd`), and writes only `brain/_index/briefing.json`; nothing runs while the persona is off |
 | Links you made inside the vault are followed | Checks are on the vault's paths; a workspace linked to a code folder is read and written through the link, as you set it up | The page cannot create links |

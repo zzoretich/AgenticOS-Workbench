@@ -336,7 +336,13 @@ export function useApp(opts: LaunchOptions = {}): () => AppHandle {
 
 // ── helpers the specs share ──────────────────────────────────────────
 
-export const RAIL_ORDER = ["chat", "pulse", "files", "todo", "proposals", "notifications", "spaces", "memory", "runs", "routines", "skills", "agents", "agent-teams", "term"];
+/** The rail's three sections (spec 2026-10-09-rail-sections-code D1), a line between each; "chat" (Sessions) only with a provider. */
+export const RAIL_SECTIONS = [
+  ["notifications", "pulse", "term", "chat"],
+  ["todo", "spaces", "files", "routines", "proposals"],
+  ["memory", "agent-teams", "agents", "skills", "runs"],
+];
+export const RAIL_ORDER = RAIL_SECTIONS.flat();
 
 export const rail = (win: Page, id: string) => win.locator(`.aos-wb-railbtn[data-tab="${id}"]`);
 export const badge = (win: Page, id: string) => rail(win, id).locator(".aos-wb-railbadge");

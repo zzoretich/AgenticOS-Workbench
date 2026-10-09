@@ -16,13 +16,13 @@ list at the top of app-smoke.md is the release process, not app behaviour: it is
 
 | Status | Items |
 |---|---|
-| covered | 106 |
+| covered | 108 |
 | covered in part | 25 |
 | N/A in the app | 40 |
 | not covered | 6 |
-| **total** | **177** |
+| **total** | **179** |
 
-Of the 137 items about the app (177 minus the 40 N/A), 131 are asserted (106 fully, 25 in part); the other 6 are not
+Of the 139 items about the app (179 minus the 40 N/A), 133 are asserted (108 fully, 25 in part); the other 6 are not
 covered, for the reasons below. Every write surface is enabled and tested. The
 "in part" rows need something the fixture or the app lacks (a dispatched seat, a Codex database, the clipboard, the
 OS handing over an `agenticos://` link, a published update, a vault without the briefing routine, a host's model run). The writes, each surface on through `AOS_APP_WRITE`:
@@ -74,7 +74,7 @@ see below).
 
 | # | Item | Status | Covered by / reason |
 |---|---|---|---|
-| I1 | The app opens the vault on Home, which is Pulse (first in the rail), with no error; a dev run logs `[host] AgenticOS HUD <version> loaded` | covered | `shell › boots the Workbench…` (the HUD's version loaded, Pulse active), `pulse › the cockpit…` and `variants › a provider on record › Pulse heads the rail and is Home…` (Home is Pulse with and without a provider), `shell › a tour … raises no renderer or main-process error`. |
+| I1 | The app opens the vault on Home, which is Pulse (second in the rail, after Notifications), with no error; a dev run logs `[host] AgenticOS HUD <version> loaded` | covered | `shell › boots the Workbench…` (the HUD's version loaded, Pulse active), `pulse › the cockpit…` and `variants › a provider on record › Pulse is Home with a provider too…` (Home is Pulse with and without a provider), `shell › a tour … raises no renderer or main-process error`. |
 | I2 | Paths section as pickers (this vault / auto / auto with nodes listed); Probe picks a path | covered | `settings › WORKBENCH section…` (the three pickers and the Probe button), `settings-writes › Probe resolves node again and saves it in the app's own settings` |
 | I3 | Provider row reflects `provider-state.json` (name + reason); refresh re-reads it | covered | `settings-window › the plugin's tab…` in the app's settings window: `none (forced) — checked …` and its refresh button; `settings › WORKBENCH section…` renders the same tab directly. |
 
@@ -96,7 +96,7 @@ see below).
 
 | # | Item | Status | Covered by / reason |
 |---|---|---|---|
-| F1 | Files second on the rail; the top level, folders first, without dot-folders, node_modules or graphify-out | covered | `files › Files sits second on the rail…` |
+| F1 | Files after Spaces on the rail; the top level, folders first, without dot-folders, node_modules or graphify-out | covered | `shell › rail: three sections…` (its place), `files › Files opens from the rail…` |
 | F2 | A folder opens and closes in place; a click on a note opens it | covered | `files › a folder opens and closes in place…` |
 | F3 | Search across notes with the hit highlighted; all text files; a line opens its note; Escape clears | covered | `files › search finds lines across notes…` |
 | F4 | Open file… (⌘O) fuzzy, Markdown first; Search vault… (⌘⇧F) focuses the search box | covered | `files › Open file… matches paths fuzzily…`, `› Search vault… opens Files…` |
@@ -115,11 +115,12 @@ see below).
 | S5 | A value outside the presets reads "$175.00 (custom)", is not changed by opening the tab; − / + go to $150 / $200 | covered | The fixture sets `cost.monthlyBudget 175` with `aos config set`. `settings › number rows…`; `shell › read-only guard…` checks `brain/config.json` is unchanged. |
 | S6 | recallRoots / routines.tools chips (last chip locked); Edit brain/config.json buttons; Manage in Skills / Agents; hosts & install plain text | covered | `settings › list settings…`, `settings › quickLinks and external labels…`, `settings › hosts & install…`, `settings-writes › chips: a routine tool change asks first; switching all but one off locks the last one…` |
 | S7 | Setting `claude.model` leaves a follow-up bar and a ⚙ badge; clicking runs the sync | covered | `settings-writes › a picker sets the key in the file that wins; its follow-up becomes a button and a ⚙ badge…`; with the surface off, `settings › …a change is refused…` |
-| S8 | ↺ resets a row; hosts & install rows read-only; ❯_ aos doctor / aos upgrade open Term running them | covered | `settings › hosts & install…`, `settings › ❯_ aos doctor runs the vault's own doctor in a new Term session`, `settings-writes › ↺ goes back to the default…`. `aos upgrade` runs in Term, the user's shell, as doctor does. |
+| S8 | ↺ resets a row; hosts & install rows read-only; ❯_ aos doctor / aos upgrade open Code running them | covered | `settings › hosts & install…`, `settings › ❯_ aos doctor runs the vault's own doctor in a new terminal in Code`, `settings-writes › ↺ goes back to the default…`. `aos upgrade` runs in Code, the user's shell, as doctor does. |
 | S9 | Claude-only: Codex rows dimmed with the hint, still editable; Codex-only: Claude rows dimmed; both: nothing dimmed | covered | `settings › Codex rows are dimmed…`, `variants › a Codex-only machine › Settings…`, `variants › both hosts › Settings: nothing is dimmed` |
 | S10 | A runtime before 0.17: "run aos upgrade" with a button; the WORKBENCH section works | covered | `variants › a runtime that predates aos config › Settings asks for aos upgrade…` |
 | S11 | WORKBENCH section and the settings window's Runtime tab show the same rows; a change in one shows in the other | covered | `settings › WORKBENCH section…` (same rows, same renderer), `settings-window › the plugin's tab…` (the rows in the window), `settings-window › a change in the window shows in the WORKBENCH section…` (both ways; the plugin's settings live in the app's data folder). |
 | S12 | Vault root picker: a missing vault shows a Notice; a different vault the 10 s explanation | not covered | Picking saves only the plugin's own settings (userData, which no write surface gates); reaching either Notice needs a second vault in the picker's list, which the fixture does not have. |
+| S13 | The rail in three sections with a light line between them (and under the head, over the foot); Pulse navy in light, neon blue in dark, the other theme's on its selected chip; Code's tooltip and palette name, `tab=term` still opens it | covered | `shell › rail: three sections…` (the order, two separators at the section ends, Code's label and icon), `shell › rail: Pulse is navy in light…` (both themes: at rest, hovered, selected; one line colour), `shell › commands…` (Open Workbench: Code under the id `term`); the `term` id is unchanged, so `WORKBENCH_TAB_IDS` resolves `tab=term` as before. |
 
 ## Config (both hosts)
 
@@ -138,7 +139,7 @@ see below).
 | P1 | LEDs in the popup's Health area: every manifest pipeline, EMBED off, never-ran / disabled gray with the reason, nothing red | covered | `pulse › LEDs…` |
 | P2 | Briefing band: the persona's name heads it (Briefing without a persona); composed from the facts with no `briefing.json`; Turn on adds the routine; each phrase opens its area | covered in part | `pulse › briefing row…` (the name, "composed from the facts", a phrase opens its area in the popup, ↻ offered), `variants › an empty vault › Pulse: with no persona the band reads Briefing…`. **Turn on** needs a vault with a persona and no briefing routine: the fixture's template seeds the routine. |
 | P11 | Cockpit: ten tiles with no scrollbar at full size and at 960×600, where rows become "+N more"; the rail badge counts what needs you, rose with an error | covered | `pulse › the cockpit…` (ten tiles; no scroll at the suite's 1480×920 and at 960×600; every headline kept and a "+N more"; the badge equals the Needs-you count), `pulse › the tiles refit when the band grows…` (no row cut at a list's foot), `shell › rail badges count the fixture…` (rose: the fixture has a health error). |
-| P12 | Popup: a tile opens its area; the list switches areas (↑↓ too) and Esc closes; safe actions act in place, decisions jump | covered in part | `pulse › the popup…` (opened from a tile, switched from the list, ↓, Esc), `pulse › a decision jumps…` (Review → opens the review in Term). Done, Mark read and Run now reuse the To-Do, Notifications and Routines writes, tested from their tabs (T4, N4, RT5); a gate opening Agent Teams is not asserted. |
+| P12 | Popup: a tile opens its area; the list switches areas (↑↓ too) and Esc closes; safe actions act in place, decisions jump | covered in part | `pulse › the popup…` (opened from a tile, switched from the list, ↓, Esc), `pulse › a decision jumps…` (Review → opens the review in Code). Done, Mark read and Run now reuse the To-Do, Notifications and Routines writes, tested from their tabs (T4, N4, RT5); a gate opening Agent Teams is not asserted. |
 | P13 | Claude Code host: `aos routines run briefing` writes `briefing.json` (`provider: claude`) and a `duty:briefing` spend row; Pulse shows it; ↻ writes it again | N/A in the app | A host model run (it spends). Which paragraph the band shows for a written `briefing.json` (fresh, stale, failed, skipped) is unit-tested in `obsidian-plugin` `briefingBand.test.ts`; ↻'s spawn rule (`persona/briefing.js --force`, nothing wider) in `write-policy.test.ts`. |
 | P14 | Codex host: the same run writes it with `provider: codex` (or `ollama`); Pulse's Review → buttons start Codex | covered in part | `variants › a Codex-only machine › Pulse: Review → on a proposal runs the same flag-closer skill through codex`. The run itself is a host model call (it spends). |
 | P3 | COST row absent while cost is off, present with cost on and a budget | covered | `pulse › COST row…`, `variants › session costing off › Pulse…`. Switching it on is a write. |
@@ -154,7 +155,7 @@ see below).
 
 | # | Item | Status | Covered by / reason |
 |---|---|---|---|
-| T1 | Rail between Pulse and Proposals; "Nothing open" without TODO.md; `open TODO.md` creates and opens it | covered | `shell › rail…`, `variants › an empty vault › To-Do…`, `todo › open TODO.md…` (an existing file), `todo-writes › without TODO.md, open TODO.md creates it from the template…` |
+| T1 | Heads the rail's second section; "Nothing open" without TODO.md; `open TODO.md` creates and opens it | covered | `shell › rail…`, `variants › an empty vault › To-Do…`, `todo › open TODO.md…` (an existing file), `todo-writes › without TODO.md, open TODO.md creates it from the template…` |
 | T2 | Quick-add appends to `## Open` | covered | `todo › quick-add row…` (the controls), `todo-writes › quick-add appends to the end of ## Open…` (Enter and + add; the file byte for byte) |
 | T3 | OVERDUE / TODAY / UPCOMING / SOMEDAY with late markers, priority order; badge follows a hand edit within a second with another tab active | covered | `todo › head counts and the four groups…`, `todo › badge counts overdue + today…` |
 | T4 | Ticking moves the item to Done; unticking moves it back | covered | `todo-writes › ticking moves the item and its child line…`; with the surface off, `todo › …a tick is refused…` |
@@ -167,11 +168,11 @@ see below).
 
 | # | Item | Status | Covered by / reason |
 |---|---|---|---|
-| R1 | Rail after To-Do; badge hidden with no proposals; a copied-in proposal shows an amber count within a second with another tab active, and goes when deleted | covered | `shell › rail…`, `variants › an empty vault › badges…`, `proposals › badge…` |
+| R1 | Closes the rail's second section, after Routines; badge hidden with no proposals; a copied-in proposal shows an amber count within a second with another tab active, and goes when deleted | covered | `shell › rail…`, `variants › an empty vault › badges…`, `proposals › badge…` |
 | R2 | PENDING: slug, target, kind pill, surface, age, `confirmed Nd` (green at 2+), ⚠ with reasons | covered | `proposals › PENDING…` |
 | R3 | Expanded row: needs, recipe, What / Why / Risk as Markdown, premises; Open file; group heads collapse | covered | `proposals › a row expands…`, `proposals › Open file…`, `proposals › group heads…` |
 | R4 | BACKLOG newest first; HISTORY newest first without filed rows; rates match `ledger.js summary` | covered | `proposals › BACKLOG…`, `proposals › HISTORY…`, `proposals › head, review button and the 28-day rates line…` |
-| R5 | Review in Claude ❯_ opens Term running `claude "review persona flags"` (no extra shell); Codex-only runs the flag-closer skill | covered | `proposals › Review in Claude ❯_…`, `variants › a Codex-only machine › Proposals…` (a directly wired Codex's `$persona-flag-closer` form is not exercised). |
+| R5 | Review in Claude ❯_ opens Code running `claude "review persona flags"` (no extra shell); Codex-only runs the flag-closer skill | covered | `proposals › Review in Claude ❯_…`, `variants › a Codex-only machine › Proposals…` (a directly wired Codex's `$persona-flag-closer` form is not exercised). |
 | R6 | Without `persona/`: only the "isn't set up" line | covered | `variants › an empty vault › Proposals…` |
 | R7 | "Appears after the next scan"; running `proposal-html.js` makes the row open the page in the browser; the page itself in light and dark | covered in part | `proposals › proposal pages…`, `proposals › proposal-html.js run in the vault…`. The page opens in the OS browser (recorded, not opened): its rendering is outside the app. |
 | R8 | The Markdown gains the page link; a second run skips it; BACKLOG and HISTORY rows with a page link it | covered in part | `proposals › proposal-html.js run…` (the link line), `proposals › BACKLOG…` and `› HISTORY…` (page links). "A second run prints skipped" is the runtime's own output. |
@@ -180,7 +181,7 @@ see below).
 
 | # | Item | Status | Covered by / reason |
 |---|---|---|---|
-| N1 | Rail after Proposals; no `brain/notifications`: badge hidden, "No notifications yet" with the hint | covered | `shell › rail…`, `variants › an empty vault › Notifications…` |
+| N1 | Heads the rail; no `brain/notifications`: badge hidden, "No notifications yet" with the hint | covered | `shell › rail…`, `variants › an empty vault › Notifications…` |
 | N2 | `aos notify post` shows an amber count within a second, with another tab active | covered | `notifications › a post from aos notify post…` (the fixture's edition carries the actions). |
 | N3 | A breaking post raises a desktop notification and turns the badge rose; `osAlert false` suppresses it | covered in part | `notifications › rail badge … rose…`. The desktop alert comes from the runtime's `aos notify`, not the app. |
 | N4 | Unread newest first; an edition opens in the reading pane with intro, sections and buttons; the row turns read; Mark all read | covered | `notifications › Unread lists…`, `› an edition expands…`, `› with the Notifications surface off, opening an unread item…` (refused), `notifications-writes › opening an unread item marks it read…`, `› Mark all read…`. In the Unread view the opened item leaves the list at once (upstream finding). |
@@ -203,7 +204,7 @@ see below).
 
 | # | Item | Status | Covered by / reason |
 |---|---|---|---|
-| AT1 | ⁂ after Agents; "Open Workbench: Agent Teams"; "No teams yet" with the hint; Seed runs `aos team init` | covered | `agent-teams › rail…`, `shell › commands…`, `variants › an empty vault › Agent Teams…`, `variants › no teams yet, with the Agent Teams surface on › Seed the example team…` |
+| AT1 | ⁂ after Memory, above Agents; "Open Workbench: Agent Teams"; "No teams yet" with the hint; Seed runs `aos team init` | covered | `shell › rail: three sections…` (its place), `agent-teams › rail…`, `shell › commands…`, `variants › an empty vault › Agent Teams…`, `variants › no teams yet, with the Agent Teams surface on › Seed the example team…` |
 | AT2 | A gate put on the board shows an amber count within a second; NEEDS YOU card: item, gate, wait, spend, the lead's pitch, presets, − / +, a preset below spend disabled | covered | `agent-teams › a gate put on the board…`, `› NEEDS YOU…`, `› a budget preset or − / +…` |
 | AT3 | Approve asks first, Cancel writes nothing; Approve records, opens the lead; a stale `--expect` is refused | covered | `agent-teams › Approve asks first; Cancel records nothing and runs nothing`, `teams-writes › Approve records the decision…`, `› an approve drawn before the lead changed the item is refused by --expect…` |
 | AT4 | Redirect ❯_ opens the lead's agent with the gate and the recording line; one button per host; a config-dir prefix when it differs | covered in part | `agent-teams › Redirect ❯_…`, `variants › a Codex-only machine › Agent Teams…`, `variants › both hosts › Agent Teams…`. The `CLAUDE_CONFIG_DIR='…'` prefix needs a config dir other than the terminal's; the fixture's are the same. |
@@ -297,9 +298,9 @@ see below).
 | # | Item | Status | Covered by / reason |
 |---|---|---|---|
 | CH1 | `codex` (a Codex-only vault): header `· codex via ask.js (reasoner caps)` until Codex is picked, then `· Codex via ask.js (Codex default, reasoner caps)`, the menu's pick in place of `Codex default`; an answer; the spend row | covered | `variants › a Codex-only machine › Sessions: the host and model menu offers Codex alone…` (Codex the one ready host, not picked: the chip reads Codex, the header today's route), `chat-writes › SE13 Vault chat's picker…` (the header with a picked model, an answer through `ask.js --host=codex` and its `reason:ask` row), `chat-writes › codex (CH1)…` and `variants › a provider on record › Vault chat…` (no host ready: `· codex via ask.js (reasoner caps)`, the answer through a stub `codex exec` and the runtime's `reason:ask` row). |
-| CH2 | `none`: no Sessions rail button; Open Workbench: Sessions shows the hint | covered | `sidebar-omni-notes › Sessions and Term › no provider…`, `shell › rail…` |
+| CH2 | `none`: no Sessions rail button; Open Workbench: Sessions shows the hint | covered | `sidebar-omni-notes › Sessions and Code › no provider…`, `shell › rail…` |
 | CH3 | `ollama` without a Claude login and no host ready: header `· local ask.js`; an answer | covered | `variants › a provider on record › Vault chat…` (the header), `chat-writes › ollama without a Claude login (CH3)…`: the answer comes from a stub Ollama server; nothing is billed. |
-| CH4 | `claude`: header `· Claude Code (claude-opus-5, capped)` (the reasoner while the menu reads Default); an answer with its cost | covered | `variants › a provider on record › Sessions (rail id chat) heads the rail…`, `› Vault chat under claude…` (the header, the fixed Read only chip and the host and model menu on Claude Code), `chat-writes › claude (CH4)…`: a stub `claude` answers, the turn shows its time and cost, and the chat log and the spend ledger gain their lines. |
+| CH4 | `claude`: header `· Claude Code (claude-opus-5, capped)` (the reasoner while the menu reads Default); an answer with its cost | covered | `variants › a provider on record › Pulse is Home with a provider too…` (Sessions closes the first section), `› Vault chat under claude…` (the header, the fixed Read only chip and the host and model menu on Claude Code), `chat-writes › claude (CH4)…`: a stub `claude` answers, the turn shows its time and cost, and the chat log and the spend ledger gain their lines. |
 
 ## Sessions (per host; each turn spends)
 
@@ -319,18 +320,19 @@ see below).
 | SE12 | The layout: the list (New session, Vault, workspaces, host dots, running mark, age, spend), mono tool lines, the Plan card, the working line, the top bar with the branch, Review changes +a −b and Stop, the status line, Esc stops a turn | covered | `sessions › both hosts… › SE12 the layout…` (a repository with an edited README and a new file: `+3 −1` in the top bar and per-file counts in the drawer; Claude's `TodoWrite` and Codex's `todo_list` as Plan cards; `main · 2 files` and `turn $0.02 · today …` in the status line; during a running turn, Esc in the drawer, the access menu (from an item, and from its chip after Shift+Tab) and the `/` menu only closes it, then Esc in the composer stops the turn) |
 | SE13 | Vault chat's picker on each ready host: the fixed Read only chip, the header following the pick, `claude -p` with `--model` and `--effort`, `ask.js --local --host=codex --model= --effort=` with no fallback, the footer, the menu off while a question runs | covered | `chat-writes › SE13 Vault chat's picker…` (the stub `claude`'s argv equals `buildClaudeArgs` with the pick; the stub `codex exec` gets `-m` and `model_reasoning_effort` while Claude, logged in, is not asked; Codex's levels stop at XHigh; each pick saved as `vaultChoice` and kept on returning to the tab, and the host switch bringing back Claude's remembered pick) |
 
-## Term
+## Code
 
 | # | Item | Status | Covered by / reason |
 |---|---|---|---|
-| TM1 | A fresh install's Term tab opens a live shell at once, with no "Terminal unavailable" | covered | `sidebar-omni-notes › Term: a live shell…` (node-pty is the app's own dependency). |
+| TM1 | A fresh install's Code tab opens a live shell at once, with no "Terminal unavailable" | covered | `sidebar-omni-notes › Code: a live shell…` (node-pty is the app's own dependency). |
 | TM2 | ⌘T starts the last host in the vault, the Started note; Scratch only when picked, made with its stubs, never context | covered | `term-writes › ⌘T with nothing picked…`, `› Scratch, picked in the New menu…` (fixture stubs; the conversation title needs a real Claude Code: manual). |
 | TM3 | New ▾: exact name starts there; a new name creates and starts; ⇧⌘N refusals | covered | `term-writes › typing an exact workspace name…`, `› New workspace (⇧⌘N)…`, `term-deck › the New menu stays open while you switch its host…`. |
 | TM4 | Spaces link code folder… and Claude Code here | covered in part | `term-writes › ⌥⌘3's command…` covers Claude Code here; the link needs a folder outside the vault, which the sandboxed page cannot check: manual. |
-| TM6 | The deck: groups, the header's place menu, an ended agent's Restart / Resume, ⇧⌘[ ⇧⌘] ⇧⌘W | covered in part | `term-deck` (groups, Done and Restart, selection across tabs, the Term keys as commands, Clear ended, filter); Resume of a real conversation and the keys through the menu accelerators with the xterm focused: manual. |
+| TM6 | The deck: groups, the header's place menu, an ended agent's Restart / Resume, ⇧⌘[ ⇧⌘] ⇧⌘W | covered in part | `term-deck` (groups, Done and Restart, selection across tabs, Code's keys as commands, Clear ended, filter); Resume of a real conversation and the keys through the menu accelerators with the xterm focused: manual. |
 | TM7 | The composer: ⌘L, @ files, / commands, one paste, snippets; ⇧⏎ in Claude Code; links | covered in part | `term-deck › ⇧⏎ in a Claude Code terminal sends one line feed…`, `› links an app prints in a terminal open…` (OSC 8: a note and a tab); `term-deck › the composer sits under every running terminal…` (a shell: ⌘L, a command that runs, no / list; an agent's placeholder); @, /, snippets, ⇧⏎ and links in a real Claude Code or Codex: manual. |
 | TM8 | ⌘F finds in the selected terminal: highlights and a count, ⏎ / ⇧⏎, Esc clears, the real key from inside the terminal | covered in part | `term-deck › ⌘F finds…` (a shell; the count, stepping, No results, Esc back to the terminal, ⌘F reopening); a real agent's screen, and the colours by eye: manual. The colours' contrast is unit-tested (`tokens.test.ts`). |
-| TM9 | After a visit to Term (and Agent Teams), every tab keeps its layout | covered | `tab-layout › after Term and Agent Teams, the content area carries none of their classes`, `› after a visit to Term, the tabs keep their layout…` (Notifications, Proposals, Files, To-Do, Agent Teams by position); the rest by eye. |
+| TM9 | After a visit to Code (and Agent Teams), every tab keeps its layout | covered | `tab-layout › after Code and Agent Teams, the content area carries none of their classes`, `› after a visit to Code, the tabs keep their layout…` (Notifications, Proposals, Files, To-Do, Agent Teams by position); the rest by eye. |
+| TM10 | Code never scrolls the page, at full size and at 960×600: the composer's send and the list's foot inside the window, a wheel scrolls the terminal only; the composer twice its 1.5.0 height with 15px text | covered | `term-deck › Code fits its pane…` (no element from the content area up overflows or scrolls at 1480×920 and 960×600; the composer's box ≥ 192px at 15px; the terminal keeps > 200px; a wheel moves xterm's viewport and nothing else). The text scrolling past six lines and the 320px drag limit are read by eye. |
 | TM5 | A Finder-launched app finds npm-installed CLIs | not covered | The login-shell PATH is unit-tested (`main-services › terminals start with the login shell's PATH`); e2e stands in for it with `$AOS_SETUP_PATH`. |
 
 ## Telemetry switch

@@ -37,7 +37,7 @@ test.beforeEach(async () => {
   if (await query(win).inputValue()) { await query(win).fill(""); }
 });
 
-test("Files sits second on the rail and lists the vault's top level, folders first", async () => {
+test("Files opens from the rail and lists the vault's top level, folders first", async () => {
   const { win } = app();
   await expect(rail(win, "files")).toHaveClass(/is-active/);
   await expect(content(win).locator(".aos-rt-title")).toHaveText("Files");

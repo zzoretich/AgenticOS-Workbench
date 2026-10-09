@@ -13,7 +13,7 @@ const box = async (win: Page, selector: string) => {
   return b;
 };
 
-test("after Term and Agent Teams, the content area carries none of their classes", async () => {
+test("after Code and Agent Teams, the content area carries none of their classes", async () => {
   const { win } = app();
   await openTab(win, "agent-teams");
   await openTab(win, "term");
@@ -26,7 +26,7 @@ test("after Term and Agent Teams, the content area carries none of their classes
   }
 });
 
-test("after a visit to Term, the tabs keep their layout: lists beside their reading panes, toolbars above their lists", async () => {
+test("after a visit to Code, the tabs keep their layout: lists beside their reading panes, toolbars above their lists", async () => {
   const { win } = app();
   await openTab(win, "term");
 

@@ -38,7 +38,7 @@ export class TermComposer {
     this.el = parent.createDiv({ cls: "aos-tc is-hidden" });
     const box = this.el.createDiv({ cls: "aos-tc-box" });
     this.suggest = box.createDiv({ cls: "aos-tc-suggest", attr: { role: "listbox", "aria-label": "Files" } });
-    this.input = box.createEl("textarea", { cls: "aos-tc-input", attr: { rows: "2", "aria-label": "Message to the agent", spellcheck: "true" } });
+    this.input = box.createEl("textarea", { cls: "aos-tc-input", attr: { rows: "6", "aria-label": "Message to the agent", spellcheck: "true" } });
     const bar = box.createDiv({ cls: "aos-tc-bar" });
     const snip = bar.createEl("button", { cls: "aos-tc-btn", attr: { type: "button", "aria-haspopup": "menu" } });
     const snipIcon = snip.createSpan({ cls: "aos-tc-icon" });

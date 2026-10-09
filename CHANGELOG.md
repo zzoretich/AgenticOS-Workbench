@@ -4,6 +4,15 @@ All notable changes to UniDeX (AgenticOS Workbench before 1.1). Versions follow 
 
 ## [Unreleased]
 
+### Changed
+- **The rail reads in three sections, with a light line between them.** Notifications, Pulse, Code and Sessions come first; then To-Do, Spaces, Files, Routines and Proposals; then Memory, Agent Teams, Agents, Skills and Runs. Light and dark, App settings and ⚙ Settings stay at the foot. Pulse is still Home.
+  - Pulse's icon is neon blue in the dark theme and navy in the light one, and stays readable on its selected chip.
+- **The Term tab is now called Code.** Its tooltip, its list, the palette's "Open Workbench: Code" and the buttons that open a terminal say Code. A single session is still a terminal, and links and shortcuts to the tab keep working.
+- **Code's composer is twice as tall, with larger text** (15px), so a longer prompt fits before it scrolls.
+
+### Fixed
+- **The Code page no longer scrolls.** It overflowed the window by 50px at every size, so the composer's send row and the list's foot sat under the window's edge. It now fills the window: only the terminal, the list and the composer's text scroll.
+
 ## [1.5.0] — 2026-10-08
 
 ### Changed

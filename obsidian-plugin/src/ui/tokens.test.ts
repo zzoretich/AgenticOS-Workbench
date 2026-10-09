@@ -79,4 +79,18 @@ for (const name of ["light", "dark"] as const) {
       assert.ok(contrast(t.termForeground, t[k]) >= 4.5, `termForeground on ${k}: ${contrast(t.termForeground, t[k]).toFixed(2)}`);
     }
   });
+
+  test(`${name}: Pulse's rail icon reads 4.5:1 at rest, hovered and on the selected chip (spec 2026-10-09 D6)`, () => {
+    for (const bg of ["bg", "raised"] as const) {
+      assert.ok(contrast(t.pulse, t[bg]) >= 4.5, `pulse on ${bg}: ${contrast(t.pulse, t[bg]).toFixed(2)}`);
+    }
+    assert.ok(contrast(t.pulseOnInv, t.inv) >= 4.5, `pulseOnInv on inv: ${contrast(t.pulseOnInv, t.inv).toFixed(2)}`);
+  });
 }
+
+test("Pulse is navy in light and neon blue in dark, and the selected chip takes the other theme's (spec 2026-10-09 D6)", () => {
+  assert.equal(THEMES.light.pulse, "#1e3a8a");
+  assert.equal(THEMES.dark.pulse, "#00b3ff");
+  assert.equal(THEMES.light.pulseOnInv, THEMES.dark.pulse);
+  assert.equal(THEMES.dark.pulseOnInv, THEMES.light.pulse);
+});

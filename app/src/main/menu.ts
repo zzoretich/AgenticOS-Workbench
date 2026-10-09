@@ -6,7 +6,8 @@ import { BRAND } from "../shared/brand";
 import { HOST_COMMANDS, type CommandInfo, type ThemeSource, type UpdateState } from "../shared/ipc";
 
 const WORKBENCH = "agentic-os:open-workbench";
-/** ⌘1 opens the Workbench; ⌘2–⌘9 the first rail tabs, in rail order. */
+/** ⌘1 opens the Workbench; ⌘2–⌘9 these eight tabs, a fixed set: a learned key keeps its tab when the rail's order
+ *  changes (spec 2026-10-09-rail-sections-code). */
 const NUMBERED_TABS = ["todo", "proposals", "notifications", "spaces", "memory", "runs", "routines", "skills"];
 
 /** Obsidian hotkey → Electron accelerator ("Mod" is ⌘ on macOS). */

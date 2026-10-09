@@ -156,7 +156,7 @@ test.describe("note view", () => {
   });
 });
 
-test.describe("Sessions and Term", () => {
+test.describe("Sessions and Code", () => {
   test("no provider: the Sessions rail button is absent and Open Workbench: Sessions shows the hint", async () => {
     const { win } = app();
     await expect(rail(win, "chat")).toHaveCount(0);
@@ -165,10 +165,10 @@ test.describe("Sessions and Term", () => {
     await openTab(win, "pulse");
   });
 
-  test("Term: a live shell in the vault; New ▸ Shell adds a session; typing runs in it", async () => {
+  test("Code: a live shell in the vault; New ▸ Shell adds a session; typing runs in it", async () => {
     const { win } = app();
     await openTab(win, "term");
-    await expect(content(win).locator(".aos-term-title")).toHaveText("Terminal");
+    await expect(content(win).locator(".aos-term-title")).toHaveText("Code");
     await expect(content(win).locator(".aos-term-error")).toHaveCount(0);   // node-pty loads in the app: no install hint
     await expect.poll(() => terminalText(win), { timeout: 10_000 }).toContain("fixture %");
     const before = await content(win).locator(".aos-term-tab").count();

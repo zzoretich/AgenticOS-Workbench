@@ -95,7 +95,7 @@ The rest of the run needs a clone: `git clone https://github.com/zzoretich/UniDe
 - [ ] In Claude Code: say `sitrep` (the `persona-sitrep` skill — also reachable as `/agenticos:persona-sitrep`; there is no `/sitrep` command) → it renders the Output shape with one recommended action; `review persona flags` (the `persona-flag-closer` skill) either reports `Nothing pending — no proposals, no flags, no new failures.` or lists whatever the monitor duty flagged. Both pass: the live run in the box above rewrote `STATE.md`, so its `## Flags` may legitimately hold open items (a duty that failed leaves a FAILED flag there).
 
 ## 7. The Workbench under each provider
-- [ ] With Ollama running: Pulse, Files, Spaces, Memory, Runs, Chat (answers) and Term (a live shell) all render.
+- [ ] With Ollama running: Pulse, Files, Spaces, Memory, Runs, Chat (answers) and Code (a live shell) all render.
 - [ ] With Claude logged in (Ollama running or not): Chat's header names the reasoner — `claude (claude-opus-5, capped)` — each answer shows a per-message cost, and `aos status` counts it on the `(reasoner)` line.
 - [ ] `aos provider none`: Chat tab hidden with the hint; nothing red.
 

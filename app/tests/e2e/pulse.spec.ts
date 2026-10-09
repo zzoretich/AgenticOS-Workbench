@@ -180,14 +180,14 @@ test("SYSTEM drawer: inventory counts and lists, the DISK donut and the COST DET
   await expect(d).not.toHaveClass(/is-open/);
 });
 
-test("Pulse has no terminal: terminals live in the Term tab", async () => {
+test("Pulse has no terminal: terminals live in the Code tab", async () => {
   const { win } = app();
   await openTab(win, "pulse");
   await expect(content(win)).toContainText("Needs you");
   await expect(content(win).locator(".xterm, .aos-term, .aos-term-collapsed")).toHaveCount(0);
 });
 
-test("listener leak: switching Pulse → Memory → Pulse → Term → Pulse does not add terminal-pool listeners", async () => {
+test("listener leak: switching Pulse → Memory → Pulse → Code → Pulse does not add terminal-pool listeners", async () => {
   const { win } = app();
   // Obsidian keeps them in Events._; the compat Events keeps them in _handlers.
   const count = () => win.evaluate(() => {
@@ -226,12 +226,12 @@ test("with the Pulse surface off, keep and a Fix Queue run are refused: the memo
   await h.win.evaluate(() => { (window as unknown as { aosHost: { guard: { log: unknown[] } } }).aosHost.guard.log.length = 0; });
 });
 
-test("the cockpit: Pulse heads the rail and is Home; ten tiles; the badge counts what needs you; no scrollbar at 960×600", async () => {
+test("the cockpit: Pulse follows Notifications on the rail and is Home; ten tiles; the badge counts what needs you; no scrollbar at 960×600", async () => {
   const h = app();
   const { win } = h;
   const ids = await win.locator(".aos-wb-railtabs .aos-wb-railbtn").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.tab));
-  expect(ids[0]).toBe("pulse");
-  if (ids.includes("chat")) expect(ids[1]).toBe("chat");
+  // Notifications heads the rail and Pulse comes next (spec 2026-10-09-rail-sections-code D1); Home stays Pulse (D4).
+  expect(ids.slice(0, 3)).toEqual(["notifications", "pulse", "term"]);
   await openTab(win, "todo");
   await win.locator(".aos-wb-mark").click();
   await expect(rail(win, "pulse")).toHaveClass(/is-active/);
@@ -276,7 +276,7 @@ test("the popup: a tile opens its area, the list switches areas without closing,
   await expect(win.locator(".modal.mod-pulse")).toHaveCount(0);
 });
 
-test("a decision jumps: Review → on a proposal opens its review in a Term session", async () => {
+test("a decision jumps: Review → on a proposal opens its review in a terminal in Code", async () => {
   const { win } = app();
   const modal = await pulseArea(win, "proposals");
   await modal.locator(".aos-pp-row", { hasText: "proposal" }).first().locator("button", { hasText: "Review →" }).click();

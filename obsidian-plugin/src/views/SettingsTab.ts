@@ -303,10 +303,10 @@ export class SettingsTab {
     host.createDiv({ cls: "aos-rt-subhead aos-dim", text: "HOSTS & INSTALL — CHANGED ONLY THROUGH THE INSTALLER" });
     const acts = host.createDiv({ cls: "aos-st-actions" });
     const doctor = acts.createEl("button", { cls: "aos-ws-action", text: "❯_ aos doctor" });
-    doctor.setAttr("title", "Check every install path, binary, host and hook in the Term tab");
+    doctor.setAttr("title", "Check every install path, binary, host and hook in the Code tab");
     doctor.addEventListener("click", () => this.view.runInTerm("aos doctor", { origin: "Settings" }));
     const upgrade = acts.createEl("button", { cls: "aos-ws-action", text: "❯_ aos upgrade" });
-    upgrade.setAttr("title", "Refresh the runtime and both plugins, and re-resolve the binaries, in the Term tab");
+    upgrade.setAttr("title", "Refresh the runtime and both plugins, and re-resolve the binaries, in the Code tab");
     upgrade.addEventListener("click", () => this.view.runInTerm("aos upgrade", { origin: "Settings" }));
     const box = host.createDiv({ cls: "aos-st-section" });
     for (const row of rows) this.renderRow(box, row);

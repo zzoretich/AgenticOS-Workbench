@@ -138,7 +138,7 @@ test("Open note opens the item's file in a new tab", async () => {
   await chip("Unread").click();
 });
 
-test("Deep dive ❯_ switches to Term with a Claude Code session running the skill", async () => {
+test("Deep dive ❯_ switches to Code with a Claude Code session running the skill", async () => {
   const { win } = app();
   await chip("All").click();
   await item("The Morning Edition").click();

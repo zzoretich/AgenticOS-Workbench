@@ -6,7 +6,7 @@ import { expect, test } from "@playwright/test";
 import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { BACKGROUND_SPAWNS, FX, HUD_VERSION, RAIL_ORDER, REPO, badge, command, content, expected, expectNoErrors, noteBody, notePath, openTab, rail, readVaultJson, useApp } from "./harness";
+import { BACKGROUND_SPAWNS, FX, HUD_VERSION, RAIL_ORDER, RAIL_SECTIONS, REPO, badge, command, content, expected, expectNoErrors, noteBody, notePath, openTab, rail, readVaultJson, useApp } from "./harness";
 
 const app = useApp();
 
@@ -43,16 +43,23 @@ test("the app records itself in the vault for doctor and the update check (brain
   expect(fs.readdirSync(FX.v("brain/_index")).filter((n) => n.startsWith("hud-host.json."))).toEqual([]);
 });
 
-test("rail: the tabs in order, no Sessions without a provider, ⚙ Settings at the foot", async () => {
+test("rail: three sections in order with a line between them, no Sessions without a provider, ⚙ Settings at the foot", async () => {
   const { win } = app();
   const ids = await win.locator(".aos-wb-railtabs .aos-wb-railbtn").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.tab));
   expect(ids).toEqual(RAIL_ORDER.filter((id) => id !== "chat"));
-  // Files right after Pulse, then To-Do and Proposals; Notifications right after Proposals; Agent Teams right after Agents.
-  expect(ids.indexOf("files")).toBe(ids.indexOf("pulse") + 1);
-  expect(ids.indexOf("todo")).toBe(ids.indexOf("files") + 1);
-  expect(ids.indexOf("proposals")).toBe(ids.indexOf("todo") + 1);
-  expect(ids.indexOf("notifications")).toBe(ids.indexOf("proposals") + 1);
-  expect(ids.indexOf("agent-teams")).toBe(ids.indexOf("agents") + 1);
+  // The sections and their lines (spec 2026-10-09-rail-sections-code D1, D5): a separator between sections, none at
+  // either end, so the list reads ① | ② | ③.
+  const seq = await win.locator(".aos-wb-railtabs > *").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.tab ?? (e.classList.contains("aos-wb-railsep") ? "|" : "?")));
+  expect(seq).toEqual(RAIL_SECTIONS.map((s) => s.filter((id) => id !== "chat").join(",")).join(",|,").split(","));
+  await expect(win.locator(".aos-wb-railsep[role='separator']")).toHaveCount(2);
+  // Notifications heads the rail, then Pulse and Code; Files sits right after Spaces; Runs closes the list.
+  expect(ids[0]).toBe("notifications");
+  expect(ids.indexOf("term")).toBe(ids.indexOf("pulse") + 1);
+  expect(ids.indexOf("files")).toBe(ids.indexOf("spaces") + 1);
+  expect(ids[ids.length - 1]).toBe("runs");
+  // Term is called Code (D7); its id stays "term".
+  await expect(rail(win, "term")).toHaveAttribute("aria-label", "Code");
+  await expect(rail(win, "term").locator(".aos-wb-railicon")).toHaveAttribute("data-icon", "terminal");
   await expect(win.locator(".aos-wb-railfoot .aos-wb-railbtn[data-tab='settings']")).toHaveCount(1);
   await expect(rail(win, "files").locator(".aos-wb-railicon")).toHaveAttribute("data-icon", "file-text");
   await expect(rail(win, "skills").locator(".aos-wb-railicon")).toHaveAttribute("data-icon", "sparkles");
@@ -63,6 +70,39 @@ test("rail: the tabs in order, no Sessions without a provider, ⚙ Settings at t
   const acts = (where: string) => win.locator(`.aos-wb-rail${where} .aos-wb-railact`).evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.action));
   expect(await acts("head")).toEqual(["search", "capture"]);
   expect(await acts("foot")).toEqual(["theme", "app-settings"]);
+});
+
+test("rail: Pulse is navy in light and neon blue in dark, the other theme's on its selected chip; one line colour (D5, D6)", async () => {
+  const { win } = app();
+  const NAVY = "rgb(30, 58, 138)";
+  const NEON = "rgb(0, 179, 255)";
+  const look = () => win.evaluate(() => {
+    const pulse = document.querySelector(".aos-wb-railbtn[data-tab='pulse']") as HTMLElement;
+    const css = (sel: string, prop: string) => getComputedStyle(document.querySelector(sel) as HTMLElement).getPropertyValue(prop);
+    return {
+      dark: document.body.classList.contains("theme-dark"),
+      pulse: getComputedStyle(pulse).color,
+      lines: [css(".aos-wb-railsep", "background-color"), css(".aos-wb-railhead", "border-bottom-color"), css(".aos-wb-railfoot", "border-top-color")],
+    };
+  });
+  const toggle = async () => {
+    const was = (await look()).dark;
+    await win.locator(".aos-wb-railact[data-action='theme']").click();
+    await expect.poll(async () => (await look()).dark).toBe(!was);
+  };
+  // Both themes, then back to the one the suite started in.
+  for (let i = 0; i < 2; i++) {
+    await openTab(win, "todo");
+    const rest = await look();
+    expect(rest.pulse).toBe(rest.dark ? NEON : NAVY);
+    expect(new Set(rest.lines).size).toBe(1);
+    expect(rest.lines[0]).toBe(rest.dark ? "rgba(255, 255, 255, 0.24)" : "rgb(212, 212, 212)");
+    await rail(win, "pulse").hover();
+    expect((await look()).pulse).toBe(rest.pulse);
+    await openTab(win, "pulse");
+    expect((await look()).pulse).toBe(rest.dark ? NAVY : NEON);
+    await toggle();
+  }
 });
 
 test("rail: ⚙ stays reachable in a pane too short for every tab, which scroll above it", async () => {
@@ -168,6 +208,8 @@ test("commands: the plugin registers its palette commands; each 'Open Workbench:
   expect(cmds.find((c) => c.id === "agentic-os:open-workbench-settings")?.name).toBe("Open Workbench: Settings");
   // The Chat tab became Sessions; its id (and so its command's) stays "chat", so links and hotkeys keep working.
   expect(cmds.find((c) => c.id === "agentic-os:open-workbench-chat")?.name).toBe("Open Workbench: Sessions");
+  // Term became Code the same way: the command keeps the id "term".
+  expect(cmds.find((c) => c.id === "agentic-os:open-workbench-term")?.name).toBe("Open Workbench: Code");
   // Review readiness: Omnisearch has no default hotkey (⌘K is the host's own binding).
   expect(cmds.find((c) => c.id === "agentic-os:open-omnisearch")?.hotkeys).toEqual([]);
   for (const t of ["agent-teams", "settings", "routines"]) {

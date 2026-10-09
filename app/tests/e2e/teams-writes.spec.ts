@@ -107,7 +107,7 @@ test("an approve drawn before the lead changed the item is refused by --expect: 
   }
 });
 
-test("Approve records the decision on the board and in the channel, and opens the lead in the Term (AT3)", async () => {
+test("Approve records the decision on the board and in the channel, and opens the lead in Code (AT3)", async () => {
   const { win } = app();
   await expect(badge(win, "agent-teams")).toHaveText("2");
   await gate(win, "harbor-01").locator(".aos-at-approve", { hasText: "Approve · $10" }).click();

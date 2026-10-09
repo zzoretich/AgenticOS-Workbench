@@ -120,7 +120,7 @@ test("hosts & install: read-only values and the doctor / upgrade terminal button
   await expect(hostRows.locator("select, .checkbox-container")).toHaveCount(0);
 });
 
-test("❯_ aos doctor runs the vault's own doctor in a new Term session", async () => {
+test("❯_ aos doctor runs the vault's own doctor in a new terminal in Code", async () => {
   const { win } = app();
   await C().locator(".aos-st-actions button", { hasText: "❯_ aos doctor" }).click();
   await expect(rail(win, "term")).toHaveClass(/is-active/);

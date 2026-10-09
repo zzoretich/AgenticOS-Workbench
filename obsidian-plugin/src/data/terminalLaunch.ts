@@ -73,11 +73,11 @@ export function workspaceStubs(slug: string): Record<string, string> {
 export function scratchStubs(): Record<string, string> {
   const text = instructions(SCRATCH, [
     "",
-    "Scratch is shared: agents start here when someone picks Scratch in the Term tab. When the work here becomes a",
-    "project, ask the user to use Make this a workspace… in the Term tab rather than building it here.",
+    "Scratch is shared: agents start here when someone picks Scratch in the Code tab. When the work here becomes a",
+    "project, ask the user to use Make this a workspace… in the Code tab rather than building it here.",
   ]);
   return {
-    "README.md": "# Scratch\n\nA shared workspace for quick questions and experiments. Pick Scratch in the Term tab's New menu to start\nClaude Code or Codex here. When something here becomes a project, use Make this a workspace… in the Term tab.\n",
+    "README.md": "# Scratch\n\nA shared workspace for quick questions and experiments. Pick Scratch in the Code tab's New menu to start\nClaude Code or Codex here. When something here becomes a project, use Make this a workspace… in the Code tab.\n",
     "CLAUDE.md": text,
     "AGENTS.md": text,
   };
