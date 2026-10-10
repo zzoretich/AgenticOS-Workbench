@@ -217,7 +217,7 @@ test.describe("Spaces", () => {
     await expect(M().locator(".aos-spc-h1")).toHaveText("harbor-map");
   });
 
-  test("Outside workspaces (n) opens the outside list in the centre: each folder's sessions per host, age, match and git, and no move command", async () => {
+  test("Outside workspaces (n) opens the outside list in the centre: each folder's sessions per host, age, match and git, and its Adopt… menu, which moves nothing", async () => {
     const { win } = app();
     const out = L().locator(".aos-spc-outbtn");
     // Every session the Spaces fixture added lands in a workspace (or folds into one), so these are the hub's three.
@@ -243,9 +243,22 @@ test.describe("Spaces", () => {
     await expect(rows.locator(".aos-spc-outage")).toHaveText([/^\d+h$/, /^[23]d$/, /^[56]d$/]);
     await expect(rows.locator(".aos-spc-outmatch")).toHaveText(["—", "—", "—"]);
     await expect(rows.locator(".aos-spc-outgit")).toHaveText(["—", "—", "—"]);
-    // The PR 2 stand-in is read only (D21): no adopt, no move, and today's `aos workspace adopt` hint is gone.
-    await expect(M().locator("button", { hasText: /adopt|move/i })).toHaveCount(0);
+    // Each row's Adopt… opens a menu (spaces-redesign D16): Adopt into, Link as code folder, Hide. Nothing on the list moves a folder, and
+    // today's `aos workspace adopt` hint is gone. A gone folder cannot be a code folder, and says so.
+    await expect(M().locator(".aos-spc-ledenote")).toHaveText("Adopt… records a folder as an alias of a workspace, so its sessions count there, or links it as a workspace's code folder; Hide takes it off this list.");
+    await expect(rows.locator("button.aos-spc-adoptbtn")).toHaveText(["Adopt…", "Adopt…", "Adopt…"]);
+    await expect(M().locator("button", { hasText: /move/i })).toHaveCount(0);
     await expect(M()).not.toContainText("aos workspace adopt");
+    const adopt = rows.nth(2).locator("button.aos-spc-adoptbtn");
+    await expect(adopt).toHaveAttribute("aria-haspopup", "menu");
+    await expect(adopt).toHaveAttribute("aria-label", "Adopt, link or hide ~/sketches");
+    await adopt.click();
+    await expect(menu().locator(".aos-spc-poplabel")).toHaveText(["Adopt into a workspace…", "Link as code folder of…", "Hide"]);
+    await expect(menu().locator(".aos-spc-popitem[data-key='link']")).toHaveAttribute("aria-disabled", "true");
+    await expect(menu().locator(".aos-spc-popitem[data-key='link'] .aos-spc-popdetail")).toHaveText("The folder no longer exists");
+    await win.keyboard.press("Escape");
+    await expect(menu()).toHaveCount(0);
+    await expect(adopt).toBeFocused();
     await expect(R()).toBeEmpty();
     // Back keeps the keyboard's place: the focus lands on the footer button that opened the list.
     await M().locator("button", { hasText: "Back to harbor-map" }).click();
@@ -299,19 +312,38 @@ test.describe("Spaces", () => {
     await expect(L().locator(".aos-spc-outbtn .aos-spc-outlabel")).toHaveText("Outside workspaces (3)");
   });
 
-  test("+ New opens Code's New workspace sheet, and starts nothing (the PR 2 stand-in, D4)", async () => {
+  test("+ New opens New space (D15): the name as the folder it makes and why not, the templates and Open with; Cancel makes nothing and starts nothing", async () => {
     const { win } = app();
     const before = (await terminals()).filter(Boolean);
     const nb = L().locator("button.aos-spc-newbtn");
     await expect(nb).toHaveText("New");
-    await expect(nb).toHaveAttribute("title", "New workspace: opens Code's New workspace sheet (⇧⌘N)");
+    await expect(nb).toHaveAttribute("title", "New space: a blank folder, a code repo or a clone from GitHub");
     await nb.click();
-    await expect(rail(win, "term")).toHaveClass(/is-active/);
-    // The sheet term-writes' ⇧⌘N test drives: its name field takes the focus; nothing is made until it is filled.
-    await expect(C().locator(".aos-ntm-name-input")).toBeFocused();
+    const d = win.locator(".modal.mod-spc-new");
+    await expect(d.locator(".aos-spc-dlgtitle")).toHaveText("New space");
+    const name = d.locator("input[data-spc-field='name']");
+    await expect(name).toBeFocused();
+    await expect(d.locator(".aos-spc-choicename")).toHaveText(["Blank folder", "Code repo", "Clone from GitHub"]);
+    // Open with: the hosts that are on (Claude Code; Codex is off on this machine) and Terminal, starting on ⌘T's.
+    await expect(d.locator(".aos-spc-hostopt")).toHaveText(["Claude Code", "Terminal"]);
+    await expect(d.locator(".aos-spc-hostopt[data-host='claude'] input")).toBeChecked();
+    const ok = d.locator("button.aos-spc-confirm");
+    await expect(ok).toBeDisabled();
+    // The name is checked as typed: one in use, and one an archived workspace holds.
+    const where = d.locator("[data-spc-field='where']");
+    await name.fill("harbor map");
+    await expect(where).toHaveText("workspaces/harbor-map already exists: pick it in the list");
+    await expect(ok).toBeDisabled();
+    await name.fill("Pier Repairs");
+    await expect(where).toHaveText("An archived workspace holds pier-repairs: restore it instead");
+    await name.fill("Tide Clock");
+    await expect(where).toHaveText(FX.v("workspaces/tide-clock"));
+    await expect(ok).toBeEnabled();
+    await d.locator("button.aos-spc-cancel").click();
+    await expect(d).toHaveCount(0);
+    expect(fs.existsSync(FX.v("workspaces/tide-clock"))).toBe(false);
     expect((await terminals()).filter(Boolean)).toEqual(before);
-    await win.keyboard.press("Escape");
-    await expect(C().locator(".aos-ntm-name-input")).not.toBeVisible();
+    await expect(rail(win, "spaces")).toHaveClass(/is-active/);
   });
 
   test("the header: name, status pill, the meta line, and Resume in Code with its menu, Terminal, Finder and More", async () => {
@@ -379,10 +411,14 @@ test.describe("Spaces", () => {
     await expect(menu()).toHaveCount(0);
     await expect(caret).toBeFocused();
 
-    // More ⋯ (the PR 2 stand-in): Copy path, Reveal in Finder, today's Link code folder.
+    // More ⋯ (spaces-redesign D5; PR 3's actions, D15–D18): Rename…, Pin, Set status…, Link code folder…, Draft workspace.md, Copy
+    // path, Reveal in Finder, then Archive… apart. The status pill opens the status menu.
+    await expect(pill).toHaveAttribute("aria-haspopup", "menu");
     await head.locator("button[aria-label='More actions']").click();
-    await expect(menu().locator(".aos-spc-poplabel")).toHaveText(["Copy path", "Reveal in Finder", "Link code folder…"]);
+    await expect(menu().locator(".aos-spc-poplabel")).toHaveText(["Rename…", "Pin", "Set status…", "Link code folder…", "Draft workspace.md", "Copy path", "Reveal in Finder", "Archive…"]);
+    await expect(menu().locator(".aos-spc-popsep")).toHaveCount(1);
     await expect(menu().locator(".aos-spc-popitem[data-key='link'] .aos-spc-popdetail")).toHaveText("Terminals here start in that folder");
+    await expect(menu().locator(".aos-spc-popitem[data-key='draft'] .aos-spc-popdetail")).toHaveText("A summary, objectives and next step to review; nothing is saved until you press Save");
     const opened = (await h.opened()).length;
     const before = await terminals();
     await menu().locator(".aos-spc-popitem", { hasText: "Reveal in Finder" }).click();
@@ -411,6 +447,8 @@ test.describe("Spaces", () => {
     // last: the newest interactive thread (the headless Codex exec run six hours ago shows only in History, D6).
     const last = pickRow("last");
     await expect(last.locator(".aos-spc-who")).toHaveText("claude");
+    // Inline, so the age and title follow on the same line (the Draft footer's rule is scoped to the dialog).
+    expect(await last.locator(".aos-spc-who").evaluate((el) => getComputedStyle(el).display)).toBe("inline-flex");
     await expect(last.locator(".aos-spc-who .aos-spc-hostdot")).toHaveAttribute("aria-label", "Claude Code");
     await expect(last).toContainText(/claude · \d+h — “Tide parser in the chart view”/);
     // The hint is the line Resume types (launchLine: the configured binary), and where it resumes (D7).
@@ -666,8 +704,9 @@ test.describe("Spaces", () => {
     await pick("harbor-map");
     const linked = R().locator(".aos-spc-linked");
     await expect(linked.locator(".aos-spc-h3")).toHaveText("LINKED");
-    // harbor-map's project note links by its slug; no to-do or proposal names it, so those groups are not drawn.
-    await expect(linked.locator(".aos-spc-lhead .aos-spc-lname")).toHaveText(["Memory"]);
+    // harbor-map's project note links by its slug; no to-do or proposal names it. The To-do heading stays at zero, its
+    // number hidden, for + to-do and Link to-dos… (spaces-redesign D35); an empty Proposal group is not drawn.
+    await expect(linked.locator(".aos-spc-lhead .aos-spc-lname")).toHaveText(["To-do", "Memory"]);
     await expect(linked.locator(".aos-spc-lhead .aos-spc-mono")).toHaveText(["1"]);
     await expect(linked.locator(".aos-spc-litem .aos-spc-ltext")).toHaveText(["Harbor Map"]);
     await expect(linked.locator(".aos-spc-litem .aos-spc-lhow")).toHaveText(["named harbor-map"]);
@@ -883,6 +922,76 @@ test.describe("Spaces", () => {
     expect(fs.readFileSync(FX.v("brain/_index/workspace-maps/reef-survey.json"), "utf8")).toBe(map);
     expect(insightOf()).toBe(insight);
     await tab("Overview").click();
+    await guardLog();
+  });
+
+  test("with the surface off, the actions are refused and nothing changes: Pin, status, Archive, Rename, New space, Draft and Hide each say why", async () => {
+    const h = app();
+    const { win } = h;
+    const OFF = "Spaces' write surface is off in this app: run the aos workspace command in a terminal instead";
+    const listing = (rel: string) => fs.readdirSync(FX.v(rel)).sort();
+    const hiddenFile = FX.v("brain/_index/workspaces-hidden.json");
+    const hidden = () => (fs.existsSync(hiddenFile) ? fs.readFileSync(hiddenFile, "utf8") : null);
+    const before = { manifest: fs.readFileSync(FX.v("workspaces/harbor-map/workspace.md"), "utf8"), workspaces: listing("workspaces"), archive: listing("workspaces/_archive"), hidden: hidden() };
+    await guardLog();
+    await pick("harbor-map");
+    const head = M().locator(".aos-spc-head");
+    const notices = win.locator(".notice-container");
+    // Pin and the status menu: one `aos workspace set` each, refused by main; the Notice says what to do instead.
+    await head.locator("button[data-spc-key='pin']").click();
+    await expect(notices).toContainText(`Pin: ${OFF}`);
+    await head.locator("button[data-spc-key='status']").click();
+    await menu().locator(".aos-spc-popitem[data-key='status:paused']").click();
+    await expect(notices).toContainText(`Status not set: ${OFF}`);
+    // A move: the confirmation opens, and its button answers in the dialog.
+    const confirm = win.locator(".modal.mod-spc-confirm");
+    await head.locator("button[aria-label='More actions']").click();
+    await menu().locator(".aos-spc-popitem[data-key='archive']").click();
+    await confirm.locator("button.aos-spc-confirm").click();
+    await expect(confirm.locator(".aos-spc-dlgerr")).toHaveText(OFF);
+    await confirm.locator("button.aos-spc-cancel").click();
+    await head.locator("button[aria-label='More actions']").click();
+    await menu().locator(".aos-spc-popitem[data-key='rename']").click();
+    await confirm.locator("input[data-spc-field='rename']").fill("harbor-chart");
+    await confirm.locator("button.aos-spc-confirm").click();
+    await expect(confirm.locator(".aos-spc-dlgerr")).toHaveText(OFF);
+    await confirm.locator("button.aos-spc-cancel").click();
+    await expect(confirm).toHaveCount(0);
+    // New space and Draft say it in their dialogs.
+    await L().locator("button.aos-spc-newbtn").click();
+    const nw = win.locator(".modal.mod-spc-new");
+    await nw.locator("input[data-spc-field='name']").fill("Tide Clock");
+    await nw.locator("button.aos-spc-confirm").click();
+    await expect(nw.locator(".aos-spc-dlgerr")).toHaveText(OFF);
+    await nw.locator("button.aos-spc-cancel").click();
+    await head.locator("button[aria-label='More actions']").click();
+    await menu().locator(".aos-spc-popitem[data-key='draft']").click();
+    const draft = win.locator(".modal.mod-spc-draft");
+    await expect(draft.locator(".aos-spc-dlgerr")).toHaveText(OFF);
+    await expect(draft.locator(".aos-spc-emptyval")).toHaveText("No draft this time.");
+    await expect(draft.locator("button.aos-spc-confirm")).toBeDisabled();
+    await draft.locator("button.aos-spc-cancel").click();
+    // The outside list's Hide.
+    await L().locator(".aos-spc-outbtn").click();
+    await M().locator("tbody tr", { has: win.locator(".aos-spc-outname", { hasText: /^\/opt\/sample\/sandbox$/ }) }).locator("button.aos-spc-adoptbtn").click();
+    await menu().locator(".aos-spc-popitem[data-key='hide']").click();
+    await expect(notices).toContainText(`Not hidden: ${OFF}`);
+    await M().locator("button[data-spc-key='outside-close']").click();
+    // Every refusal was a named verb main would not spawn; nothing on disk moved or changed.
+    const refused = (await h.guard()).filter((e) => e.kind === "spawn").map((e) => e.what.replace(/^.*\/cli\/aos\.js /, ""));
+    expect(refused).toEqual([
+      expect.stringMatching(/^workspace set harbor-map --set \{"pinned":true\} --expect [0-9a-f]{64} --json$/),
+      expect.stringMatching(/^workspace set harbor-map --set \{"status":"paused"\} --expect [0-9a-f]{64} --json$/),
+      "workspace archive harbor-map --json",
+      "workspace rename harbor-map harbor-chart --json",
+      "workspace new tide-clock --pin --json",
+      "workspace draft harbor-map --json",
+      "workspace hide /opt/sample/sandbox --json",
+    ]);
+    expect(fs.readFileSync(FX.v("workspaces/harbor-map/workspace.md"), "utf8")).toBe(before.manifest);
+    expect(listing("workspaces")).toEqual(before.workspaces);
+    expect(listing("workspaces/_archive")).toEqual(before.archive);
+    expect(hidden()).toBe(before.hidden);
     await guardLog();
   });
 });
