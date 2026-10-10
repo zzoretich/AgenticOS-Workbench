@@ -61,6 +61,8 @@ export interface VaultConfig {
   crossReview: { enabled: boolean; claudeModel: string | null; codexModel: string | null; effort: string | null; perCallUsd: number; perDayUsd: number; timeoutSec: number; rounds: number };
   // Sessions (spec 2026-10-07-unidex-sessions S6): what a turn and a day of agent sessions may spend.
   sessions: { perTurnUsd: number; perDayUsd: number };
+  // Spaces (spec 2026-10-09-spaces-redesign D30): the scan works these out; the HUD reads the results in snapshot.json.
+  workspaces: { activeDays: number; idleDays: number; commits: number; recentSessions: number; ignoreCommitSubjects: string[]; attributeByFiles: boolean };
   // Universal skills (spec 2026-09-23-universal-skills D6): the Skills tab reads the runtime's cache, not these; mirrored so the defaults stay whole.
   skills: { sync: boolean; exclude: string[] };
   // Universal agents (spec 2026-09-23-universal-agents D6): the Agents tab reads the runtime's cache, not these; mirrored likewise.
@@ -105,6 +107,7 @@ export const VAULT_CONFIG_DEFAULTS: VaultConfig = {
   routines: { enabled: true, runner: "auto", codexModel: null, perRunUsd: 2.0, perDayUsd: 6.0, tools: "Read,Glob,Grep", externalLabels: [] },
   crossReview: { enabled: true, claudeModel: null, codexModel: null, effort: null, perCallUsd: 3.0, perDayUsd: 10.0, timeoutSec: 600, rounds: 5 },
   sessions: { perTurnUsd: 1.0, perDayUsd: 10.0 },
+  workspaces: { activeDays: 7, idleDays: 30, commits: 10, recentSessions: 12, ignoreCommitSubjects: ["^vault backup:"], attributeByFiles: true },
   skills: { sync: true, exclude: [] },
   agents: { sync: true, exclude: [] },
   statusline: {

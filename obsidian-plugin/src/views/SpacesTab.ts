@@ -5,14 +5,17 @@ import type { TAbstractFile } from "obsidian";
 import type AgenticOSPlugin from "../../main";
 import type { WorkbenchView } from "./WorkbenchView";
 import { formatRelative } from "../data/runs";
-import { loadSnapshot, Snapshot, SNAPSHOT_PATH, WorkspaceEntry, WorkspaceSource } from "../data/snapshot";
+import { loadSnapshot, Snapshot, SNAPSHOT_PATH, visibleWorkspaces, WorkspaceEntry, WorkspaceSource } from "../data/snapshot";
 import { listDir, readPreview } from "../data/workspaceFiles";
-import { sessionsChip, outsideRows } from "../data/hostSessions";
+import { sessionsChip, sessionsTitle, outsideRows } from "../data/hostSessions";
 import { loadWorkspaceMap, mapStats, filterFiles, WorkspaceMap, MapFile, MAPS_DIR } from "../data/workspaceMaps";
 import { shell } from "../host";
 
+// spaces-redesign D11: the scan's active / stalled / idle and workspace.md's paused / done; planned, blocked, shipped and
+// dormant are the words snapshots written before the redesign carry.
 const STATUS_DOT: Record<string, string> = {
-  active: "🟢", idle: "🟡", planned: "🔵", blocked: "🔴", shipped: "✅", dormant: "⚪",
+  active: "🟢", stalled: "🟠", idle: "🟡", paused: "⏸️", done: "✅",
+  planned: "🔵", blocked: "🔴", shipped: "✅", dormant: "⚪",
 };
 
 export class SpacesTab {
@@ -53,8 +56,9 @@ export class SpacesTab {
 
   async refresh(): Promise<void> {
     this.snapshot = await loadSnapshot(this.plugin.app);
-    const workspaces = this.snapshot?.workspaces ?? [];
-    if (!this.selected && workspaces.length) this.selected = workspaces[0].name;
+    const workspaces = visibleWorkspaces(this.snapshot?.workspaces);
+    // A selection that is gone or now hidden (archived, renamed to `_x`) falls back to the first listed workspace.
+    if (!this.selected || !workspaces.some((w) => w.name === this.selected)) this.selected = workspaces[0]?.name ?? null;
     this.map = this.selected ? await loadWorkspaceMap(this.plugin.app, this.selected) : null;
     this.render();
   }
@@ -64,7 +68,8 @@ export class SpacesTab {
     const host = this.host;
     if (!host) return;
     host.empty();
-    const workspaces = this.snapshot?.workspaces ?? [];
+    // Hidden entries (`_` folders, _archive/) stay in the snapshot but are never listed (spaces-redesign D22).
+    const workspaces = visibleWorkspaces(this.snapshot?.workspaces);
     const body = host.createDiv({ cls: "aos-ws-body" });
     this.renderMaster(body.createDiv({ cls: "aos-ws-list" }), workspaces);
     const detailHost = body.createDiv({ cls: "aos-ws-detail" });
@@ -78,12 +83,14 @@ export class SpacesTab {
     if (!workspaces.length) { parent.createDiv({ cls: "aos-dim", text: "no workspaces" }); return; }
     for (const w of workspaces) {
       const row = parent.createDiv({ cls: `aos-ws-row${this.selected === w.name ? " aos-ws-row-active" : ""}` });
-      row.createSpan({ cls: "aos-ws-dot", text: STATUS_DOT[w.status ?? ""] ?? "•" });
+      const status = w.status ?? "";
+      row.createSpan({ cls: "aos-ws-dot", text: STATUS_DOT[status] ?? "•", attr: status ? { title: status, "aria-label": status } : {} });
       const meta = row.createDiv({ cls: "aos-ws-rowmeta" });
       meta.createDiv({ cls: "aos-ws-name", text: w.name });
       meta.createDiv({ cls: "aos-ws-sub aos-dim", text: w.summary ?? "—" });
       const chip = sessionsChip(w.sessions);
-      if (chip) meta.createDiv({ cls: "aos-ws-sub aos-dim", text: chip });
+      const title = sessionsTitle(w.sessions);
+      if (chip) meta.createDiv({ cls: "aos-ws-sub aos-dim", text: chip, attr: title ? { title } : {} });
       row.addEventListener("click", () => {
         this.selected = w.name;
         this.expandedDirs.clear();
@@ -101,10 +108,11 @@ export class SpacesTab {
 
   // Sessions of either host that ran outside workspaces/: the centralisation signal (workspace hub D5).
   private renderOutside(parent: HTMLElement): void {
-    const rows = outsideRows(this.snapshot?.hostSessions?.outsideWorkspaces);
+    const hs = this.snapshot?.hostSessions;
+    const rows = outsideRows(hs?.outsideWorkspaces, 8, Date.now(), undefined, hs?.windowDays);
     if (!rows.length) return;
     const foot = parent.createDiv({ cls: "aos-ws-outside" });
-    foot.createDiv({ cls: "aos-ws-name aos-dim", text: `outside workspaces (${this.snapshot?.hostSessions?.outsideWorkspaces?.length ?? rows.length})` });
+    foot.createDiv({ cls: "aos-ws-name aos-dim", text: `outside workspaces (${hs?.outsideWorkspaces?.length ?? rows.length})` });
     for (const r of rows) {
       const line = foot.createDiv({ cls: "aos-ws-sub aos-dim", text: `${r.label} — ${r.chip}` });
       line.setAttr("title", `${r.cwd}\naos workspace adopt "${r.cwd}"`);

@@ -7,13 +7,16 @@
  *      gate or its stage's gate is not approved, or the phase budget is spent.
  *   2. Resolves the provider: the seat's own, or for `opposite` the one that did not build the item (`builders`), so a
  *      reviewer never runs on the provider that built what it reviews. The host must be enabled and have a binary.
- *   3. Forks team/<item>/<member> from the item's trunk team/<item>/trunk (cut from the project's HEAD on first use) at
- *      workspaces/_worktrees/<item>/<member>, writes the run's marker, and runs lib/headless.js seatArgs under headlessEnv.
+ *   3. Forks team/<team>/<item>/<member> from the item's trunk team/<team>/<item>/trunk (cut from the project's HEAD on
+ *      first use) at workspaces/_worktrees/<team>/<item>/<member> (vaults may still hold the older _worktrees/<item>/<member>),
+ *      writes the run's marker, and runs lib/headless.js seatArgs under headlessEnv.
  *   4. Records spend (family team:<team>:<member>; Codex priced from tokens) and a telemetry run as the lead's, with the
  *      seat as its sub-agent, so the Runs tab rolls the seat up under the lead (D9).
  *   5. Merges the seat branch into the trunk (fast-forward, else a merge commit; a conflict is a blocker), adds an execute
  *      seat that committed to `builders`, posts the seat's final line when it did not post, and a blocker for a failure,
- *      a kill, uncommitted work or a conflict. Then the run's row lands in runs.jsonl and the marker goes.
+ *      a kill, uncommitted work or a conflict. Then the run's row lands in runs.jsonl and the marker goes. Its `session`
+ *      is the host's own id for the run: Claude's session_id, Codex's thread id (thread.started), which Spaces uses to
+ *      credit the run to the item's workspace (spaces-redesign D20, D34).
  *
  * SIGTERM, SIGHUP or SIGINT stops the seat (SIGKILL after GRACE_MS) and records the run as killed. A SIGKILL leaves the
  * marker for the next sweep (teams.js reapKilledRuns). --detach hands the same command to launchd (macOS), systemd-run
@@ -213,6 +216,17 @@ function parseFinal(text) {
   return { kind: 'note', text: line };
 }
 
+/** The thread id a Codex seat's `exec --json` events start with (thread.started, read by session-events.js), or null. The
+ *  ledger records it as the run's `session`, as it does Claude's session_id (spaces-redesign D34). */
+function codexThreadId(events) {
+  try {
+    const p = require('./session-events.js').createParser('codex');
+    p.push(String(events || ''));
+    p.end();
+    return p.state.hostSessionId || null;
+  } catch { return null; }
+}
+
 function stamp() { return new Date().toISOString().replace(/[:.]/g, '-'); }
 function readJson(file) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; } }
 function writeMarker(file, obj) { require('./fsx.js').writeAtomic(file, JSON.stringify(obj, null, 2) + '\n'); }
@@ -381,6 +395,7 @@ async function dispatch(opts, ctx) {
       let events = '';
       try { events = fs.readFileSync(`${logBase}.out`, 'utf8'); } catch { /* no events */ }
       spendRow = S.rowFromCodex(events, { feature, model: model || '', ms });
+      session = codexThreadId(events);
     }
     usd = Number(spendRow.usd) || 0;
     const killed = ctl.caught;
@@ -604,4 +619,4 @@ function detach(t, plan, args, ctx) {
   ].join('\n') };
 }
 
-module.exports = { dispatch, mergeSeat, branchNames, modelFor, preflight, resolveProvider, gateAllows, projectRepo, prepareWorktree, mergeBack, agentBody, parseFinal, promptFor, runSeat, detach, detachedEnv, launchdJob, plistXml, GRACE_MS };
+module.exports = { dispatch, mergeSeat, branchNames, modelFor, preflight, resolveProvider, gateAllows, projectRepo, prepareWorktree, mergeBack, agentBody, parseFinal, promptFor, codexThreadId, runSeat, detach, detachedEnv, launchdJob, plistXml, GRACE_MS };

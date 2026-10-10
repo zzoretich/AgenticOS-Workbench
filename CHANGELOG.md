@@ -4,6 +4,16 @@ All notable changes to UniDeX (AgenticOS Workbench before 1.1). Versions follow 
 
 ## [Unreleased]
 
+### Changed
+- **`_` folders are hidden from Spaces and Pulse counts**, and the outside list drops temp, scratch and job folders.
+- **Workspace status is active, stalled or idle**, worked out from sessions and commits, unless `workspace.md` sets `active`, `paused` or `done`; session counts cover the last 30 days on both hosts.
+
+### Fixed
+- **Spaces counts Claude Code sessions.** Sessions are read from each transcript's own folder, worktrees and team seats are credited to their workspace, and sessions started at the vault root count for the workspace whose files they touched.
+- **A workspace's next step comes from its handoff or plan, not the last commit.** Automatic backup commits no longer show as the next step, and a model's suggestion is no longer stored as one.
+- **`aos workspace` works when run from the vault folder itself**, where it used to say no vault was configured.
+- **Reading a workspace's repository runs nothing that repository's own config names.** The scan and the Sessions tab's changes and diffs no longer run its filter drivers, external diff or textconv programs, or fetch missing objects of a partial clone.
+
 ## [1.6.0] — 2026-10-09
 
 ### Changed

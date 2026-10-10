@@ -24,11 +24,13 @@ const IGNORED_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', 
   '.mp3', '.mp4', '.mov', '.wav', '.woff', '.woff2', '.ttf', '.otf', '.pptx', '.xlsx', '.docx', '.bin', '.dylib', '.node']);
 const MAX_SIZE = 1024 * 1024;
 const HEAD_CHARS = 4000;
+const HEAD_BYTES = 16 * 1024; // what describe() reads of a file: HEAD_CHARS characters of UTF-8 at most
 
+// Dot-folders and `_` folders (_archive/, _worktrees/, any hidden folder: spaces-redesign D22) get no map.
 function listWorkspaces() {
   try {
     return fs.readdirSync(WORKSPACES_DIR, { withFileTypes: true })
-      .filter((d) => d.isDirectory() && !d.name.startsWith('.'))
+      .filter((d) => d.isDirectory() && !d.name.startsWith('.') && !d.name.startsWith('_'))
       .map((d) => d.name).sort();
   } catch { return []; }
 }
@@ -53,6 +55,30 @@ function walkFiles(absRoot, rel = '', out = []) {
   return out;
 }
 
+/**
+ * Whether one file (its absolute and workspace-relative paths) is one walkFiles would list: no dot segment but .github,
+ * no skipped folder on the way, not a skipped name or type, at most MAX_SIZE (map-workspace.js --file, spaces-redesign §6).
+ */
+function mappableFile(absPath, relPath) {
+  const segs = String(relPath).split('/');
+  const name = segs[segs.length - 1];
+  if (segs.some((s) => s.startsWith('.') && s !== '.github')) return false;
+  if (segs.slice(0, -1).some((s) => IGNORED_DIRS.has(s))) return false;
+  if (IGNORED_FILES.has(name) || IGNORED_EXTS.has(path.extname(name).toLowerCase())) return false;
+  try { return fs.statSync(absPath).size <= MAX_SIZE; } catch { return false; }
+}
+
+/** A file's first HEAD_BYTES as text, never the whole file, or null. */
+function readHead(absPath) {
+  let fd = null;
+  try {
+    fd = fs.openSync(absPath, 'r');
+    const buf = Buffer.alloc(HEAD_BYTES);
+    const n = fs.readSync(fd, buf, 0, HEAD_BYTES, 0);
+    return buf.subarray(0, n).toString('utf8');
+  } catch { return null; } finally { if (fd !== null) { try { fs.closeSync(fd); } catch { /* closed */ } } }
+}
+
 function readMap(name) {
   try {
     const parsed = JSON.parse(fs.readFileSync(path.join(MAPS_DIR, `${name}.json`), 'utf8'));
@@ -68,8 +94,9 @@ function writeMap(name, map) {
 }
 
 async function describe(absPath, relPath, chatFn) {
-  let head = '';
-  try { head = fs.readFileSync(absPath, 'utf8').slice(0, HEAD_CHARS); } catch { return null; }
+  const text = readHead(absPath);
+  if (text == null) return null;
+  const head = text.slice(0, HEAD_CHARS);
   try {
     const line = await summarize(`FILE: ${relPath}\n---\n${head}`, {
       style: 'prose', maxWords: 14, chatFn,
@@ -187,4 +214,4 @@ async function describeOneFile(workspaceName, relPath, opts = {}) {
   return line;
 }
 
-module.exports = { collectFileMaps, describeOneFile, listWorkspaces, MAPS_DIR };
+module.exports = { collectFileMaps, describeOneFile, listWorkspaces, mappableFile, MAPS_DIR };

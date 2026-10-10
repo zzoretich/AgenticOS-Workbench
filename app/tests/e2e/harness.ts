@@ -6,11 +6,14 @@
 // tests/.fixture/.pristine. Each spec file (useApp) restores vault/ and home/ from that copy before it launches, so a
 // runtime refresh or an edit in one file never leaks into the next. The copy is restored to the same paths the
 // generator used, because the runtime's caches (snapshot.json, agenticos.json, routine plists) hold absolute paths.
+// close() returns only once nothing the app started is still running (the app's processes, below): a runtime refresh
+// the app left running would otherwise go on writing into the fixture while the next spec file restores it.
 
 import { _electron as electron, expect, test, type ElectronApplication, type Locator, type Page } from "@playwright/test";
-import { spawnSync } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { promisify } from "node:util";
 
 export const REPO = path.resolve(__dirname, "..", "..");
 /** The HUD's version as the app reads it (boot.ts: ../obsidian-plugin/package.json), so a version bump needs no test edit. */
@@ -106,7 +109,11 @@ export interface AppHandle {
   guard(): Promise<GuardEntry[]>;
   /** What the app asked the OS to do (shell.openPath / openExternal / showItemInFolder / trashItem), recorded instead. */
   opened(): Promise<Opened[]>;
-  close(): Promise<void>;
+  /**
+   * Quits the app, then waits until every process it started has ended, the detached refreshes it leaves running on
+   * quit included; what is still running `graceMs` after the quit (default 10 s) is killed, with its children.
+   */
+  close(opts?: { graceMs?: number }): Promise<void>;
 }
 
 export interface LaunchOptions {
@@ -257,6 +264,75 @@ export function providerState(name: string, logins: { claude: boolean; codex: bo
   fs.writeFileSync(file, `${JSON.stringify(j, null, 2)}\n`);
 }
 
+// ── the app's processes ──────────────────────────────────────────────
+
+const run = promisify(execFile);
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+interface Proc { pid: number; ppid: number; pgid: number; command: string }
+
+/** Every process now, but zombies (ended, waiting for their parent to collect them). */
+async function processes(): Promise<Proc[]> {
+  const { stdout } = await run("ps", ["-Aww", "-o", "pid=,ppid=,pgid=,stat=,command="], { maxBuffer: 64 << 20 });
+  const all: Proc[] = [];
+  for (const line of stdout.split("\n")) {
+    const m = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s*(.*)$/.exec(line);
+    if (m && !m[4].startsWith("Z")) all.push({ pid: Number(m[1]), ppid: Number(m[2]), pgid: Number(m[3]), command: m[5] });
+  }
+  return all;
+}
+
+/**
+ * The processes one app started, followed from the app's own: their pids and their process groups. Main starts the
+ * runtime's refreshes (scan-vault.js after a new workspace or Scratch, regen-workspace-insight …) detached and leaves
+ * them running on quit (ProcService.killAttached), as a user's app should. Each leads its own group, which its own
+ * children (the scan's git) join; once the app has gone they are re-parented away from it, so the groups are what
+ * still ties them, and their children, to it.
+ */
+class AppProcesses {
+  private readonly pids = new Set<number>();
+  private readonly groups = new Set<number>();
+  constructor(app: number) { this.pids.add(app); }
+
+  /**
+   * Takes in what now runs under the app's processes or in their groups, and anything whose command line names the
+   * fixture (runtime scripts run as `node <fixture>/vault/brain/scripts/…`, and a detached respawn keeps that path), so a
+   * script orphaned before close() began is still waited for; returns the app's processes still running.
+   */
+  async update(): Promise<Proc[]> {
+    const all = await processes();
+    const own = all.find((p) => p.pid === process.pid)?.pgid; // this worker's group is never the app's
+    const fixture = ROOT + path.sep;
+    for (let grew = true; grew;) {
+      grew = false;
+      for (const p of all) {
+        const ours = this.pids.has(p.ppid) || this.groups.has(p.pgid) || (p.pid !== process.pid && p.command.includes(fixture));
+        if (!this.pids.has(p.pid) && ours) { this.pids.add(p.pid); grew = true; }
+        if (this.pids.has(p.pid) && p.pgid > 1 && p.pgid !== own && !this.groups.has(p.pgid)) { this.groups.add(p.pgid); grew = true; }
+      }
+    }
+    return all.filter((p) => this.pids.has(p.pid));
+  }
+
+  /**
+   * Waits until none of them runs. What still does after `graceMs` is killed, with its group. The grace comes first
+   * because a refresh killed mid-write can leave its lock behind (scan-vault's .snapshot.lock goes stale only after
+   * 60 s), which a relaunch in the same spec file would trip over.
+   */
+  async settle(graceMs: number): Promise<void> {
+    let running = await this.update();
+    for (const until = Date.now() + graceMs; running.length && Date.now() < until; running = await this.update()) await sleep(25);
+    if (!running.length) return;
+    console.warn(`close(): killed what the app left running ${graceMs} ms after it quit:\n${running.map((p) => `  ${p.pid} ${p.command}`).join("\n")}`);
+    for (const g of new Set(running.map((p) => p.pgid))) if (this.groups.has(g)) { try { process.kill(-g, "SIGKILL"); } catch { /* gone */ } }
+    for (const p of running) { try { process.kill(p.pid, "SIGKILL"); } catch { /* gone */ } }
+    for (const until = Date.now() + 5_000; running.length; running = await this.update()) {
+      if (Date.now() > until) throw new Error(`close(): the app's processes would not end:\n${running.map((p) => `  ${p.pid} ${p.command}`).join("\n")}`);
+      await sleep(25);
+    }
+  }
+}
+
 /** Errors that are part of the app's read-only phase, not faults: none so far. Add a pattern here only with a reason. */
 const KNOWN_ERRORS: RegExp[] = [];
 
@@ -266,6 +342,11 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<AppHandle> {
   markNoted(opts.noted === false ? null : FX.vault);
   opts.prepare?.();
   const app = await electron.launch({ args: [REPO], cwd: REPO, env: appEnv(opts.env), timeout: 60_000 });
+  // AOS_E2E_STRAGGLER=1: a scan the app starts holds its writes for the next restoreFixture (straggler.cjs). Playwright
+  // drops NODE_OPTIONS from the launch environment, so it goes into main's own, which every child the app spawns inherits.
+  if (process.env.AOS_E2E_STRAGGLER === "1") {
+    await app.evaluate((_e, pre) => { process.env.NODE_OPTIONS = `--require ${JSON.stringify(pre)}`; }, path.join(__dirname, "straggler.cjs"));
+  }
   const errors: string[] = [];
   const notices: string[] = [];
   const known = (t: string) => KNOWN_ERRORS.some((re) => re.test(t));
@@ -307,11 +388,21 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<AppHandle> {
     app, win, errors, notices,
     guard: () => win.evaluate(() => (window as unknown as { aosHost: { guard: { log: GuardEntry[] } } }).aosHost.guard.log.map((e) => ({ ...e }))),
     opened: () => app.evaluate(() => (globalThis as unknown as { __aosOpened: Opened[] }).__aosOpened.map((e) => ({ ...e }))),
-    close: async () => {
+    close: async ({ graceMs = 10_000 } = {}) => {
       const proc = app.process();
+      const started = new AppProcesses(proc.pid!);
+      await started.update();
+      // Followed while the app quits as well: what it starts on the way out is its too.
+      let quitting = true;
+      const following = (async () => { while (quitting) { await started.update().catch(() => undefined); await sleep(25); } })();
       const closed = app.close().then(() => true, () => false);
       const timeout = new Promise<boolean>((r) => setTimeout(() => r(false), 15_000));
       if (!(await Promise.race([closed, timeout]))) proc.kill("SIGKILL");
+      quitting = false;
+      await following;
+      // The app has gone, but not necessarily what it started: a scan still writing under vault/brain fails the next
+      // restoreFixture() (ENOTEMPTY) or writes into its fresh copy.
+      await started.settle(graceMs);
     },
   };
   return handle;

@@ -26,6 +26,8 @@ test("the HUD's own reads of the fixture vault give the runtime's facts", async 
   assert.deepEqual(pulseFacts(inputs, NOW), withoutHash(runtime.facts(runtime.read(VAULT, { now: NOW }), NOW)));
   assert.equal(inputs.personaName, "Beacon");
   assert.deepEqual(inputs.gates.map((g) => g.item), ["site-02"]);
+  // The fixture's hidden entries (_spikes, _archive/old-chart) are left out on both sides (spaces-redesign D22).
+  assert.deepEqual(inputs.workspaces, [{ name: "harbor-map", status: "active" }, { name: "field-notes", status: "active" }, { name: "old-site", status: "idle" }]);
 });
 
 test("an empty vault: no items, nothing thrown", async () => {

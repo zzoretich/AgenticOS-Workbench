@@ -225,7 +225,7 @@ export async function gatherPulseInputs(app: App, vaultRoot: string, now: Date =
       .sort((x, y) => String(x.since ?? "").localeCompare(String(y.since ?? "")));
   } catch { /* no teams */ }
 
-  const snapshot = await json<{ health?: { issues?: { severity: string; area: string; message: string }[] }; workspaces?: { name: string; status: string }[] }>(SNAPSHOT_PATH);
+  const snapshot = await json<{ health?: { issues?: { severity: string; area: string; message: string }[] }; workspaces?: { name: string; status: string; hidden?: boolean }[] }>(SNAPSHOT_PATH);
   const state = parseState(await read(STATE_PATH));
   const notifications: PulseInputs["notifications"] = [];
   const years = (await list(NOTIFICATIONS_DIR)).folders.filter((f) => /\/\d{4}$/.test(f));
@@ -253,7 +253,8 @@ export async function gatherPulseInputs(app: App, vaultRoot: string, now: Date =
     drafts: (await list("brain/memory/feedback/_drafts")).files.filter((f) => f.endsWith(".md")).length,
     gates,
     issues: (snapshot?.health?.issues ?? []).map((i) => ({ severity: i.severity, area: i.area, message: i.message })),
-    workspaces: (snapshot?.workspaces ?? []).map((w) => ({ name: w.name, status: w.status })),
+    // Hidden entries (`_` folders, _archive/) are never counted (spaces-redesign D22); the twin read in lib/pulse-facts.js filters the same way.
+    workspaces: (snapshot?.workspaces ?? []).filter((w) => w && !w.hidden).map((w) => ({ name: w.name, status: w.status })),
     pipelines,
     routines,
     todo: await read("TODO.md"),

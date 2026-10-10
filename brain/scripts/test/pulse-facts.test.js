@@ -46,7 +46,7 @@ test('the fixture: the summary per area', () => {
   assert.deepEqual(s.todo, { open: 4, done: 1, overdue: 1, today: 1 });
   assert.deepEqual(s.routines, { total: 2, failing: 1 });
   assert.deepEqual(s.memory, { writtenToday: 2, pendingReview: 1, drafts: 2 });
-  assert.deepEqual(s.workspaces, { total: 3, active: 2 });
+  assert.deepEqual(s.workspaces, { total: 3, active: 2 });   // the fixture's _spikes and _archive/old-chart are hidden (spaces-redesign D22)
   assert.deepEqual(s.spend, { usd: 0.41, calls: 2 });   // today's rows only
 });
 
@@ -86,6 +86,21 @@ test('an empty vault reads as empty facts, never throws', () => {
     assert.equal(f.summary.todo.open, 0);
     assert.equal(f.summary.notifications.latest, null);
     assert.equal(f.summary.decisions.oldestDays, null);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('hidden workspaces (`_` folders, _archive/) are left out of the counts (spaces-redesign D22)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pulse-hidden-'));
+  try {
+    fs.mkdirSync(path.join(dir, 'brain', '_index'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'brain', '_index', 'snapshot.json'), JSON.stringify({ workspaces: [
+      { name: 'harbor-map', status: 'active', hidden: false },
+      { name: 'old-site', status: 'idle' },
+      { name: '_spikes', status: 'active', hidden: true, hiddenReason: 'underscore' },
+      { name: '_archive/x', label: 'x', status: 'idle', hidden: true, hiddenReason: 'archived' },
+    ] }));
+    assert.deepEqual(PF.read(dir, { now: NOW }).workspaces, [{ name: 'harbor-map', status: 'active' }, { name: 'old-site', status: 'idle' }]);
+    assert.deepEqual(factsOf(dir).summary.workspaces, { total: 2, active: 1 });
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 

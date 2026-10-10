@@ -490,6 +490,27 @@ stage("notifications (lib/notifications.js post + mark, synthetic clock)", () =>
   return `${NOTES.length} items (${[edition, breaking, alert].length} unread)`;
 });
 
+// The workspaces and host sessions added for the Spaces redesign (spaces-redesign D11, D20–D25), named once so the
+// stages below and expected.json agree.
+const WS_FIXTURE = {
+  git: "buoy-log",                              // its own repository: one commit two days ago, one dirty file, no remote
+  stalled: "reef-survey",                       // a dated HANDOFF-reef-survey.md and a Claude Code session 12 days ago
+  template: "kelp-watch",                       // the stubs `aos workspace new` writes, nothing else
+  archived: "_archive/pier-repairs",            // hidden, hiddenReason archived
+  hidden: "_spikes",                            // hidden, hiddenReason underscore (its sonar-test/ folder is content)
+  seat: "_worktrees/example/harbor-02/builder", // a team seat's worktree: never an entry
+  claude: {                                     // projects/<the start folder's real slug>/<id>.jsonl
+    "harbor-map": "c1a0de00-0000-4000-8000-000000000001",
+    "reef-survey": "c1a0de00-0000-4000-8000-000000000002",
+  },
+  codex: {                                      // harbor-map's rollouts (the workspace hub's two, given a title each, and two more)
+    prompt: "0199a1b2-0000-4000-8000-000000000001",    // titled by its first prompt
+    index: "0199a1b2-0000-4000-8000-000000000002",     // titled by its session_index.jsonl thread_name
+    exec: "0199a1b2-0000-4000-8000-000000000005",      // `codex exec`: headless
+    subagent: "0199a1b2-0000-4000-8000-000000000006",  // a thread_spawn subagent of `prompt`: folds into it, never counted
+  },
+};
+
 stage("workspaces", () => {
   write(v("workspaces/harbor-map/workspace.md"), `---\nstatus: active\nsummary: An offline harbor chart viewer with tide overlays.\nobjectives:\n  - Parse the sample tide tables\n  - Cache chart tiles for offline use\nnext: Wire the tide parser into the chart view\n---\n\n# Harbor Map\n`);
   write(v("workspaces/harbor-map/README.md"), "# Harbor Map\n\nAn offline harbor chart viewer.\n\n## Objectives\n\n- Parse the sample tide tables\n");
@@ -497,26 +518,113 @@ stage("workspaces", () => {
   write(v("workspaces/harbor-map/src/tides.js"), "// Parses the sample tide tables.\nexport function parseTides(text) {\n  return text.split(\"\\n\").filter(Boolean).map((l) => l.split(\",\"));\n}\n");
   write(v("workspaces/harbor-map/src/tiles.js"), "// Chart tile cache (next).\nexport const TILE_SIZE = 256;\n");
   write(v("workspaces/field-notes/README.md"), "# Field Notes\n\nA notebook for survey trips.\n\n## Next\n\n- Pick a sync format\n");
+  // spaces-redesign: one workspace per kind the Spaces data layer tells apart. harbor-map and field-notes above stay as
+  // they are (files.spec.ts and sessions.spec.ts pin them); no new name or summary contains theirs, so the specs'
+  // `hasText` row lookups still find exactly one row.
+  // buoy-log: its own git repository (the next stage commits it and leaves one file dirty); active by its commit (D11, D24).
+  write(v(`workspaces/${WS_FIXTURE.git}/README.md`), "# Buoy Log\n\nReads the hourly buoy logs into one table.\n\n## Next\n\n- Add a CSV export\n");
+  write(v(`workspaces/${WS_FIXTURE.git}/src/buoys.js`), "// Reads one buoy log: a timestamp and a wave height per line.\nexport function readLog(text) {\n  return text.split(\"\\n\").filter(Boolean).map((l) => l.split(\";\"));\n}\n");
+  // reef-survey: a plan in a dated handoff and a Claude Code session 12 days ago, so stalled (D11; the handoff, D23).
+  write(v(`workspaces/${WS_FIXTURE.stalled}/README.md`), "# Reef Survey\n\nDive logs and the coral counts from each survey.\n");
+  write(v(`workspaces/${WS_FIXTURE.stalled}/HANDOFF-${WS_FIXTURE.stalled}.md`), `# Reef survey handoff — ${day(-12)}\n\n## Now (${day(-12)})\n\nThe coral counts for the north reef are entered; the south reef is half done.\n\n## Next\n\n- [x] Enter the north reef counts\n- [ ] Enter the south reef counts\n\n## Notes\n\n- The dive logs use local time.\n`);
+  // Hidden entries (D22): an archived workspace keyed _archive/<n>, and an `_` folder; neither shows in Spaces or Pulse.
+  write(v(`workspaces/${WS_FIXTURE.archived}/workspace.md`), `---\nsummary: Repairs to the old pier's pilings.\narchived: ${day(-20)}\n---\n\n# Pier Repairs\n`);
+  write(v(`workspaces/${WS_FIXTURE.archived}/README.md`), "# Pier Repairs\n\nRepairs to the old pier's pilings.\n");
+  write(v(`workspaces/${WS_FIXTURE.hidden}/sonar-test/README.md`), "# Sonar test\n\nA one-day spike on the depth sounder's output.\n");
+  // A team seat's worktree as lib/team-run.js lays it out (_worktrees/<team>/<item>/<member>): infrastructure, no entry.
+  write(v(`workspaces/${WS_FIXTURE.seat}/README.md`), "# Chart tile cache (the builder's worktree)\n");
 });
 
+stage(`aos workspace new ${WS_FIXTURE.template} (a template stub)`, () => {
+  // The stubs as `aos workspace new` writes them: their placeholder text is never a summary (D23: summaryTemplate).
+  return aos(["workspace", "new", WS_FIXTURE.template], { env: USER_ENV() }).trim().split("\n")[0];
+});
+
+stage(`${WS_FIXTURE.git}: its own git repository (one commit, one dirty file, no remote)`, () => {
+  const dir = v(`workspaces/${WS_FIXTURE.git}`);
+  // Identity and dates are set here and no system or user git config is read, so the repository is the same on every
+  // machine; the empty address keeps an email out of it. The commit is two days old, so the workspace reads active.
+  const at = `@${Math.floor(ago(2 * DAY).getTime() / 1000)} +0000`;
+  const env = {
+    ...ENV(), GIT_CONFIG_NOSYSTEM: "1",
+    GIT_AUTHOR_NAME: "Fixture Builder", GIT_AUTHOR_EMAIL: "", GIT_AUTHOR_DATE: at,
+    GIT_COMMITTER_NAME: "Fixture Builder", GIT_COMMITTER_EMAIL: "", GIT_COMMITTER_DATE: at,
+  };
+  const git = (...a) => run("git", ["-c", "init.defaultBranch=main", "-c", "commit.gpgsign=false", ...a], { cwd: dir, env });
+  git("init", "--quiet");
+  git("add", "-A");
+  git("commit", "--quiet", "-m", "Read the buoy logs into one table");
+  fs.appendFileSync(path.join(dir, "src", "buoys.js"), "\n// Next: the CSV export.\n");
+  return `main · ${git("rev-parse", "--short", "HEAD").trim()} · dirty: ${git("status", "--porcelain").trim()}`;
+}, { optional: true });
+
 stage("host sessions (Codex rollouts and Claude Code transcripts)", () => {
-  const rollout = (ms, id, cwd) => {
+  // Codex: sessions/YYYY/MM/DD/rollout-<time>-<id>.jsonl, opening with session_meta; `lines` are the records after it as
+  // [ms after the start, type, payload]. The file's mtime is its last record's time, as Codex leaves it.
+  const rollout = (ms, id, cwd, { source, lines = [] } = {}) => {
     const d = ago(ms);
     const file = path.join(CODEX, "sessions", String(d.getFullYear()), pad(d.getMonth() + 1), pad(d.getDate()), `rollout-${d.toISOString().slice(0, 19).replace(/:/g, "-")}-${id}.jsonl`);
-    write(file, `${JSON.stringify({ timestamp: d.toISOString(), type: "session_meta", payload: { id, cwd, timestamp: d.toISOString(), originator: "codex_cli_rs" } })}\n`);
-    fs.utimesSync(file, d, d);
+    const rec = (t, type, payload) => JSON.stringify({ timestamp: t.toISOString(), type, payload });
+    const out = [rec(d, "session_meta", { id, cwd, timestamp: d.toISOString(), originator: "codex_cli_rs", ...(source === undefined ? {} : { source }) })];
+    let last = d;
+    for (const [off, type, payload] of lines) {
+      const t = new Date(d.getTime() + off);
+      out.push(rec(t, type, payload));
+      if (t > last) last = t;
+    }
+    write(file, `${out.join("\n")}\n`);
+    fs.utimesSync(file, last, last);
   };
-  rollout(1 * DAY + 2 * HOUR, "0199a1b2-0000-4000-8000-000000000001", v("workspaces/harbor-map"));
-  rollout(3 * DAY, "0199a1b2-0000-4000-8000-000000000002", v("workspaces/harbor-map/src"));
+  const say = (role, text) => ["response_item", { type: "message", role, content: [{ type: role === "user" ? "input_text" : "output_text", text }] }];
+  const turn = (cwd) => ["turn_context", { cwd, approval_policy: "on-request", sandbox_policy: { mode: "workspace-write" }, model: "gpt-5-codex", effort: "medium" }];
+  // What Codex injects as a user message before the user's own words: never a title.
+  const context = (cwd) => say("user", `<environment_context>\n  <cwd>${cwd}</cwd>\n</environment_context>`);
+  const harbor = v("workspaces/harbor-map");
+  const cx = WS_FIXTURE.codex;
+  rollout(1 * DAY + 2 * HOUR, cx.prompt, harbor, { source: "cli", lines: [
+    [1000, ...turn(harbor)], [1000, ...context(harbor)], [2000, ...say("user", "Sketch the depth contours layer for the chart view")],
+    [3 * MIN, ...say("assistant", "Added a contours layer stub and a toggle in the chart view.")],
+  ] });
+  rollout(3 * DAY, cx.index, path.join(harbor, "src"), { source: "cli", lines: [[1000, ...turn(path.join(harbor, "src"))]] });
   rollout(2 * DAY, "0199a1b2-0000-4000-8000-000000000003", "/opt/sample/sandbox");
   rollout(5 * DAY, "0199a1b2-0000-4000-8000-000000000004", path.join(HOME, "sketches"));   // under HOME: shown as ~/sketches
-  // Claude Code transcripts under an encoded cwd outside every workspace (projects/<slug>/<session>.jsonl).
+  rollout(6 * HOUR, cx.exec, harbor, { source: "exec", lines: [[1000, ...turn(harbor)], [1000, ...say("user", "List the chart tiles missing a zoom level")]] });
+  // Spawned two minutes into the `prompt` thread and done before it ends, so folding it in leaves the thread's times alone.
+  rollout(1 * DAY + 2 * HOUR - 2 * MIN, cx.subagent, harbor, { source: { subagent: { thread_spawn: { parent_thread_id: cx.prompt, depth: 1 } } }, lines: [
+    [1000, ...turn(harbor)], [1000, ...say("user", "Find where the chart view draws its layers")], [30_000, ...say("assistant", "In src/tiles.js.")],
+  ] });
+  // A thread named in Codex: session_index.jsonl rows { id, thread_name, updated_at }.
+  write(path.join(CODEX, "session_index.jsonl"), `${JSON.stringify({ id: cx.index, thread_name: "Chart tile cache sizes", updated_at: ago(3 * DAY - 10 * MIN).toISOString() })}\n`);
+
+  // Claude Code: projects/<slug>/<session>.jsonl, the slug being the start folder with every character but a letter or a
+  // digit turned into "-" (so the folder cannot be read back from it: the runtime reads the cwd inside the transcript).
+  // Two transcripts under an encoded cwd outside every workspace, as the workspace hub had them:
   const slugDir = path.join(CLAUDE, "projects", "-opt-sample-scratchpad");
   for (const [sid, ms] of [["5e55a0a0-0000-4000-8000-00000000000a", 26 * HOUR], ["5e55a0a0-0000-4000-8000-00000000000b", 4 * HOUR]]) {
     const file = path.join(slugDir, `${sid}.jsonl`);
     write(file, `${JSON.stringify({ type: "user", sessionId: sid, cwd: "/opt/sample/scratchpad", timestamp: ago(ms).toISOString(), message: { role: "user", content: "sample prompt" } })}\n`);
     fs.utimesSync(file, ago(ms), ago(ms));
   }
+  // and one per workspace session under the folder's real slug (its real path, as Claude Code records it).
+  const transcript = (dir, sid, ms, { prompt, read, reply, title = null }) => {
+    const cwd = fs.realpathSync(dir);
+    const t0 = ago(ms);
+    const at = (s) => new Date(t0.getTime() + s * 1000).toISOString();
+    const uuid = (n) => `0e0e0e0e-0000-4000-8000-${sid.slice(-4)}${String(n).padStart(8, "0")}`; // each entry's own id
+    const base = { isSidechain: false, userType: "external", cwd, sessionId: sid, version: "2.1.0", gitBranch: "", entrypoint: "cli" };
+    const lines = [
+      { parentUuid: null, ...base, type: "user", message: { role: "user", content: prompt }, uuid: uuid(1), timestamp: at(0) },
+      { parentUuid: uuid(1), ...base, type: "assistant", message: { role: "assistant", model: "claude-sonnet-5", content: [{ type: "tool_use", id: `toolu_${sid.slice(-6)}1`, name: "Read", input: { file_path: path.join(cwd, read) } }] }, uuid: uuid(2), timestamp: at(20) },
+      { parentUuid: uuid(2), ...base, type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: `toolu_${sid.slice(-6)}1`, content: "(file contents)" }] }, uuid: uuid(3), timestamp: at(21) },
+      { parentUuid: uuid(3), ...base, type: "assistant", message: { role: "assistant", model: "claude-sonnet-5", content: [{ type: "text", text: reply }] }, uuid: uuid(4), timestamp: at(90) },
+      ...(title ? [{ type: "ai-title", aiTitle: title, sessionId: sid }] : []),
+    ];
+    const file = path.join(CLAUDE, "projects", cwd.replace(/[^A-Za-z0-9]/g, "-"), `${sid}.jsonl`);
+    write(file, `${lines.map((l) => JSON.stringify(l)).join("\n")}\n`);
+    fs.utimesSync(file, new Date(at(90)), new Date(at(90)));
+  };
+  transcript(harbor, WS_FIXTURE.claude["harbor-map"], 3 * HOUR, { prompt: "Wire the tide parser into the chart view", read: "src/tides.js", reply: "The parser's rows now feed the chart view's overlay.", title: "Tide parser in the chart view" });
+  transcript(v(`workspaces/${WS_FIXTURE.stalled}`), WS_FIXTURE.claude["reef-survey"], 12 * DAY, { prompt: "Enter the north reef coral counts from the dive log", read: `HANDOFF-${WS_FIXTURE.stalled}.md`, reply: "North reef counts entered; the south reef is next." });
 });
 
 const TEAM_ITEMS = [];
@@ -694,7 +802,10 @@ stage("expected values", () => {
   try { expected.teams = parse(aos(["team", "list", "--json"])); } catch (e) { expected.teamsError = String(e.message).slice(0, 200); }
   expected.teamItems = TEAM_ITEMS;
   expected.runs = RUNS.map((r) => r.id);
-  expected.snapshot = parse(fs.readFileSync(v("brain/_index/snapshot.json"), "utf8")).scannedAt;
+  const snap = parse(fs.readFileSync(v("brain/_index/snapshot.json"), "utf8"));
+  expected.snapshot = snap.scannedAt;
+  // The Spaces redesign's workspaces and sessions, with the status the runtime gave each entry (spaces-redesign D11, D22).
+  expected.workspaces = { ...WS_FIXTURE, status: Object.fromEntries((snap.workspaces ?? []).map((w) => [w.name, w.status ?? null])) };
 });
 
 writeJson(path.join(OUT, "expected.json"), expected);

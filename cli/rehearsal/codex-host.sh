@@ -172,6 +172,33 @@ sh "$VAULT/brain/scripts/bin/aos" statusline uninstall | grep -q '^codex   remov
 cmp -s "$CODEX_HOME/config.toml" "$TMP/config.before" || { echo "config.toml was not restored byte for byte"; exit 1; }
 rm -rf "$VAULT/persona/teams/reh"
 
+echo "== Spaces counts a Codex session started in a workspace, titled from session_index.jsonl (spaces-redesign D20, D25)"
+# A rollout as Codex writes it (sessions/YYYY/MM/DD/rollout-<time>-<id>.jsonl, session_meta first), and the thread name
+# Codex appends to session_index.jsonl when a thread is named.
+AOS="$VAULT/brain/scripts/bin/aos"
+sh "$AOS" workspace new reh-codex > /dev/null
+WS=$(cd "$VAULT/workspaces/reh-codex" && pwd -P)
+SID=0199a1b2-0000-4000-8000-0000000000aa
+NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+DAYDIR="$CODEX_HOME/sessions/$(date -u +%Y/%m/%d)"
+ROLLOUT="$DAYDIR/rollout-$(date -u +%Y-%m-%dT%H-%M-%S)-$SID.jsonl"
+mkdir -p "$DAYDIR"
+printf '{"timestamp":"%s","type":"session_meta","payload":{"id":"%s","timestamp":"%s","cwd":"%s","originator":"codex_cli_rs","source":"cli"}}\n' \
+  "$NOW" "$SID" "$NOW" "$WS" > "$ROLLOUT"
+printf '{"timestamp":"%s","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Plan the rehearsal workspace"}]}}\n' \
+  "$NOW" >> "$ROLLOUT"
+printf '{"id":"%s","thread_name":"Rehearsal thread","updated_at":"%s"}\n' "$SID" "$NOW" >> "$CODEX_HOME/session_index.jsonl"
+AOS_DETACHED=1 sh "$AOS" scan-vault --quiet
+sh "$AOS" workspace list --json > "$TMP/workspaces.json"
+node -e '
+const j = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+const w = j.workspaces.find((x) => x.name === "reh-codex");
+const s = w && w.sessions;
+if (!s || !(s.codex >= 1)) throw new Error("reh-codex sessions: " + JSON.stringify(s));
+const r = (s.recent || []).find((x) => x.id === process.argv[2] && x.host === "codex");
+if (!r || r.title !== "Rehearsal thread" || r.titleSource !== "index") throw new Error("recent row: " + JSON.stringify(r));
+' "$TMP/workspaces.json" "$SID"
+
 echo "== 3. uninstall --keep-vault removes the plugin and its marketplace"
 OUT=$(node "$ROOT/cli/aos.js" uninstall --keep-vault --yes)
 echo "$OUT"

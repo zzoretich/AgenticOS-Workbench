@@ -14,7 +14,7 @@ import type { TermTab } from "./src/views/TermTab";
 import { sessionHosts } from "./src/data/aosConfig";
 import type { TermHost } from "./src/data/terminalLaunch";
 import { AgenticOSSettings, AgenticOSSettingTab, DEFAULT_SETTINGS } from "./src/settings";
-import { loadSnapshot, SNAPSHOT_PATH } from "./src/data/snapshot";
+import { loadSnapshot, SNAPSHOT_PATH, visibleWorkspaces } from "./src/data/snapshot";
 import { loadRuns, RUNS_PATH, touchesRuns, formatRelative } from "./src/data/runs";
 import { loadStatusline, isStale as statuslineStale, barSegments, workbenchTabFrom, STATUSLINE_PATH } from "./src/data/statusline";
 import type { BarTone } from "./src/data/statusline";
@@ -556,8 +556,8 @@ export default class AgenticOSPlugin extends Plugin {
     const snap = await loadSnapshot(app);
     // Same workspace-name source P2 uses everywhere else (PulseTab.refresh(),
     // SpacesTab, and the old Workspaces view all read snapshot.workspaces, never settings) —
-    // loadAllMaps() itself tolerates a missing/null map per name.
-    const wsNames = (snap?.workspaces ?? []).map((w) => w.name);
+    // loadAllMaps() itself tolerates a missing/null map per name. Hidden entries stay out (spaces-redesign D22).
+    const wsNames = visibleWorkspaces(snap?.workspaces).map((w) => w.name);
 
     const [maps, memories, runs, staff, inv] = await Promise.all([
       loadAllMaps(app, wsNames),

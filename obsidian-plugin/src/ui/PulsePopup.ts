@@ -14,6 +14,7 @@ import { sweepLine } from "../data/maintenance";
 import { renderSystemDrawer } from "../views/SystemDrawer";
 import { groupTodos, localDay, doneThisWeek } from "../data/todos";
 import { formatRelative } from "../data/runs";
+import { visibleWorkspaces } from "../data/snapshot";
 import type { FixAction } from "../data/fixQueue";
 
 const pl = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`;
@@ -175,7 +176,7 @@ export class PulsePopup extends Modal {
       }
       case "workspaces": {
         const l = list();
-        for (const w of [...(m.snapshot?.workspaces ?? [])].sort((a, b) => String(b.lastEvent?.iso ?? "").localeCompare(String(a.lastEvent?.iso ?? "")))) {
+        for (const w of visibleWorkspaces(m.snapshot?.workspaces).sort((a, b) => String(b.lastEvent?.iso ?? "").localeCompare(String(a.lastEvent?.iso ?? "")))) {
           this.row(l, { tone: w.status === "active" ? "ok" : "off", title: w.name, meta: [w.lastEvent?.iso ? formatRelative(w.lastEvent.iso) : null, w.next?.text ? `next: ${w.next.text}` : null, w.summary].filter(Boolean).join(" · "), tag: w.status ?? undefined, acts: [{ label: "Open →", jump: true, run: () => openTab(ctx, "spaces") }] });
         }
         return;
