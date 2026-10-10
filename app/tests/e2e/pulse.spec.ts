@@ -276,6 +276,22 @@ test("the popup: a tile opens its area, the list switches areas without closing,
   await expect(win.locator(".modal.mod-pulse")).toHaveCount(0);
 });
 
+test("Workspaces: the tile and the popup list the visible workspaces only, as many rows as the count (spaces-redesign D22)", async () => {
+  const { win } = app();
+  const snap = readVaultJson<{ workspaces: Array<{ name: string; hidden?: boolean }> }>("brain/_index/snapshot.json");
+  const visible = snap.workspaces.filter((w) => !w.hidden).map((w) => w.name).sort();
+  expect(snap.workspaces.filter((w) => w.hidden).map((w) => w.name)).toEqual(expect.arrayContaining(["_spikes", "_archive/pier-repairs"]));
+  const tile = content(win).locator(".aos-pulse-tile[data-area='workspaces']");
+  await expect(tile.locator(".aos-pulse-tile-head .aos-pulse-clip")).toHaveText(new RegExp(`^${visible.length} · `));
+  // Rows past the tile's height are hidden by fit(), not removed, so every row is still counted here.
+  await expect(tile.locator(".aos-pulse-li")).toHaveCount(visible.length);
+  expect((await tile.locator(".aos-pulse-li-title").allTextContents()).sort()).toEqual(visible);
+  const modal = await pulseArea(win, "workspaces");
+  await expect(modal.locator(".aos-pp-sub")).toHaveText(new RegExp(`^${visible.length} workspaces · `));
+  expect((await modal.locator(".aos-pp-list .aos-pp-rowtitle").allTextContents()).sort()).toEqual(visible);
+  await closePulse(win);
+});
+
 test("a decision jumps: Review → on a proposal opens its review in a terminal in Code", async () => {
   const { win } = app();
   const modal = await pulseArea(win, "proposals");

@@ -4,11 +4,11 @@ import * as path from "path";
 import type AgenticOSPlugin from "../../../main";
 import { gatherPulseInputs, pulseFacts, type PulseFacts, type PulseInputs } from "../../data/pulseFacts";
 import { BRIEFING_PATH, chooseParagraph, parseBriefing, sinceLine, type BriefingFile, type Paragraph } from "../../data/briefingBand";
-import { loadSnapshot, type Snapshot } from "../../data/snapshot";
+import { loadSnapshot, visibleWorkspaces, type Snapshot, type WorkspaceEntry } from "../../data/snapshot";
 import { loadPipelines, pipelineStatuses, type PipelineStatus } from "../../data/pipelines";
 import { buildFixQueue, type FixAction } from "../../data/fixQueue";
 import { loadTrail, isPendingReview, type TrailEntry } from "../../data/promoteTrail";
-import { loadAllMaps, mapStats } from "../../data/workspaceMaps";
+import { loadAllMaps, mapStats, type WorkspaceMap } from "../../data/workspaceMaps";
 import { buildMonthlyBudget, formatUSD, type BudgetConfig } from "../../data/cost";
 import { loadRunsForMonth, type AgentRun } from "../../data/runs";
 import { loadStaff, type StaffAgent } from "../../data/staff";
@@ -23,6 +23,16 @@ import { diskAdapter, memberStatus, pendingGates, readTeams } from "../../data/t
 import { env, fs, sessionsHost } from "../../host";
 
 export const BRIEFING_ROUTINE_PATH = "brain/routines/briefing.md";
+
+/**
+ * The Fix Queue's map rows: visible workspaces only (spaces-redesign D22). A hidden folder's map is never refreshed
+ * (fileMap.js skips `_` folders) and map-workspace.js refuses its name, so its fix could never succeed.
+ */
+export function mapPendingRows(workspaces: WorkspaceEntry[] | null | undefined, maps: Record<string, WorkspaceMap | null>): { workspace: string; pending: number }[] {
+  return visibleWorkspaces(workspaces)
+    .map((w) => ({ workspace: w.name, pending: maps[w.name] ? mapStats(maps[w.name]!).pending : 0 }))
+    .filter((m) => m.pending > 0);
+}
 
 export interface LiveRow { title: string; sub: string; host: string }
 export interface TeamRow { id: string; name: string; members: number; working: number; blocked: number; gates: number; paused: boolean }
@@ -192,8 +202,7 @@ export async function loadPulseModel(plugin: AgenticOSPlugin, seenAt: string | n
     ? "no cost data"
     : `${formatUSD(budget.monthToDate)} this month · ${(budget.pctOfBudget * 100).toFixed(1)}% of ${formatUSD(budget.budget)}`;
   const issues = snapshot?.health?.issues ?? [];
-  const wsNames = (snapshot?.workspaces ?? []).map((w) => w.name);
-  const maps = await loadAllMaps(app, wsNames);
+  const maps = await loadAllMaps(app, visibleWorkspaces(snapshot?.workspaces).map((w) => w.name));
   const queue = buildFixQueue({
     statuses,
     costMonth: budgetConfig?.month ?? null,
@@ -202,7 +211,7 @@ export async function loadPulseModel(plugin: AgenticOSPlugin, seenAt: string | n
     uncostedRuns: countBackfillable(plugin, monthRuns),
     healthErrors: issues.filter((i) => i.severity === "error").length,
     staleArtifacts: issues.filter((i) => i.area === "artifacts").length,
-    mapPending: wsNames.map((n) => ({ workspace: n, pending: maps[n] ? mapStats(maps[n]!).pending : 0 })).filter((m) => m.pending > 0),
+    mapPending: mapPendingRows(snapshot?.workspaces, maps),
     costEnabled: costActive,
   });
 

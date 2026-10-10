@@ -10,24 +10,45 @@ import { FX, closeNotes, content, drawer, expected, notePath, openTab, readVault
 const app = useApp();
 const C = () => content(app().win);
 
-interface WS { name: string; summary: string | null; sessions?: { claude: number; codex: number }; insight: { status: string; model?: string | null; text?: string | null } }
+interface WS {
+  name: string; hidden?: boolean; summary: string | null; status?: string; summaryTemplate?: boolean;
+  git?: { kind: string; branch?: string | null; dirty?: number; remotes?: string[] } | null;
+  sessions?: { claude: number; codex: number; recent?: { title: string | null; titleSource: string | null; host: string; kind: string }[] };
+  insight: { status: string; model?: string | null; text?: string | null };
+}
 
 // ── Spaces ───────────────────────────────────────────────────────────
 
 test.describe("Spaces", () => {
   test.beforeEach(async () => { await openTab(app().win, "spaces"); });
 
-  test("lists workspaces from snapshot.json with a sessions chip only where a host worked", async () => {
+  test("lists the snapshot's workspaces but the hidden ones, with a sessions chip only where a host worked", async () => {
     const snap = readVaultJson<{ workspaces: WS[] }>("brain/_index/snapshot.json");
-    await expect(C().locator(".aos-ws-row .aos-ws-name")).toHaveText(snap.workspaces.map((w) => w.name));
+    // spaces-redesign D22: `_` folders and _archive/ children stay in the snapshot, hidden; _worktrees is no entry at all.
+    expect(snap.workspaces.filter((w) => w.hidden).map((w) => w.name).sort()).toEqual(["_archive/pier-repairs", "_spikes"]);
+    await expect(C().locator(".aos-ws-row .aos-ws-name")).toHaveText(snap.workspaces.filter((w) => !w.hidden).map((w) => w.name));
+    // The fixture's PR 1 workspaces, as literal outcomes (D11, D23, D24): a repository of its own with one commit two days
+    // ago and one dirty file is active; a dated handoff with nothing for 12 days is stalled; the bare stubs are a
+    // template summary with nothing planned. The Codex thread named in session_index.jsonl takes that title.
+    const by = Object.fromEntries(snap.workspaces.map((w) => [w.name, w]));
+    expect(by["buoy-log"].git).toMatchObject({ kind: "repo", branch: "main", dirty: 1, remotes: [] });
+    expect(by["buoy-log"].status).toBe("active");
+    expect(by["reef-survey"].status).toBe("stalled");
+    expect([by["kelp-watch"].summaryTemplate, by["kelp-watch"].status]).toEqual([true, "idle"]);
+    expect(by["harbor-map"].sessions?.recent).toContainEqual(expect.objectContaining({ title: "Chart tile cache sizes", titleSource: "index", host: "codex" }));
     const harbor = C().locator(".aos-ws-row", { hasText: "harbor-map" });
     await expect(harbor.locator(".aos-ws-sub").first()).toHaveText("An offline harbor chart viewer with tide overlays.");
-    await expect(harbor.locator(".aos-ws-sub").nth(1)).toHaveText("codex 2 · 1d ago");
+    // The Claude Code transcript under harbor-map's real slug counts (D20: the cwd read inside it); its four Codex
+    // rollouts count as three, the exec one included, since the thread_spawn subagent folds into its parent (D25).
+    // The fixture is Claude Code only (hosts.codex.enabled false), and Codex's threads count all the same: a host that
+    // is off still has its sessions read (spec §4's matrix, D31: they show with Resume off). "today" is the transcript's.
+    await expect(harbor.locator(".aos-ws-sub").nth(1)).toHaveText("claude 1 · codex 3 · today");
     await expect(C().locator(".aos-ws-row", { hasText: "field-notes" }).locator(".aos-ws-sub")).toHaveCount(1);
   });
 
   test("an outside-workspaces footer names the other working directories, newest first, with the adopt command", async () => {
     const foot = C().locator(".aos-ws-outside");
+    // Every session the Spaces fixture added lands in a workspace (or folds into one), so these are the hub's three.
     await expect(foot.locator(".aos-ws-name")).toHaveText("outside workspaces (3)");
     // A directory under HOME is ~-shortened.
     await expect(foot.locator(".aos-ws-sub")).toHaveText(["/opt/sample/scratchpad — claude 2 · today", "/opt/sample/sandbox — codex 1 · 2d ago", "~/sketches — codex 1 · 5d ago"]);

@@ -16,16 +16,17 @@ list at the top of app-smoke.md is the release process, not app behaviour: it is
 
 | Status | Items |
 |---|---|
-| covered | 108 |
-| covered in part | 25 |
-| N/A in the app | 40 |
+| covered | 107 |
+| covered in part | 26 |
+| N/A in the app | 41 |
 | not covered | 6 |
-| **total** | **179** |
+| **total** | **180** |
 
-Of the 139 items about the app (179 minus the 40 N/A), 133 are asserted (108 fully, 25 in part); the other 6 are not
+Of the 139 items about the app (180 minus the 41 N/A), 133 are asserted (107 fully, 26 in part); the other 6 are not
 covered, for the reasons below. Every write surface is enabled and tested. The
 "in part" rows need something the fixture or the app lacks (a dispatched seat, a Codex database, the clipboard, the
-OS handing over an `agenticos://` link, a published update, a vault without the briefing routine, a host's model run). The writes, each surface on through `AOS_APP_WRITE`:
+OS handing over an `agenticos://` link, a published update, a vault without the briefing routine, a host's model run,
+a live host session). The writes, each surface on through `AOS_APP_WRITE`:
 - To-Do (T1, T2, T4, T5, T7) in `todo-writes.spec.ts`;
 - Notifications (N4, N5, N6) in `notifications-writes.spec.ts`;
 - Capture (P7, P8) in `capture-writes.spec.ts`;
@@ -138,7 +139,7 @@ see below).
 |---|---|---|---|
 | P1 | LEDs in the popup's Health area: every manifest pipeline, EMBED off, never-ran / disabled gray with the reason, nothing red | covered | `pulse › LEDs…` |
 | P2 | Briefing band: the persona's name heads it (Briefing without a persona); composed from the facts with no `briefing.json`; Turn on adds the routine; each phrase opens its area | covered in part | `pulse › briefing row…` (the name, "composed from the facts", a phrase opens its area in the popup, ↻ offered), `variants › an empty vault › Pulse: with no persona the band reads Briefing…`. **Turn on** needs a vault with a persona and no briefing routine: the fixture's template seeds the routine. |
-| P11 | Cockpit: ten tiles with no scrollbar at full size and at 960×600, where rows become "+N more"; the rail badge counts what needs you, rose with an error | covered | `pulse › the cockpit…` (ten tiles; no scroll at the suite's 1480×920 and at 960×600; every headline kept and a "+N more"; the badge equals the Needs-you count), `pulse › the tiles refit when the band grows…` (no row cut at a list's foot), `shell › rail badges count the fixture…` (rose: the fixture has a health error). |
+| P11 | Cockpit: ten tiles with no scrollbar at full size and at 960×600, where rows become "+N more"; the rail badge counts what needs you, rose with an error | covered | `pulse › the cockpit…` (ten tiles; no scroll at the suite's 1480×920 and at 960×600; every headline kept and a "+N more"; the badge equals the Needs-you count), `pulse › the tiles refit when the band grows…` (no row cut at a list's foot), `pulse › Workspaces: the tile and the popup list the visible workspaces only…` (hidden `_` and archived entries in neither, as many rows as the count), `shell › rail badges count the fixture…` (rose: the fixture has a health error). |
 | P12 | Popup: a tile opens its area; the list switches areas (↑↓ too) and Esc closes; safe actions act in place, decisions jump | covered in part | `pulse › the popup…` (opened from a tile, switched from the list, ↓, Esc), `pulse › a decision jumps…` (Review → opens the review in Code). Done, Mark read and Run now reuse the To-Do, Notifications and Routines writes, tested from their tabs (T4, N4, RT5); a gate opening Agent Teams is not asserted. |
 | P13 | Claude Code host: `aos routines run briefing` writes `briefing.json` (`provider: claude`) and a `duty:briefing` spend row; Pulse shows it; ↻ writes it again | N/A in the app | A host model run (it spends). Which paragraph the band shows for a written `briefing.json` (fresh, stale, failed, skipped) is unit-tested in `obsidian-plugin` `briefingBand.test.ts`; ↻'s spawn rule (`persona/briefing.js --force`, nothing wider) in `write-policy.test.ts`. |
 | P14 | Codex host: the same run writes it with `provider: codex` (or `ollama`); Pulse's Review → buttons start Codex | covered in part | `variants › a Codex-only machine › Pulse: Review → on a proposal runs the same flag-closer skill through codex`. The run itself is a host model call (it spends). |
@@ -233,10 +234,11 @@ see below).
 | # | Item | Status | Covered by / reason |
 |---|---|---|---|
 | SMR1 | Spaces lists workspaces from `snapshot.json`; the insight footer names the model, or `local` | covered | `spaces-memory-runs › Spaces › lists…`, `› overview…` |
-| SMR2 | A sessions chip `claude N · codex M · Nd ago` where a host worked; none otherwise | covered | `› Spaces › lists workspaces … with a sessions chip only where a host worked` |
-| SMR3 | The outside-workspaces footer: ~-shortened, newest first, the adopt command on hover; gone once adopted | covered in part | `› Spaces › an outside-workspaces footer…`. Adopting writes. |
+| SMR2 | Claude Code: a sessions chip `claude N · codex M · Nd ago` (the last 30 days) where a host worked, `none in 30d · Nd ago` when every session is older, none with no session; a vault-root session that touches `workspaces/x` (three edits or reads, more than any other workspace) raises x's `claude` count | covered in part | `› Spaces › lists workspaces … with a sessions chip only where a host worked`. The vault-root credit needs a live Claude Code session; the runtime's `host-sessions.test.js` credits a vault-root Claude Edit and a Codex apply_patch into `workspaces/x` on synthetic transcripts. |
+| SMR3 | The outside-workspaces footer: ~-shortened, newest first, the adopt command on hover; gone once adopted; temp, scratch and job folders, home, the hosts' config folders and the vault outside `workspaces/` never listed | covered in part | `› Spaces › an outside-workspaces footer…`. Adopting writes; which folders are left out is the runtime's (`host-sessions.test.js` drops home, both config folders, the temp folders and the vault outside `workspaces/`). |
 | SMR4 | The memory graph renders; daily notes are session nodes | covered | `› Memory › graph…` |
 | SMR5 | Runs updates within a second of a new `runs.jsonl` line | covered | `› Runs › a line appended to runs.jsonl…` |
+| SMR6 | Codex: a session in `workspaces/.worktrees/<ws>/` counts for `<ws>`, not as an outside folder | N/A in the app | Host session; the attribution is the runtime's (`host-sessions.test.js`). |
 
 ## Routines
 

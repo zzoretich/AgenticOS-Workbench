@@ -96,8 +96,10 @@ test("↻ re-describes one file; with no model provider it fails, the ledger rec
   await expect(win.locator(".notice-container")).toContainText("▶ map-workspace.js harbor-map --file README.md");
   // The ledger writes lastRun twice (lib/pipeline-report.js): at the start, status "running" with the new startedAt, then
   // the outcome. Wait for a run that started after the click AND ended: reading at the first write saw "running".
+  // spaces-redesign D33: the one-file call goes through the provider as feature `file-map`, so under the fixture's
+  // `aos init --provider none` it stops before any model call and says so.
   await expect.poll(() => { const r = fileMapRun(); return r && r.startedAt !== was && r.status !== "running" ? r : null; }, { timeout: 30_000 })
-    .toMatchObject({ status: "error", error: "could not describe README.md (missing file or qwen failure)" });
+    .toMatchObject({ status: "error", error: "no model provider to describe README.md (forced)" });
   expect(fs.readFileSync(mapFile("harbor-map"), "utf8")).toBe(before);
 });
 

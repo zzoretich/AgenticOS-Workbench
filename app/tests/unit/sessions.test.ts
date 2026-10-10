@@ -4,13 +4,13 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { SessionEvent, SessionEventRecord } from "../../src/shared/ipc";
 import type { ProgramContext } from "../../src/main/policy/programs";
-import { GitService, parseNumstat, parseStatus, untrackedLines } from "../../src/main/services/git";
+import { DIFF_SAFE, GIT_GUARD, GitService, filterOverrides, parseNumstat, parseStatus, untrackedLines } from "../../src/main/services/git";
 import { SessionService, workspaceDir } from "../../src/main/services/sessions";
 
 const REPO = path.resolve(process.cwd(), "..");
@@ -188,6 +188,14 @@ test("parseNumstat and untrackedLines: counts by path, a rename by its new path,
   assert.equal(untrackedLines(w("c", "")), 0);
   assert.equal(untrackedLines(w("d", Buffer.from([0x61, 0]))), null);
   assert.equal(untrackedLines(path.join(dir, "missing")), null);
+  // A link is never followed: not to a file outside the workspace, and not to a FIFO, whose open would block main.
+  const outside = w("outside.txt", "secret\nlines\n");
+  fs.symlinkSync(outside, path.join(dir, "link"));
+  assert.equal(untrackedLines(path.join(dir, "link")), null);
+  execFileSync("mkfifo", [path.join(dir, "fifo")]);
+  fs.symlinkSync(path.join(dir, "fifo"), path.join(dir, "fifo-link"));
+  assert.equal(untrackedLines(path.join(dir, "fifo")), null);
+  assert.equal(untrackedLines(path.join(dir, "fifo-link")), null);
 });
 
 test("git: a workspace folder inside another repository (a vault kept in git) is not a repository of its own: nothing to read or commit", async () => {
@@ -204,6 +212,134 @@ test("git: a workspace folder inside another repository (a vault kept in git) is
   assert.deepEqual(await git.diff("plain", "a.txt"), { ok: false, error: "not a git repository", code: "EROFS" });
   assert.deepEqual(await git.commit("plain", "Add a"), { ok: false, error: "not a git repository", code: "EROFS" });
   fs.rmSync(outer, { recursive: true, force: true });
+});
+
+test("git: every command carries the repo-config guard, so a repository's core.fsmonitor never runs (spaces-redesign D24)", async () => {
+  const outer = fs.mkdtempSync(path.join(os.tmpdir(), "aos-sessions-guard-"));
+  const v = path.join(outer, "vault");
+  const repo = path.join(v, "workspaces", "guarded");
+  fs.mkdirSync(repo, { recursive: true });
+  const g = (...a: string[]) => execFileSync("git", a, { cwd: repo, stdio: "ignore" });
+  g("init", "-q", "-b", "main");
+  g("config", "user.email", ["test", "example.invalid"].join("@"));
+  g("config", "user.name", "Test");
+  g("config", "commit.gpgsign", "false");
+  fs.writeFileSync(path.join(repo, "a.txt"), "one\n");
+  g("add", "-A");
+  g("commit", "-q", "-m", "first");
+  const marker = path.join(outer, "fsmonitor-ran");
+  const hook = path.join(outer, "fsmonitor.sh");
+  fs.writeFileSync(hook, `#!/bin/sh\ntouch "${marker}"\nexit 1\n`, { mode: 0o755 });
+  g("config", "core.fsmonitor", hook);
+  execFileSync("git", ["status", "--porcelain=v2"], { cwd: repo, stdio: "ignore" });
+  assert.ok(fs.existsSync(marker), "the control: plain git status runs the hook");
+  fs.rmSync(marker);
+  fs.writeFileSync(path.join(repo, "a.txt"), "two\n");
+  const git = new GitService({ workspace: (n) => workspaceDir(v, n), enabled: () => true, env: process.env });
+  const st = await git.status("guarded");
+  assert.ok(st.ok && st.data.repo && st.data.files.length === 1, JSON.stringify(st));
+  assert.ok((await git.diff("guarded", "a.txt")).ok);
+  assert.equal(fs.existsSync(marker), false, "core.fsmonitor never ran");
+  // Every argv starts with the guard, whatever the command.
+  const seen: string[][] = [];
+  const fake = ((_file: string, args: readonly string[], _opts: unknown, cb: (e: null, out: string, err: string) => void) => {
+    seen.push([...args]);
+    cb(null, "", "");
+  }) as unknown as typeof execFile;
+  const spy = new GitService({ workspace: () => ({ dir: repo }), enabled: () => true, env: process.env, execFileImpl: fake });
+  await spy.status("guarded");
+  await spy.diff("guarded");
+  await spy.commit("guarded", "x");
+  assert.ok(seen.length >= 2, String(seen.length));
+  for (const a of seen) assert.deepEqual(a.slice(0, GIT_GUARD.length), [...GIT_GUARD], a.join(" "));
+  assert.deepEqual([...GIT_GUARD], ["-c", "core.fsmonitor=false", "-c", "log.showSignature=false", "-c", "core.untrackedCache=false", "--no-optional-locks"]);
+  fs.rmSync(outer, { recursive: true, force: true });
+});
+
+test("filterOverrides turns off every filter driver below global and system scope, a name with = included", () => {
+  const out = ["local", "filter.evil.clean", "local", "filter.a=b.process", "worktree", "filter.x.y.smudge", "global", "filter.lfs.clean", "system", "filter.s.clean", ""].join("\0");
+  const off = (n: string) => [`--config-env=filter.${n}.clean=AOS_GIT_EMPTY`, `--config-env=filter.${n}.smudge=AOS_GIT_EMPTY`, `--config-env=filter.${n}.process=AOS_GIT_EMPTY`, `--config-env=filter.${n}.required=AOS_GIT_FALSE`];
+  assert.deepEqual(filterOverrides(out), [...off("evil"), ...off("a=b"), ...off("x.y")]);
+  assert.deepEqual(filterOverrides(""), []);
+});
+
+test("git: status and diff run no filter driver, external diff or textconv the repository defines (spec §6)", async () => {
+  const outer = fs.mkdtempSync(path.join(os.tmpdir(), "aos-sessions-drivers-"));
+  const v = path.join(outer, "vault");
+  const repo = path.join(v, "workspaces", "drivers");
+  fs.mkdirSync(repo, { recursive: true });
+  const g = (...a: string[]) => execFileSync("git", a, { cwd: repo, stdio: "ignore" });
+  g("init", "-q", "-b", "main");
+  g("config", "user.email", ["test", "example.invalid"].join("@"));
+  g("config", "user.name", "Test");
+  g("config", "commit.gpgsign", "false");
+  fs.writeFileSync(path.join(repo, "a.txt"), "one\n");
+  g("add", "-A");
+  g("commit", "-q", "-m", "first");
+  const log = path.join(outer, "ran.log");
+  const script = (name: string, body: string) => {
+    const p = path.join(outer, `${name}.sh`);
+    fs.writeFileSync(p, `#!/bin/sh\necho ${name} >> "${log}"\n${body}\n`, { mode: 0o755 });
+    return p;
+  };
+  g("config", "filter.evil.clean", script("clean", "cat"));
+  g("config", "diff.external", script("external", "exit 0"));
+  g("config", "diff.tc.textconv", script("textconv", "cat \"$1\""));
+  fs.writeFileSync(path.join(repo, ".git", "info", "attributes"), "* filter=evil diff=tc\n");
+  fs.writeFileSync(path.join(repo, "a.txt"), "two\n");
+  fs.writeFileSync(path.join(repo, "new.txt"), "new\n");
+  const ran = () => (fs.existsSync(log) ? [...new Set(fs.readFileSync(log, "utf8").trim().split("\n"))].sort() : []);
+  // Control: plain git runs all three.
+  execFileSync("git", ["diff", "HEAD"], { cwd: repo, stdio: "ignore" });
+  execFileSync("git", ["diff", "--no-ext-diff", "HEAD"], { cwd: repo, stdio: "ignore" });
+  assert.deepEqual(ran(), ["clean", "external", "textconv"], "the control ran every driver");
+  fs.rmSync(log);
+  const git = new GitService({ workspace: (n) => workspaceDir(v, n), enabled: () => true, env: process.env });
+  const st = await git.status("drivers");
+  assert.ok(st.ok && st.data.files.length === 2, JSON.stringify(st));
+  const whole = await git.diff("drivers");
+  assert.ok(whole.ok && /\+two/.test(whole.data.text), JSON.stringify(whole));
+  assert.ok((await git.diff("drivers", "a.txt")).ok);
+  const added = await git.diff("drivers", "new.txt");
+  assert.ok(added.ok && /\+new/.test(added.data.text), JSON.stringify(added));
+  assert.deepEqual(ran(), [], "no driver the repository names ran");
+  fs.rmSync(outer, { recursive: true, force: true });
+});
+
+test("git: every diff passes --no-ext-diff --no-textconv; a read gets no lazy fetch and no transport; commit runs as in a terminal", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aos-git-spy-"));
+  const seen: { args: string[]; env: NodeJS.ProcessEnv }[] = [];
+  const fake = ((_file: string, args: readonly string[], opts: { env: NodeJS.ProcessEnv }, cb: (e: null, out: string, err: string) => void) => {
+    seen.push({ args: [...args], env: opts.env });
+    const a = args.slice(GIT_GUARD.length).filter((x) => !x.startsWith("--config-env="));
+    if (a[0] === "rev-parse" && a[1] === "--show-toplevel") return cb(null, `${dir}\n`, "");
+    if (a[0] === "rev-parse" && a[1] === "--git-path") return cb(null, ".git/MERGE_HEAD\n", "");
+    if (a[0] === "status") return cb(null, "# branch.head main\n1 .M N... 100644 100644 100644 a b a.txt\n", "");
+    if (a[0] === "config") return cb(null, ["local", "filter.evil.clean", ""].join("\0"), "");
+    return cb(null, "", "");
+  }) as unknown as typeof execFile;
+  const env: NodeJS.ProcessEnv = { ...process.env, GIT_DIR: path.join(dir, "elsewhere"), GIT_WORK_TREE: path.join(dir, "elsewhere") };
+  const spy = new GitService({ workspace: () => ({ dir }), enabled: () => true, env, execFileImpl: fake });
+  assert.ok((await spy.diff("x")).ok);
+  assert.ok((await spy.diff("x", "a.txt")).ok);
+  assert.ok((await spy.commit("x", "msg")).ok);
+  const diffs = seen.filter((c) => c.args.includes("diff"));
+  assert.ok(diffs.length >= 5, String(diffs.length));
+  for (const c of diffs) { const i = c.args.indexOf("diff"); assert.deepEqual(c.args.slice(i + 1, i + 3), [...DIFF_SAFE], c.args.join(" ")); }
+  for (const c of seen.filter((x) => x.args.includes("status") || x.args.includes("diff"))) {
+    assert.ok(c.args.includes("--config-env=filter.evil.clean=AOS_GIT_EMPTY"), c.args.join(" "));
+  }
+  const writes = seen.filter((c) => c.args.includes("add") || c.args.includes("commit"));
+  assert.equal(writes.length, 2);
+  for (const c of seen) {
+    assert.equal(c.env.GIT_DIR, undefined, "no inherited GIT_DIR");
+    assert.equal(c.env.GIT_WORK_TREE, undefined, "no inherited work tree");
+    const write = writes.includes(c);
+    assert.equal(c.env.GIT_NO_LAZY_FETCH, write ? env.GIT_NO_LAZY_FETCH : "1", c.args.join(" "));
+    assert.equal(c.env.GIT_ALLOW_PROTOCOL, write ? env.GIT_ALLOW_PROTOCOL : "", c.args.join(" "));
+    if (write) assert.ok(!c.args.some((x) => x.startsWith("--config-env=")), "the user's commit keeps the repository's filters");
+  }
+  fs.rmSync(dir, { recursive: true, force: true });
 });
 
 test("each turn runs with its own model, effort and access; a send that names none reuses the thread's last (sessions-ux U6, U7)", async () => {

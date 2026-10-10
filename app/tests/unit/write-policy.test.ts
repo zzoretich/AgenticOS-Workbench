@@ -208,6 +208,40 @@ test("each surface's commands run only while it is on; its look-alikes never", (
   }
 });
 
+test("map and regen take a workspace name (WS) and a file inside it (REL), never a path out (spaces-redesign §6)", () => {
+  const spaces = new WritePolicy(VAULT, ["spaces"]);
+  const pulse = new WritePolicy(VAULT, ["pulse"]);
+  const all = new WritePolicy(VAULT, [...SURFACE_IDS]);
+  const map = (...a: string[]) => [`${S}/map-workspace.js`, ...a];
+  const regen = (...a: string[]) => [`${S}/regen-workspace-insight.js`, ...a];
+  // What a workspace name and a file inside one may look like.
+  for (const name of ["harbor", "harbor-map", "Field Notes", "a.b", "café", "x".repeat(128)]) {
+    assert.equal(spaces.canSpawn(NODE, map(name)), true, `spaces map ${name}`);
+    assert.equal(spaces.canSpawn(NODE, regen(name)), true, `spaces regen ${name}`);
+    assert.equal(pulse.canSpawn(NODE, map(name)), true, `pulse map ${name}`);
+  }
+  for (const file of ["src/tide.ts", "README.md", ".github/workflows/ci.yml", "notes/a b.md", "a\\b.md", "_drafts/x.md", "x..y.md", "a/.hidden"]) {
+    assert.equal(spaces.canSpawn(NODE, map("harbor", "--file", file)), true, `--file ${file}`);
+  }
+  // What the page never runs, whatever is on: hidden, archived and dot names, separators, flags, line breaks, paths out.
+  const badNames = ["..", ".", "_archive", "_archive/x", "_spikes", ".hidden", "a\\b", "-x", "--all", "har\nbor", "\nharbor", "harbor\r",
+    "../x", "/etc/x", "a/b", "", " harbor", "x".repeat(129), "a\0b", "\0x", "a\u2028b", "a\u2029b", "\u2028a"];
+  for (const name of badNames) {
+    assert.equal(all.canSpawn(NODE, map(name)), false, `map ${JSON.stringify(name)}`);
+    assert.equal(all.canSpawn(NODE, regen(name)), false, `regen ${JSON.stringify(name)}`);
+    assert.equal(all.canSpawn(NODE, map(name, "--file", "src/tide.ts")), false, `map ${JSON.stringify(name)} --file`);
+  }
+  const badFiles = ["..", ".", "../x", "/etc/x", "-x", "--budget", "a\nb", "src/tide.ts\n", "a\rb", "src/../../x", "src/..", "./src/tide.ts",
+    "src/./tide.ts", "a\u2028/../x", "a\u2029/..", "a\0b", ""];
+  for (const file of badFiles) assert.equal(all.canSpawn(NODE, map("harbor", "--file", file)), false, `--file ${JSON.stringify(file)}`);
+  // The rules' shape: one name; --file only with its value, after the name; no other flag.
+  assert.equal(all.canSpawn(NODE, map("harbor", "src/tide.ts")), false);
+  assert.equal(all.canSpawn(NODE, map("--file", "src/tide.ts", "harbor")), false);
+  assert.equal(all.canSpawn(NODE, map("harbor", "--file")), false);
+  assert.equal(all.canSpawn(NODE, regen("harbor", "--file", "src/tide.ts")), false);
+  assert.equal(pulse.canSpawn(NODE, map("harbor", "--file", "src/tide.ts")), false, "Pulse maps whole workspaces only");
+});
+
 test("a relative script runs only against the vault it resolves into", () => {
   const p = new WritePolicy(VAULT, ["chat"]);
   assert.equal(p.canSpawn(NODE, ["brain/scripts/sdk/ask.js", "--local", "hi"], VAULT), true, "askSpawner: relative, cwd = the vault");

@@ -62,9 +62,15 @@ export function argv(...parts: ReadonlyArray<string | RegExp>): (a: readonly str
 
 // One argument of a given kind. None may start with "-", so a value can never be read as a flag.
 const ID = /[A-Za-z0-9][\w.:@-]*/;          // a team, item, member, agent or skill id; a config key
-const NAME = /[^\s\/-][^\/]*/;              // a workspace folder's name
 const WORD = /[^\s-][^\s]*/;                // a preset, a model name
 const TEXT = /[^-][\s\S]*/;                 // free text: a todo, a post, a path
+// A workspace (spaces-redesign §6): an existing folder's name, which the runtime checks again. Not ".", "..", ".x" or "_x"
+// (hidden and archived folders), no path separator, no NUL or line break (U+2028 and U+2029 included), at most 128
+// characters. collectors/util.js WS_NAME is its twin.
+const WS = /[^\s\0._\/\\-][^\/\\\0\n\r\u2028\u2029]{0,127}/;
+// A file inside a workspace (map-workspace.js --file), which the runtime checks again: relative, no "." or ".." segment,
+// no NUL or line break. The segment check spans any character, so no line separator can hide a "..".
+const REL = /(?![-\/])(?!(?:[\s\S]*\/)?\.\.?(?:\/|$))[^\0\n\r\u2028\u2029]+/;
 // Chat's question. recall-cli.js and ask.js read only whole `--…` arguments as flags, so a question may start with one
 // dash ("- what is due?"), as it may in Obsidian; `--` never, which keeps out `--warm` and ask.js's `--write=<file>`.
 const QUESTION = /(?!--)[\s\S]+/;
@@ -172,7 +178,7 @@ export const SURFACES: readonly Surface[] = [
       { script: "heartbeat-writer.js", args: /^$/ },
       { script: "graph-build.js", args: /^--quiet$/ },
       { script: "build-brain-md.js", args: /^$/ },
-      { script: "map-workspace.js", args: argv(NAME) },
+      { script: "map-workspace.js", args: argv(WS) },
       { script: "cost-budget.js", args: argv("--anchor", USD) },
       { script: "sdk/reflect-week.js", args: /^--local$/ },
       // The ↻ on the briefing band (spec 2026-10-08-pulse-cockpit-design P13): one paragraph now, under the daily duty cap.
@@ -186,9 +192,9 @@ export const SURFACES: readonly Surface[] = [
     source: "views/SpacesTab.ts (map now, ↻ one file, regen), main.ts regenWorkspaceInsight",
     writes: [],
     spawns: [
-      { script: "map-workspace.js", args: argv(NAME) },
-      { script: "map-workspace.js", args: argv(NAME, "--file", TEXT) },
-      { script: "regen-workspace-insight.js", args: argv(NAME) },
+      { script: "map-workspace.js", args: argv(WS) },
+      { script: "map-workspace.js", args: argv(WS, "--file", REL) },
+      { script: "regen-workspace-insight.js", args: argv(WS) },
     ],
     verified: true,
   },

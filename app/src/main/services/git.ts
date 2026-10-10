@@ -14,6 +14,49 @@ import { refused } from "./fs";
 export const DIFF_MAX = 2 * 1024 * 1024;
 const STATUS_MAX = 4 * 1024 * 1024;
 const TIMEOUT_MS = 30_000;
+/**
+ * Before every git command (spaces-redesign D24, spec §6, the rules of the runtime's collectors/util.js). A read (status,
+ * diff, rev-parse, ls-files, config) may not run a program the repository's own config names:
+ *   core.fsmonitor (a hook on status), log.showSignature (gpg.program on a signed commit): off through GIT_GUARD's -c,
+ *     which beats the repo's config and reaches the git processes git starts itself;
+ *   filter.<driver>.clean/smudge/process (status and diff re-hash a changed file through them): every driver defined
+ *     below global and system scope is turned off (filterOverrides), so the user's own (git-lfs) still work;
+ *   diff.external, diff.<driver>.command and textconv: every diff passes DIFF_SAFE;
+ *   a lazy fetch in a partial clone (core.sshCommand, remote helpers): READ_ENV, which allows no transport at all.
+ * Commit is the user's own act on the Commit button: `add -A` and `commit` run the repository's filters, hooks
+ * (core.hooksPath) and signing (commit.gpgsign, gpg.program) as they would in a terminal (SECURITY.md). --no-optional-locks
+ * with no untracked cache keeps a read from writing the index.
+ */
+export const GIT_GUARD: readonly string[] = ["-c", "core.fsmonitor=false", "-c", "log.showSignature=false", "-c", "core.untrackedCache=false", "--no-optional-locks"];
+/** After `diff`: no external diff program and no textconv driver. */
+export const DIFF_SAFE: readonly string[] = ["--no-ext-diff", "--no-textconv"];
+/** A read's environment on top of the rest: no lazy fetch, and an empty transport allow-list the repo cannot widen. */
+export const READ_ENV: Readonly<Record<string, string>> = { GIT_NO_LAZY_FETCH: "1", GIT_ALLOW_PROTOCOL: "" };
+// filterOverrides' --config-env values: an empty command and required=false turn a driver off without failing a read.
+const EMPTY_ENV = "AOS_GIT_EMPTY";
+const FALSE_ENV = "AOS_GIT_FALSE";
+
+/**
+ * `config -z --show-scope --name-only --get-regexp ^filter\.` → the global options that turn off, for one command, every
+ * filter driver defined below global and system scope (.git/config, the worktree config, a file either includes).
+ * `--config-env` splits at the last `=`, so a driver named with `=` is turned off too.
+ */
+export function filterOverrides(out: string): string[] {
+  const t = out.split("\0");
+  const names = new Set<string>();
+  for (let i = 0; i + 1 < t.length; i += 2) {
+    const [scope, key] = [t[i], t[i + 1]];
+    if (scope === "global" || scope === "system" || !key.startsWith("filter.")) continue;
+    const dot = key.lastIndexOf(".");
+    if (dot >= "filter.".length) names.add(key.slice("filter.".length, dot));
+  }
+  const args: string[] = [];
+  for (const n of names) {
+    for (const k of ["clean", "smudge", "process"]) args.push(`--config-env=filter.${n}.${k}=${EMPTY_ENV}`);
+    args.push(`--config-env=filter.${n}.required=${FALSE_ENV}`);
+  }
+  return args;
+}
 
 export type WorkspaceDir = { dir: string } | { refusal: string };
 
@@ -76,12 +119,19 @@ export function parseNumstat(out: string): Map<string, [number | null, number | 
   return counts;
 }
 
-/** An untracked file's lines, all added; null for a binary or unreadable one. Reads at most UNTRACKED_READ bytes. */
+/**
+ * An untracked file's lines, all added; null for a binary or unreadable one, or anything but a regular file: a link is
+ * never followed (out of the workspace, or to a FIFO that would block main). Reads at most UNTRACKED_READ bytes.
+ */
 export function untrackedLines(file: string): number | null {
   try {
-    const fd = fs.openSync(file, "r");
+    if (!fs.lstatSync(file).isFile()) return null;
+    const { O_RDONLY, O_NOFOLLOW = 0, O_NONBLOCK = 0 } = fs.constants;
+    const fd = fs.openSync(file, O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
     try {
-      const buf = Buffer.alloc(Math.min(fs.fstatSync(fd).size, UNTRACKED_READ));
+      const st = fs.fstatSync(fd);
+      if (!st.isFile()) return null;
+      const buf = Buffer.alloc(Math.min(st.size, UNTRACKED_READ));
       fs.readSync(fd, buf, 0, buf.length, 0);
       if (buf.includes(0)) return null;
       if (!buf.length) return 0;
@@ -96,20 +146,33 @@ export function untrackedLines(file: string): number | null {
 const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 const UNTRACKED_READ = 1024 * 1024;
 const UNTRACKED_COUNTED = 200;
+const NOT_REPO: GitStatus = { repo: false, branch: null, detached: false, merging: false, files: [] };
 
 export class GitService {
   constructor(private readonly o: GitServiceOptions) {}
 
-  private run(dir: string, args: readonly string[], maxBuffer = STATUS_MAX): Promise<Run> {
-    const env = { ...this.o.env, GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0", LC_ALL: "C" };
+  /** `git <guard> <args…>` in `dir`. A read (the default) gets READ_ENV; only add and commit pass `write`. */
+  private run(dir: string, args: readonly string[], o: { maxBuffer?: number; write?: boolean } = {}): Promise<Run> {
+    const env: NodeJS.ProcessEnv = { ...this.o.env, GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0", LC_ALL: "C", [EMPTY_ENV]: "", [FALSE_ENV]: "false", ...(o.write ? {} : READ_ENV) };
+    // The cwd picks the repository, never a GIT_DIR or work tree inherited from a parent git process.
+    for (const k of ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR"]) delete env[k];
+    const maxBuffer = o.maxBuffer ?? STATUS_MAX;
     return new Promise((resolve) => {
-      (this.o.execFileImpl ?? childProcess.execFile)("git", [...args], { cwd: dir, env, maxBuffer, timeout: TIMEOUT_MS, encoding: "utf8", windowsHide: true }, (err, stdout, stderr) => {
+      (this.o.execFileImpl ?? childProcess.execFile)("git", [...GIT_GUARD, ...args], { cwd: dir, env, maxBuffer, timeout: TIMEOUT_MS, encoding: "utf8", windowsHide: true }, (err, stdout, stderr) => {
         const e = err as (NodeJS.ErrnoException & { code?: number | string }) | null;
         const truncated = !!e && e.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER";
-        const code = !e || truncated ? 0 : typeof e.code === "number" ? e.code : 1;
+        // An exit status as git gave it; -1 when git did not exit on its own (missing, killed at the timeout).
+        const code = !e || truncated ? 0 : typeof e.code === "number" ? e.code : -1;
         resolve({ code, stdout: String(stdout ?? ""), stderr: String(stderr ?? ""), truncated });
       });
     });
+  }
+
+  /** filterOverrides for the repository at `dir` (reading config runs nothing), or null when git cannot say. */
+  private async filters(dir: string): Promise<string[] | null> {
+    const r = await this.run(dir, ["config", "-z", "--show-scope", "--name-only", "--get-regexp", "^filter\\."]);
+    if (r.code === 1 && !r.stdout) return []; // no filter defined anywhere
+    return r.code === 0 ? filterOverrides(r.stdout) : null;
   }
 
   private dir(workspace: string): WorkspaceDir {
@@ -123,12 +186,15 @@ export class GitService {
     return { ok: true, data: await this.statusOf(w.dir) };
   }
 
-  private async statusOf(dir: string): Promise<GitStatus> {
+  private async statusOf(dir: string, known?: readonly string[] | null): Promise<GitStatus> {
     // The workspace's own repository only: a folder inside another one (a vault kept in git) is not a repository here,
     // or its status would be the vault's and Commit would add the whole vault.
     const top = await this.run(dir, ["rev-parse", "--show-toplevel"]);
-    if (top.code !== 0 || !sameDir(top.stdout.trim(), dir)) return { repo: false, branch: null, detached: false, merging: false, files: [] };
-    const s = await this.run(dir, ["status", "--porcelain=v2", "--branch", "--untracked-files=all"]);
+    if (top.code !== 0 || !sameDir(top.stdout.trim(), dir)) return NOT_REPO;
+    // When git cannot say which filter drivers the repository defines, nothing that could run one is read.
+    const filters = known === undefined ? await this.filters(dir) : known;
+    if (!filters) return NOT_REPO;
+    const s = await this.run(dir, [...filters, "status", "--porcelain=v2", "--branch", "--untracked-files=all"]);
     const mergeHead = await this.run(dir, ["rev-parse", "--git-path", "MERGE_HEAD"]);
     const merging = mergeHead.code === 0 && fs.existsSync(path.resolve(dir, mergeHead.stdout.trim()));
     const st = parseStatus(s.stdout);
@@ -136,7 +202,7 @@ export class GitService {
       // +/- per file (spec 2026-10-07-sessions-ux U11): tracked changes against HEAD, staged or not; untracked files count
       // their lines.
       const head = await this.run(dir, ["rev-parse", "--verify", "--quiet", "HEAD"]);
-      const n = await this.run(dir, ["diff", "--numstat", "-z", head.code === 0 ? "HEAD" : EMPTY_TREE]);
+      const n = await this.run(dir, [...filters, "diff", ...DIFF_SAFE, "--numstat", "-z", head.code === 0 ? "HEAD" : EMPTY_TREE]);
       const counts = n.code === 0 ? parseNumstat(n.stdout) : new Map<string, [number | null, number | null]>();
       let untracked = 0;
       for (const f of st.files) {
@@ -153,16 +219,17 @@ export class GitService {
     const w = this.dir(workspace);
     if ("refusal" in w) return refused(w.refusal);
     if (file !== undefined) { const why = fileRefusal(file); if (why) return refused(why); }
-    const st = await this.statusOf(w.dir);
-    if (!st.repo) return refused("not a git repository");
+    const filters = await this.filters(w.dir);
+    const st = await this.statusOf(w.dir, filters);
+    if (!st.repo || !filters) return refused("not a git repository");
     const hasHead = (await this.run(w.dir, ["rev-parse", "--verify", "--quiet", "HEAD"])).code === 0;
-    const base = hasHead ? ["diff", "HEAD"] : ["diff"];
+    const base = [...filters, "diff", ...DIFF_SAFE, ...(hasHead ? ["HEAD"] : [])];
     const stat = await this.run(w.dir, [...base, "--stat"]);
     let text: Run;
-    if (file === undefined) text = await this.run(w.dir, base, DIFF_MAX);
-    else if ((await this.run(w.dir, ["ls-files", "--error-unmatch", "--", file])).code === 0) text = await this.run(w.dir, [...base, "--", file], DIFF_MAX);
+    if (file === undefined) text = await this.run(w.dir, base, { maxBuffer: DIFF_MAX });
+    else if ((await this.run(w.dir, ["ls-files", "--error-unmatch", "--", file])).code === 0) text = await this.run(w.dir, [...base, "--", file], { maxBuffer: DIFF_MAX });
     // A new file git does not track yet: its whole text as an addition (exit 1 means "they differ").
-    else text = await this.run(w.dir, ["diff", "--no-index", "--", "/dev/null", file], DIFF_MAX);
+    else text = await this.run(w.dir, [...filters, "diff", ...DIFF_SAFE, "--no-index", "--", "/dev/null", file], { maxBuffer: DIFF_MAX });
     return { ok: true, data: { stat: stat.stdout, text: text.stdout, truncated: text.truncated } };
   }
 
@@ -176,9 +243,10 @@ export class GitService {
     if (st.detached) return refused("HEAD is detached: check out a branch first");
     if (st.merging) return refused("a merge is in progress");
     if (!st.files.length) return refused("nothing to commit");
-    const add = await this.run(w.dir, ["add", "-A"]);
+    // The user's own commit: the repository's filters, hooks and signing run, as in a terminal (GIT_GUARD).
+    const add = await this.run(w.dir, ["add", "-A"], { write: true });
     if (add.code !== 0) return { ok: false, error: lastLine(add.stderr) || "git add failed", code: "EIO" };
-    const done = await this.run(w.dir, ["commit", "-m", msg]);
+    const done = await this.run(w.dir, ["commit", "-m", msg], { write: true });
     if (done.code !== 0) return { ok: false, error: lastLine(done.stderr || done.stdout) || "git commit failed", code: "EIO" };
     const head = await this.run(w.dir, ["rev-parse", "HEAD"]);
     return { ok: true, data: { commit: head.stdout.trim() } };

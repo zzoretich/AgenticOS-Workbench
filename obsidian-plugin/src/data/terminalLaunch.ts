@@ -1,7 +1,8 @@
 // terminalLaunch.ts — what the Term tab starts and where (spec 2026-10-08-term-agent-deck T2–T11). Pure: which hosts a
 // launch may use, the place a terminal lands, the line typed into its shell, the workspace stubs (a port of
-// cli/workspace.js, pinned by its test), whether a new workspace gets its own git repo, and a workspace's linked code
-// folder (`repo:` in its workspace.md). data/terminalLauncher.ts does the writes and the spawns.
+// cli/workspace.js, pinned by its test) and their placeholder text (a mirror of collectors/workspaces.js, likewise),
+// whether a new workspace gets its own git repo, and a workspace's linked code folder (`repo:` in its workspace.md).
+// data/terminalLauncher.ts does the writes and the spawns.
 import * as path from "path";
 import type { AgenticosJson, ProviderState } from "./aosConfig";
 import { sessionHosts } from "./aosConfig";
@@ -67,6 +68,27 @@ export function workspaceStubs(slug: string): Record<string, string> {
     "CLAUDE.md": text,
     "AGENTS.md": text,
   };
+}
+
+/**
+ * The stubs' placeholder text, which never counts as a summary, an objective or a next step (spaces-redesign D23): a
+ * mirror of TEMPLATE_TEXT in brain/scripts/collectors/workspaces.js, pinned by terminalLaunch.test.ts (the pulse-facts
+ * precedent). `<slug>` stands for any workspace name and backticks are ignored; the stubs' empty `- ` bullets under
+ * Objectives and Next step are skipped wherever bullets are read, so they need no entry. A workspace whose summary was
+ * only this text carries `summaryTemplate: true` in the snapshot.
+ */
+export const TEMPLATE_TEXT: readonly string[] = Object.freeze([
+  "One line about what this project is.",
+  "This is the `workspaces/<slug>/` workspace of an AgenticOS vault.",
+]);
+const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const TEMPLATE_RES = TEMPLATE_TEXT.map((t) => new RegExp("^" + escapeRe(t.replace(/`/g, "")).replace("<slug>", "[^/]+")));
+
+/** Whether a line is stub placeholder text (spaces-redesign D23), as the runtime's isTemplateText decides it. */
+export function isTemplateText(s: unknown): boolean {
+  if (typeof s !== "string") return false;
+  const v = s.replace(/`/g, "").replace(/\s+/g, " ").trim();
+  return !!v && TEMPLATE_RES.some((re) => re.test(v));
 }
 
 /** Scratch's stubs: a README that says what Scratch is, and the instructions with one line more. */

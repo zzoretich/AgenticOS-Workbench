@@ -14,6 +14,7 @@ import { AnchorModal } from "../ui/AnchorModal";
 import { COMMAND_REGISTRY, executeCommand } from "../data/commandRegistry";
 import { PulsePopup } from "../ui/PulsePopup";
 import { formatRelative } from "../data/runs";
+import { visibleWorkspaces } from "../data/snapshot";
 import { groupTodos, localDay } from "../data/todos";
 import { adapterOf as routineAdapter } from "../data/routineWriter";
 import { AOS_CLI } from "../data/aosRun";
@@ -340,9 +341,11 @@ export class PulseTab {
   }
 
   private renderWorkspaces(grid: HTMLElement, m: PulseModel): void {
-    const ws = [...(m.snapshot?.workspaces ?? [])].sort((a, b) => String(b.lastEvent?.iso ?? "").localeCompare(String(a.lastEvent?.iso ?? "")));
+    // Hidden entries (`_` folders, archived ones) stay out of the rows as they do of the count (spaces-redesign D22).
+    const ws = visibleWorkspaces(m.snapshot?.workspaces).sort((a, b) => String(b.lastEvent?.iso ?? "").localeCompare(String(a.lastEvent?.iso ?? "")));
     const s = m.facts.summary.workspaces;
-    const body = this.tile(grid, "workspaces", { span: 2, note: `${s.total} · ${s.active} active · ${s.total - s.active} idle` });
+    const stalled = ws.filter((w) => w.status === "stalled").length;
+    const body = this.tile(grid, "workspaces", { span: 2, note: `${s.total} · ${s.active} active${stalled ? ` · ${stalled} stalled` : ""}` });
     const list = this.list(body);
     const liveIn = new Set(m.live.map((l) => l.sub.split(" · ")[1]));
     for (const w of ws) {

@@ -1,9 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { createRequire } from "module";
 import {
-  slugify, isReserved, workspaceStubs, scratchStubs, stubWrites, workspaceNameProblem, gitInitWanted,
+  slugify, isReserved, workspaceStubs, scratchStubs, stubWrites, workspaceNameProblem, gitInitWanted, TEMPLATE_TEXT, isTemplateText,
   workspacePlace, placeOf, resolvePlace, isContextPlace, vaultPlace, homePlace, parseRepoLink, withRepoLink, repoValue,
   termHostChoices, quickHost, launchLine, launchArgs, previewLine, SCRATCH, menuRows, firstActionable,
 } from "./terminalLaunch";
@@ -57,6 +59,60 @@ test("stubWrites follows completeStubs: mirror a lone instruction file, then wri
   const mirror = stubWrites(stubs, (n) => n === "CLAUDE.md", () => "mine\n");
   assert.deepEqual(mirror, [{ name: "AGENTS.md", data: "mine\n" }, { name: "README.md", data: stubs["README.md"] }]);
   assert.deepEqual(stubWrites(stubs, () => true, () => ""), []);
+});
+
+// ── the stubs' placeholder text mirrors the runtime's list (spaces-redesign D23; the pulse-facts precedent) ──
+
+type Collector = { TEMPLATE_TEXT: readonly string[]; isTemplateText(s: unknown): boolean };
+
+/**
+ * collectors/workspaces.js resolves a vault as it loads (lib/paths.js) and reads its brain/_index: give it an empty temp
+ * vault and no agenticos.json, so this never reads the developer's own config or vault.
+ */
+function loadCollector(): Collector {
+  const vault = fs.mkdtempSync(path.join(os.tmpdir(), "aos-template-vault-"));
+  fs.mkdirSync(path.join(vault, "brain", "_index"), { recursive: true });
+  const saved = { vault: process.env.AOS_VAULT, config: process.env.AOS_CONFIG };
+  process.env.AOS_VAULT = vault;
+  process.env.AOS_CONFIG = path.join(vault, "no-agenticos.json");
+  try {
+    return req(path.resolve(__dirname, "../../../brain/scripts/collectors/workspaces.js")) as Collector;
+  } finally {
+    for (const [k, v] of [["AOS_VAULT", saved.vault], ["AOS_CONFIG", saved.config]] as const) {
+      if (v === undefined) delete process.env[k]; else process.env[k] = v;
+    }
+    fs.rmSync(vault, { recursive: true, force: true });
+  }
+}
+
+/** A stub's first body line: the first line that is neither blank nor a heading, as the runtime reads a summary. */
+const firstBodyLine = (text: string): string => text.split("\n").map((l) => l.trim()).find((l) => l && !l.startsWith("#")) ?? "";
+
+test("TEMPLATE_TEXT is the runtime's list, and isTemplateText decides every line as the runtime does", () => {
+  const runtime = loadCollector();
+  assert.deepEqual([...TEMPLATE_TEXT], [...runtime.TEMPLATE_TEXT]);
+  const stubs = workspaceStubs("tide-chart");
+  const lines = [
+    ...TEMPLATE_TEXT, firstBodyLine(stubs["README.md"]), firstBodyLine(stubs["CLAUDE.md"]),
+    "This is the workspaces/a/ workspace of an AgenticOS vault.", "  One   line about what this project is.  ",
+    "This is the `workspaces/a/b/` workspace of an AgenticOS vault.", "An offline harbor chart viewer.",
+    "one line about what this project is.", "Says: One line about what this project is.", "", "   ", "- ",
+  ];
+  for (const l of lines) assert.equal(isTemplateText(l), runtime.isTemplateText(l), JSON.stringify(l));
+  for (const v of [null, undefined, 3, ["One line about what this project is."]]) assert.equal(isTemplateText(v), runtime.isTemplateText(v));
+});
+
+test("every placeholder the stubs write is on the list: their first body lines, and bullets left empty", () => {
+  for (const slug of ["tide-chart", "a", "bz-wedding"]) {
+    const stubs = workspaceStubs(slug);
+    for (const name of ["README.md", "CLAUDE.md", "AGENTS.md"]) assert.equal(isTemplateText(firstBodyLine(stubs[name])), true, `${slug}/${name}`);
+    // The README's Objectives and Next step bullets are empty, which every bullet reader skips: a placeholder written
+    // into them would need a TEMPLATE_TEXT entry (here and in the runtime).
+    const bullets = stubs["README.md"].split("\n").filter((l) => /^\s*[-*+](\s|$)/.test(l));
+    assert.deepEqual(bullets.map((b) => b.trim()), ["-", "-"], slug);
+  }
+  assert.equal(isTemplateText("An offline harbor chart viewer."), false);
+  assert.equal(isTemplateText(firstBodyLine(scratchStubs()["README.md"])), false, "Scratch's README says what Scratch is");
 });
 
 // ── git (T7) ──

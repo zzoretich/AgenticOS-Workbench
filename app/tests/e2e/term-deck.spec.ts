@@ -268,7 +268,18 @@ test("Code fits its pane: no page scroll at 1480×920 or 960×600, the composer 
       expect(l.font).toBe("15px");
       expect(l.term).toBeGreaterThan(200);
     }
-    // Scrollback in the terminal: the wheel moves xterm's viewport, and the page stays put.
+    // Scrollback in the terminal: the wheel moves xterm's viewport, and the page stays put. Type only once xterm fits the
+    // 960×600 pane: its refit runs from a ResizeObserver, in a frame a loaded runner can deliver after the typing, and a
+    // refit that lands while seq's output is on its way leaves zsh's end-of-line mark, sized for the old width, on a row
+    // of its own ("400", "%", the prompt).
+    const fitted = () => C().locator(".aos-term-xterm:visible").evaluate((el) => {
+      const screen = el.querySelector(".xterm-screen");
+      if (!screen) return false;
+      const box = el.getBoundingClientRect();
+      const s = screen.getBoundingClientRect();
+      return s.width <= box.width && s.height <= box.height;
+    });
+    await expect.poll(fitted).toBe(true);
     await win.evaluate(() => {
       const p = (window as unknown as { aosHost: { plugin: { terminalPool: { selectedId(): string | null; get(id: string): { write(d: string): void } | undefined } } } }).aosHost.plugin.terminalPool;
       p.get(p.selectedId() ?? "")?.write("seq 1 400\r");
