@@ -1,7 +1,9 @@
 // terminalLauncher.ts — starting terminals from the Term tab (spec 2026-10-08-term-agent-deck T2–T11). The decisions are
 // pure, in terminalLaunch.ts; this does the rest through the HudHost: it lists the workspaces and their linked code
-// folders, makes Scratch and new workspaces (the folder and the stubs through HostFs, which the Files surface admits),
-// starts the terminal, types the agent's line into it, remembers the choice, and tells the panel what it started.
+// folders, makes Scratch and new workspaces, starts the terminal, types the agent's line into it, remembers the choice,
+// and tells the panel what it started. A new workspace and a linked code folder go through the runtime's
+// `aos workspace new` and `aos workspace set` while the Spaces surface admits them (spaces-redesign D28, D29), the one
+// code path a session on either host uses too; with that surface off, through HostFs as before (the Files surface).
 import * as path from "path";
 import type AgenticOSPlugin from "../../main";
 import { env, fs } from "../host";
@@ -17,6 +19,8 @@ import {
 } from "./terminalLaunch";
 import type { LaunchSpec, Place, PlaceWhy, PlaceWorld, TermAccess, TermHost, TermHostChoice } from "./terminalLaunch";
 import { rememberTerminalChoice, sanitizeSessionChoice, sanitizeTerminalChoice } from "../settingsDefaults";
+import { KEBAB_RE, WS_RE, verbResult, workspaceArgs } from "./spacesModel";
+import type { ManifestFields, VerbResult } from "./spacesModel";
 import type { TerminalChoice } from "../settingsDefaults";
 
 /** What a launch asks for: the host, and a place when one was picked; otherwise the context or the default decides. */
@@ -199,11 +203,34 @@ export class TerminalLauncher {
     return { session, place, why };
   }
 
-  /** Makes a new workspace and starts `host` there in the same step (T6). Throws on a bad name. */
+  /**
+   * Makes a new workspace and starts `host` there in the same step (T6). Throws on a bad name. While the Spaces surface
+   * is on, `aos workspace new <slug> [--git] --json` makes it (spaces-redesign D28) and the slug it answers is checked
+   * against KEBAB again before a terminal opens in it; a refused spawn (the surface is off) or a runtime that predates the
+   * verb takes today's path. A workspace that exists already (the sheet's "Open <name>") is opened, never made again:
+   * `new` would refuse it.
+   */
   async createAndLaunch(name: string, host: TermHost, gitInit: boolean): Promise<Launched> {
     const problem = workspaceNameProblem(name);
     const slug = slugify(name);
     if (problem || !slug) throw new Error(problem ?? "Use a letter or digit");
+    if (!this.exists(slug)) {
+      if (!KEBAB_RE.test(slug)) throw new Error("Use at most 64 letters, digits and dashes");
+      const made = await this.verb<{ slug?: unknown; name?: unknown }>(workspaceArgs.new(slug, { git: gitInit }));
+      if (made.ok) {
+        const got = String(made.json.slug ?? made.json.name ?? slug);
+        if (!KEBAB_RE.test(got)) throw new Error(`aos workspace new answered a name Spaces will not use: ${JSON.stringify(got.slice(0, 60))}`);
+        this.refreshSpaces();
+        // `--git` made the repository; the typed `[ -e .git ] || git init -q` is then a no-op, and covers a runtime that
+        // leaves it to the terminal.
+        return this.launch({ host, picked: workspacePlace(got, this.world()), gitInit });
+      }
+      if (!made.refused && !made.outdated) throw new Error(made.reason);
+      // Today's path makes the folder itself, so it keeps the runtime's rule: an archived workspace holds its name.
+      if (fs.existsSync(path.join(this.workspacesDir(), "_archive", slug))) {
+        throw new Error(`"${slug}" is held by an archived workspace (workspaces/_archive/${slug}): restore it, or pick another name`);
+      }
+    }
     try {
       this.ensureFolder(slug, workspaceStubs(slug));
     } catch (e) {
@@ -216,17 +243,67 @@ export class TerminalLauncher {
     return this.launch({ host, picked: workspacePlace(slug, this.world()), gitInit });
   }
 
-  /** Writes `repo:` into a workspace's workspace.md (T8): a path typed by the user, `~/…` or absolute. */
-  linkRepo(workspace: string, typed: string | null): string | null {
+  /**
+   * Writes `repo:` into a workspace's workspace.md (T8): a path typed by the user, `~/…` or absolute; empty unlinks it.
+   * Through `aos workspace set` while the Spaces surface is on (the runtime checks the folder again: it exists, outside
+   * the vault and every host's config folder; spaces-redesign D24, §6), else today's write.
+   */
+  async linkRepo(workspace: string, typed: string | null): Promise<string | null> {
+    const home = this.home();
+    let abs: string | null = null;
+    if (typed !== null && typed.trim()) {
+      abs = parseRepoLink(withRepoLink(null, typed.trim()), home, this.vault());
+      if (!abs) throw new Error("Give a folder outside the vault, as ~/… or a full path");
+    }
+    if (WS_RE.test(workspace)) {
+      const r = await this.setManifest(workspace, { repo: abs ? repoValue(abs, home) : "" });
+      if (r.ok) return abs;
+      if (!r.refused && !r.outdated) throw new Error(r.reason);
+    }
     const file = path.join(this.workspacesDir(), workspace, "workspace.md");
     let text: string | null = null;
     try { text = fs.readFileSync(file, "utf8"); } catch { /* none yet */ }
-    if (typed === null || !typed.trim()) { if (text !== null) fs.writeFileSync(file, withRepoLink(text, null)); return null; }
-    const home = this.home();
-    const abs = parseRepoLink(withRepoLink(null, typed.trim()), home, this.vault());
-    if (!abs) throw new Error("Give a folder outside the vault, as ~/… or a full path");
+    if (!abs) { if (text !== null) fs.writeFileSync(file, withRepoLink(text, null)); return null; }
     fs.writeFileSync(file, withRepoLink(text, repoValue(abs, home)));
     return abs;
+  }
+
+  // ── the runtime's workspace verbs (spaces-redesign D28, D29) ──
+
+  /**
+   * Runs one of the page's `aos workspace` verbs (spacesModel.workspaceArgs) and reads its answer: runAosJson, so the
+   * spawn goes through proc:spawn and the spaces surface's argument rules; no new IPC (spec §6).
+   */
+  async verb<T = Record<string, unknown>>(args: string[], timeoutMs?: number): Promise<VerbResult<T>> {
+    try {
+      return verbResult<T>(await this.plugin.aosJson<T>(args, timeoutMs));
+    } catch (e) {
+      return { ok: false, reason: e instanceof Error ? e.message : String(e), refused: false, outdated: false, stale: false };
+    }
+  }
+
+  /** workspace.md's hash as `aos workspace set --expect` compares it: the sha256 of its bytes, or "none" without one. */
+  async manifestHash(workspace: string): Promise<string> {
+    const file = path.join(this.workspacesDir(), workspace, "workspace.md");
+    if (!fs.existsSync(file)) return "none";
+    // The runtime refuses a workspace.md over 256 KB; one byte more is enough to hash a file it would refuse.
+    return sha256Hex(fs.readBytesSync(file, 0, 256 * 1024 + 1));
+  }
+
+  /**
+   * Sets workspace.md keys (D18): compare-and-set on the file as it is now, so a change made meanwhile is never lost. A
+   * miss here (Pin, Status, Link: no draft to redo) is a write that landed between the read and the set, so the hash is
+   * read once more and the set tried again; a second miss says so in words that fit outside the Draft dialog.
+   */
+  async setManifest(workspace: string, fields: ManifestFields): Promise<VerbResult<Record<string, unknown>>> {
+    for (let attempt = 0; ; attempt++) {
+      let args: string[];
+      try { args = workspaceArgs.set(workspace, fields, await this.manifestHash(workspace)); }
+      catch (e) { return { ok: false, reason: e instanceof Error ? e.message : String(e), refused: false, outdated: false, stale: false }; }
+      const r = await this.verb(args);
+      if (r.ok || !r.stale) return r;
+      if (attempt) return { ...r, reason: "workspace.md changed meanwhile: try again" };
+    }
   }
 
   /** The terminal itself: a fresh shell in the place, with the agent's line typed when it is an agent. Throws before any
@@ -255,6 +332,14 @@ export class TerminalLauncher {
     this.plugin.terminalPool.lastLaunch = { ...note, at: Date.now() };
     this.plugin.terminalPool.trigger("session-launched", note);
   }
+}
+
+/** The sha256 of `bytes` as lowercase hex (Web Crypto: the page's and Node's). */
+async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  const copy = new Uint8Array(bytes.length);
+  copy.set(bytes);
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", copy.buffer);
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 /** A new conversation id: the deck names Claude Code's so Resume can find it again. */

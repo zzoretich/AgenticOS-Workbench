@@ -5,6 +5,7 @@ import {
   SESSIONS_OFF_TEXT, formerNames, gitBrief, gitMeta, gitMetaParts, groupOf, hiddenToggleText, historyFor, hostOffText,
   linkedCounts, linkedFor, liveByWorkspace, matchesQuery, namesPath, newSessionRows, overviewFor, pickupFor,
   resumeTarget, sessionsLink, spaceList, spaceRow, statusPill, statusWord, workspaceSlug,
+  SPACES_OFF_TEXT, STALE_TEXT, UPGRADE_TEXT, flippingNotes, manifestList, movePlan, noteHoldsStatus, todoLinkSuggestions, verbResult, workspaceArgs,
 } from "./spacesModel";
 import type { ResumeContext } from "./spacesModel";
 import type { WorkspaceEntry, WorkspaceSessionRow } from "./snapshot";
@@ -491,4 +492,199 @@ test("namesPath: whole path segments only", () => {
   assert.equal(namesPath("workspaces/site.com/x", "workspaces/site"), false);
   assert.equal(namesPath("myworkspaces/site", "workspaces/site"), false);
   assert.equal(namesPath(null, "workspaces/site"), false);
+});
+
+// ── PR 3: the proposal workspace: rule, Link to-dos…, the verbs, the moves ──
+
+test("linkedFor: a proposal's workspace: key links it first, a former name too; it says so (D27, PR 3)", () => {
+  const e = entry("site", { aliases: [`${VAULT}/workspaces/old-site`] });
+  const keyed = (name: string, ws: string, target = "brain/scripts/x.js") =>
+    parseProposal(name, `---\nkind: product\nsurface: hud\nworkspace: ${ws}\ntarget: ${target}\n---\n\n## What\n\nx\n`);
+  const proposals = [keyed("2026-10-06-f.md", "site"), keyed("2026-10-07-g.md", "workspaces/old-site"), keyed("2026-10-08-h.md", "other", "workspaces/site/x")];
+  const prop = linkedFor(e, { proposals }, { vault: VAULT }).groups[1];
+  assert.deepEqual(prop.items.map((i) => [i.text, i.how, i.howText]), [
+    ["f", "workspace", "workspace: site"],
+    ["g", "workspace", "workspace: old-site (former name old-site)"],
+    ["h", "target", "its target names workspaces/site"],
+  ]);
+});
+
+test("todoLinkSuggestions: an untagged open to-do naming the workspace is suggested; tagged, done or another workspace's are not (D35)", () => {
+  const todos = parseTodos(`# To-Do
+
+## Open
+
+- [ ] Untagged but names site
+- [ ] Ship the Harbor Map legend
+- [ ] Fix site-repo's build
+- [ ] Update site docs index
+- [ ] Already linked site #ws/site
+- [ ] Linked elsewhere site #ws/other
+- [ ] Clean up old-site leftovers
+- [ ] Nothing to do with it
+- [ ] Read workspaces/ai/PLAN.md
+- [ ] Say ai things
+- [x] Done site thing ✅ 2026-10-01
+`);
+  const site = todoLinkSuggestions(todos, entry("site", { aliases: [`${VAULT}/workspaces/old-site`] }), { vault: VAULT, others: ["site", "site-repo", "site docs", "harbor-map"] });
+  assert.deepEqual(site.map((s) => [s.text, s.how, s.matched, s.former]), [
+    ["Untagged but names site", "name", "site", null],
+    ["Clean up old-site leftovers", "former", "old-site", "old-site"],
+  ]);
+  assert.equal(site[0].key, "- [ ] Untagged but names site");
+  const harbor = todoLinkSuggestions(todos, entry("harbor-map"), { vault: VAULT });
+  assert.deepEqual(harbor.map((s) => [s.text, s.matched]), [["Ship the Harbor Map legend", "Harbor Map"]]);
+  const named = todoLinkSuggestions(todos, entry("Example Workspace"), {});
+  assert.deepEqual(named, []);
+  // A one- or two-letter name counts only as workspaces/<name>.
+  assert.deepEqual(todoLinkSuggestions(todos, entry("ai")).map((s) => s.text), ["Read workspaces/ai/PLAN.md"]);
+  // An archived workspace suggests by its own name.
+  assert.deepEqual(todoLinkSuggestions(todos, entry("_archive/site", { label: "site" }), { others: ["site-repo", "site docs"] }).map((s) => s.text), ["Untagged but names site"]);
+});
+
+test("todoLinkSuggestions: a shorter workspace name inside this one's never hides it; a longer one holding it still does", () => {
+  const todos = parseTodos("## Open\n\n- [ ] fix site docs build\n- [ ] Ship the Harbor Map legend\n- [ ] deploy api gateway now\n- [ ] Update Site Docs index\n- [ ] tidy the site footer\n");
+  // site-docs beside site: its own spaced and labelled forms are its own.
+  assert.deepEqual(todoLinkSuggestions(todos, entry("site-docs"), { others: ["site"] }).map((s) => s.text), ["fix site docs build", "Update Site Docs index"]);
+  assert.deepEqual(todoLinkSuggestions(todos, entry("site-docs", { label: "Site Docs" }), { others: ["site"] }).map((s) => s.matched), ["site docs", "Site Docs"]);
+  assert.deepEqual(todoLinkSuggestions(todos, entry("harbor-map"), { others: ["harbor"] }).map((s) => s.text), ["Ship the Harbor Map legend"]);
+  assert.deepEqual(todoLinkSuggestions(todos, entry("api-gateway"), { others: ["api"] }).map((s) => s.text), ["deploy api gateway now"]);
+  // …while site, beside site-docs, gets only the to-do that names site alone.
+  assert.deepEqual(todoLinkSuggestions(todos, entry("site"), { others: ["site-docs"] }).map((s) => s.text), ["tidy the site footer"]);
+  assert.deepEqual(todoLinkSuggestions(todos, entry("harbor"), { others: ["harbor-map"] }).map((s) => s.text), []);
+});
+
+test("todoLinkSuggestions never writes: it returns rows and leaves the to-dos as they were", () => {
+  const todos = parseTodos("## Open\n\n- [ ] Names site\n");
+  const before = JSON.stringify(todos);
+  const s = todoLinkSuggestions(todos, entry("site"));
+  assert.equal(s.length, 1);
+  assert.equal(JSON.stringify(todos), before);
+  assert.deepEqual(todoLinkSuggestions(null, entry("site")), []);
+});
+
+test("flippingNotes: the project notes linked by workspace: or slug, never by a body mention (D17)", () => {
+  const memories = [
+    parseMemoryMeta("brain/memory/projects/a.md", "---\nworkspace: site\n---\n# Keyed\n"),
+    parseMemoryMeta("brain/memory/projects/site.md", "# By slug\n"),
+    parseMemoryMeta("brain/memory/projects/c.md", "# Mention\n\nSee workspaces/site/PLAN.md.\n"),
+  ];
+  const l = linkedFor(entry("site"), { memories }, { vault: VAULT });
+  assert.deepEqual(flippingNotes(l), [{ title: "Keyed", path: "brain/memory/projects/a.md" }, { title: "By slug", path: "brain/memory/projects/site.md" }]);
+  assert.deepEqual(flippingNotes(null), []);
+  // As the runtime flips them: only notes that hold the tag that flips, and for Restore only Archive's record.
+  assert.deepEqual(flippingNotes(l, { holds: (p) => p.endsWith("/site.md") }), [{ title: "By slug", path: "brain/memory/projects/site.md" }]);
+  assert.deepEqual(flippingNotes(l, { only: ["brain/memory/projects/a.md"] }), [{ title: "Keyed", path: "brain/memory/projects/a.md" }]);
+  assert.deepEqual(flippingNotes(l, { only: [] }), [], "no record: Restore flips nothing");
+});
+
+test("noteHoldsStatus reads the frontmatter's status tag as the runtime does; manifestList reads Archive's record", () => {
+  assert.equal(noteHoldsStatus("---\ntags: [memory/projects, status/active]\n---\n", "active"), true);
+  assert.equal(noteHoldsStatus("---\ntags:\n  - memory/projects\n  - \"status/archived\"\n---\n", "archived"), true);
+  assert.equal(noteHoldsStatus("---\r\ntags: ['status/active']\r\n---\r\n", "active"), true);
+  assert.equal(noteHoldsStatus("---\ntags: [status/active-ish]\n---\n", "active"), false);
+  assert.equal(noteHoldsStatus("---\ntags: [memory/projects]\n---\nstatus/active in the body\n", "active"), false);
+  assert.equal(noteHoldsStatus("no frontmatter status/active", "active"), false);
+  const md = "---\nstatus: paused\narchived: 2026-10-10\narchivedNotes:\n  - brain/memory/projects/a.md\n  - \"brain/memory/projects/b.md\"\narchivedFrom: harbor\n---\nbody\n";
+  assert.deepEqual(manifestList(md, "archivedNotes"), ["brain/memory/projects/a.md", "brain/memory/projects/b.md"]);
+  assert.deepEqual(manifestList(md, "archivedFrom"), ["harbor"]);
+  assert.deepEqual(manifestList("---\ntags: [a, b]\n---\n", "tags"), ["a", "b"]);
+  assert.deepEqual(manifestList(md, "missing"), []);
+  assert.deepEqual(manifestList(null, "archivedNotes"), []);
+});
+
+test("workspaceArgs: each verb's argv in the surface's one order, --json last; bad values throw before anything runs (D29)", () => {
+  assert.deepEqual(workspaceArgs.new("trip-planner", { pin: true }), ["workspace", "new", "trip-planner", "--pin", "--json"]);
+  assert.deepEqual(workspaceArgs.new("trip-planner", { git: true, pin: true }), ["workspace", "new", "trip-planner", "--git", "--pin", "--json"]);
+  assert.deepEqual(workspaceArgs.new("trip-planner", { empty: true }), ["workspace", "new", "trip-planner", "--empty", "--json"]);
+  assert.throws(() => workspaceArgs.new("trip-planner", { git: true, empty: true }));
+  for (const bad of ["My App", "-x", "a-", "", "a".repeat(65), "_archive", "a/b"]) assert.throws(() => workspaceArgs.new(bad), bad);
+  assert.deepEqual(workspaceArgs.draft("site"), ["workspace", "draft", "site", "--json"]);
+  assert.deepEqual(workspaceArgs.set("site", { pinned: true }, "none"), ["workspace", "set", "site", "--set", '{"pinned":true}', "--expect", "none", "--json"]);
+  const h = "a".repeat(64);
+  assert.deepEqual(workspaceArgs.set("Example Workspace", { status: "" }, h, { dryRun: true }), ["workspace", "set", "Example Workspace", "--set", '{"status":""}', "--expect", h, "--dry-run", "--json"]);
+  assert.throws(() => workspaceArgs.set("site", {}, "ABC"));
+  assert.throws(() => workspaceArgs.set("_archive/site", {}, "none"));
+  assert.deepEqual(workspaceArgs.archive("site"), ["workspace", "archive", "site", "--json"]);
+  assert.deepEqual(workspaceArgs.restore("site"), ["workspace", "restore", "site", "--json"]);
+  assert.deepEqual(workspaceArgs.rename("site", "new-site"), ["workspace", "rename", "site", "new-site", "--json"]);
+  assert.throws(() => workspaceArgs.rename("site", "../b"));
+  assert.deepEqual(workspaceArgs.adopt("~/code/x", "site"), ["workspace", "adopt", "~/code/x", "--into", "site", "--json"]);
+  assert.deepEqual(workspaceArgs.adopt("/tmp/x y", "site"), ["workspace", "adopt", "/tmp/x y", "--into", "site", "--json"]);
+  assert.throws(() => workspaceArgs.adopt("code/x", "site"));
+  assert.throws(() => workspaceArgs.adopt("--name", "site"));
+  assert.deepEqual(workspaceArgs.hide("/tmp/gone"), ["workspace", "hide", "/tmp/gone", "--json"]);
+  assert.deepEqual(workspaceArgs.unhide("~/gone"), ["workspace", "unhide", "~/gone", "--json"]);
+  assert.throws(() => workspaceArgs.hide("/tmp/a\nb"));
+});
+
+test("verbResult: ok bodies, the runtime's reason, a refused spawn, an old runtime, a changed workspace.md", () => {
+  const r = (o: Partial<{ code: number; stdout: string; stderr: string; timedOut: boolean; error: string; json: unknown }>) =>
+    verbResult({ code: 0, stdout: "", stderr: "", timedOut: false, json: null, ...o });
+  assert.deepEqual(r({ json: { ok: true, name: "x" } }), { ok: true, json: { ok: true, name: "x" } });
+  assert.deepEqual(r({ stdout: '{"provider":"heuristic"}' }), { ok: true, json: { provider: "heuristic" } });
+  assert.equal((r({ code: 1, stdout: '{"ok":false,"reason":"x is held by a running team"}' }) as { reason: string }).reason, "x is held by a running team");
+  assert.equal((r({ json: { ok: false, error: "nope" } }) as { reason: string }).reason, "nope");
+  assert.equal((r({ code: 2, stderr: "aos workspace: no such workspace \"x\"\n" }) as { reason: string }).reason, 'no such workspace "x"');
+  const refused = r({ code: -1, error: "UniDeX: spawn node … refused; no write surface that allows it is on" });
+  assert.deepEqual([refused.ok, (refused as { refused: boolean }).refused, (refused as { reason: string }).reason], [false, true, SPACES_OFF_TEXT]);
+  const old = r({ code: 2, stderr: "aos workspace: unknown flag --pin\n" });
+  assert.equal((old as { outdated: boolean }).outdated, true);
+  assert.match((old as { reason: string }).reason, /^The vault's runtime predates this action: run aos upgrade/);
+  const stale = r({ code: 1, stderr: `aos workspace: ${STALE_TEXT}\n` });
+  assert.deepEqual([(stale as { stale: boolean }).stale, (stale as { reason: string }).reason], [true, STALE_TEXT]);
+  assert.equal((r({ code: -1, timedOut: true }) as { reason: string }).reason, "aos did not answer in time");
+  assert.equal((r({ stdout: "[1]" }) as { reason: string }).reason, "aos answered in an unexpected shape");
+  // As cli/aos.js prints them: `aos: <reason>` on stderr; a usage error adds the usage text after it.
+  const usage = r({ code: 2, stderr: "aos: aos workspace new --empty leaves the folder empty for `git clone … .`\nusage:\n  aos workspace [list [--json] | which]\n" });
+  assert.deepEqual([usage.ok, (usage as { outdated: boolean }).outdated], [false, false]);
+  assert.match((usage as { reason: string }).reason, /^aos workspace new --empty leaves the folder empty/);
+  const changed = r({ code: 1, stderr: `aos: ${STALE_TEXT}\n` });
+  assert.deepEqual([(changed as { stale: boolean }).stale, (changed as { reason: string }).reason], [true, STALE_TEXT]);
+  const oldFlag = r({ code: 2, stderr: "aos: unknown flag --pin\nusage:\n  aos workspace [list [--json] | new <name> | adopt <path> [--name <slug>]]\n" });
+  assert.deepEqual([(oldFlag as { outdated: boolean }).outdated, (oldFlag as { reason: string }).reason], [true, `${UPGRADE_TEXT} (unknown flag --pin)`]);
+  // A runtime from before PR 3 takes `new <slug> --json` and prints its text lines: the folder is made, the answer is
+  // no JSON, and createAndLaunch's fallback finishes the job.
+  const oldNew = r({ stdout: "created /tmp/v/workspaces/kite\n  README.md\nopen a terminal there and start `claude` or `codex`\n" });
+  assert.deepEqual([oldNew.ok, (oldNew as { outdated: boolean }).outdated, (oldNew as { refused: boolean }).refused], [false, true, false]);
+  const oldVerb = r({ code: 2, stderr: 'aos: aos workspace: unknown verb "set" (list | new | adopt)\nusage:\n' });
+  assert.equal((oldVerb as { outdated: boolean }).outdated, true);
+  assert.equal((r({ code: 1, stderr: "aos: Cannot find module './workspace.js'\n" }) as { outdated: boolean }).outdated, true);
+  // A name the runtime echoes is never mistaken for a usage error (the HostFs fallback runs only for an old runtime):
+  // a workspace called "unknown verb" on a refusal, exit 1, is a refusal.
+  const named = r({ code: 1, stderr: "aos: workspaces/unknown verb is a symlink, not a workspace folder\n" });
+  assert.deepEqual([named.ok, (named as { outdated: boolean }).outdated], [false, false]);
+  assert.equal((r({ code: 2, stderr: "aos: refusing workspaces/unknown flag x: it is inside the vault\n" }) as { outdated: boolean }).outdated, false);
+  assert.equal((r({ code: 1, stdout: '{"ok":false,"reason":"unknown command in workspaces/x"}' }) as { outdated: boolean }).outdated, false);
+});
+
+test("movePlan names the source, the destination, the threads that move and the notes whose tag flips (§6)", () => {
+  const notes = [{ title: "Site project", path: "brain/memory/projects/site.md" }];
+  const a = movePlan("archive", entry("site"), { threads: 2, sessions: 5, notes });
+  assert.deepEqual([a.title, a.confirm, a.from, a.to], ["Archive site?", "Archive", "workspaces/site", "workspaces/_archive/site"]);
+  assert.deepEqual(a.items, [
+    "Moves workspaces/site to workspaces/_archive/site",
+    "Moves its file map to brain/_index/workspace-maps/_archive/",
+    "Marks its project memory archived: status/active becomes status/archived in 1 note",
+    "Keeps its 2 Sessions threads listed in Sessions, read-only until Restore",
+    "Keeps its 5 sessions and its git history attached",
+  ]);
+  assert.deepEqual(a.notes, ["Site project"]);
+  assert.match(movePlan("archive", entry("site"), { threads: 0, archiveTaken: true }).items[0], /date added/);
+  assert.equal(a.footnote, "Restore it any time: show archived and _ folders, then More › Restore…");
+  const r = movePlan("restore", entry("_archive/site", { label: "site" }), { threads: 1, notes });
+  assert.deepEqual([r.from, r.to, r.items[3]], ["workspaces/_archive/site", "workspaces/site", "Its 1 Sessions thread takes turns again"]);
+  // A dated archive goes back to the name Archive recorded (archivedFrom:).
+  const rd = movePlan("restore", entry("_archive/site-2026-10-10", { label: "site-2026-10-10" }), { threads: 0, to: "site" });
+  assert.deepEqual([rd.from, rd.to, rd.items[0]], ["workspaces/_archive/site-2026-10-10", "workspaces/site", "Moves workspaces/_archive/site-2026-10-10 back to workspaces/site"]);
+  const n = movePlan("rename", entry("site"), { threads: 3, to: "new-site", claudeThreads: 2 });
+  assert.deepEqual([n.from, n.to, n.warn], ["workspaces/site", "workspaces/new-site", null], "Claude resumes across folders (D7): no warning");
+  assert.equal(movePlan("rename", entry("site"), { threads: 0, to: "x", claudeThreads: 2, claudeCrossFolder: false }).warn, "2 Claude threads may not resume from the new folder");
+  assert.match(n.items[1], /3 Sessions threads, and rewrites each thread's workspace to new-site/);
+  assert.equal(n.items.length, 3);
+  assert.equal(movePlan("rename", entry("site"), { threads: 0, to: "x", ownRepo: true }).items[3], "Codex asks once to trust workspaces/x: it is a git repository of its own");
+  const ad = movePlan("adopt", entry("site"), { threads: 0, sessions: 4, folder: "~/code/site" });
+  assert.deepEqual([ad.from, ad.to, ad.items[1]], ["~/code/site", "site (alias)", "Moves nothing: the folder stays where it is"]);
+  assert.equal(ad.items[2], "Its 4 sessions count toward site after the next scan");
+  assert.equal(movePlan("adopt", entry("site"), { threads: 0, sessions: 1, folder: "~/x" }).items[2], "Its 1 session counts toward site after the next scan");
 });

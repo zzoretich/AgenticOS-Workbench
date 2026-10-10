@@ -3488,6 +3488,161 @@ button.aos-spc-popitem.is-off:not(.clickable-icon):hover:not(:disabled) { backgr
 button.aos-spc-popitem.is-off:not(.clickable-icon):focus-visible { outline: 2px solid var(--udx-focus); outline-offset: -2px; background: var(--udx-raised-2); }
 .aos-spc-popdetail { color: var(--udx-text-2); font-size: 11.5px; }
 
+/* PR 3's actions in the panes (D15–D18, D35): the status menu on the pill, the pin toggle, a fresh clone's card, the
+   Draft link, menu separators and checks, the To-do group's buttons, the outside list's Adopt… and its hidden rows. */
+button.aos-spc-pillbtn:not(.clickable-icon) {
+  display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 7px 0 9px; box-sizing: border-box; border: 1px solid transparent;
+  border-radius: 999px; box-shadow: none; font-size: 12px; font-weight: 500; white-space: nowrap;
+}
+button.aos-spc-pillbtn.is-ok:not(.clickable-icon), button.aos-spc-pillbtn.is-ok:not(.clickable-icon):hover:not(:disabled) { background: var(--udx-ok-bg); color: var(--udx-ok); }
+button.aos-spc-pillbtn.is-warn:not(.clickable-icon), button.aos-spc-pillbtn.is-warn:not(.clickable-icon):hover:not(:disabled) { background: var(--udx-warn-bg); color: var(--udx-warn); }
+button.aos-spc-pillbtn.is-info:not(.clickable-icon), button.aos-spc-pillbtn.is-info:not(.clickable-icon):hover:not(:disabled) { background: var(--udx-info-bg); color: var(--udx-info); }
+button.aos-spc-pillbtn.is-off:not(.clickable-icon), button.aos-spc-pillbtn.is-off:not(.clickable-icon):hover:not(:disabled),
+button.aos-spc-pillbtn.is-paused:not(.clickable-icon), button.aos-spc-pillbtn.is-paused:not(.clickable-icon):hover:not(:disabled) {
+  border-color: var(--udx-line-2); background: var(--udx-off-bg); color: var(--udx-off);
+}
+button.aos-spc-pillbtn:not(.clickable-icon):hover:not(:disabled) { border-color: currentColor; }
+.aos-spc-pillbtn .aos-spc-chev { opacity: 0.7; }
+.aos-spc-pillbtn .aos-spc-chev svg { width: 10px; height: 10px; }
+button.aos-spc-pinbtn:not(.clickable-icon) { width: 26px; height: 26px; color: var(--udx-text-3); }
+button.aos-spc-pinbtn:not(.clickable-icon) svg { width: 15px; height: 15px; }
+button.aos-spc-pinbtn.is-on:not(.clickable-icon) { color: var(--udx-text); }
+/* Filled when pinned: the mock's mark; the outline pin is the action that pins. */
+button.aos-spc-pinbtn.is-on:not(.clickable-icon) svg { fill: currentColor; }
+.aos-spc-clone {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 12px; border: 1px solid var(--udx-line);
+  border-radius: 10px; background: var(--udx-surface); font-size: 12.5px;
+}
+.aos-spc-clonetext { flex: 1 1 260px; min-width: 0; overflow-wrap: anywhere; color: var(--udx-text-2); }
+.aos-spc-clonetext .aos-spc-mono { font-size: 11.5px; color: var(--udx-text); }
+.aos-spc-cloneacts { display: flex; align-items: center; gap: 12px; }
+.aos-spc-clone > .aos-spc-why { flex-basis: 100%; }
+button.aos-spc-draftlink:not(.clickable-icon) { font-size: 11.5px; text-decoration: none; }
+.aos-spc-popsep { height: 1px; margin: 4px 6px; background: var(--udx-line); }
+.aos-spc-popcheck { color: var(--udx-text-2); }
+button.aos-spc-popitem.is-checked:not(.clickable-icon) { font-weight: 600; }
+.aos-spc-lgroup.is-todo .aos-spc-lhead { flex-wrap: wrap; }
+.aos-spc-lhead button.aos-spc-linkbtn:not(.clickable-icon) { font-size: 11.5px; font-weight: 400; text-decoration: none; }
+/* Enabled header actions read as actions, so the disabled (text-3) state is visibly dimmer. */
+.aos-spc-lhead button.aos-spc-linkbtn:not(.clickable-icon):not(:disabled) { color: var(--udx-text); }
+.aos-spc-lhead button.aos-spc-linkbtn:not(.clickable-icon):disabled { opacity: 1; color: var(--udx-text-3); cursor: default; }
+.aos-spc-lwhy { margin-top: -2px; }
+.aos-spc-outtable th:nth-child(1) { width: 30%; }
+.aos-spc-outtable th:nth-child(2) { width: 17%; }
+.aos-spc-outtable th:nth-child(5) { width: 12%; }
+.aos-spc-outtable th.aos-spc-outacts { width: 104px; }
+.aos-spc-outtable td.aos-spc-outacts { padding-right: 0; text-align: right; white-space: nowrap; }
+button.aos-spc-adoptbtn:not(.clickable-icon) { gap: 4px; padding: 0 8px; }
+.aos-spc-adoptbtn .aos-spc-chev svg { width: 10px; height: 10px; }
+.aos-spc-hiddenlist { display: flex; flex-direction: column; gap: 8px; }
+.aos-spc-ledenote { max-width: 70ch; color: var(--udx-text-3); font-size: 12px; }
+.aos-spc-hidrows { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.aos-spc-hidrow { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--udx-line); font-size: 12px; color: var(--udx-text-2); }
+.aos-spc-hidrow .aos-spc-outname { min-width: 0; overflow-wrap: anywhere; }
+
+/* PR 3's dialogs (the Manage and Draft mocks): .modal.mod-spc with a header, a body and a footer; fields in 11 px caps
+   over their control; the moves' confirmation names what moves (§6); the Draft dialog's form beside its exact-file
+   preview. Tokens only, so both themes follow. */
+.modal.mod-spc { width: min(520px, calc(100vw - 32px)); max-height: 84vh; padding: 0; display: flex; flex-direction: column; overflow: hidden; border-color: var(--udx-line-2); }
+.modal.mod-spc .modal-title { display: none; }
+.modal.mod-spc .modal-close-button { top: 16px; right: 16px; }
+.modal.mod-spc .modal-content { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.modal.mod-spc-draft { width: min(960px, calc(100vw - 48px)); }
+.modal-container:has(> .modal.mod-spc-draft) { align-items: center; padding-top: 0; }
+.aos-spc-dialog { flex: 1; min-height: 0; display: flex; flex-direction: column; color: var(--udx-text); font-family: var(--udx-sans); font-size: 13px; line-height: 1.45; }
+.aos-spc-dialog :focus-visible { outline: 2px solid var(--udx-focus); outline-offset: 1px; }
+.aos-spc-dlghead { flex: none; display: flex; flex-direction: column; gap: 4px; padding: 16px 44px 12px 18px; border-bottom: 1px solid var(--udx-line); }
+.aos-spc-dlgtitle { margin: 0; font-size: 15px; font-weight: 650; overflow-wrap: anywhere; }
+.aos-spc-dlgtitle .aos-spc-mono { font-family: var(--udx-mono); font-size: 14px; }
+.aos-spc-dlgsub { margin: 0; color: var(--udx-text-2); font-size: 12.5px; }
+.aos-spc-dlgbody { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding: 16px 18px; }
+.aos-spc-dlgfoot { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 12px 18px 16px; border-top: 1px solid var(--udx-line); }
+.aos-spc-dlgerr { display: none; flex-basis: 100%; order: -1; color: var(--udx-danger); font-size: 12px; }
+.aos-spc-dlgerr.is-shown { display: block; }
+.aos-spc-dlgerr.is-stale { font-weight: 600; }
+.aos-spc-dlgnote { margin: 0; color: var(--udx-text-3); font-size: 12px; line-height: 1.5; }
+.aos-spc-form { display: flex; flex-direction: column; gap: 14px; }
+.aos-spc-field { display: flex; flex-direction: column; gap: 6px; }
+.aos-spc-flabel { color: var(--udx-text-3); font-size: 11px; font-weight: 600; letter-spacing: 0.07em; }
+.aos-spc-fhint { color: var(--udx-text-3); font-size: 11px; overflow-wrap: anywhere; }
+.aos-spc-mono.aos-spc-fhint { font-family: var(--udx-mono); }
+/* An error reads as a sentence, in the sans face even on a mono hint (after the mono rule, and as specific). */
+.aos-spc-fhint.is-error, .aos-spc-mono.aos-spc-fhint.is-error { color: var(--udx-danger); font-family: var(--udx-sans); }
+.aos-spc-dialog input.aos-spc-input, .aos-spc-dialog textarea.aos-spc-input, .aos-spc-dialog select.aos-spc-input {
+  width: 100%; min-width: 0; padding: 0 10px; border: 1px solid var(--udx-line-2); border-radius: 8px; background-color: var(--udx-field);
+  color: var(--udx-text); font-size: 13px;
+}
+.aos-spc-dialog input.aos-spc-input, .aos-spc-dialog select.aos-spc-input { height: 34px; }
+.aos-spc-dialog input.aos-spc-input.aos-spc-mono { font-family: var(--udx-mono); font-size: 12px; }
+.aos-spc-dialog textarea.aos-spc-input { padding: 8px 10px; line-height: 1.45; resize: vertical; }
+.aos-spc-dialog select.aos-spc-input { padding-right: 26px; }
+.aos-spc-dialog .aos-spc-input:focus { border-color: var(--udx-focus); }
+.aos-spc-fieldset { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; border: none; min-width: 0; }
+.aos-spc-fieldset > legend { margin-bottom: 6px; padding: 0; }
+.aos-spc-choice { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border: 1px solid var(--udx-line); border-radius: 9px; background: var(--udx-bg); cursor: pointer; }
+.aos-spc-choice.is-on { border-color: var(--udx-text); background: var(--udx-surface); }
+.aos-spc-choice input { margin: 2px 0 0; }
+.aos-spc-choicetext { display: flex; flex-direction: column; gap: 2px; }
+.aos-spc-choicename { font-size: 13px; font-weight: 500; }
+.aos-spc-choicedetail { color: var(--udx-text-2); font-size: 12px; }
+.aos-spc-field.is-hidden { display: none; }
+.aos-spc-hostpick { display: flex; flex-wrap: wrap; gap: 8px; }
+.aos-spc-hostopt { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 11px; border: 1px solid var(--udx-line); border-radius: 8px; font-size: 12.5px; cursor: pointer; }
+.aos-spc-hostopt:has(input:checked) { border-color: var(--udx-text); background: var(--udx-surface); font-weight: 500; }
+.aos-spc-hostopt.is-off { color: var(--udx-text-3); cursor: default; }
+.aos-spc-hostopt input { margin: 0; }
+.aos-spc-plan { display: flex; flex-direction: column; gap: 10px; }
+.aos-spc-move { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 8px; padding: 8px 10px; border-radius: 8px; background: var(--udx-raised); font-size: 12px; }
+.aos-spc-move .aos-spc-mono { font-family: var(--udx-mono); font-size: 11.5px; overflow-wrap: anywhere; }
+.aos-spc-movearrow { color: var(--udx-text-3); }
+.aos-spc-planlist { display: flex; flex-direction: column; gap: 5px; margin: 0; padding-left: 18px; color: var(--udx-text-2); font-size: 12.5px; line-height: 1.45; }
+.aos-spc-plannotes { display: flex; flex-direction: column; gap: 6px; }
+.aos-spc-planwarn { margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--udx-warn-bg); color: var(--udx-warn); font-size: 12.5px; }
+.aos-spc-suggest { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.aos-spc-sugrow { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--udx-line); }
+.aos-spc-sugtext { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.aos-spc-sugline { overflow-wrap: anywhere; }
+.aos-spc-sugrow.is-linked .aos-spc-sugline { color: var(--udx-text-3); }
+.aos-spc-drafting { padding: 24px 0; color: var(--udx-text-2); }
+.aos-spc-draftgrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); margin: -16px -18px; min-height: 0; }
+.aos-spc-draftform { padding: 18px 22px; border-right: 1px solid var(--udx-line); }
+.aos-spc-draftpreview { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 18px 22px; background: var(--udx-surface); }
+.aos-spc-draftpreview .aos-spc-prevtop { display: flex; align-items: center; gap: 8px; }
+.aos-spc-prevfile { font-family: var(--udx-mono); font-size: 11px; overflow-wrap: anywhere; }
+.aos-spc-draftpre {
+  display: flex; flex-direction: column; margin: 0; padding: 12px 0; overflow-x: auto; border: 1px solid var(--udx-line); border-radius: 8px;
+  background: var(--udx-bg); color: var(--udx-text); font-family: var(--udx-mono); font-size: 11.5px; line-height: 1.7; white-space: pre-wrap;
+}
+.aos-spc-draftpre > .aos-spc-dim { padding: 0 14px; font-family: var(--udx-sans); }
+.aos-spc-pline { display: flex; gap: 10px; padding: 0 14px; overflow-wrap: anywhere; }
+.aos-spc-pline.is-added { background: var(--udx-ok-bg); }
+.aos-spc-pmark { flex: none; width: 8px; color: var(--udx-ok); }
+.aos-spc-objedit { display: flex; flex-direction: column; gap: 6px; }
+.aos-spc-objrow { display: flex; align-items: center; gap: 6px; }
+button.aos-spc-objrm:not(.clickable-icon) { width: 26px; height: 26px; font-size: 11px; }
+button.aos-spc-addobj:not(.clickable-icon) { align-self: flex-start; height: 28px; padding: 0 10px; border-style: dashed; border-color: var(--udx-line-2); background: none; color: var(--udx-text-2); font-size: 12px; }
+.aos-spc-sources { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--udx-text-3); font-size: 11.5px; }
+.aos-spc-chip { padding: 2px 7px; border-radius: 5px; background: var(--udx-raised); color: var(--udx-text-2); font-family: var(--udx-mono); font-size: 11px; }
+/* The Draft footer only: who answered (a long heuristic reason wraps inside it), then the three buttons as one group
+   kept together at the right. Scoped to the footer, so the pick-up card's inline .aos-spc-who (PR 2) is left alone. */
+.aos-spc-dlgfoot > .aos-spc-who { flex: 1 1 280px; display: flex; flex-wrap: wrap; align-items: center; gap: 7px; min-width: 0; color: var(--udx-text-2); font-size: 12px; }
+.aos-spc-dlgfoot .aos-spc-whydetail { flex-basis: 100%; min-width: 0; color: var(--udx-text-3); font-size: 11.5px; overflow-wrap: anywhere; }
+.aos-spc-dlgacts { flex: none; display: flex; align-items: center; gap: 8px; margin-left: auto; }
+/* Draft's body keeps about the form's height while it drafts, so the dialog does not jump when the form arrives. */
+.modal.mod-spc-draft .aos-spc-dlgbody { min-height: min(520px, 60vh); }
+.modal.mod-spc-draft .aos-spc-draftgrid { flex: 1 0 auto; }
+/* The workspace picker (Adopt into…, Link as code folder of…): the folder and the action as a line of their own, and
+   room on the right of both lines for the close button. */
+.aos-spc-pickhead { padding: 14px 44px 0 16px; color: var(--udx-text-2); font-family: var(--udx-sans); font-size: 12.5px; line-height: 1.45; overflow-wrap: anywhere; }
+.modal.prompt.mod-spc-picker .prompt-input { padding-right: 44px; }
+.aos-spc-badge.is-ok { background: var(--udx-ok-bg); color: var(--udx-ok); }
+.aos-spc-badge.is-off { background: var(--udx-off-bg); color: var(--udx-off); }
+@media (max-width: 760px) {
+  .aos-spc-draftgrid { grid-template-columns: minmax(0, 1fr); }
+  .aos-spc-draftform { border-right: none; border-bottom: 1px solid var(--udx-line); }
+  .aos-spc-dlghead, .aos-spc-dlgbody, .aos-spc-dlgfoot { padding-left: 16px; padding-right: 16px; }
+}
+
 /* Narrower: the right pane under the dossier (1100 px), then the list above it (760 px). */
 @media (max-width: 1100px) {
   .aos-spc-main { flex-direction: column; overflow-y: auto; }

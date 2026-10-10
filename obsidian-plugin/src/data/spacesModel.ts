@@ -1,9 +1,12 @@
-// spacesModel.ts — the Spaces tab's model (spec 2026-10-09-spaces-redesign, PR 2). Pure: snapshot entries, the HUD's
-// live terminals and threads, the host choices, and the to-dos, proposals and memory notes in; the rows the panes draw
-// out. The list's groups, filter and hidden rule (D4, D22), the live dot (D26), the row and its git (D4, D24), Resume's
-// target and folder (D7, D31, D32), the pick-up card (D6), Overview (D8), History (D10) and Linked (D27). The panes
-// under views/spaces/ render these; nothing here reads a file, spawns or writes.
+// spacesModel.ts — the Spaces tab's model (spec 2026-10-09-spaces-redesign, PR 2 and PR 3). Pure: snapshot entries, the
+// HUD's live terminals and threads, the host choices, and the to-dos, proposals and memory notes in; the rows the panes
+// draw out. The list's groups, filter and hidden rule (D4, D22), the live dot (D26), the row and its git (D4, D24),
+// Resume's target and folder (D7, D31, D32), the pick-up card (D6), Overview (D8), History (D10) and Linked (D27); PR 3:
+// the page's `aos workspace` verbs as argv and their answers (D28, D29), what a move's confirmation names (D17), and
+// Link to-dos…'s suggestions (D35). The panes under views/spaces/ render these; nothing here reads a file, spawns or
+// writes.
 import * as path from "path";
+import type { AosJsonResult } from "./aosRun";
 import type { Proposal } from "./proposals";
 import type { MemoryMeta } from "./memories";
 import type { Todo } from "./todos";
@@ -649,8 +652,8 @@ export function namesPath(text: string | null | undefined, p: string): boolean {
 }
 
 /**
- * What links to a workspace (D27), computed live: open to-dos tagged `#ws/<slug>`; proposals whose `target` or
- * `recheck` names the workspace's path (PR 3 adds their `workspace:` key); memory notes whose `workspace:` names it,
+ * What links to a workspace (D27), computed live: open to-dos tagged `#ws/<slug>`; proposals whose `workspace:` (PR 3)
+ * names it, or whose `target` or `recheck` names the workspace's path; memory notes whose `workspace:` names it,
  * whose slug is its slug, or whose body mentions `workspaces/<name>/`. A former name from `aliases:` counts for every
  * rule, and an adopted folder's path for proposals. Each item says how it matched; a zero count shows no number.
  */
@@ -672,7 +675,8 @@ export function linkedFor(e: Pick<WorkspaceEntry, "name" | "label" | "aliases">,
     todos.push({ kind: "todo", key: t.raw, text: t.text || t.body, how: "tag", howText: `tagged #ws/${slugs[i]}${suffix(formerOf(i))}`, former: formerOf(i), tag: null, todo: t });
   }
 
-  // Proposal: target, then recheck, naming workspaces/<name> or an adopted folder (absolute or ~/).
+  // Proposal: its `workspace:` (PR 3: /propose writes it, D27), then target, then recheck, naming workspaces/<name> or an
+  // adopted folder (absolute or ~/).
   const home = opts.home ?? null;
   const paths: Array<{ p: string; shown: string; former: string | null }> = names.map((n, i) => ({ p: `workspaces/${n}`, shown: `workspaces/${n}`, former: formerOf(i) }));
   for (const a of outsideAliases(e, opts.vault)) {
@@ -683,6 +687,12 @@ export function linkedFor(e: Pick<WorkspaceEntry, "name" | "label" | "aliases">,
   const proposals: LinkedItem[] = [];
   for (const p of src.proposals ?? []) {
     if (!p) continue;
+    const key = typeof p.workspace === "string" && p.workspace ? slugify(p.workspace) : "";
+    const wi = key ? slugs.indexOf(key) : -1;
+    if (wi >= 0 && slugs[wi]) {
+      proposals.push({ kind: "proposal", key: p.name, text: p.slug, how: "workspace", howText: `workspace: ${p.workspace}${suffix(formerOf(wi))}`, former: formerOf(wi), tag: "pending", proposal: p });
+      continue;
+    }
     let hit: { how: "target" | "recheck"; at: (typeof paths)[number] } | null = null;
     for (const how of ["target", "recheck"] as const) {
       const at = paths.find((x) => namesPath(p[how], x.p));
@@ -722,4 +732,343 @@ export function linkedFor(e: Pick<WorkspaceEntry, "name" | "label" | "aliases">,
 /** The row's counts from a `linkedFor` result. */
 export function linkedCounts(l: Linked): LinkedCounts {
   return { todos: l.groups.find((g) => g.kind === "todo")?.count ?? 0, proposals: l.groups.find((g) => g.kind === "proposal")?.count ?? 0 };
+}
+
+/**
+ * The project notes whose `status/` tag Archive and Restore flip (spaces-redesign D17, §6): those Linked found by their
+ * `workspace:` or their exact slug, never by a body mention. Only notes under brain/memory/projects/. As the runtime
+ * flips them (cli/workspace.js flipProjectNotes): `holds` keeps the notes whose frontmatter carries the tag that flips
+ * now (status/active for Archive, status/archived for Restore; noteHoldsStatus), and `only` keeps Restore to Archive's
+ * record (`archivedNotes:`), so the confirmation names exactly the notes that change.
+ */
+export function flippingNotes(
+  l: Linked | null | undefined,
+  o: { holds?: (path: string) => boolean; only?: readonly string[] | null } = {},
+): Array<{ title: string; path: string }> {
+  const mem = l?.groups.find((g) => g.kind === "memory")?.items ?? [];
+  return mem
+    .filter((i) => (i.how === "workspace" || i.how === "slug") && i.memory && i.memory.path.startsWith("brain/memory/projects/"))
+    .filter((i) => (!o.holds || o.holds(i.key)) && (!o.only || o.only.includes(i.key)))
+    .map((i) => ({ title: i.text || i.key, path: i.key }));
+}
+
+const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---/;
+
+/** Whether a note's frontmatter carries `status/<word>` as a tag, by the runtime's rule (cli/workspace.js statusTag). */
+export function noteHoldsStatus(text: string | null | undefined, word: "active" | "archived"): boolean {
+  const m = typeof text === "string" ? FRONTMATTER_RE.exec(text) : null;
+  if (!m) return false;
+  const re = new RegExp(`(^|[\\s,\\[\\-'"])status/${word}(?=$|[\\s,\\]'"])`);
+  return m[1].split(/\r?\n/).some((l) => re.test(l));
+}
+
+/**
+ * A frontmatter list by key, as the runtime's listField reads it (`[a, b]`, a block list, or one value): Archive's
+ * record in an archived workspace.md, `archivedNotes:` (the notes it flipped) and `archivedFrom:` (the name it came
+ * from when it archived under a dated one). [] when the key is missing.
+ */
+export function manifestList(text: string | null | undefined, key: string): string[] {
+  const m = typeof text === "string" ? FRONTMATTER_RE.exec(text) : null;
+  if (!m) return [];
+  const out: string[] = [];
+  const unquote = (v: string): string => v.trim().replace(/^["']|["']$/g, "");
+  let on = false;
+  for (const raw of m[1].split(/\r?\n/)) {
+    if (!raw.trim()) continue;
+    const item = /^\s*-(?:\s+(.*))?$/.exec(raw);
+    if (item && on) { const v = unquote(item[1] ?? ""); if (v) out.push(v); continue; }
+    const kv = /^([A-Za-z0-9_-]+):\s*(.*)$/.exec(raw);
+    if (!kv) continue;
+    on = kv[1] === key;
+    if (!on) continue;
+    const value = kv[2].trim();
+    const flow = /^\[(.*)\]$/.exec(value);
+    for (const v of (flow ? flow[1].split(",") : value ? [value] : []).map(unquote)) if (v) out.push(v);
+  }
+  return out;
+}
+
+// ── Link to-dos… (D35) ──
+
+/** + to-do and Link to-dos… write TODO.md through the To-Do surface: with its writes off, both are off with this. */
+export const TODO_WRITES_OFF_TEXT = "Needs the To-Do surface's writes";
+
+/** A to-do Link to-dos… offers: untagged, open, and naming the workspace. Only offered: nothing is tagged without a click. */
+export interface TodoSuggestion {
+  todo: Todo;
+  /** The to-do's raw line: what the one-click edit names (todos.ts editTodo). */
+  key: string;
+  text: string;
+  /** The words it matched, as the to-do wrote them. */
+  matched: string;
+  how: "name" | "slug" | "former";
+  former: string | null;
+}
+
+/** A name as a pattern: its words joined by any run of spaces, `-` or `_`, case-insensitive. */
+function namePattern(name: string): string | null {
+  const words = name.toLowerCase().split(/[\s_-]+/).filter(Boolean).map(escapeRe);
+  return words.length ? words.join("[\\s_-]+") : null;
+}
+
+/** Where `name` appears in `text` as a whole name: not glued to a letter, digit, `-` or `_` on either side. */
+function findName(text: string, name: string): { at: number; len: number } | null {
+  const p = namePattern(name);
+  if (!p) return null;
+  const m = new RegExp(`(?<![\\p{L}\\p{N}_-])${p}(?![\\p{L}\\p{N}_-]|\\.[\\p{L}\\p{N}])`, "iu").exec(text);
+  return m ? { at: m.index, len: m[0].length } : null;
+}
+
+/** Where `workspaces/<name>` appears in `text` (a short name counts only so). */
+function findPath(text: string, name: string): { at: number; len: number } | null {
+  const m = new RegExp(`(?<![\\p{L}\\p{N}_.-])workspaces/${escapeRe(name)}(?![\\p{L}\\p{N}_-]|\\.[\\p{L}\\p{N}])`, "iu").exec(text);
+  return m ? { at: m.index, len: m[0].length } : null;
+}
+
+/**
+ * Link to-dos…'s suggestions (D35): open to-dos with no `#ws/` tag at all whose text names the workspace, by its name,
+ * its slug, or a former name from `aliases:` (D17), as whole words (`harbor map` names harbor-map; `site-repo` does not
+ * name site). A name of one or two characters only counts as `workspaces/<name>`, so short names do not match every
+ * to-do. `others` are the other workspaces' names: where a longer one of them is what the to-do names, it names that
+ * one, not this. Pure: suggesting writes nothing (the click goes through the To-Do surface's writer).
+ */
+export function todoLinkSuggestions(todos: Todo[] | null | undefined, e: Pick<WorkspaceEntry, "name" | "label" | "aliases">, opts: { vault?: string | null; others?: string[] } = {}): TodoSuggestion[] {
+  const self = baseName(e);
+  const slug = slugify(self);
+  const cands: Array<{ name: string; how: TodoSuggestion["how"]; former: string | null }> = [{ name: self, how: "name", former: null }];
+  if (slug && slug !== self.toLowerCase()) cands.push({ name: slug, how: "slug", former: null });
+  for (const f of formerNames(e, opts.vault)) cands.push({ name: f, how: "former", former: f });
+  const selfKeys = new Set(cands.map((c) => slugify(c.name)));
+  // Only another workspace whose name is longer than one of this one's and holds it ("site docs" around "site") can
+  // own the mention; a shorter one ("site" inside "site docs") never hides this workspace's own name.
+  const others = (opts.others ?? [])
+    .map((n) => String(n ?? "").replace(/^_archive\//, "").trim())
+    .filter((n) => n && !selfKeys.has(slugify(n)))
+    .filter((n) => cands.some((c) => slugify(n).length > slugify(c.name).length && findName(n.replace(/[\s_-]+/g, " "), c.name) !== null));
+  const out: TodoSuggestion[] = [];
+  for (const t of todos ?? []) {
+    if (!t || t.done) continue;
+    if ((t.tags ?? []).some((x) => /^ws\//i.test(x))) continue;
+    let text = String(t.text || t.body || "");
+    // A longer workspace name that holds this one ("site docs" around "site") is that workspace's mention: blank it out.
+    for (const o of others) {
+      for (let hit = findName(text, o); hit; hit = findName(text, o)) text = text.slice(0, hit.at) + " ".repeat(hit.len) + text.slice(hit.at + hit.len);
+    }
+    for (const c of cands) {
+      const hit = slugify(c.name).replace(/-/g, "").length < 3 ? findPath(text, c.name) : findName(text, c.name);
+      if (!hit) continue;
+      out.push({ todo: t, key: t.raw, text: t.text || t.body, matched: String(t.text || t.body || "").slice(hit.at, hit.at + hit.len), how: c.how, former: c.former });
+      break;
+    }
+  }
+  return out;
+}
+
+// ── the page's workspace verbs (D28, D29; the plan's Mechanics › PR 3 › Security) ──
+
+/**
+ * The argument kinds the spaces surface admits (app/src/shared/surfaces.ts KEBAB, WS, HASH, PATH; none starts with
+ * `-`). The page builds a verb's argv only from values that pass them, so what the runtime refuses is a real refusal,
+ * never a line the surface would not run; the runtime checks every name and path again (cli/workspace.js).
+ */
+export const KEBAB_RE = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
+export const WS_RE = /^[^\s\0._\/\\-][^\/\\\0\n\r\u2028\u2029]{0,127}$/;
+export const HASH_RE = /^(?:none|[0-9a-f]{16,64})$/;
+export const PATH_RE = /^(?:\/|~\/)[^\0\n\r\u2028\u2029]+$/;
+
+export type ManifestStatus = "active" | "paused" | "done";
+export const MANIFEST_STATUSES: readonly ManifestStatus[] = ["active", "paused", "done"];
+
+/** The workspace.md keys `aos workspace set` writes (D18; the runtime's allow-list). `""` clears a key. */
+export interface ManifestFields {
+  status?: ManifestStatus | "";
+  pinned?: boolean;
+  summary?: string;
+  objectives?: string[];
+  next?: string;
+  repo?: string;
+}
+
+function arg(re: RegExp, v: unknown, what: string): string {
+  if (typeof v !== "string" || !re.test(v)) throw new Error(`Not ${what} Spaces can pass to aos: ${JSON.stringify(String(v ?? "").slice(0, 60))}`);
+  return v;
+}
+const wsArg = (name: string): string => arg(WS_RE, name, "a workspace name");
+
+/**
+ * Each verb's argv in the one order the spaces surface admits (`--json` last; `new`'s flags in the order --git, --pin,
+ * --empty). Throws on a value its argument kind refuses.
+ */
+export const workspaceArgs = {
+  new(slug: string, o: { git?: boolean; pin?: boolean; empty?: boolean } = {}): string[] {
+    if (o.git && o.empty) throw new Error("A workspace made for a clone starts empty: --git and --empty never go together");
+    return ["workspace", "new", arg(KEBAB_RE, slug, "a new workspace name"), ...(o.git ? ["--git"] : []), ...(o.pin ? ["--pin"] : []), ...(o.empty ? ["--empty"] : []), "--json"];
+  },
+  draft: (name: string): string[] => ["workspace", "draft", wsArg(name), "--json"],
+  /** Compare-and-set (D13): only `fields`, on the file whose hash is `expect` (`none`: no workspace.md yet). */
+  set(name: string, fields: ManifestFields, expect: string, o: { dryRun?: boolean } = {}): string[] {
+    if (!fields || typeof fields !== "object" || Array.isArray(fields)) throw new Error("set takes an object of workspace.md keys");
+    return ["workspace", "set", wsArg(name), "--set", JSON.stringify(fields), "--expect", arg(HASH_RE, expect, "a workspace.md hash"), ...(o.dryRun ? ["--dry-run"] : []), "--json"];
+  },
+  archive: (name: string): string[] => ["workspace", "archive", wsArg(name), "--json"],
+  /** An archived workspace by its own name (`_archive/<n>`'s <n>). */
+  restore: (name: string): string[] => ["workspace", "restore", wsArg(name), "--json"],
+  rename: (name: string, next: string): string[] => ["workspace", "rename", wsArg(name), arg(KEBAB_RE, next, "a new workspace name"), "--json"],
+  /** The alias form only (D16): the folder stays where it is. */
+  adopt: (folder: string, into: string): string[] => ["workspace", "adopt", arg(PATH_RE, folder, "a folder"), "--into", wsArg(into), "--json"],
+  hide: (folder: string): string[] => ["workspace", "hide", arg(PATH_RE, folder, "a folder"), "--json"],
+  unhide: (folder: string): string[] => ["workspace", "unhide", arg(PATH_RE, folder, "a folder"), "--json"],
+};
+
+/** The page asked for a verb while the spaces surface is off (main refused the spawn): what to do instead (host parity). */
+export const SPACES_OFF_TEXT = "Spaces' write surface is off in this app: run the aos workspace command in a terminal instead";
+/** The vault's vendored runtime has no such verb or flag yet. */
+export const UPGRADE_TEXT = "The vault's runtime predates this action: run aos upgrade";
+/** `set --expect` found another workspace.md than the draft read (D13). */
+export const STALE_TEXT = "workspace.md changed: draft again";
+
+export interface VerbFailure {
+  ok: false;
+  reason: string;
+  /** Main refused the spawn: the spaces surface is off (the caller may take today's path instead). */
+  refused: boolean;
+  /** The runtime does not know the verb or a flag: the vault needs `aos upgrade`. */
+  outdated: boolean;
+  /** `set --expect` refused a changed workspace.md. */
+  stale: boolean;
+}
+export type VerbResult<T> = { ok: true; json: T } | VerbFailure;
+
+const fail = (reason: string, o: Partial<VerbFailure> = {}): VerbFailure => ({ ok: false, reason, refused: false, outdated: false, stale: false, ...o });
+const str = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v.trim() : null);
+
+/** The runtime's own message: `{ok:false, reason|error}` on stdout, else its `aos …: ` line on stderr. */
+function said(body: unknown, stderr: string): string | null {
+  if (body && typeof body === "object") {
+    const b = body as Record<string, unknown>;
+    const s = str(b.reason) ?? str(b.error) ?? str(b.message);
+    if (s) return s;
+  }
+  const lines = String(stderr ?? "").split("\n").map((l) => l.trim()).filter(Boolean);
+  const own = lines.find((l) => /^aos( [a-z-]+)?: /.test(l)) ?? lines[0] ?? null;
+  return own ? own.replace(/^aos( [a-z-]+)?: /, "") : null;
+}
+
+/**
+ * A verb's answer (spaces-redesign D28): `{ok: true, …}` (or any object without `ok: false`) on exit 0, else why not.
+ * Each verb prints `{ok, …}` or an error with a reason (the plan's Mechanics › PR 3); a spawn main refused says the
+ * surface is off, and a runtime that does not know the verb says to upgrade.
+ */
+export function verbResult<T>(r: Pick<AosJsonResult<T>, "code" | "stdout" | "stderr" | "timedOut" | "json"> & { error?: string }): VerbResult<T> {
+  if (r.error && /\brefused\b/.test(r.error)) return fail(SPACES_OFF_TEXT, { refused: true });
+  if (r.timedOut) return fail("aos did not answer in time");
+  if (r.error) return fail(`could not run aos: ${r.error}`);
+  let body: unknown = r.json;
+  let parsed = body !== null && body !== undefined;
+  if (!parsed) { try { body = JSON.parse(r.stdout); parsed = true; } catch { body = null; } }
+  const okBody = !!body && typeof body === "object" && !Array.isArray(body) && (body as { ok?: unknown }).ok !== false;
+  if (r.code === 0 && okBody) return { ok: true, json: body as T };
+  // Exit 0 with text instead of JSON: a runtime from before PR 3, whose `workspace new` took `--json` and printed its
+  // text lines (spaces-redesign D28). It did the work, so the caller's fallback (createAndLaunch) finds the folder made.
+  if (r.code === 0 && !parsed && String(r.stdout ?? "").trim()) return fail(`${UPGRADE_TEXT} (it answered in text, not JSON)`, { outdated: true });
+  const line = said(body, r.stderr) ?? (r.code === 0 ? "aos answered in an unexpected shape" : `aos exited ${r.code}`);
+  // An old runtime only by its own usage error (exit 2, `unknown verb|flag|command` opening stderr's first line) or a
+  // module it lacks: never by text anywhere in the answer, which can hold a workspace name someone chose, so a refusal
+  // never sends the caller to its HostFs fallback (terminalLauncher createAndLaunch, linkRepo).
+  const first = String(r.stderr ?? "").split("\n").map((l) => l.trim()).find(Boolean) ?? "";
+  const usage = r.code === 2 && /^(?:aos: )?(?:aos workspace: )?unknown (?:verb|flag|command)\b/.test(first);
+  if (usage || /^(?:aos: )?(?:Error: )?Cannot find module /.test(first)) return fail(`${UPGRADE_TEXT} (${line})`, { outdated: true });
+  return fail(line, { stale: /workspace\.md changed/i.test(line) });
+}
+
+// ── moves: what each confirmation names (D16, D17; §6 Confirmation) ──
+
+export type MoveKind = "archive" | "restore" | "rename" | "adopt";
+
+export interface MovePlanInput {
+  /** The app's Sessions threads kept under brain/_index/sessions/<n>/. */
+  threads: number;
+  /** Host sessions credited to the workspace (or the folder, for Adopt) in the count window. */
+  sessions?: number;
+  /** The project notes whose status/ tag flips (flippingNotes). */
+  notes?: Array<{ title: string; path: string }>;
+  /** Rename: the new name. Restore: the name it goes back to (Archive's `archivedFrom:` for a dated archive). */
+  to?: string;
+  /** Adopt: the folder, as it reads (~/…). */
+  folder?: string;
+  /** Archive: workspaces/_archive/<n> is taken already, so the runtime adds a date to the name. */
+  archiveTaken?: boolean;
+  /** Rename: Claude Code threads among its recent sessions, and D7's build check (Rename warns only when it failed). */
+  claudeThreads?: number;
+  claudeCrossFolder?: boolean;
+  /** Rename: the workspace is a git repository of its own, so Codex asks once to trust its new path (host parity). */
+  ownRepo?: boolean;
+}
+
+export interface MovePlan {
+  kind: MoveKind;
+  title: string;
+  confirm: string;
+  /** What moves (or, for Adopt, the folder) and where it goes (or the workspace whose alias it becomes). */
+  from: string;
+  to: string;
+  items: string[];
+  /** The notes whose tag flips, by title. */
+  notes: string[];
+  footnote: string | null;
+  /** A warning shown above the buttons (Rename's Claude threads when a cross-folder resume fails). */
+  warn: string | null;
+}
+
+/**
+ * What a move's confirmation says (§6: the source and destination, the threads that move, the notes whose tag flips).
+ * Archive and Restore move the folder between workspaces/ and workspaces/_archive/ with its map; Rename moves the
+ * folder, its map and its threads and records the old path as an alias; Adopt records an alias and moves nothing.
+ */
+export function movePlan(kind: MoveKind, e: Pick<WorkspaceEntry, "name" | "label">, o: MovePlanInput): MovePlan {
+  const n = baseName(e);
+  const threads = Math.max(0, o.threads || 0);
+  const sessions = Math.max(0, o.sessions || 0);
+  const notes = (o.notes ?? []).map((x) => x.title);
+  const threadsText = plural(threads, "Sessions thread");
+  if (kind === "archive") {
+    const items = [
+      `Moves workspaces/${n} to workspaces/_archive/${n}${o.archiveTaken ? " with today's date added (that name is taken)" : ""}`,
+      `Moves its file map to brain/_index/workspace-maps/_archive/`,
+      notes.length ? `Marks its project memory archived: status/active becomes status/archived in ${plural(notes.length, "note")}` : "No project note names it by workspace: or slug, so no tag changes",
+    ];
+    if (threads) items.push(`Keeps its ${threadsText} listed in Sessions, read-only until Restore`);
+    items.push(sessions ? `Keeps its ${plural(sessions, "session")} and its git history attached` : "Keeps its sessions and git history attached");
+    return { kind, title: `Archive ${n}?`, confirm: "Archive", from: `workspaces/${n}`, to: `workspaces/_archive/${n}`, items, notes, footnote: "Restore it any time: show archived and _ folders, then More › Restore…", warn: null };
+  }
+  if (kind === "restore") {
+    const back = o.to || n;
+    const items = [
+      `Moves workspaces/_archive/${n} back to workspaces/${back}`,
+      "Moves its file map back to brain/_index/workspace-maps/",
+      notes.length ? `Marks its project memory active again: status/archived becomes status/active in ${plural(notes.length, "note")}` : "No project note names it by workspace: or slug, so no tag changes",
+    ];
+    if (threads) items.push(`Its ${threadsText} take${threads === 1 ? "s" : ""} turns again`);
+    return { kind, title: `Restore ${n}?`, confirm: "Restore", from: `workspaces/_archive/${n}`, to: `workspaces/${back}`, items, notes, footnote: null, warn: null };
+  }
+  if (kind === "rename") {
+    const to = o.to ?? "";
+    const items = [
+      `Moves workspaces/${n} to workspaces/${to || "…"}`,
+      threads ? `Moves its file map and its ${threadsText}, and rewrites each thread's workspace to ${to || "the new name"}` : "Moves its file map",
+      `Records workspaces/${n} under aliases:, so its past sessions, to-dos and notes still count here`,
+    ];
+    if (o.ownRepo) items.push(`Codex asks once to trust workspaces/${to || "…"}: it is a git repository of its own`);
+    const claude = Math.max(0, o.claudeThreads || 0);
+    const crossFolder = o.claudeCrossFolder ?? CLAUDE_RESUME_CROSS_FOLDER.works;
+    const warn = claude && !crossFolder ? `${plural(claude, "Claude thread")} may not resume from the new folder` : null;
+    return { kind, title: `Rename ${n}`, confirm: "Rename", from: `workspaces/${n}`, to: `workspaces/${to || "…"}`, items, notes: [], footnote: null, warn };
+  }
+  const folder = o.folder ?? "";
+  const items = [
+    `Records ${folder} under ${n}'s aliases: in its workspace.md`,
+    "Moves nothing: the folder stays where it is",
+    sessions ? `Its ${plural(sessions, "session")} count${sessions === 1 ? "s" : ""} toward ${n} after the next scan` : `Its sessions count toward ${n} after the next scan`,
+  ];
+  return { kind, title: `Adopt ${folder} into ${n}?`, confirm: "Adopt", from: folder, to: `${n} (alias)`, items, notes: [], footnote: "Adopting from Spaces never moves a folder: aos workspace adopt without --into, in a terminal, still does.", warn: null };
 }

@@ -1,9 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  PANES_FOR, entryAbs, entryPlace, moreMenuItems, panesFor, primaryAction, sessionsFooter, splitMenuItems, targetFor,
-  threadSignature, tilde, typedCommand, watchFlags, type SpacesActions, type SpacesCtx,
+  PANES_FOR, entryAbs, entryPlace, moreMenuItems, outsideMenuItems, panesFor, primaryAction, sessionsFooter, splitMenuItems,
+  statusMenuItems, targetFor, threadSignature, tilde, typedCommand, watchFlags, type SpacesActions, type SpacesCtx,
 } from "./ui";
+import type { OutsideListRow } from "../../data/hostSessions";
 import { SESSIONS_OFF_TEXT, CLI_THREAD_TEXT } from "../../data/spacesModel";
 import { launchLine, type LaunchSpec, type PlaceWorld, type TermHostChoice } from "../../data/terminalLaunch";
 import type { Snapshot, WorkspaceEntry, WorkspaceSessionRow } from "../../data/snapshot";
@@ -52,7 +53,7 @@ function ctx(e: WorkspaceEntry, o: { claude?: "on" | "off" | "out"; codex?: "on"
   const calls: string[] = [];
   const act = new Proxy({}, { get: (_t, k: string) => (...args: unknown[]) => { calls.push(`${k}(${args.map((a) => JSON.stringify(a)).join(",")})`); } }) as SpacesActions;
   const snapshot = { workspaces: [e] } as unknown as Snapshot;
-  const c = { snapshot, choices: choices(o), world: world(o.links), sessionsAvailable: o.sessions ?? true, act, vault: VAULT, quick: o.quick ?? null } as unknown as SpacesCtx;
+  const c = { snapshot, entries: [e], choices: choices(o), world: world(o.links), sessionsAvailable: o.sessions ?? true, act, vault: VAULT, quick: o.quick ?? null } as unknown as SpacesCtx;
   return { c, calls };
 }
 
@@ -178,16 +179,95 @@ test("splitMenuItems: a row per host that is on, Terminal here, Open last thread
   assert.ok(splitMenuItems(ctx(hidden).c, hidden).filter((i) => i.key !== "sessions").every((i) => i.disabled && /^Archived/.test(i.detail ?? "")));
 });
 
-test("moreMenuItems: Copy path, Reveal in Finder, Link code folder (Change… when linked); targetFor turns a hidden entry's Resume off", () => {
+test("moreMenuItems: Rename…, Pin, Set status…, Link code folder…, Draft, Copy path, Reveal, Archive…; Restore… when archived (PR 3)", () => {
   const e = entry("site", { absPath: `${VAULT}/workspaces/site` });
   const m = ctx(e);
-  assert.deepEqual(moreMenuItems(m.c, e).map((i) => i.label), ["Copy path", "Reveal in Finder", "Link code folder…"]);
-  moreMenuItems(m.c, e)[0].run!();
-  assert.deepEqual(m.calls, [`copy("${VAULT}/workspaces/site")`]);
-  assert.equal(moreMenuItems(ctx(e, { links: { site: `${HOME}/code/site` } }).c, e)[2].label, "Change code folder…");
-  const hidden = entry("_archive/old", { hidden: true, sessions: sessions([row(ID1)]) });
-  const t = targetFor(ctx(hidden).c, hidden, { workspace: "_archive/old", id: ID1 });
+  const items = moreMenuItems(m.c, e);
+  assert.deepEqual(items.map((i) => i.label), ["Rename…", "Pin", "Set status…", "Link code folder…", "Draft workspace.md", "Copy path", "Reveal in Finder", "Archive…"]);
+  assert.deepEqual(items.filter((i) => i.sep).map((i) => i.key), ["archive"]);
+  assert.ok(items.every((i) => !i.disabled));
+  items.find((i) => i.key === "copy")!.run!();
+  items.find((i) => i.key === "archive")!.run!();
+  items.find((i) => i.key === "status")!.run!();
+  assert.deepEqual(m.calls, [`copy("${VAULT}/workspaces/site")`, "archive()", "statusMenu()"]);
+  assert.equal(moreMenuItems(ctx(e, { links: { site: `${HOME}/code/site` } }).c, e)[3].label, "Change code folder…");
+  assert.equal(moreMenuItems(m.c, entry("site", { pinned: true }))[1].label, "Unpin");
+  // A folder no longer under workspaces/: its own verbs are off with the reason; Copy and Reveal stay.
+  const gone = entry("ghost");
+  const g = moreMenuItems(ctx(gone).c, gone);
+  assert.deepEqual(g.filter((i) => i.disabled).map((i) => i.key), ["rename", "pin", "status", "link", "draft", "archive"]);
+  assert.match(g[0].detail ?? "", /not under workspaces\//);
+  // Archived: Copy, Reveal and Restore… only.
+  const arch = entry("_archive/old", { label: "old", hidden: true, hiddenReason: "archived", sessions: sessions([row(ID1)]) });
+  const am = ctx(arch);
+  const a = moreMenuItems(am.c, arch);
+  assert.deepEqual(a.map((i) => i.label), ["Copy path", "Reveal in Finder", "Restore…"]);
+  a[2].run!();
+  assert.deepEqual(am.calls, ["restore()"]);
+  // A _ folder: nothing but Copy and Reveal.
+  const u = entry("_scratchpad", { hidden: true, hiddenReason: "underscore" });
+  assert.deepEqual(moreMenuItems(ctx(u).c, u).map((i) => i.key), ["copy", "reveal"]);
+  const t = targetFor(ctx(arch).c, arch, { workspace: "_archive/old", id: ID1 });
   assert.equal(t.kind, "disabled");
+});
+
+test("statusMenuItems: Automatic, Active, Paused, Done; the one workspace.md sets is checked and runs nothing (D18)", () => {
+  const auto = entry("site", { statusAuto: "stalled", status: "stalled" });
+  const m = ctx(auto);
+  const items = statusMenuItems(m.c, auto);
+  assert.deepEqual(items.map((i) => [i.label, i.checked]), [["Automatic", true], ["Active", false], ["Paused", false], ["Done", false]]);
+  assert.equal(items[0].detail, "stalled now, from sessions and commits");
+  assert.equal(items[0].run, undefined);
+  items[2].run!();
+  assert.deepEqual(m.calls, ['setStatus("paused")']);
+  const paused = entry("site", { statusOverride: "paused", statusSource: "manifest", status: "paused" });
+  const p = ctx(paused);
+  const pi = statusMenuItems(p.c, paused);
+  assert.deepEqual(pi.map((i) => i.checked), [false, false, true, false]);
+  pi[0].run!();
+  assert.deepEqual(p.calls, ['setStatus("")']);
+});
+
+test("outsideMenuItems: Adopt into and Link as code folder of the matching workspace, Hide; pickers when none matches (D16, D24)", () => {
+  const out = (o: Partial<OutsideListRow> = {}): OutsideListRow => ({
+    cwd: `${HOME}/code/site`, label: "~/code/site", exists: true, claude: 2, codex: 0, total: 2, lastAt: ago(30), age: "30m", chip: "claude 2",
+    match: "site", git: null, gitRoot: null, worktrees: 0, ...o,
+  });
+  const site = entry("site", { git: { kind: "vault" } });
+  const m = ctx(site);
+  const items = outsideMenuItems(m.c, out());
+  assert.deepEqual(items.map((i) => [i.label, !!i.disabled]), [["Adopt into site", false], ["Link as code folder of site", false], ["Hide", false]]);
+  items[0].run!();
+  items[1].run!();
+  items[2].run!();
+  assert.deepEqual(m.calls.map((c) => c.slice(0, c.indexOf("("))), ["adoptInto", "linkFolder", "hide"]);
+  assert.ok(m.calls[0].endsWith(',"site")') && m.calls[0].includes(`"cwd":"${HOME}/code/site"`));
+  // The workspace is its own repository: no code folder to link. A vanished folder cannot be one either.
+  const repo = entry("site", { git: { kind: "repo", branch: "main", detached: false, head: "abc", upstream: null, ahead: null, behind: null, dirty: 0, remotes: [] } });
+  assert.match(outsideMenuItems(ctx(repo).c, out())[1].detail ?? "", /repository of its own/);
+  assert.equal(outsideMenuItems(ctx(site).c, out({ exists: false }))[1].disabled, true);
+  assert.equal(outsideMenuItems(ctx(site).c, out({ exists: false }))[0].disabled, false, "a vanished folder can still be adopted: its past sessions count");
+  // No match: the pickers.
+  const none = ctx(site);
+  const ni = outsideMenuItems(none.c, out({ match: null }));
+  assert.deepEqual(ni.map((i) => i.label), ["Adopt into a workspace…", "Link as code folder of…", "Hide"]);
+  ni[0].run!();
+  assert.match(none.calls[0], /^pickWorkspace\("adopt",/);
+  // A row inside the vault (workspaces/<old> after a rename by hand): the runtime refuses adopt, link and hide there,
+  // so each is off with the reason, matched or not.
+  for (const match of ["site", null]) {
+    const inside = outsideMenuItems(ctx(site).c, out({ cwd: `${VAULT}/workspaces/old-site`, label: "~/vault/workspaces/old-site", match, exists: false }));
+    assert.deepEqual(inside.map((i) => [i.key, !!i.disabled, i.detail]), [
+      ["adopt", true, "Inside the vault: rename or remove it in Files"],
+      ["link", true, "Inside the vault: rename or remove it in Files"],
+      ["hide", true, "Inside the vault: rename or remove it in Files"],
+    ]);
+  }
+  // A workspace already linked: Link never replaces its code folder from here.
+  const linked = entry("site", { git: { kind: "vault" }, repoPath: `${HOME}/code/site-repo` });
+  const li = outsideMenuItems(ctx(linked).c, out());
+  assert.deepEqual([li[1].disabled, li[1].detail], [true, "Already linked to ~/code/site-repo: change it in More › Link code folder…"]);
+  assert.equal(li[0].disabled, false, "adopting it is still fine");
 });
 
 test("sessionsFooter counts this workspace's app threads, is off with the reason when Sessions is hidden", () => {

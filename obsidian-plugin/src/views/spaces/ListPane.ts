@@ -1,11 +1,13 @@
-// ListPane.ts — the left pane (spaces-redesign D4): the search, + New (Code's New workspace sheet until PR 3), the
-// groups PINNED / ACTIVE / STALLED / IDLE as disclosure buttons, rows as options with aria-selected, the hidden toggle
-// and the "Outside workspaces (n)" footer; and the outside list it opens in the centre (D21, the PR 2 stand-in: read
-// only, no move command).
+// ListPane.ts — the left pane (spaces-redesign D4): the search, + New (PR 3: the New space dialog, D15), the groups
+// PINNED / ACTIVE / STALLED / IDLE as disclosure buttons, rows as options with aria-selected, the hidden toggle and the
+// "Outside workspaces (n)" footer; and the outside list it opens in the centre (D21), where each folder's Adopt…
+// popover offers Adopt into <name> (an alias: nothing moves, D16), Link as code folder of <name> (D24) and Hide, and
+// the folders hidden so far can be unhidden.
 import { groupOf, hiddenToggleText, spaceList, spaceRow } from "../../data/spacesModel";
 import type { WorkspaceEntry } from "../../data/snapshot";
 import { outsideGroups, sessionsTitle, type OutsideListRow } from "../../data/hostSessions";
-import { arrowKeys, button, hostDot, keepPlace, statusDot, type SpacesCtx } from "./ui";
+import { PATH_RE } from "../../data/spacesModel";
+import { arrowKeys, button, hostDot, keepPlace, outsideMenuItems, statusDot, type SpacesCtx } from "./ui";
 
 /** The outside rows drawn per group before "Show all n": the runtime lists every start folder, windowed or not. */
 export const OUTSIDE_SHOWN = 100;
@@ -17,11 +19,11 @@ export function renderList(host: HTMLElement, ctx: SpacesCtx): void {
   const visible = ctx.entries.filter((e) => !e.hidden).length;
   top.createSpan({ cls: "aos-spc-count", text: String(visible), attr: { title: `${visible} workspace${visible === 1 ? "" : "s"}` } });
   top.createSpan({ cls: "aos-spc-grow" });
-  const nb = button(top, "aos-spc-btn aos-spc-newbtn", null, { key: "new", title: "New workspace: opens Code's New workspace sheet (⇧⌘N)" });
+  const nb = button(top, "aos-spc-btn aos-spc-newbtn", null, { key: "new", title: "New space: a blank folder, a code repo or a clone from GitHub" });
   const newIco = nb.createSpan({ cls: "aos-spc-ico" });
   ctx.setIcon(newIco, "plus");
   nb.createSpan({ text: "New" });
-  nb.addEventListener("click", () => ctx.act.newWorkspace());
+  nb.addEventListener("click", () => ctx.act.newSpace());
 
   const search = head.createEl("label", { cls: "aos-spc-search" });
   const searchIco = search.createSpan({ cls: "aos-spc-ico aos-spc-searchico" });
@@ -136,9 +138,11 @@ function renderFooter(host: HTMLElement, ctx: SpacesCtx): void {
   const hs = ctx.snapshot?.hostSessions;
   const out = outsideGroups(hs?.outsideWorkspaces, ctx.now, ctx.home, hs?.windowDays ?? null);
   const hidden = ctx.entries.filter((e) => e.hidden).length;
-  if (!out.total && !hidden) return;
+  // Hidden outside folders keep the way in to the list, where they can be unhidden (D16).
+  const outside = out.total || ctx.hiddenOutside.length;
+  if (!outside && !hidden) return;
   const foot = host.createDiv({ cls: "aos-spc-listfoot" });
-  if (out.total) {
+  if (outside) {
     const on = ctx.ui.centre === "outside";
     const b = button(foot, `aos-spc-outbtn${on ? " is-on" : ""}`, null, {
       key: "outside", title: "Folders where Claude Code or Codex sessions ran outside every workspace", attr: { "aria-pressed": String(on) },
@@ -162,7 +166,7 @@ function renderFooter(host: HTMLElement, ctx: SpacesCtx): void {
   }
 }
 
-// ── the outside list, in the centre (D21; PR 2 reads it, PR 3 adds Adopt and Hide) ──
+// ── the outside list, in the centre (D21; PR 3: Adopt, Link as code folder and Hide, D16, D24) ──
 
 export function renderOutside(host: HTMLElement, ctx: SpacesCtx): void {
   const hs = ctx.snapshot?.hostSessions;
@@ -179,12 +183,31 @@ export function renderOutside(host: HTMLElement, ctx: SpacesCtx): void {
     cls: "aos-spc-lede",
     text: `Folders where Claude Code or Codex sessions ran${days ? ` in the last ${days} days` : ""}, outside every workspace. Nothing here moves a folder.`,
   });
+  head.createDiv({ cls: "aos-spc-ledenote", text: "Adopt… records a folder as an alias of a workspace, so its sessions count there, or links it as a workspace's code folder; Hide takes it off this list." });
   const body = host.createDiv({ cls: "aos-spc-body" });
-  if (!out.total) { body.createDiv({ cls: "aos-spc-empty", text: "No sessions ran outside a workspace." }); return; }
+  if (!out.total) body.createDiv({ cls: "aos-spc-empty", text: "No sessions ran outside a workspace." });
   // A table only where it has rows: with every folder gone, a line says so above VANISHED instead of a bare header.
-  if (out.present.length) outsideTable(body, ctx, out.present, null);
+  else if (out.present.length) outsideTable(body, ctx, out.present, null);
   else body.createEl("p", { cls: "aos-spc-emptyval", text: "None of these folders is still on disk." });
   if (out.vanished.length) outsideTable(body, ctx, out.vanished, `Vanished (${out.vanished.length})`);
+  if (ctx.hiddenOutside.length) hiddenList(body, ctx);
+}
+
+/** The folders hidden so far (brain/_index/workspaces-hidden.json), each with Unhide (D16, D21). */
+function hiddenList(parent: HTMLElement, ctx: SpacesCtx): void {
+  const sec = parent.createEl("section", { cls: "aos-spc-hiddenlist", attr: { "aria-label": "Hidden folders" } });
+  sec.createEl("h3", { cls: "aos-spc-h3", text: `HIDDEN (${ctx.hiddenOutside.length})` });
+  const ul = sec.createEl("ul", { cls: "aos-spc-hidrows" });
+  for (const h of ctx.hiddenOutside) {
+    const li = ul.createEl("li", { cls: "aos-spc-hidrow" });
+    li.createSpan({ cls: "aos-spc-mono aos-spc-outname", text: h.label, attr: { title: h.stored } });
+    li.createSpan({ cls: "aos-spc-grow" });
+    const ok = PATH_RE.test(h.stored);
+    const b = button(li, "aos-spc-btn aos-spc-small", "Unhide", {
+      key: `outside-unhide:${h.stored}`, disabled: !ok, title: ok ? "Show it in this list again" : "Not a path Spaces can pass to aos: edit brain/_index/workspaces-hidden.json",
+    });
+    b.addEventListener("click", () => ctx.act.unhide(h.stored));
+  }
 }
 
 function outsideTable(parent: HTMLElement, ctx: SpacesCtx, rows: OutsideListRow[], heading: string | null): void {
@@ -193,6 +216,7 @@ function outsideTable(parent: HTMLElement, ctx: SpacesCtx, rows: OutsideListRow[
   const table = sec.createEl("table", { cls: "aos-spc-outtable" });
   const hr = table.createEl("thead").createEl("tr");
   for (const h of ["Folder", "Sessions", "Last active", "Matches", "Git"]) hr.createEl("th", { text: h, attr: { scope: "col" } });
+  hr.createEl("th", { cls: "aos-spc-outacts", attr: { scope: "col" } }).createSpan({ cls: "aos-spc-sr", text: "Actions" });
   const tb = table.createEl("tbody");
   // The runtime lists every distinct start folder (collectors/hostSessions.js): draw the first OUTSIDE_SHOWN of a group
   // until "Show all n" asks for the rest, so a long-lived machine does not rebuild hundreds of rows on every redraw.
@@ -215,6 +239,18 @@ function outsideTable(parent: HTMLElement, ctx: SpacesCtx, rows: OutsideListRow[
     } else m.createSpan({ cls: "aos-spc-dim", text: r.match ?? "—" });
     const g = tr.createEl("td", { cls: "aos-spc-mono aos-spc-outgit", text: r.git ?? "—", attr: r.gitRoot ? { title: r.gitRoot } : {} });
     if (!r.git) g.addClass("aos-spc-dim");
+    // The adopt popover (D16, D24): Adopt into, Link as code folder, Hide. Nothing runs until an item is chosen.
+    const act = tr.createEl("td", { cls: "aos-spc-outacts" });
+    const items = outsideMenuItems(ctx, r);
+    const label = `Adopt, link or hide ${r.label}`;
+    const ab = button(act, `aos-spc-btn aos-spc-small aos-spc-adoptbtn${match ? " aos-spc-primary" : ""}`, null, {
+      key: `outside-act:${r.cwd}`, label, title: match ? `Adopt into ${match.label || match.name}, link it, or hide it` : "Adopt into a workspace, link it as a code folder, or hide it",
+      attr: { "aria-haspopup": "menu", "aria-expanded": "false" },
+    });
+    ab.createSpan({ text: "Adopt…" });
+    const chev = ab.createSpan({ cls: "aos-spc-chev" });
+    ctx.setIcon(chev, "chevron-down");
+    ab.addEventListener("click", () => ctx.act.menu(ab, items, label));
   }
   if (shown.length < rows.length) {
     const more = button(sec, "aos-spc-linkbtn aos-spc-more", `Show all ${rows.length}`, { key: `outside-more:${heading ?? ""}`, title: `${rows.length - shown.length} more folders` });

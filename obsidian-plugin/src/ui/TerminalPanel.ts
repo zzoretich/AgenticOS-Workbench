@@ -462,8 +462,8 @@ export class TerminalPanel {
     if (place.kind === "workspace" && place.workspace) {
       const name = place.workspace;
       item(place.linked ? "Change the code folder…" : "Link a code folder…", () => {
-        new LinkRepoModal(this.plugin.app, name, this.plugin.termLauncher.world().links[name] ?? null, (typed) => {
-          const abs = this.plugin.termLauncher.linkRepo(name, typed);
+        new LinkRepoModal(this.plugin.app, name, this.plugin.termLauncher.world().links[name] ?? null, async (typed) => {
+          const abs = await this.plugin.termLauncher.linkRepo(name, typed);
           this.worldCache = null;
           new Notice(abs ? `${name} is linked to ${abs}` : `${name} is no longer linked`);
           this.renderTabs();

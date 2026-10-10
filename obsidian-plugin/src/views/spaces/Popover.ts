@@ -24,14 +24,23 @@ export function openPopover(anchor: HTMLElement, container: HTMLElement, items: 
   const el = container.createDiv({ cls: "aos-spc-pop", attr: { role: "menu", id, "aria-label": o.label } });
   const rows: HTMLElement[] = [];
   for (const it of items) {
+    if (it.sep && rows.length) el.createDiv({ cls: "aos-spc-popsep", attr: { role: "separator" } });
+    // A choice of one (the status menu, PR 3) is a menuitemradio whose check reads as text too.
+    const radio = it.checked !== undefined;
     const b = el.createEl("button", {
-      cls: `aos-spc-popitem${it.disabled ? " is-off" : ""}`,
-      attr: { type: "button", role: "menuitem", tabindex: "-1", "data-key": it.key, ...(it.disabled ? { "aria-disabled": "true" } : {}) },
+      cls: `aos-spc-popitem${it.disabled ? " is-off" : ""}${it.checked ? " is-checked" : ""}`,
+      attr: {
+        type: "button", role: radio ? "menuitemradio" : "menuitem", tabindex: "-1", "data-key": it.key,
+        ...(radio ? { "aria-checked": String(!!it.checked) } : {}), ...(it.disabled ? { "aria-disabled": "true" } : {}),
+      },
     });
-    b.createSpan({ cls: "aos-spc-poplabel", text: it.label });
+    const label = b.createSpan({ cls: "aos-spc-poplabel", text: it.label });
+    if (it.checked) label.createSpan({ cls: "aos-spc-popcheck", text: " ✓", attr: { "aria-hidden": "true" } });
     if (it.detail) b.createSpan({ cls: "aos-spc-popdetail", text: it.detail });
     b.addEventListener("click", (e) => {
       e.preventDefault();
+      // The checked status closes the menu and changes nothing.
+      if (it.checked && !it.run) { handle.close(true, "item"); return; }
       if (it.disabled || !it.run) return;
       // The focus goes back to the opener first; an action that opens a modal or another tab moves it on itself.
       handle.close(true, "item");
