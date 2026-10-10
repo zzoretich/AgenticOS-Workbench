@@ -68,8 +68,9 @@ outside changes, the conflict strip, a deleted note, save on close, read-only ru
 guard (`notes-writes`), Edit disabled with Notes off (`sidebar-omni-notes`), the tray popover with the SidebarHUD
 (`shell`), a full-tour no-error check, user content unchanged
 after the tour, note view and link following, ⌘K results and dispatch, the sidebar HUD's tiles and ticker, inspector
-pop-outs into the split pane, external links routed to the OS, and one `test.fixme` documenting a compat gap (⧉ copy,
-see below).
+pop-outs into the split pane, external links routed to the OS, the harness's own close(), which returns only once what
+the app left running has ended and kills, with its children, what outlives the grace (`harness`), and one `test.fixme`
+documenting a compat gap (⧉ copy, see below).
 
 ## Install paths
 
