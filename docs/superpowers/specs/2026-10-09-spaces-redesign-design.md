@@ -82,7 +82,7 @@ The user answered A1 (D7) and A2 (D11) as recommended (A1 c, A2 a) and A3 (D35) 
 | Claude | `entrypoint: cli` | interactive | true |
 | Claude | `sdk-*` | headless | false: "Headless run: open it in Sessions or start a new session" |
 | Codex | `source` `cli`, `vscode` | interactive | true |
-| Codex | `source` `exec` | headless | false until a PR 1 check shows it resumes |
+| Codex | `source` `exec` (and `mcp`) | headless | true (PR 1 check: `codex resume <id>` takes any recorded session; `--include-non-interactive` filters only the picker and `--last`, codex-cli 0.162.0) |
 | Codex | `archived_sessions/` | its source's | false: "Archived in Codex" |
 | either | team seat | team | false |
 | either | Sessions thread | app | opens it in Sessions |
@@ -108,20 +108,20 @@ The user answered A1 (D7) and A2 (D11) as recommended (A1 c, A2 a) and A3 (D35) 
 3. **Model calls:** the draft and ↻ per file, through `provider.js` per host (matrix).
 4. **Session data:** runtime only, through the §4 seams; the HUD reads `snapshot.json`.
 5. **MCP:** none.
-6. **Degradation:** D31–D34 and the matrix: one 30-day window (Claude prunes at about 30 days, unverified); PR 1 adds Codex ids to the team ledger; a Codex resume keeps its own sandbox.
+6. **Degradation:** D31–D34 and the matrix: one 30-day window (Claude prunes at about 30 days, unverified); PR 1 adds Codex ids to the team ledger; a Codex resume keeps its own sandbox; the files credit sees a Codex thread_spawn subagent's edits (folded into its thread) but not a Claude subagent's (`<id>/subagents/` is never read); a host that is off still has its local sessions counted (Resume off).
 7. **Docs:** README, `docs/install.md` (Hosts paragraph, D34), `vault-template/AGENTICOS.md`, app-smoke per host and `## Codex host`, COVERAGE.
 
 | Mode | How the user invokes it | What runs | What they see if it can't |
 |---|---|---|---|
 | Claude Code only | The Spaces tab; `aos workspace …` in a session or terminal; `/todo`, `/propose`, `/project` inside a workspace | Claude transcripts; Resume types `claude --resume <id>`; Draft: Ollama, else Claude (`claude.model`, capped) | Codex rows: Resume off, "Codex is off on this machine: run aos init --host codex"; no New Codex session; headless rows: no Resume, with the reason; `none` or cap: a labelled heuristic |
-| Codex only (plugin · direct) | The Spaces tab; `aos workspace …`; `$agenticos:todo`, `$agenticos:propose`, `$agenticos:project` (`$todo`… direct) | Codex rollouts and `session_index.jsonl`; Resume types `codex resume <id>`, as does the end bar; Draft: Ollama, a logged-in `claude`, else Codex (low effort, daily cap), labelled by who answered | Claude rows: Resume off, "Claude Code is off on this machine: run aos init --host claude"; no New Claude Code session; `exec` and archived rows: no Resume, with the reason; vault-root credit by edits only; writes outside the cwd may ask for sandbox approval (D34); `none`: the heuristic |
+| Codex only (plugin · direct) | The Spaces tab; `aos workspace …`; `$agenticos:todo`, `$agenticos:propose`, `$agenticos:project` (`$todo`… direct) | Codex rollouts and `session_index.jsonl`; Resume types `codex resume <id>`, as does the end bar; Draft: Ollama, a logged-in `claude`, else Codex (low effort, daily cap), labelled by who answered | Claude rows: Resume off, "Claude Code is off on this machine: run aos init --host claude"; no New Claude Code session; archived rows: no Resume, with the reason; vault-root credit by edits only; writes outside the cwd may ask for sandbox approval (D34); `none`: the heuristic |
 | Both | Both forms | Both formats; Resume uses the thread's host; the same 30-day window; Draft `auto` | A host not logged in: its Resume off with the reason; the other host's New offered |
 
 Every differing cell is D31, D32 or D34; no parity gap widens.
 
 ## 6. Security
 
-- **PR 1:** the map and regen rules (Spaces, Pulse) take `WS`/`REL` instead of `NAME`, checked again in the runtime (today `map-workspace.js ..` maps the vault root). Every git call runs `git -c core.fsmonitor=false -c log.showSignature=false -c core.untrackedCache=false --no-optional-locks` with `GIT_TERMINAL_PROMPT=0`, so no repo config can run a program.
+- **PR 1:** the map and regen rules (Spaces, Pulse) take `WS`/`REL` instead of `NAME`, checked again in the runtime (today `map-workspace.js ..` maps the vault root). Every git call runs `git -c core.fsmonitor=false -c log.showSignature=false -c core.untrackedCache=false --no-optional-locks` with `GIT_TERMINAL_PROMPT=0`; a read also turns off every filter driver defined below global and system scope (`--config-env`), passes `--no-ext-diff --no-textconv` to any diff, and sets `GIT_NO_LAZY_FETCH=1` and an empty `GIT_ALLOW_PROTOCOL`, so no read runs a program the repository's own config names (fsmonitor, gpg, filters, external diff, textconv, a lazy fetch's ssh). The Commit button's `add` and `commit` run the repository's hooks, filters and signing, as in a terminal (SECURITY.md).
 - **PR 3, the new power:** the §4 verbs (one model call for a draft) write only `workspaces/**` and `brain/_index/**`, plus one exception: the `status/` tag line of a project note D27 links by `workspace:` or exact slug, in `brain/memory/projects/`, if it exists and is no symlink. Folders move only between `workspaces/` and `workspaces/_archive/`; nothing is deleted. Resume and Clone are typed into a visible terminal (SECURITY.md:72).
 - **Validation in the runtime:** names resolve to direct children of `workspaces/` (`_archive/` for restore); new names are free, not reserved and not `scratch`; paths are absolute or `~/`, outside the vault, not `/` or home itself, neither inside nor containing a host config folder, and (adopt, hide) equal a current outside row's cwd or (unhide) a stored hidden entry; `set` checks types, lengths and control characters; `--expect` refuses a changed file; writes are atomic and follow no symlink.
 - **Refusals:** reserved names and `scratch`; a running team item or app turn; linked git worktrees; restore onto an existing name; moves under `AOS_HEADLESS=1`. Archive, Restore, Rename and Adopt ask in a `ConfirmModal`; Cancel spawns nothing.

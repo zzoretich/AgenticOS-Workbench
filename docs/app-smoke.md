@@ -148,8 +148,9 @@ Run before tagging a release, in the UniDeX app on a vault created by `aos init`
 ## Spaces / Memory / Runs
 
 - [ ] Spaces lists workspaces from `snapshot.json`; insight footer says `local` when no model tag is present.
-- [ ] Spaces rows carry a sessions chip (`claude N · codex M · Nd ago`) for every workspace either CLI has worked in since the last scan; a workspace with no sessions shows no chip.
-- [ ] An "outside workspaces" footer under the list names each working directory sessions ran in elsewhere (`~`-shortened, newest first, at most eight); hovering shows the `aos workspace adopt` command. It disappears once those folders are adopted and the vault rescanned.
+- [ ] **Claude Code:** Spaces rows carry a sessions chip (`claude N · codex M · Nd ago`, sessions of the last 30 days) for every workspace either CLI has worked in; a workspace whose sessions are all older than 30 days shows `none in 30d · Nd ago`, and one with no session at all shows no chip. Counts include the local sessions of a host that is turned off. A Claude Code session started at the vault root that touches files in `workspaces/x` (three edits or reads or more, more than any other workspace) raises x's `claude` count after the next scan (the session's end, or `/scan`); what a subagent of that session edits does not count.
+- [ ] **Codex:** a Codex session started in a checkout under `workspaces/.worktrees/<ws>/` counts for `<ws>`: its `codex` count rises after the next scan, and the checkout is not listed outside workspaces.
+- [ ] An "outside workspaces" footer under the list names each working directory sessions ran in elsewhere (`~`-shortened, newest first, at most eight); hovering shows the `aos workspace adopt` command. It disappears once those folders are adopted and the vault rescanned. Temp, scratch and job folders (anything under the OS temp folder, `/tmp` or `/var/folders`), home itself, each host's config folder and the vault outside `workspaces/` are never listed.
 - [ ] Memory graph renders; daily notes under the configured `dailyNote.layout` classify as `session` nodes.
 - [ ] Runs tab updates within a second of a new line appended to `agent-runs/runs.jsonl` (bus `runs-appended`).
 
