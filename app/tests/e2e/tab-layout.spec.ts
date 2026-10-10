@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { RAIL_ORDER, content, openTab, useApp } from "./harness";
+import { RAIL_ORDER, content, openTab, resizeHud, useApp } from "./harness";
 
 // Every tab draws into one content area. A tab must never leave its own layout on it for the next one: in 1.4.0 the Term
 // deck's classes (aos-term, aos-term-deck: a row) stayed after a visit to Term, and every tab after it was laid out in a
@@ -57,4 +57,48 @@ test("after a visit to Code, the tabs keep their layout: lists beside their read
   const teams = await box(win, ".aos-at-teams");
   const board = await box(win, ".aos-at-board");
   expect(teams.y + teams.height).toBeLessThanOrEqual(board.y + 1);
+});
+
+test("after a visit to Code, Spaces keeps its three panes side by side, and below 1100 px folds the right pane under the dossier (spaces-redesign D3)", async () => {
+  const h = app();
+  const { win } = h;
+  await openTab(win, "term");
+  await openTab(win, "spaces");
+  await expect(C().locator(".aos-spc-right .aos-spc-history")).toBeVisible();
+  const noSideScroll = () => C().evaluate((el) => el.scrollWidth <= el.clientWidth + 1);
+  // The list (≈260 px) · the dossier (flex) · the right pane (≈300 px), on one row under nothing.
+  const list = await box(win, ".aos-spc-list");
+  const centre = await box(win, ".aos-spc-centre");
+  const right = await box(win, ".aos-spc-right");
+  expect(list.x + list.width).toBeLessThanOrEqual(centre.x + 1);
+  expect(centre.x + centre.width).toBeLessThanOrEqual(right.x + 1);
+  expect(Math.abs(list.y - centre.y)).toBeLessThan(2);
+  expect(Math.abs(centre.y - right.y)).toBeLessThan(2);
+  expect(list.width).toBeGreaterThanOrEqual(240);
+  expect(list.width).toBeLessThanOrEqual(300);
+  expect(right.width).toBeGreaterThanOrEqual(260);
+  expect(right.width).toBeLessThanOrEqual(340);
+  expect(centre.width).toBeGreaterThan(right.width);
+  expect(await noSideScroll()).toBe(true);
+  // The dossier's actions sit on the left, not spread across the header.
+  const head = await box(win, ".aos-spc-head");
+  const acts = await box(win, ".aos-spc-actions");
+  expect(acts.x - head.x).toBeLessThan(40);
+  try {
+    // The window's narrowest (its minWidth, 960 px) is under 1100: HISTORY and LINKED move under the dossier, the list
+    // stays at the left. The 760 px step (the list above) is below what the app's window allows.
+    await resizeHud(h.app, { width: 960, height: 700 });
+    await expect.poll(async () => {
+      const c = await box(win, ".aos-spc-centre");
+      const r = await box(win, ".aos-spc-right");
+      return r.y >= c.y + c.height - 1 && Math.abs(r.x - c.x) < 2;
+    }).toBe(true);
+    const l = await box(win, ".aos-spc-list");
+    const c = await box(win, ".aos-spc-centre");
+    expect(l.x + l.width).toBeLessThanOrEqual(c.x + 1);
+    expect(await noSideScroll()).toBe(true);
+  } finally {
+    await resizeHud(h.app, { width: 1480, height: 920 });
+  }
+  await expect.poll(async () => (await box(win, ".aos-spc-right")).y - (await box(win, ".aos-spc-centre")).y).toBeLessThan(2);
 });

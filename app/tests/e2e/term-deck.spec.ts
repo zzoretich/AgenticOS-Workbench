@@ -8,18 +8,37 @@ const app = useApp();
 const C = () => content(app().win);
 const selected = () => app().win.evaluate(() => (window as unknown as { aosHost: { plugin: { terminalPool: { selectedId(): string | null } } } }).aosHost.plugin.terminalPool.selectedId());
 
-test("terminals group by place: a workspace's group above the vault's; the header names the place and the host (T1)", async () => {
+test("Spaces' Resume in Code types `claude --resume <id>` in the workspace's place; its group sits above the vault's, and the header names the place and the host (T1, spaces-redesign D7)", async () => {
   const { win } = app();
   expect(await command(win, "agentic-os:new-terminal-shell")).toBe(true);
   await openTab(win, "spaces");
-  await C().locator(".aos-ws-row", { hasText: "harbor-map" }).first().click();
-  await C().locator(".aos-ws-detail-head button", { hasText: "Claude Code here" }).click();
+  await C().locator('.aos-spc-row[data-workspace="harbor-map"]').click();
+  await expect(C().locator(".aos-spc-h1")).toHaveText("harbor-map");
+  const resume = C().locator(".aos-spc-split button.aos-spc-primary").first();
+  await expect(resume).toHaveText("Resume in Code");
+  await resume.click();
   await expect(win.locator(".aos-wb-railbtn[data-tab='term']")).toHaveClass(/is-active/);
+  // The fixture's claude stub echoes its arguments: the last thread's id, by --resume. D7's build check (Claude Code
+  // 2.1.296, 2026-10-10) found a thread started in another folder resumes from the workspace's, so it starts there.
+  await expect.poll(() => terminalText(win), { timeout: 10_000 }).toMatch(/\[fixture claude stub\] --resume c1a0de00-0000-4000-8000-000000000001/);
+  const s = await win.evaluate(() => {
+    const p = (window as unknown as { aosHost: { plugin: { terminalPool: { selectedId(): string | null; get(id: string): { cwd: string; meta: { host: string; origin: string | null; sessionId: string | null; place: { workspace?: string } | null } } | undefined } } } }).aosHost.plugin.terminalPool;
+    const t = p.get(p.selectedId() ?? "");
+    return t ? { cwd: t.cwd, host: t.meta.host, origin: t.meta.origin, sessionId: t.meta.sessionId, workspace: t.meta.place?.workspace ?? null } : null;
+  });
+  expect(s).toEqual({ cwd: FX.v("workspaces/harbor-map"), host: "claude", origin: "Spaces", sessionId: "c1a0de00-0000-4000-8000-000000000001", workspace: "harbor-map" });
   const groups = C().locator(".aos-tl-group");
   await expect(groups.first()).toHaveAttribute("data-group", "ws:harbor-map");
   await expect(C().locator(".aos-tl-group[data-group='vault']")).toHaveCount(1);
+  await expect(C().locator(".aos-tl-row.aos-term-tab-active .aos-tl-origin")).toHaveText("from Spaces");
   await expect(C().locator(".aos-term-head .aos-term-place")).toContainText("harbor-map");
   await expect(C().locator(".aos-term-head .aos-term-chip").first()).toContainText("Claude Code");
+  // The workspace's group links back to Spaces on it (D12): select only, nothing starts.
+  const count = await win.evaluate(() => (window as unknown as { aosHost: { plugin: { terminalPool: { list(): unknown[] } } } }).aosHost.plugin.terminalPool.list().length);
+  await C().locator(".aos-tl-group[data-group='ws:harbor-map'] .aos-tl-openws").click();
+  await expect(win.locator(".aos-wb-railbtn[data-tab='spaces']")).toHaveClass(/is-active/);
+  await expect(C().locator('.aos-spc-row[data-workspace="harbor-map"]')).toHaveAttribute("aria-selected", "true");
+  expect(await win.evaluate(() => (window as unknown as { aosHost: { plugin: { terminalPool: { list(): unknown[] } } } }).aosHost.plugin.terminalPool.list().length)).toBe(count);
 });
 
 test("an agent that ends shows Done, and Restart starts it again in the same place (T1)", async () => {
@@ -28,6 +47,9 @@ test("an agent that ends shows Done, and Restart starts it again in the same pla
   // The fixture's claude stub echoes and exits 0, so the exec'd agent ends at once.
   const row = C().locator(".aos-tl-row.aos-term-tab-active");
   await expect(row.locator(".aos-tl-end")).toHaveText("✓ Done", { timeout: 10_000 });
+  // A terminal that knows its conversation (here the thread Spaces resumed) offers Resume by that id, not the latest.
+  await expect(C().locator(".aos-term-endbar button")).toHaveText(["Restart", "Resume", "Open a shell here"]);
+  await expect(C().locator(".aos-term-endbar button", { hasText: /^Resume$/ })).toHaveAttribute("title", "Resume this conversation (c1a0de00…)");
   const before = await C().locator(".aos-tl-row").count();
   await C().locator(".aos-term-endbar button", { hasText: "Restart" }).click();
   await expect(C().locator(".aos-tl-row")).toHaveCount(before + 1);

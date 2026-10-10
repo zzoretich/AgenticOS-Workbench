@@ -292,10 +292,103 @@ test.describe("a Codex-only machine", () => {
     // Without the Sessions surface nothing runs here; sessions.spec's Codex-only machine runs a Codex turn.
     await expect(content(win).locator(".aos-ss-list .aos-ss-note")).toHaveText("Workspace sessions are unavailable: the Sessions surface is off.");
   });
+
+  test("Spaces: Resume follows the thread's host: a Claude Code thread's is off with how to turn it on, a Codex thread's types `codex resume` in ws:<name>; no New Claude Code session row (spaces-redesign D7, D31)", async () => {
+    const { win } = app();
+    await openTab(win, "spaces");
+    const C = content(win);
+    await C.locator('.aos-spc-row[data-workspace="harbor-map"]').click();
+    await expect(C.locator(".aos-spc-h1")).toHaveText("harbor-map");
+    const head = C.locator(".aos-spc-head");
+    const off = "Claude Code is off on this machine: run aos init --host claude";
+    // The last thread is Claude Code's: Resume in Code is off and says how to turn the host on (never the other host,
+    // which cannot read the transcript).
+    const go = head.locator(".aos-spc-split button.aos-spc-primary").first();
+    await expect(go).toHaveText("Resume in Code");
+    await expect(go).toBeDisabled();
+    await expect(go).toHaveAttribute("title", off);
+    await expect(C.locator(".aos-spc-pickval[data-row='last'] .aos-spc-why")).toHaveText(off);
+    // The menu lists only the hosts that are on: Codex's New row, no Claude Code one; Sessions is on (Codex is the
+    // provider), and a thread started in a terminal resumes in Code, not there (D32).
+    await head.locator("button.aos-spc-caret").click();
+    const pop = C.locator(".aos-spc-pop");
+    await expect(pop.locator(".aos-spc-poplabel")).toHaveText(["New Codex session", "Terminal here", "Open last thread in Sessions"]);
+    await expect(pop.locator(".aos-spc-popitem[data-key='new:codex']")).not.toHaveAttribute("aria-disabled", "true");
+    await expect(pop.locator(".aos-spc-popitem[data-key='sessions'] .aos-spc-popdetail")).toHaveText("Started in a terminal: resume it in Code");
+    await win.keyboard.press("Escape");
+    await expect(pop).toHaveCount(0);
+    // History: the Claude Code thread's Resume is off with the same words; a Codex thread's resumes in the workspace.
+    const hist = C.locator(".aos-spc-history");
+    const claudeRow = hist.locator(".aos-spc-hrow", { hasText: "Tide parser in the chart view" });
+    await expect(claudeRow.locator("button.aos-spc-hresume")).toBeDisabled();
+    await expect(claudeRow.locator(".aos-spc-why")).toHaveText(off);
+    const codexRow = hist.locator(".aos-spc-hrow", { hasText: "Sketch the depth contours layer for the chart view" });
+    const resume = codexRow.locator("button.aos-spc-hresume");
+    await expect(resume).toBeEnabled();
+    await expect(resume).toHaveAttribute("title", "Resumes in workspaces/harbor-map");
+    await resume.click();
+    await expect(rail(win, "term")).toHaveClass(/is-active/);
+    // D7 for Codex (codex-cli 0.162.0): `-C <folder>` names the terminal's folder, so Codex resumes there without asking
+    // which folder to use. The fixture's codex stub echoes what it was given.
+    const dir = FX.v("workspaces/harbor-map");
+    await expect.poll(() => terminalText(win), { timeout: 10_000 }).toContain(`[fixture codex stub] resume -C ${dir} 0199a1b2-0000-4000-8000-000000000001`);
+    const s = await win.evaluate(() => {
+      const p = (window as unknown as { aosHost: { plugin: { terminalPool: { selectedId(): string | null; get(id: string): { cwd: string; meta: { host: string; sessionId: string | null; place: { workspace?: string } | null } } | undefined } } } }).aosHost.plugin.terminalPool;
+      const t = p.get(p.selectedId() ?? "");
+      return t ? { cwd: t.cwd, host: t.meta.host, sessionId: t.meta.sessionId, workspace: t.meta.place?.workspace ?? null } : null;
+    });
+    expect(s).toEqual({ cwd: dir, host: "codex", sessionId: "0199a1b2-0000-4000-8000-000000000001", workspace: "harbor-map" });
+    // The active row sits under ws:harbor-map's head (TermList draws heads and rows as flat siblings): its nearest head.
+    expect(await win.evaluate(() => {
+      let n = document.querySelector(".aos-tl-row.aos-term-tab-active")?.previousElementSibling ?? null;
+      while (n && !n.matches(".aos-tl-group")) n = n.previousElementSibling;
+      return n?.getAttribute("data-group") ?? null;
+    })).toBe("ws:harbor-map");
+    // The stub echoes and exits, so the row ends: a terminal that knows its thread resumes that same thread by its id
+    // (not `codex resume --last`), with `-C <folder>` again (TM6, CX16).
+    const endbar = content(win).locator(".aos-term-endbar button");
+    await expect(endbar).toHaveText(["Restart", "Resume", "Open a shell here"], { timeout: 10_000 });
+    const again = content(win).locator(".aos-term-endbar button", { hasText: /^Resume$/ });
+    await expect(again).toHaveAttribute("title", "Resume this conversation (0199a1b2…)");
+    const line = `[fixture codex stub] resume -C ${dir} 0199a1b2-0000-4000-8000-000000000001`;
+    const times = async () => (await terminalText(win)).split(line).length - 1;
+    const was = await times();
+    await again.click();
+    await expect.poll(times, { timeout: 10_000 }).toBeGreaterThan(was);
+  });
 });
 
 test.describe("both hosts", () => {
-  const app = useApp({ prepare: () => editJson(agenticos, (j) => { j.hosts.claude.enabled = true; j.hosts.codex.enabled = true; }) });
+  // Both hosts on and ready: every host button is on.
+  const app = useApp({
+    prepare: () => {
+      editJson(agenticos, (j) => { j.hosts.claude.enabled = true; j.hosts.codex.enabled = true; });
+      editJson(FX.v("brain/_index/provider-state.json"), (j) => { j.codex = { ...(j.codex ?? {}), loggedIn: true, checkedAt: new Date().toISOString() }; });
+    },
+  });
+
+  test("Spaces: with both hosts ready the menu's New rows are both on, and every thread's Resume is on, in the workspace's place (spaces-redesign D7, D31)", async () => {
+    const { win } = app();
+    await openTab(win, "spaces");
+    const C = content(win);
+    await C.locator('.aos-spc-row[data-workspace="harbor-map"]').click();
+    await expect(C.locator(".aos-spc-h1")).toHaveText("harbor-map");
+    const head = C.locator(".aos-spc-head");
+    await expect(head.locator(".aos-spc-split button.aos-spc-primary").first()).toBeEnabled();
+    await head.locator("button.aos-spc-caret").click();
+    const pop = C.locator(".aos-spc-pop");
+    await expect(pop.locator(".aos-spc-poplabel")).toHaveText(["New Claude Code session", "New Codex session", "Terminal here", "Open last thread in Sessions"]);
+    for (const key of ["new:claude", "new:codex", "terminal"]) await expect(pop.locator(`.aos-spc-popitem[data-key='${key}']`)).not.toHaveAttribute("aria-disabled", "true");
+    await win.keyboard.press("Escape");
+    const rows = C.locator(".aos-spc-history .aos-spc-hrow");
+    const resume = rows.locator("button.aos-spc-hresume");
+    await expect(resume).toHaveCount(4);
+    for (const i of [0, 1, 2, 3]) await expect(resume.nth(i)).toBeEnabled();
+    await expect(C.locator(".aos-spc-history .aos-spc-why")).toHaveCount(0);
+    // A Codex thread resumes in the workspace's place like a Claude Code one (D7).
+    await expect(rows.filter({ hasText: "Sketch the depth contours layer for the chart view" }).locator("button.aos-spc-hresume")).toHaveAttribute("title", "Resumes in workspaces/harbor-map");
+    await expect(resume.nth(0)).toHaveAttribute("title", "Resumes in workspaces/harbor-map");
+  });
 
   test("Notifications: one ask button per host", async () => {
     const { win } = app();
@@ -317,6 +410,42 @@ test.describe("both hosts", () => {
     await expect(content(win).locator(".aos-rt-count")).not.toHaveText("loading…");
     await expect(content(win).locator(".aos-st-row")).not.toHaveCount(0);
     await expect(content(win).locator(".aos-st-row.is-dim")).toHaveCount(0);
+  });
+});
+
+test.describe("both hosts, Codex not logged in", () => {
+  const app = useApp({
+    prepare: () => {
+      editJson(agenticos, (j) => { j.hosts.claude.enabled = true; j.hosts.codex.enabled = true; });
+      // Codex is on but not logged in on this machine (the provider probe's cache): its launches are off with why.
+      editJson(FX.v("brain/_index/provider-state.json"), (j) => { j.codex = { loggedIn: false, checkedAt: new Date().toISOString() }; });
+    },
+  });
+
+  test("Spaces: the menu offers both hosts, the one not logged in off with why; its threads' Resume is off too, the other host's on (spaces-redesign D31)", async () => {
+    const { win } = app();
+    await openTab(win, "spaces");
+    const C = content(win);
+    await C.locator('.aos-spc-row[data-workspace="harbor-map"]').click();
+    await expect(C.locator(".aos-spc-h1")).toHaveText("harbor-map");
+    const head = C.locator(".aos-spc-head");
+    await expect(head.locator(".aos-spc-split button.aos-spc-primary").first()).toBeEnabled();   // its last thread is Claude Code's
+    await head.locator("button.aos-spc-caret").click();
+    const pop = C.locator(".aos-spc-pop");
+    await expect(pop.locator(".aos-spc-poplabel")).toHaveText(["New Claude Code session", "New Codex session", "Terminal here", "Open last thread in Sessions"]);
+    await expect(pop.locator(".aos-spc-popitem[data-key='new:claude']")).not.toHaveAttribute("aria-disabled", "true");
+    await expect(pop.locator(".aos-spc-popitem[data-key='new:codex']")).toHaveAttribute("aria-disabled", "true");
+    await expect(pop.locator(".aos-spc-popitem[data-key='new:codex'] .aos-spc-popdetail")).toHaveText("Codex is not logged in");
+    await win.keyboard.press("Escape");
+    const rows = C.locator(".aos-spc-history .aos-spc-hrow");
+    await expect(rows.locator("button.aos-spc-hresume")).toHaveCount(4);
+    await expect(rows.nth(0).locator("button.aos-spc-hresume")).toBeEnabled();   // Claude Code's
+    for (const i of [1, 2, 3]) {
+      await expect(rows.nth(i).locator("button.aos-spc-hresume")).toBeDisabled();
+      await expect(rows.nth(i).locator("button.aos-spc-hresume")).toHaveAttribute("title", "Codex is not logged in");
+    }
+    // Said once, under the first row it turns off.
+    await expect(C.locator(".aos-spc-history .aos-spc-why")).toHaveText(["Codex is not logged in"]);
   });
 });
 
