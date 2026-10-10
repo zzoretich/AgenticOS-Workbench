@@ -1,6 +1,6 @@
 // termGroups.ts — the Term deck's list (spec 2026-10-08-term-agent-deck T1). Pure: terminals grouped by where they run,
 // each group in order of the last launch there (as Sessions orders its workspaces), with the vault, home and other
-// folders last; each row's end state; and the filter.
+// folders last; each row's end state; the filter; and the scope another tab opens Code with (spaces-redesign D12).
 import type { Place, TermHost } from "./terminalLaunch";
 
 export interface TermRowInput {
@@ -26,6 +26,15 @@ export function groupKey(p: Place): string {
   return `dir:${p.dir}`;
 }
 
+/**
+ * Code scoped to one place (spaces-redesign D12): `reveal({workspace})` from Spaces shows only that workspace's group,
+ * matched by its key and never by text (a filter for "site" would also match "site-repo"). `place` is the workspace's
+ * own place, which the group's + starts in.
+ */
+export interface TermScope { key: string; label: string; place: Place }
+
+export function scopeOf(place: Place): TermScope { return { key: groupKey(place), label: place.label, place }; }
+
 /** How a row ended: still running, Done (exit 0), or Exited n. */
 export function rowEnd(r: Pick<TermRowInput, "exited" | "exitCode">): { end: RowEnd; endText: string | null } {
   if (!r.exited) return { end: "running", endText: null };
@@ -34,17 +43,24 @@ export function rowEnd(r: Pick<TermRowInput, "exited" | "exitCode">): { end: Row
 
 const LAST: Record<string, number> = { vault: 1, home: 2, other: 3 };
 
-/** The groups: workspaces and Scratch by their newest launch, then the vault, home and other folders; rows newest first. */
-export function groupTerminals(rows: TermRowInput[], filter = ""): TermGroup[] {
+/**
+ * The groups: workspaces and Scratch by their newest launch, then the vault, home and other folders; rows newest first.
+ * With a scope, only its group: empty (so its + and Open workspace still show) when nothing runs there yet and no
+ * filter is typed.
+ */
+export function groupTerminals(rows: TermRowInput[], filter = "", scope: TermScope | null = null): TermGroup[] {
   const q = filter.trim().toLowerCase();
   const by = new Map<string, TermGroup>();
   for (const r of rows) {
-    if (q && !`${r.title}\n${r.place.label}\n${r.origin ?? ""}`.toLowerCase().includes(q)) continue;
     const key = groupKey(r.place);
-    const g = by.get(key) ?? { key, label: r.place.label, kind: r.place.kind, place: r.place, rows: [] };
+    if (scope && key !== scope.key) continue;
+    if (q && !`${r.title}\n${r.place.label}\n${r.origin ?? ""}`.toLowerCase().includes(q)) continue;
+    const place = scope ? scope.place : r.place;
+    const g = by.get(key) ?? { key, label: place.label, kind: place.kind, place, rows: [] };
     g.rows.push({ ...r, ...rowEnd(r) });
     by.set(key, g);
   }
+  if (scope && !by.size && !q) by.set(scope.key, { key: scope.key, label: scope.label, kind: scope.place.kind, place: scope.place, rows: [] });
   const newest = (g: TermGroup) => Math.max(...g.rows.map((r) => r.startedAt));
   for (const g of by.values()) g.rows.sort((a, b) => b.startedAt - a.startedAt);
   return [...by.values()].sort((a, b) => {

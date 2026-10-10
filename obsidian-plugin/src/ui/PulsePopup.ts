@@ -177,7 +177,10 @@ export class PulsePopup extends Modal {
       case "workspaces": {
         const l = list();
         for (const w of visibleWorkspaces(m.snapshot?.workspaces).sort((a, b) => String(b.lastEvent?.iso ?? "").localeCompare(String(a.lastEvent?.iso ?? "")))) {
-          this.row(l, { tone: w.status === "active" ? "ok" : "off", title: w.name, meta: [w.lastEvent?.iso ? formatRelative(w.lastEvent.iso) : null, w.next?.text ? `next: ${w.next.text}` : null, w.summary].filter(Boolean).join(" · "), tag: w.status ?? undefined, acts: [{ label: "Open →", jump: true, run: () => openTab(ctx, "spaces") }] });
+          // A row opens Spaces on its workspace (spaces-redesign D12); live as the tile says it (D26).
+          const live = this.tab.isLive(w.name);
+          const open = (): void => { ctx.close(); if (!ctx.view.open({ tab: "spaces", workspace: w.name })) ctx.view.setTab("spaces"); };
+          this.row(l, { tone: live ? "info" : w.status === "active" ? "ok" : "off", title: w.name, meta: [live ? "live now" : null, w.lastEvent?.iso ? formatRelative(w.lastEvent.iso) : null, w.next?.text ? `next: ${w.next.text}` : null, w.summary].filter(Boolean).join(" · "), tag: w.status ?? undefined, acts: [{ label: "Open →", jump: true, run: open }] });
         }
         return;
       }

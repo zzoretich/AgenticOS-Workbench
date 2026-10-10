@@ -462,6 +462,21 @@ export async function resizeHud(app: ElectronApplication, size: { width: number;
   await app.evaluate(({ BrowserWindow }, s) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().startsWith("app://hud/"))?.setContentSize(s.width, s.height), size);
 }
 
+/**
+ * Lays the page out at `size` whatever the screen, and returns the undo. Electron keeps a window within its screen
+ * (setContentSize clamps unless the window was made larger-than-screen), and CI's macOS runners have a 1024 px one, so
+ * launchApp's 1480 × 920 is 1024 wide there: a test that needs a layout wider than the screen emulates the viewport.
+ */
+export async function emulateViewport(win: Page, size: { width: number; height: number }): Promise<() => Promise<void>> {
+  const cdp = await win.context().newCDPSession(win);
+  await cdp.send("Emulation.setDeviceMetricsOverride", { width: size.width, height: size.height, deviceScaleFactor: 0, mobile: false });
+  await expect.poll(() => win.evaluate(() => window.innerWidth)).toBe(size.width);
+  return async () => {
+    await cdp.send("Emulation.clearDeviceMetricsOverride");
+    await cdp.detach();
+  };
+}
+
 export async function openTab(win: Page, id: string): Promise<void> {
   await rail(win, id).click();
   await expect(rail(win, id)).toHaveClass(/is-active/);

@@ -331,6 +331,23 @@ export function quickHost(remembered: TermHost | null, choices: TermHostChoice[]
 
 // ── the launch line (T10, T11) ──
 
+/**
+ * spaces-redesign D7 for Codex, checked on 2026-10-10 against codex-cli 0.162.0: `codex resume <id>` takes any
+ * recorded session by UUID (exec included), and when the terminal's folder differs from the session's recorded cwd the
+ * TUI asks which folder to use, unless `tui.resume_cwd` is set (codex-rs/tui/src/session_resume.rs). An explicit
+ * `-C <dir>` (`--cd`, an option of `codex resume`) makes `effective_resume_cwd_mode` answer "current", so the thread
+ * resumes in <dir> with no question (codex-rs/tui/src/lib.rs `resolve_startup_resume_or_fork_cwd`, which passes
+ * `cli.cwd`; its test `startup_resume_and_fork_use_configured_or_explicit_cwd` pins that an explicit cwd wins even over
+ * `resume_cwd = "session"`). So a resume by id of a Codex thread types `codex resume -C <cwd> <id>` (launchArgs, with
+ * `LaunchSpec.cwd`; a Spaces resume passes `ResumeTarget.cwd`); `-c tui.resume_cwd=current` would do the same from the
+ * terminal's own folder. Nothing here started a model session.
+ */
+export const CODEX_RESUME_CD = Object.freeze({
+  flag: "-C",
+  checked: "2026-10-10",
+  version: "codex-cli 0.162.0",
+});
+
 export interface LaunchSpec {
   host: "claude" | "codex";
   /** The recorded absolute binary, or null for the bare name. */
@@ -338,10 +355,18 @@ export interface LaunchSpec {
   /** A model id, or null for the host's own default. */
   model: string | null;
   access: TermAccess;
-  /** Claude: the id the deck gives a new conversation, so it can be resumed exactly. */
+  /** Claude: the id the deck gives a new conversation (`--session-id`), so it can be resumed exactly. */
   sessionId?: string | null;
-  /** Continue a conversation instead of starting one: by id (Claude), or the latest one (Claude --continue, Codex). */
+  /** Continue a conversation instead of starting one: by id (either host), or the latest one (Claude --continue,
+   *  `codex resume --last`). */
   resume?: { id: string } | "last" | null;
+  /**
+   * The folder the terminal starts in. A Codex resume by id names it with `-C`: Codex otherwise asks which folder to use
+   * when the thread was recorded in another one, and an explicit `--cd` answers that question with this folder
+   * (spaces-redesign D7; codex-cli 0.162.0, codex-rs/tui/src/session_resume.rs `effective_resume_cwd_mode`). Claude Code
+   * needs no flag: `claude --resume <id>` finds a thread started in another folder (D7's build check, 2026-10-10).
+   */
+  cwd?: string | null;
   /** Make the folder its own repo first (T7); a folder that already has .git is left alone. */
   gitInit?: boolean;
   /** `NAME='value' ` prefixes for a non-default config folder (teams.ts envPrefix). */
@@ -361,17 +386,45 @@ const CODEX_ACCESS: Record<TermAccess, string[]> = {
   run: ["-s", "workspace-write", "-a", "on-request"],
 };
 
-/** The agent's words after its binary, unquoted (the model and the id are the only free values). */
+/**
+ * The ids a launch carries (spaces-redesign D7). `fresh`: the id the deck gives a new Claude Code conversation
+ * (`--session-id`). `known`: the id the terminal keeps so its end bar resumes this conversation by id: the fresh one,
+ * or the thread a resume by id names, on either host. A shell, a new Codex session (Codex takes no id up front) and a
+ * resume of the latest conversation know none.
+ */
+export function launchIds(host: TermHost, resume: LaunchSpec["resume"], newId: () => string): { fresh: string | null; known: string | null } {
+  if (host === "shell") return { fresh: null, known: null };
+  if (resume && resume !== "last") return { fresh: null, known: resume.id };
+  const fresh = host === "claude" && !resume ? newId() : null;
+  return { fresh, known: fresh };
+}
+
+/**
+ * A free value on the agent's line (a model, an id, a folder): one that starts with `-` would read as a flag, so the
+ * line is refused rather than typed (spaces-redesign D7, spec §6).
+ */
+function free(what: string, v: string): string {
+  if (v.startsWith("-")) throw new Error(`Refused a ${what} that starts with "-": ${JSON.stringify(v.slice(0, 40))}`);
+  return v;
+}
+
+/** The agent's words after its binary, unquoted (the model, the ids and the folder are the only free values). Throws
+ *  when a free value starts with `-`. */
 export function launchArgs(s: LaunchSpec): string[] {
+  const model = s.model ? free("model", s.model) : null;
+  const resume = s.resume && s.resume !== "last" ? { id: free("session id", s.resume.id) } : s.resume ?? null;
   if (s.host === "claude") {
-    const tail = s.resume === "last" ? ["--continue"]
-      : s.resume ? ["--resume", s.resume.id]
-      : s.sessionId ? ["--session-id", s.sessionId] : [];
-    return [...(s.model ? ["--model", s.model] : []), ...CLAUDE_ACCESS[s.access], ...tail];
+    const tail = resume === "last" ? ["--continue"]
+      : resume ? ["--resume", resume.id]
+      : s.sessionId ? ["--session-id", free("session id", s.sessionId)] : [];
+    return [...(model ? ["--model", model] : []), ...CLAUDE_ACCESS[s.access], ...tail];
   }
-  // A Codex resume takes the conversation's own settings: flags beside `resume` are not verified (spec §5 gaps).
-  if (s.resume) return ["resume", s.resume === "last" ? "--last" : s.resume.id];
-  return [...(s.model ? ["-m", s.model] : []), ...CODEX_ACCESS[s.access]];
+  // A Codex resume takes the conversation's own settings: flags beside `resume` are not verified (spec §5 gaps). By id,
+  // `-C <folder>` comes first and names this terminal's folder, so Codex resumes there without asking (LaunchSpec.cwd);
+  // `--last` already looks only at threads recorded in this folder.
+  if (resume === "last") return ["resume", "--last"];
+  if (resume) return ["resume", ...(s.cwd ? [CODEX_RESUME_CD.flag, free("folder", s.cwd)] : []), resume.id];
+  return [...(model ? ["-m", model] : []), ...CODEX_ACCESS[s.access]];
 }
 
 /**

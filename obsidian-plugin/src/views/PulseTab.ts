@@ -63,6 +63,10 @@ export class PulseTab {
     this.popup?.update(this.model);
   }
 
+  /** Whether something runs in a workspace now (spaces-redesign D26): a Code terminal placed there, or a Sessions
+   *  thread mid-turn (the model's liveByWorkspace, the rule Spaces' live dot uses). */
+  isLive(name: string): boolean { return (this.model?.liveBy.get(name)?.total ?? 0) > 0; }
+
   /** What rows and the popup act through. */
   ctx(close: () => void = () => {}): PulseCtx {
     return {
@@ -347,9 +351,8 @@ export class PulseTab {
     const stalled = ws.filter((w) => w.status === "stalled").length;
     const body = this.tile(grid, "workspaces", { span: 2, note: `${s.total} · ${s.active} active${stalled ? ` · ${stalled} stalled` : ""}` });
     const list = this.list(body);
-    const liveIn = new Set(m.live.map((l) => l.sub.split(" · ")[1]));
     for (const w of ws) {
-      this.row(list, { tone: liveIn.has(w.name) ? "info" : w.status === "active" ? "ok" : "off", title: w.name, meta: w.next?.text ?? w.summary ?? "", right: w.lastEvent?.iso ? this.when(w.lastEvent.iso, m.now) : "" });
+      this.row(list, { tone: this.isLive(w.name) ? "info" : w.status === "active" ? "ok" : "off", title: w.name, meta: w.next?.text ?? w.summary ?? "", right: w.lastEvent?.iso ? this.when(w.lastEvent.iso, m.now) : "" });
     }
   }
 

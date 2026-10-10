@@ -58,4 +58,9 @@ test('insightHeuristic renders age, objectives, subprojects and next step', () =
     'Active today · 0 objectives listed · 2 subprojects · next: Ship it');
   assert.equal(insightHeuristic({ lastEvent: { ageDays: 5 }, objectives: [1] }), 'Quiet 5d · 1 objective open · next step unset');
   assert.equal(insightHeuristic({}), 'No activity recorded · 0 objectives listed · next step unset');
+  // A long next step is cut with an ellipsis (the Spaces pick-up card's read showed "…an elli" with none).
+  const long = 'Check that the preview header truncates with an ellipsis on narrow panes';
+  const read = insightHeuristic({ lastEvent: { ageDays: 1 }, objectives: [], next: { text: long } });
+  assert.equal(read, `Active 1d ago · 0 objectives listed · next: ${long.slice(0, 59).trimEnd()}…`);
+  assert.equal(insightHeuristic({ lastEvent: { ageDays: 1 }, objectives: [], next: { text: 'x'.repeat(60) } }).endsWith(`next: ${'x'.repeat(60)}`), true, 'exactly 60 is kept whole');
 });

@@ -20,8 +20,10 @@ export interface TerminalMeta {
   label: string | null;
   model: string | null;
   access: TermAccess | null;
-  /** The id given to a new Claude Code conversation, so Resume can name it. */
-  claudeSessionId: string | null;
+  /** The conversation's id when the deck knows it, on either host: the id it gave a new Claude Code conversation, or
+   *  the one a resume by id named (a Codex thread included), so the end bar's Resume can name it again
+   *  (spaces-redesign D7). Nothing persists it. */
+  sessionId: string | null;
   startedAt: number;
 }
 
@@ -69,7 +71,7 @@ export class TerminalSession {
       label: opts.meta?.label ?? null,
       model: opts.meta?.model ?? null,
       access: opts.meta?.access ?? null,
-      claudeSessionId: opts.meta?.claudeSessionId ?? null,
+      sessionId: opts.meta?.sessionId ?? null,
       startedAt: opts.meta?.startedAt ?? Date.now(),
     };
 

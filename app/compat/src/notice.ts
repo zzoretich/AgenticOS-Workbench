@@ -9,7 +9,8 @@ export class Notice {
   private timer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(message: string | DocumentFragment, duration?: number) {
-    container ??= document.body.createDiv({ cls: "notice-container" });
+    // A live region, so a screen reader says each notice ("copied", "copy failed", why a Resume was refused) as it shows.
+    container ??= document.body.createDiv({ cls: "notice-container", attr: { role: "status", "aria-live": "polite" } });
     this.noticeEl = container.createDiv({ cls: "notice" });
     this.setMessage(message);
     console.info("[notice]", typeof message === "string" ? message : message.textContent);

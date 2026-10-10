@@ -79,7 +79,9 @@ function insightHeuristic(ws = {}) {
   parts.push(`${n} objective${n === 1 ? '' : 's'} ${n ? 'open' : 'listed'}`);
   const subs = Array.isArray(ws.subprojects) ? ws.subprojects.length : 0;
   if (subs) parts.push(`${subs} subproject${subs === 1 ? '' : 's'}`);
-  parts.push(ws.next && ws.next.text ? `next: ${String(ws.next.text).slice(0, 60)}` : 'next step unset');
+  // A next step past 60 characters is cut with an ellipsis, so a cut read says it was cut.
+  const next = ws.next && ws.next.text ? String(ws.next.text) : '';
+  parts.push(next ? `next: ${next.length > 60 ? `${next.slice(0, 59).trimEnd()}…` : next}` : 'next step unset');
   return parts.join(' · ');
 }
 

@@ -152,8 +152,7 @@ export class MemoryTab {
       row.createSpan({ text: m.title });
       row.createSpan({ cls: "aos-mem-chip", text: m.type });
       row.createSpan({ cls: "aos-dim", text: m.updated ?? "—" });
-      // always create the 4th cell to keep the 4-column grid aligned across rows
-      // (see SpacesTab's aos-sp-badge for the same trick); empty + classless when reviewed.
+      // always create the 4th cell to keep the 4-column grid aligned across rows; empty + classless when reviewed.
       row.createSpan(m.reviewed === false ? { cls: "aos-mem-unreviewed", text: "unreviewed" } : { text: "" });
       row.addEventListener("click", () => {
         this.view.openDrawer(

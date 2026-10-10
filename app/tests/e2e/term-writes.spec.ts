@@ -99,7 +99,7 @@ test("New workspace (⇧⌘N): reserved names are refused, an existing one is of
   await win.keyboard.press("Escape");
 });
 
-test("⌥⌘3's command opens a shell next to the selected workspace terminal; Spaces' Claude Code here starts in its workspace (T4)", async () => {
+test("⌥⌘3's command opens a shell next to the selected workspace terminal; Spaces' Terminal here starts in its workspace, and its row shows it live (T4, spaces-redesign D5, D26)", async () => {
   const { win } = app();
   await openTab(win, "term");
   // Select the tide-chart agent from the earlier test: a workspace is context, so the shell starts there.
@@ -115,8 +115,22 @@ test("⌥⌘3's command opens a shell next to the selected workspace terminal; S
   expect(selected?.meta.host).toBe("shell");
   expect(selected?.cwd).toBe(FX.v("workspaces/tide-chart"));
   await openTab(win, "spaces");
-  await C().locator(".aos-ws-row", { hasText: "field-notes" }).first().click();
-  await C().locator(".aos-ws-detail-head button", { hasText: "Claude Code here" }).click();
+  // field-notes is idle, so its group starts folded (spaces-redesign D4).
+  const idle = C().locator(".aos-spc-ghead", { has: win.locator(".aos-spc-glabel", { hasText: /^IDLE$/ }) });
+  if ((await idle.getAttribute("aria-expanded")) === "false") await idle.click();
+  const row = C().locator('.aos-spc-row[data-workspace="field-notes"]');
+  await row.click();
+  await expect(C().locator(".aos-spc-h1")).toHaveText("field-notes");
+  await expect(row.locator(".aos-spc-live")).toHaveCount(0);
+  // Resume in Code's menu: Terminal here, a shell in the workspace (its code folder when linked).
+  await C().locator(".aos-spc-head button.aos-spc-caret").click();
+  await C().locator(".aos-spc-pop .aos-spc-popitem", { hasText: "Terminal here" }).click();
   await expect.poll(async () => (await pool()).selected?.cwd).toBe(FX.v("workspaces/field-notes"));
+  expect((await pool()).selected?.meta.host).toBe("shell");
+  expect((await pool()).selected?.meta.place?.kind).toBe("workspace");
   await expect(win.locator(".aos-wb-railbtn[data-tab='term']")).toHaveClass(/is-active/);
+  // D26: a Code terminal placed in the workspace is what makes its row live.
+  await openTab(win, "spaces");
+  await expect(row.locator(".aos-spc-live")).toHaveText("live");
+  await expect(row.locator(".aos-spc-live")).toHaveAttribute("title", /^Live: \d+ terminals? in Code$/);
 });

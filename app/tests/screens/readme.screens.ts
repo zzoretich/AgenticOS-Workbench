@@ -59,13 +59,23 @@ test.describe("the Workbench", () => {
   test.afterAll(async () => { await h?.close(); });
 
   // Each tab as it first draws, after its reads settle.
-  for (const tab of ["pulse", "todo", "proposals", "spaces", "routines", "skills", "agent-teams", "settings"]) {
+  for (const tab of ["pulse", "todo", "proposals", "routines", "skills", "agent-teams", "settings"]) {
     test(tab, async () => {
       await openTab(h.win, tab);
       await h.win.waitForTimeout(1500);
       await shot(h.win, tab);
     });
   }
+
+  test("spaces, on a workspace with a thread to pick up, a history and linked work", async () => {
+    // Selected by name, not left to the list's first row: the picture does not move with the fixture's sort order.
+    await openTab(h.win, "spaces");
+    await content(h.win).locator('.aos-spc-row[data-workspace="harbor-map"]').click();
+    await expect(content(h.win).locator(".aos-spc-h1")).toHaveText("harbor-map");
+    await expect(content(h.win).locator(".aos-spc-history .aos-spc-hrow").first()).toBeVisible();
+    await h.win.waitForTimeout(800);
+    await shot(h.win, "spaces");
+  });
 
   test("notifications, with the morning edition open", async () => {
     await openTab(h.win, "notifications");

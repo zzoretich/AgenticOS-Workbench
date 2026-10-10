@@ -122,6 +122,11 @@ export class SessionsTab {
   private refreshing = false;
   /** The new session's workspace. */
   private workspace = "";
+  /** The workspace another tab opened Sessions on (reveal): the list shows only its threads until Show all, or until a
+   *  thread elsewhere is open (spaces-redesign D12). */
+  private scope: string | null = null;
+  /** What reveal() asked to open, applied when the list it asked for answers. */
+  private revealing: { thread: string | null } | null = null;
   /** The open thread's next turn: what the user picked for it, else what its last turn ran on (U6). */
   private next: { thread: string; model: string | null; effort: string | null; access: HostSessionAccess } | null = null;
   /** The new session's host, model and effort as last picked, until it starts: a custom id the catalog does not list
@@ -179,6 +184,43 @@ export class SessionsTab {
     this.host = null;
   }
 
+  /**
+   * Sessions on a workspace (spaces-redesign D12, WorkbenchView.open): the list shows only that workspace's threads,
+   * with Show all, and `thread` opens when the list holds it. Without one (or when it is not an app thread, D32), the
+   * newest thread there opens unless one of its threads is already open; with none, New session with the workspace
+   * picked. Select only: nothing is sent or started.
+   */
+  reveal(target: { workspace?: string | null; thread?: string | null }): void {
+    this.scope = target.workspace || null;
+    this.revealing = { thread: target.thread || null };
+    void this.loadList();
+  }
+
+  /** Applies a pending reveal() once the list has answered. */
+  private applyReveal(): void {
+    const r = this.revealing;
+    if (!r) return;
+    this.revealing = null;
+    const t = r.thread ? this.threads.find((x) => x.id === r.thread) : undefined;
+    if (t) {
+      if (this.scope && t.workspace !== this.scope) this.scope = t.workspace;
+      if (this.selected !== t.id) this.select(t.id);
+      return;
+    }
+    if (!this.scope || !sessionsHost()) return;   // without the app's sessions there is no thread or New session to show
+    if (this.thread && this.isThread(this.selected) && this.thread.workspace === this.scope) return;
+    const newest = groupThreads(this.threads).find((g) => g.workspace === this.scope)?.threads[0];
+    if (newest) { this.select(newest.id); return; }
+    if (this.workspaces().includes(this.scope)) this.workspace = this.scope;
+    this.select(NEW);
+  }
+
+  /** Shows every workspace's threads again. */
+  private clearScope(): void {
+    this.scope = null;
+    this.renderList();
+  }
+
   private active(): boolean { return this.wb.isTabActive("chat") && !!this.host; }
   private isThread(id: string): boolean { return id !== VAULT && id !== NEW; }
 
@@ -203,6 +245,7 @@ export class SessionsTab {
       }
     }
     if (!this.active()) return;
+    if (this.revealing) this.applyReveal();
     this.renderList();
     this.renderStatus();
     // A thread opened before the list knew it (just started elsewhere) gets its header and menus now.
@@ -681,11 +724,22 @@ export class SessionsTab {
 
       const threads = list.createDiv({ cls: "aos-ss-threads" });
       const note = (text: string) => threads.createDiv({ cls: "aos-ss-note", text });
+      // A thread open in another workspace ends the scope, so the open thread is never missing from the list.
+      if (this.scope && this.thread && this.isThread(this.selected) && this.thread.workspace !== this.scope) this.scope = null;
+      const scope = this.scope;
+      if (scope) {
+        const bar = threads.createDiv({ cls: "aos-ss-note aos-ss-scope" });
+        bar.createSpan({ cls: "aos-ss-scopetext", text: `Showing ${scope} only · ` });
+        const all = bar.createEl("a", { cls: "aos-ss-scopeall", text: "Show all", href: "#", attr: { "data-focus": "scope-all" } });
+        all.addEventListener("click", (e) => { e.preventDefault(); this.clearScope(); });
+      }
+      const groups = groupThreads(this.threads).filter((g) => !scope || g.workspace === scope);
       if (!sh) note("Workspace sessions run in the UniDeX app.");
       else if (this.listError) note(`Workspace sessions are unavailable: ${this.listError}.`);
-      else if (!this.threads.length) { if (this.listLoaded) note("No workspace sessions yet. New session starts one."); }
-      else {
-        for (const g of groupThreads(this.threads)) {
+      else if (!groups.length) {
+        if (this.listLoaded) note(scope ? `No sessions in ${scope} yet. New session starts one.` : "No workspace sessions yet. New session starts one.");
+      } else {
+        for (const g of groups) {
           const group = threads.createDiv({ cls: "aos-ss-group", attr: { "data-workspace": g.workspace, role: "group", "aria-label": g.workspace } });
           const head = group.createDiv({ cls: "aos-ss-ws" });
           const folder = head.createSpan({ cls: "aos-ss-wsicon" });
@@ -784,7 +838,12 @@ export class SessionsTab {
       }
       const t = this.thread;
       const crumbs = top.createDiv({ cls: "aos-ss-crumbs" });
-      crumbs.createSpan({ cls: "aos-ss-crumb-ws", text: t?.workspace ?? "" });
+      // The workspace crumb opens it in Spaces (spaces-redesign D12): select only.
+      const ws = t?.workspace ?? "";
+      if (ws) {
+        const link = crumbs.createEl("a", { cls: "aos-ss-crumb-ws is-link", text: ws, href: "#", attr: { title: `Open workspace ${ws} in Spaces`, "data-focus": "crumb-ws" } });
+        link.addEventListener("click", (e) => { e.preventDefault(); this.wb.open({ tab: "spaces", workspace: ws }); });
+      } else crumbs.createSpan({ cls: "aos-ss-crumb-ws", text: "" });
       crumbs.createSpan({ cls: "aos-ss-sep", text: "/" });
       crumbs.createSpan({ cls: "aos-ss-crumb-title", text: t?.title ?? "" });
       if (!t) return;

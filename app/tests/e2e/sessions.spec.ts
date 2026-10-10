@@ -453,6 +453,42 @@ test.describe("both hosts, the Sessions surface on", () => {
     await expect(list(win).locator(`.aos-ss-row[data-thread="${id}"]`)).toHaveAttribute("title", /^Codex · 2 turns · ≈\$0\.\d+ · /);
   });
 
+  test("the workspace crumb opens Spaces on its workspace, and Spaces' Sessions links come back scoped to it (spaces-redesign D12, D32)", async () => {
+    const { win } = app();
+    // The threads the turns above left under harbor-map: the newest is open.
+    const g = group(win, "harbor-map");
+    await g.locator(".aos-ss-row").first().click();
+    const crumb = reader(win).locator("a.aos-ss-crumb-ws");
+    await expect(crumb).toHaveText("harbor-map");
+    await expect(crumb).toHaveAttribute("title", "Open workspace harbor-map in Spaces");
+    await crumb.click();
+    // Select only: Spaces shows the workspace, and nothing is sent or started.
+    await expect(rail(win, "spaces")).toHaveClass(/is-active/);
+    await expect(content(win).locator('.aos-spc-row[data-workspace="harbor-map"]')).toHaveAttribute("aria-selected", "true");
+    await expect(content(win).locator(".aos-spc-h1")).toHaveText("harbor-map");
+    // Sessions lists app threads only (D32): History counts them, and opens Sessions on this workspace.
+    const more = content(win).locator(".aos-spc-history button.aos-spc-more");
+    await expect(more).toHaveText(/^All \d+ in Sessions →$/);
+    await more.click();
+    await expect(rail(win, "chat")).toHaveClass(/is-active/);
+    await expect(list(win).locator(".aos-ss-scope .aos-ss-scopetext")).toHaveText("Showing harbor-map only ·");
+    await expect(list(win).locator(".aos-ss-group")).toHaveCount(1);
+    await expect(list(win).locator(".aos-ss-group")).toHaveAttribute("data-workspace", "harbor-map");
+    await expect(more).toHaveCount(0);
+    const n = await group(win, "harbor-map").locator(".aos-ss-row").count();
+    expect(n).toBeGreaterThan(0);
+    await list(win).locator(".aos-ss-scopeall").click();
+    await expect(list(win).locator(".aos-ss-scope")).toHaveCount(0);
+    // And the count the link showed was this workspace's app threads.
+    await openTab(win, "spaces");
+    await expect(content(win).locator(".aos-spc-history button.aos-spc-more")).toHaveText(`All ${n} in Sessions →`);
+    // The right pane's footer link opens the same scoped list.
+    await content(win).locator(".aos-spc-rightfoot button", { hasText: "Threads in Sessions →" }).click();
+    await expect(rail(win, "chat")).toHaveClass(/is-active/);
+    await expect(list(win).locator(".aos-ss-scope .aos-ss-scopetext")).toHaveText("Showing harbor-map only ·");
+    await list(win).locator(".aos-ss-scopeall").click();
+  });
+
   for (const host of ["claude", "codex"] as Host[]) {
     test(`Stop ends a running ${host} turn: the running mark and Stop while it runs, then stopped, and the thread can go on`, async () => {
       const { win } = app();

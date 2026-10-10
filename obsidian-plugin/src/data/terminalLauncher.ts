@@ -11,7 +11,7 @@ import { envPrefix } from "./teams";
 import { shq } from "./skills";
 import type { TerminalSession } from "./terminalSession";
 import {
-  SCRATCH, TERM_HOST_LABEL, gitInitWanted, homePlace, launchLine, parseRepoLink, placeOf, previewLine, quickHost,
+  SCRATCH, TERM_HOST_LABEL, gitInitWanted, homePlace, launchIds, launchLine, parseRepoLink, placeOf, previewLine, quickHost,
   repoValue, resolvePlace, scratchStubs, slugify, stubWrites, termHostChoices, vaultPlace, withRepoLink, workspaceNameProblem,
   workspacePlace, workspaceStubs,
 } from "./terminalLaunch";
@@ -22,13 +22,17 @@ import type { TerminalChoice } from "../settingsDefaults";
 /** What a launch asks for: the host, and a place when one was picked; otherwise the context or the default decides. */
 export interface LaunchRequest {
   host: TermHost;
+  /** Where it starts. A Spaces resume picks `{...workspacePlace(name, w), dir: <the folder D7 picks>, linked: false}`, so
+   *  the terminal stays in the `ws:<name>` group whatever folder it starts in (spaces-redesign D7, D26). */
   picked?: Place | null;
   context?: Place | null;
-  /** Continue the last conversation in that place instead of starting one (⇧Enter in the menu). */
+  /** Continue a conversation instead of starting one: the last one in that place (⇧Enter in the menu), or one by id
+   *  (either host; the terminal then remembers the id for its end bar's Resume). */
   resume?: "last" | { id: string } | null;
   /** Type `git init` first (a new workspace whose box is ticked). */
   gitInit?: boolean;
-  /** What started it when it was not the deck (a skill's button…): such launches never change the remembered host. */
+  /** What started it when it was not the deck (a skill's button, Spaces…): the row's "from …" subtitle. Such launches
+   *  never change the remembered host. */
   origin?: string | null;
 }
 
@@ -109,8 +113,12 @@ export class TerminalLauncher {
     });
   }
 
-  /** The agent line a launch would type, before the session id is known (the menu's preview). */
-  spec(host: "claude" | "codex", opts: { resume?: "last" | { id: string } | null; gitInit?: boolean; sessionId?: string | null } = {}): LaunchSpec {
+  /**
+   * The agent line a launch would type, before the session id is known (the menu's preview), or for a resume by id
+   * (Spaces' hint: `launchLine(spec(host, { resume: { id }, cwd }))`). `cwd` is the folder the terminal starts in; a
+   * Codex resume by id needs it, or Codex asks which folder to use (LaunchSpec.cwd).
+   */
+  spec(host: "claude" | "codex", opts: { resume?: "last" | { id: string } | null; gitInit?: boolean; sessionId?: string | null; cwd?: string | null } = {}): LaunchSpec {
     const cfg = readAgenticosJson(this.plugin.claudeConfigDir());
     const bin = this.choices().find((c) => c.host === host)?.bin ?? null;
     const model = modelArg(host, sanitizeSessionChoice(this.plugin.settings.sessionChoice).models[host]);
@@ -120,13 +128,15 @@ export class TerminalLauncher {
     const prefix = host === "claude"
       ? envPrefix("CLAUDE_CONFIG_DIR", this.plugin.claudeConfigDir(), envClaudeConfigDir())
       : envPrefix("CODEX_HOME", cfg?.hosts?.codex?.home || envCodex, envCodex);
-    return { host, bin, model, access, resume: opts.resume ?? null, gitInit: opts.gitInit, sessionId: opts.sessionId ?? null, envPrefix: prefix };
+    return { host, bin, model, access, resume: opts.resume ?? null, gitInit: opts.gitInit, sessionId: opts.sessionId ?? null, cwd: opts.cwd ?? null, envPrefix: prefix };
   }
 
   /** What the menu previews for a launch of `host`: the short command, or a shell's note. */
   preview(host: TermHost, opts: { resume?: "last" | null; gitInit?: boolean } = {}): string {
     if (host === "shell") return opts.gitInit ? "git init -q (then your shell)" : "a new shell: nothing is typed";
-    return previewLine(this.spec(host, { ...opts, sessionId: host === "claude" && !opts.resume ? "new-id" : null }));
+    // A remembered model that starts with "-" is refused by launchArgs: the menu says so instead of failing to draw.
+    try { return previewLine(this.spec(host, { ...opts, sessionId: host === "claude" && !opts.resume ? "new-id" : null })); }
+    catch (e) { return e instanceof Error ? e.message : String(e); }
   }
 
   // ── folders ──
@@ -219,17 +229,22 @@ export class TerminalLauncher {
     return abs;
   }
 
-  /** The terminal itself: a fresh shell in the place, with the agent's line typed when it is an agent. */
+  /** The terminal itself: a fresh shell in the place, with the agent's line typed when it is an agent. Throws before any
+   *  terminal opens when the line would carry a value that starts with `-` (launchArgs). */
   private start(host: TermHost, place: Place, o: { resume: "last" | { id: string } | null; gitInit: boolean; origin: string | null }): TerminalSession {
     const pool = this.plugin.terminalPool;
     const shell = this.plugin.settings.terminalShell || pool.defaults.shell;
-    const sessionId = host === "claude" && !o.resume ? newId() : null;
-    const spec = host === "shell" ? null : this.spec(host, { resume: o.resume, gitInit: o.gitInit, sessionId });
+    // The deck names a new Claude Code conversation; a resume by id names the thread on either host. Either way the
+    // terminal keeps the id, so its end bar resumes this conversation and not the folder's latest (spaces-redesign D7).
+    const ids = launchIds(host, o.resume, newId);
+    const sessionId = ids.known;
+    const spec = host === "shell" ? null : this.spec(host, { resume: o.resume, gitInit: o.gitInit, sessionId: ids.fresh, cwd: place.dir });
+    const line = spec ? launchLine(spec) : null;
     const session = pool.create({
       shell, cwd: place.dir,
-      meta: { host, place, origin: o.origin, label: null, model: spec?.model ?? null, access: spec?.access ?? null, claudeSessionId: sessionId, startedAt: Date.now() },
+      meta: { host, place, origin: o.origin, label: null, model: spec?.model ?? null, access: spec?.access ?? null, sessionId, startedAt: Date.now() },
     });
-    if (spec) session.write(`${launchLine(spec)}\r`);
+    if (line) session.write(`${line}\r`);
     else if (o.gitInit) session.write(" [ -e .git ] || git init -q\r");
     pool.select(session.id);
     return session;
