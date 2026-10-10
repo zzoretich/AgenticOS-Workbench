@@ -33,7 +33,8 @@ output. The design treats the page that shows them as untrusted (design D7,
     memories, and so on. Files and the note editor write anywhere in the vault except the runtime's folders
     (`brain/_index`, `brain/scripts`), dependency folders and every dot-path, so no page can plant a host's project
     configuration (`.claude/settings.json` hooks, `.mcp.json`, `.codex/`, `.git/hooks`). The page cannot create links or
-    change a file's permissions.
+    change a file's permissions. Spaces writes no file itself; its verbs write as their row under *What the design
+    accepts* says.
   - *Processes:* only the runtime's own commands, each with an argument rule (a background refresh, or a command of a
     surface that is on), never through a shell. The program is a bare name main finds on its own `PATH`, or an
     executable outside the vault and the app's data, which the page cannot create. The child's environment is main's,
@@ -41,7 +42,9 @@ output. The design treats the page that shows them as untrusted (design D7,
     or Codex folder only when it is one main trusts.
   - *Terminals:* a shell listed in `/etc/shells` (or your `$SHELL`), with no arguments. Main starts it with its own
     environment, `PATH` replaced by your login shell's (asked once, as the setup wizard does) and `CLAUDECODE` removed;
-    the page still cannot set `PATH`. The Code tab starts an agent by typing its command into that shell.
+    the page still cannot set `PATH`. The Code tab starts an agent by typing its command into that shell. Spaces types
+    a Resume line only with a UUID from the scan, and a Clone line only for a URL matching the GitHub rule (a
+    `https://github.com/<owner>/<repo>` URL or GitHub's SSH form of it, quoted).
   - *Appearance:* the page may set the theme to `system`, `light` or `dark` and nothing else; main saves the choice in
     the app's data (`app-settings.json`), never in the vault, and hands it to macOS's `nativeTheme`.
   - *Setup (phase 5):* the wizard names a fix by id; main runs that fix's fixed command (`app/src/main/policy/setup.ts`:
@@ -72,6 +75,8 @@ output. The design treats the page that shows them as untrusted (design D7,
 | The Code tab is a shell | It is the feature: what you type runs as you. A compromised page could type into a terminal it opens | Nothing in the page can run code (CSP, sanitized Markdown, no remote content), so a page must first be compromised; the terminal starts only a listed shell |
 | The page can do what the Workbench's buttons do | Routines run agent prompts, Settings changes settings, Agent Teams approves gates | Each is a named command with an argument rule; nothing outside the surfaces runs |
 | The page can make the Chief of Staff write a briefing now | Pulse's ↻ (spec 2026-10-08-pulse-cockpit-design P13) | One rule on the Pulse surface: `persona/briefing.js --force` and nothing else. It makes one model call through `provider.js`, under the daily duty cap (`persona.perDayUsd`), and writes only `brain/_index/briefing.json`; nothing runs while the persona is off |
+| The page can create, move and rename workspaces and set workspace.md fields | Spaces' New, Adopt, Archive, Restore, Rename, Pin and Set status (spec 2026-10-09-spaces-redesign D15–D18) | Named `aos workspace` verbs, each with an argument rule; the runtime checks every name and path, writes only `workspaces/**` and `brain/_index/**` plus a project note's status tag, moves folders only between `workspaces/` and `workspaces/_archive/`, deletes nothing, follows no symlink, refuses a linked `workspaces/`, `workspaces/_archive`, map, thread or project-note folder (each must be a plain folder inside the vault), never writes a map over another, matches a name to its folder exactly, refuses headless runs, and asks before every move. On by default since 1.7.0, after a live check on each host |
+| The page can make one model call to draft a workspace's `workspace.md` | Spaces' Draft (spec 2026-10-09-spaces-redesign D13, D14) | One rule: `aos workspace draft <name> --json`, which writes no workspace file. It makes one `provider.js` call under the hook cap (`claude.perDayUsd` or `codex.perDayUsd`, and the per-call cap), on the workspace's own top-level files (no dot-files or credential names, never its code folder, each at most 16 KB; a Codex call runs read-only from an empty folder); with no provider or at the cap it is a labelled heuristic draft and no call. The model's text is shown as text, for review. Save (`aos workspace set … --expect`) writes only allow-listed frontmatter keys (summary, objectives, next, status, pinned, repo) that changed, keeps the body and every other key, and refuses a file that changed since the draft |
 | Links you made inside the vault are followed | Checks are on the vault's paths; a workspace linked to a code folder is read and written through the link, as you set it up | The page cannot create links |
 | An https link can carry data out | Notifications link to the web; the browser shows every link it opens | Opening is visible; the page has no network access of its own (`connect-src 'self'`) |
 | A fix-it runs an installer from the network (Homebrew's `install.sh`, npm packages) | That is how those tools install, and the wizard exists so a user need not type it | The commands are fixed in main and shown before they run, in a terminal the user watches and can stop; the page can only pick one, and only while setup shows |

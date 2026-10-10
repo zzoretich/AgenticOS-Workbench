@@ -387,3 +387,47 @@ test("catalog: the runtime's answer for each host; a host that does not answer k
   assert.ok((await s.catalog(true)).ok);
   assert.deepEqual(await service(false).s.catalog(), { ok: false, error: "the Sessions surface is off", code: "EROFS" });
 });
+
+test("an archived workspace's threads stay listed and readable, and refuse a turn until Restore (spaces-redesign D17)", async () => {
+  const { s } = service();
+  const live = path.join(vault, "workspaces", "tide-log");
+  const archived = path.join(vault, "workspaces", "_archive", "tide-log");
+  fs.mkdirSync(live, { recursive: true });
+  const log = path.join(tmp, "claude.argv");
+  const calls = () => fs.readFileSync(log, "utf8").trim().split("\n").length;
+  const r = await s.start({ workspace: "tide-log", host: "claude", text: "chart the tides" });
+  assert.ok(r.ok, JSON.stringify(r));
+  await idle(s);
+  const file = path.join(vault, "brain", "_index", "sessions", "tide-log", `${r.data.id}.jsonl`);
+  assert.ok(fs.existsSync(file));
+
+  // Archive (cli/workspace.js) moves the folder under _archive/ and leaves the thread where it is.
+  fs.mkdirSync(path.dirname(archived), { recursive: true });
+  fs.renameSync(live, archived);
+  const before = fs.readFileSync(file, "utf8");
+  const seen = calls();
+  const why = "tide-log is archived: restore it in Spaces to continue";
+  assert.deepEqual(await s.send({ thread: r.data.id, text: "and the moon" }), { ok: false, error: why, code: "EROFS" });
+  assert.deepEqual(await s.start({ workspace: "tide-log", host: "claude", text: "new thread" }), { ok: false, error: why, code: "EROFS" });
+  assert.deepEqual(workspaceDir(vault, "tide-log"), { refusal: why });
+  assert.equal(s.runningCount, 0);
+  assert.equal(calls(), seen, "no host ran");
+  assert.equal(fs.readFileSync(file, "utf8"), before, "the thread is unchanged");
+  assert.deepEqual(fs.readdirSync(path.join(vault, "brain", "_index", "sessions", "tide-log")), [`${r.data.id}.jsonl`], "no new thread");
+  const list = await s.list();
+  assert.ok(list.ok);
+  assert.ok(list.data.some((t) => t.id === r.data.id && t.workspace === "tide-log"), "still listed");
+  const read = await s.read(r.data.id);
+  assert.ok(read.ok);
+  assert.equal(read.data.filter((e) => e.kind === "prompt").length, 1, "still readable");
+  // The archive folder itself is never a workspace a turn runs in, and a name nothing holds is still "no such workspace".
+  assert.deepEqual(workspaceDir(vault, "_archive"), { refusal: "a workspace name" });
+  assert.deepEqual(workspaceDir(vault, "ebb-log"), { refusal: "no such workspace" });
+
+  // Restore moves it back: the same thread takes a turn again.
+  fs.renameSync(archived, live);
+  const next = await s.send({ thread: r.data.id, text: "and the moon" });
+  assert.ok(next.ok, JSON.stringify(next));
+  await idle(s);
+  assert.equal(calls(), seen + 1, "the host ran once");
+});

@@ -12,6 +12,8 @@ import { isIgnored } from "../../compat/src/ignore";
 import { fuzzyScore } from "../../compat/src/modal";
 import { normalizePath } from "../../compat/src/files";
 import { opensOutside } from "../../compat/src/markdown";
+import { canSave, canWrite, setWriteGuard } from "../../compat/src/guard";
+import { PagePolicy } from "../../src/renderer/pagePolicy";
 
 test("agenticos:// links parse into an action and safe params", () => {
   assert.deepEqual(parseAgenticosUrl("agenticos://workbench?tab=proposals"), { action: "workbench", params: { tab: "proposals" } });
@@ -104,4 +106,34 @@ test("write surfaces: every verified surface by default; AOS_APP_WRITE narrows o
   const fresh = SURFACES.map((s) => (s.id === "chat" ? { ...s, verified: false } : s));
   assert.deepEqual(loadWriteSettings({}, fresh).surfaces, verified.filter((id) => id !== "chat"));
   assert.deepEqual(loadWriteSettings({ AOS_APP_WRITE: "chat" }, fresh).surfaces, ["chat"]);
+});
+
+test("compat's write guard answers canWrite beside canSave, so the HUD can show why a button's writes are off (spaces-redesign D35)", () => {
+  const g = globalThis as { __aosGuard?: unknown };
+  const saved = g.__aosGuard;
+  delete g.__aosGuard;
+  const vault = "/vaults/demo";
+  try {
+    assert.equal(canWrite(`${vault}/TODO.md`), false, "nothing is writable before the host installs its policy");
+    assert.equal(canSave(`${vault}/notes/a.md`), false);
+    // Spaces on and To-Do off: + to-do and Link to-dos… are disabled with the reason.
+    setWriteGuard(new PagePolicy(vault, ["spaces"]));
+    assert.equal(canWrite(`${vault}/TODO.md`), false);
+    assert.equal(canWrite(`${vault}/workspaces/harbor/workspace.md`), false, "Spaces' verbs write through the runtime, never the page");
+    setWriteGuard(new PagePolicy(vault, ["spaces", "todo"]));
+    assert.equal(canWrite(`${vault}/TODO.md`), true);
+    assert.equal(canSave(`${vault}/TODO.md`), false, "a HUD surface never answers for the note editor");
+    for (const target of ["TODO.md", `${vault}/../elsewhere/TODO.md`, "/elsewhere/TODO.md", `${vault}/TODO.md\0`, 42, null]) {
+      assert.equal(canWrite(target), false, String(target));
+    }
+    // The note editor's surface (Notes) never makes a path writable for the HUD.
+    setWriteGuard(new PagePolicy(vault, ["notes"]));
+    assert.equal(canSave(`${vault}/notes/a.md`), true);
+    assert.equal(canWrite(`${vault}/notes/a.md`), false);
+    // No vault attached (the setup wizard): nothing.
+    setWriteGuard(new PagePolicy(null, ["todo"]));
+    assert.equal(canWrite(`${vault}/TODO.md`), false);
+  } finally {
+    g.__aosGuard = saved;
+  }
 });

@@ -2,8 +2,10 @@
 // one, the page records it here and throws Node's EROFS, as the write guards did when they ran in the page. The log is
 // what the e2e suite and the packaged smoke read (window.aosHost.guard).
 //
-// The page keeps one question of its own: whether the note editor may save a path, so a note it may not save opens
-// without an Edit button. The host installs that rule (src/renderer/pagePolicy.ts); main still checks every save.
+// The page keeps two questions of its own: whether the note editor may save a path, so a note it may not save opens
+// without an Edit button; and whether a HUD surface's writes reach a path, so a button whose writes are off shows why
+// instead of failing (Spaces' + to-do and Link to-dos… need the To-Do surface's writes, spaces-redesign D35). The host
+// installs that rule (src/renderer/pagePolicy.ts); main still checks every write and every save.
 
 export interface GuardEntry {
   kind: "read" | "write" | "spawn";
@@ -14,6 +16,8 @@ export interface GuardEntry {
 export interface WriteGuard {
   /** Whether the note editor may save this absolute path. */
   canSave(target: unknown): boolean;
+  /** Whether an enabled HUD surface may write this absolute path (display only: main decides each write). */
+  canWrite(target: unknown): boolean;
 }
 
 export interface GuardState {
@@ -21,7 +25,7 @@ export interface GuardState {
   log: GuardEntry[];
 }
 
-const SAVES_NOTHING: WriteGuard = { canSave: () => false };
+const SAVES_NOTHING: WriteGuard = { canSave: () => false, canWrite: () => false };
 
 const g = globalThis as { __aosGuard?: GuardState };
 
@@ -33,6 +37,8 @@ export function guardState(): GuardState {
 export function setWriteGuard(policy: WriteGuard): void { guardState().policy = policy; }
 
 export function canSave(target: unknown): boolean { return guardState().policy.canSave(target); }
+
+export function canWrite(target: unknown): boolean { return guardState().policy.canWrite(target); }
 
 /** Records an action main refused and returns the error to throw. */
 export function refuse(kind: GuardEntry["kind"], what: string): Error {

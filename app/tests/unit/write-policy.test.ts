@@ -5,6 +5,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
 import { SURFACES, SURFACE_IDS, WritePolicy, globToRegExp, parseSurfaces } from "../../src/main/policy/write-policy";
+import { workspaceArgs } from "../../../obsidian-plugin/src/data/spacesModel";
 
 const VAULT = "/vaults/demo";
 const v = (rel: string) => `${VAULT}/${rel}`;
@@ -153,8 +154,11 @@ const COMMANDS: Record<string, { ok: Array<[string, string[]]>; no: Array<[strin
     no: [[NODE, [`${S}/cost-budget.js`, "--anchor", "-3"]], [NODE, [`${S}/cost-budget.js`, "--reset"]], [NODE, [`${S}/sdk/reflect-week.js`]], [NODE, [`${S}/persona/briefing.js`, "--root", "/tmp"]]],
   },
   spaces: {
-    ok: [[NODE, [`${S}/map-workspace.js`, "harbor"]], [NODE, [`${S}/map-workspace.js`, "harbor", "--file", "src/tide.ts"]], [NODE, [`${S}/regen-workspace-insight.js`, "harbor"]]],
-    no: [[NODE, [`${S}/map-workspace.js`, "--all"]], [NODE, [`${S}/map-workspace.js`, "../../etc"]]],
+    ok: [[NODE, [`${S}/map-workspace.js`, "harbor"]], [NODE, [`${S}/map-workspace.js`, "harbor", "--file", "src/tide.ts"]], [NODE, [`${S}/regen-workspace-insight.js`, "harbor"]],
+      [NODE, [`${S}/cli/aos.js`, "workspace", "new", "harbor-map", "--git", "--pin", "--json"]], [NODE, [`${S}/cli/aos.js`, "workspace", "draft", "harbor", "--json"]],
+      [NODE, [`${S}/cli/aos.js`, "workspace", "archive", "harbor", "--json"]]],
+    no: [[NODE, [`${S}/map-workspace.js`, "--all"]], [NODE, [`${S}/map-workspace.js`, "../../etc"]], [NODE, [`${S}/cli/aos.js`, "workspace", "new", "My App", "--json"]],
+      [NODE, [`${S}/cli/aos.js`, "workspace", "stubs", "harbor", "--pin"]]],
   },
   teams: {
     ok: [[NODE, [`${S}/team.js`, "init"]], [NODE, [`${S}/team.js`, "gate", "approve", "example", "harbor-01", "--expect", expect]],
@@ -240,6 +244,103 @@ test("map and regen take a workspace name (WS) and a file inside it (REL), never
   assert.equal(all.canSpawn(NODE, map("harbor", "--file")), false);
   assert.equal(all.canSpawn(NODE, regen("harbor", "--file", "src/tide.ts")), false);
   assert.equal(pulse.canSpawn(NODE, map("harbor", "--file", "src/tide.ts")), false, "Pulse maps whole workspaces only");
+});
+
+test("Spaces runs exactly the page's workspace verbs, each flag in one fixed place (spaces-redesign §4 PR 3, D29)", () => {
+  const spaces = new WritePolicy(VAULT, ["spaces"]);
+  const none = new WritePolicy(VAULT, []);
+  const others = new WritePolicy(VAULT, SURFACE_IDS.filter((id) => id !== "spaces"));
+  const all = new WritePolicy(VAULT, [...SURFACE_IDS]);
+  const ws = (...a: string[]) => [`${S}/cli/aos.js`, "workspace", ...a];
+  const h16 = "0123456789abcdef";
+  const h64 = "ab".repeat(32);
+  const set = JSON.stringify({ status: "paused", objectives: ["ship -x", "--json"] });
+  const ok: string[][] = [
+    // new: each combination of its optional flags, always in the order --git, --pin, --empty.
+    ...[[], ["--git"], ["--pin"], ["--git", "--pin"], ["--empty"], ["--git", "--empty"], ["--pin", "--empty"], ["--git", "--pin", "--empty"]]
+      .map((flags) => ws("new", "harbor-map", ...flags, "--json")),
+    ws("new", "a", "--json"), ws("new", "x".repeat(64), "--pin", "--json"), ws("new", "2026-tide-notes", "--empty", "--json"),
+    ws("draft", "harbor", "--json"), ws("draft", "Field Notes", "--json"),
+    ws("set", "harbor", "--set", set, "--expect", "none", "--json"), ws("set", "harbor", "--set", "{}", "--expect", h16, "--dry-run", "--json"),
+    ws("set", "Field Notes", "--set", set, "--expect", h64, "--json"),
+    ws("archive", "harbor", "--json"), ws("restore", "harbor", "--json"), ws("rename", "Field Notes", "field-notes", "--json"),
+    ws("adopt", "~/code/harbor", "--into", "harbor", "--json"), ws("adopt", "/opt/src/harbor app", "--into", "Field Notes", "--json"),
+    ws("hide", "~/scratch/old", "--json"), ws("unhide", "/Volumes/work/x", "--json"),
+  ];
+  for (const args of ok) {
+    const what = JSON.stringify(args.slice(1));
+    assert.equal(spaces.canSpawn(NODE, args), true, `spaces on: ${what}`);
+    assert.equal(none.canSpawn(NODE, args), false, `nothing on: ${what}`);
+    assert.equal(others.canSpawn(NODE, args), false, `every surface but Spaces: ${what}`);
+  }
+  const no: string[][] = [
+    // The plan's cases: a name that is not kebab-case, a path for a new name, adopt's move form (terminals only) and an
+    // unknown flag, set without the compare-and-set.
+    ws("new", "My App", "--json"), ws("new", "My", "App", "--json"), ws("rename", "a", "../b", "--json"),
+    ws("adopt", "~/code/harbor", "--json"), ws("adopt", "~/code/harbor", "--into", "harbor", "--name", "x", "--json"),
+    ws("adopt", "~/code/harbor", "--name", "harbor", "--json"), ws("set", "harbor", "--set", set, "--json"), ws("set", "harbor", "--set", set, "--dry-run", "--json"),
+    // Flags out of order.
+    ws("new", "harbor-map", "--pin", "--git", "--json"), ws("new", "harbor-map", "--empty", "--git", "--json"), ws("new", "harbor-map", "--json", "--pin"),
+    ws("new", "--git", "harbor-map", "--json"), ws("set", "harbor", "--expect", "none", "--set", set, "--json"),
+    ws("set", "harbor", "--set", set, "--dry-run", "--expect", "none", "--json"), ws("set", "harbor", "--set", set, "--expect", "none", "--json", "--dry-run"),
+    ws("adopt", "--into", "harbor", "~/code/harbor", "--json"), ws("archive", "--json", "harbor"),
+    // A trailing argument, a repeated flag, no --json.
+    ws("draft", "harbor", "--json", "extra"), ws("archive", "harbor", "--json", "--force"), ws("new", "harbor-map", "--git", "--git", "--json"),
+    ws("rename", "a", "b", "c", "--json"), ws("hide", "~/x", "~/y", "--json"), ws("archive", "harbor"), ws("draft", "harbor"), ws("new", "harbor-map"),
+    // A leading "-": no value can stand in for a flag.
+    ws("new", "-x", "--json"), ws("rename", "harbor", "-x", "--json"), ws("rename", "-x", "harbor", "--json"), ws("draft", "--all", "--json"),
+    ws("archive", "-harbor", "--json"), ws("hide", "--all", "--json"), ws("hide", "-/x", "--json"), ws("adopt", "~/code/x", "--into", "-x", "--json"),
+    ws("set", "harbor", "--set", set, "--expect", `-${h16}`, "--json"), ws("set", "harbor", "--set", `-${set}`, "--expect", "none", "--json"),
+    // A flag inside a value is not the flag.
+    ws("adopt", "~/code/x --into harbor", "--json"), ws("set", "harbor", "--set", `${set} --expect none`, "--json"),
+    // Terminals and sessions only: stubs, list, which; and verbs that do not exist.
+    ws("stubs", "harbor"), ws("stubs", "harbor", "--pin"), ws("stubs", "harbor", "--pin", "--json"), ws("list", "--json"), ws("which", "--json"),
+    ws("which", "--cwd", "/tmp", "--json"), ws("delete", "harbor", "--json"), ws("archive|restore", "harbor", "--json"),
+    // A new name (KEBAB).
+    ...["Harbor", "harbor-", "-harbor", "a_b", "harbor map", "harbor.app", "x".repeat(65), "", "café", "a\nb", "../b", "_x", "a/b"]
+      .flatMap((k) => [ws("new", k, "--json"), ws("rename", "harbor", k, "--json")]),
+    // An existing name (WS).
+    ...["_archive/harbor", "_archive", "../harbor", ".", "..", "a/b", ".hidden", "_x", "har\nbor", "a\u2028b", ""]
+      .flatMap((n) => [ws("draft", n, "--json"), ws("archive", n, "--json"), ws("restore", n, "--json"), ws("rename", n, "harbor-2", "--json"),
+        ws("adopt", "~/code/x", "--into", n, "--json"), ws("set", n, "--set", set, "--expect", "none", "--json")]),
+    // A hash (HASH) and a JSON object.
+    ...["", "abc", h16.slice(1), h16.toUpperCase(), "0".repeat(65), "None", "none ", `g${h16.slice(1)}`]
+      .map((h) => ws("set", "harbor", "--set", set, "--expect", h, "--json")),
+    ...["[]", "null", '"x"', "", "{"].map((j) => ws("set", "harbor", "--set", j, "--expect", "none", "--json")),
+    // An outside path (PATH): absolute or ~/, and never "/" or "~/" alone, nor a line break or NUL.
+    ...["relative/x", "/", "~/", "~", "~user/x", "./x", "a/../b", "/x\n", "/x\ny", "/a\0b", "/a\rb", "/a\u2028b", "~/a\u2029", ""]
+      .flatMap((p) => [ws("adopt", p, "--into", "harbor", "--json"), ws("hide", p, "--json"), ws("unhide", p, "--json")]),
+  ];
+  for (const args of no) assert.equal(all.canSpawn(NODE, args), false, `never: ${JSON.stringify(args.slice(1))}`);
+});
+
+test("every argv the page builds for a workspace verb (spacesModel workspaceArgs) is one the spaces surface admits (D29)", () => {
+  const spaces = new WritePolicy(VAULT, ["spaces"]);
+  const others = new WritePolicy(VAULT, SURFACE_IDS.filter((id) => id !== "spaces"));
+  const h = "ab".repeat(32);
+  const sent: string[][] = [
+    // NewSpaceModal's templates (Blank, Code repo, Clone), then Code's New workspace sheet (createAndLaunch, no --pin).
+    workspaceArgs.new("harbor-map", { git: false, pin: true }), workspaceArgs.new("harbor-map", { git: true, pin: true }),
+    workspaceArgs.new("harbor-map", { empty: true }), workspaceArgs.new("harbor-map", { git: false }), workspaceArgs.new("harbor-map", { git: true }),
+    workspaceArgs.draft("Field Notes"),
+    // The Draft dialog's preview and Save, the status menu, the pin toggle, Link as code folder and the link dialog.
+    workspaceArgs.set("harbor", { summary: "A -- b", objectives: ["--json"], next: "n", status: "paused" }, h, { dryRun: true }),
+    workspaceArgs.set("harbor", { status: "" }, "none"), workspaceArgs.set("harbor", { pinned: false }, h),
+    workspaceArgs.set("harbor", { repo: "~/code/x" }, h), workspaceArgs.set("harbor", { repo: "" }, h),
+    workspaceArgs.archive("harbor"), workspaceArgs.restore("harbor-2026-10-10"), workspaceArgs.rename("Field Notes", "field-notes"),
+    workspaceArgs.adopt("/opt/src/harbor app", "harbor"), workspaceArgs.hide("~/code/old"), workspaceArgs.unhide("/Volumes/work/x"),
+  ];
+  for (const a of sent) {
+    assert.equal(spaces.canSpawn(NODE, [`${S}/cli/aos.js`, ...a]), true, `spaces on: ${JSON.stringify(a)}`);
+    assert.equal(others.canSpawn(NODE, [`${S}/cli/aos.js`, ...a]), false, `spaces off: ${JSON.stringify(a)}`);
+  }
+  // What the builders refuse never reaches the surface: they throw before anything runs.
+  assert.throws(() => workspaceArgs.new("harbor-map", { git: true, empty: true }));
+  assert.throws(() => workspaceArgs.new("My App"));
+  assert.throws(() => workspaceArgs.rename("harbor", "../b"));
+  assert.throws(() => workspaceArgs.set("harbor", { pinned: true }, "-x"));
+  assert.throws(() => workspaceArgs.adopt("relative/x", "harbor"));
+  assert.throws(() => workspaceArgs.draft("_archive/harbor"));
 });
 
 test("a relative script runs only against the vault it resolves into", () => {

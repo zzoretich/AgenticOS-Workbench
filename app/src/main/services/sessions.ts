@@ -31,11 +31,19 @@ const STDERR_TAIL = 2000;
 /** A workspace's folder name: one segment, not hidden (`.git`) and not the team worktrees (`_worktrees`). */
 export const WORKSPACE_RE = /^[^._/\\\0][^/\\\0]{0,127}$/;
 
+const isDir = (p: string): boolean => { try { return fs.statSync(p).isDirectory(); } catch { return false; } };
+
 export function workspaceDir(vault: string | null, name: string): WorkspaceDir {
   if (!vault) return { refusal: "no vault is open" };
   if (typeof name !== "string" || !WORKSPACE_RE.test(name)) return { refusal: "a workspace name" };
   const dir = path.join(vault, "workspaces", name);
-  try { if (!fs.statSync(dir).isDirectory()) return { refusal: "not a workspace folder" }; } catch { return { refusal: "no such workspace" }; }
+  let stat: fs.Stats;
+  try { stat = fs.statSync(dir); } catch {
+    // Spaces' Archive moves the folder to workspaces/_archive/<name> and leaves its threads in brain/_index/sessions/<name>/,
+    // listed and read-only until Restore (spaces-redesign D17).
+    return { refusal: isDir(path.join(vault, "workspaces", "_archive", name)) ? `${name} is archived: restore it in Spaces to continue` : "no such workspace" };
+  }
+  if (!stat.isDirectory()) return { refusal: "not a workspace folder" };
   return { dir };
 }
 
