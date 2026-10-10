@@ -490,7 +490,9 @@ test('session-index.json is not rewritten while a transcript\'s last line is sti
   const past = new Date(NOW - DAY);
   fs.utimesSync(file, past, past);
   scan(w, [w.ws('x')]);
-  assert.equal(fs.statSync(file).mtimeMs, past.getTime(), 'nothing changed, so the cache was left alone');
+  // By age, not to the millisecond: utimes passes seconds as a double, and Linux truncates the nanoseconds, so a past
+  // of …672 ms can read back as …671.999. A rewrite would stamp the file with the current time.
+  assert.ok(fs.statSync(file).mtimeMs < NOW - DAY / 2, 'nothing changed, so the cache was left alone');
   fs.appendFileSync(c.file, '\n' + JSON.stringify({ sessionId: c.id, timestamp: at(0, 1), ...claudeTool(w.vault, 'Edit', path.join(x.absPath, 'b.md')) }) + '\n');
   scan(w, [w.ws('x')]);
   assert.ok(readIndex(w).files[c.file].touches[path.join(x.absPath, 'b.md')], 'once the line ends, its touches are read');
