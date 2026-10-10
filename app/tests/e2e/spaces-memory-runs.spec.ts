@@ -8,7 +8,7 @@
 import { expect, test } from "@playwright/test";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { FX, closeNotes, content, drawer, expected, notePath, openTab, pulseArea, rail, readVaultJson, useApp } from "./harness";
+import { FX, closeNotes, content, drawer, emulateViewport, expected, notePath, openTab, pulseArea, rail, readVaultJson, useApp } from "./harness";
 
 const app = useApp();
 const C = () => content(app().win);
@@ -584,6 +584,8 @@ test.describe("Spaces", () => {
     const todoWas = fs.readFileSync(todo, "utf8");
     const mapFile = FX.v("brain/_index/workspace-maps/reef-survey.json");
     const mapWas = fs.readFileSync(mapFile, "utf8");
+    // The preview scrolls in the right pane, which sits beside the dossier only above 1100 px: wider than CI's screen.
+    const undo = await emulateViewport(app().win, { width: 1480, height: 920 });
     try {
       await pick("reef-survey", "Files");
       await treeRow("transects.txt").click();
@@ -602,6 +604,7 @@ test.describe("Spaces", () => {
       await expect(R().locator(".aos-spc-prevbody > .aos-spc-empty")).toHaveCount(0);
       expect(await R().evaluate((el) => el.scrollTop)).toBe(600);
     } finally {
+      await undo();
       fs.writeFileSync(todo, todoWas);
       fs.writeFileSync(mapFile, mapWas);
       fs.rmSync(long, { force: true });
