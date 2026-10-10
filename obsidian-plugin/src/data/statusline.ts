@@ -2,7 +2,8 @@
 // brain/_index/statusline.json (schema 1, brain/scripts/lib/statusline-model.js); the status bar only reads it and asks
 // the runtime to refresh a stale one (D3). The same file feeds Claude Code's status line and the Codex session line, so
 // the three surfaces never disagree. Links into the Workbench arrive as agenticos://workbench?tab=<rail id> from the
-// UniDeX app, or as obsidian://agenticos?tab=<rail id> from a status line written before it (D10).
+// UniDeX app, or as obsidian://agenticos?tab=<rail id> from a status line written before it (D10); a Spaces link may also
+// name a workspace, a pane and a thread (spaces-redesign D12, workbenchLinkFrom).
 import type { App } from "obsidian";
 import { BRAND } from "../brand";
 
@@ -105,6 +106,38 @@ export function barSegments(m: StatuslineModel): BarSegment[] {
 export function workbenchTabFrom(params: Record<string, string | undefined>, ids: readonly string[]): string | null {
   const t = params.tab;
   return typeof t === "string" && ids.includes(t) ? t : null;
+}
+
+/** The panes an agenticos://workbench?tab=spaces&workspace=<name>&pane=<p> link may name (spaces-redesign D12): the
+ *  centre's Overview and Files, and the right pane's History and Linked. Any other value is dropped. */
+export const SPACES_PANES = ["overview", "files", "history", "linked"] as const;
+export type SpacesPane = (typeof SPACES_PANES)[number];
+
+/** A thread id as the app takes one: the ThreadId of app/src/main/ipc/schemas.ts (statusline.test.ts pins the two). */
+export const THREAD_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** What a link may select: a tab, and for Spaces a workspace with its pane and thread (WorkbenchView.open's target). */
+export interface WorkbenchLink { tab: string; workspace?: string; pane?: SpacesPane; thread?: string }
+
+/**
+ * What an agenticos://workbench link selects (spaces-redesign D12), every parameter checked: the tab as
+ * workbenchTabFrom reads it, then for Spaces only, `workspace` when it is exactly the name of an entry in the snapshot
+ * (`workspaces`), `pane` when it is one of SPACES_PANES and `thread` when it is a thread id. A value that fails its check
+ * is dropped, as are `pane` and `thread` without a workspace; every other parameter is ignored. Null when the tab is
+ * not a rail tab. A link only selects: nothing it carries resumes, opens a terminal, drafts or runs a verb.
+ */
+export function workbenchLinkFrom(params: Record<string, string | undefined>, ids: readonly string[], workspaces: readonly string[]): WorkbenchLink | null {
+  const tab = workbenchTabFrom(params, ids);
+  if (!tab) return null;
+  const out: WorkbenchLink = { tab };
+  const ws = params.workspace;
+  if (tab !== "spaces" || typeof ws !== "string" || !ws || !workspaces.includes(ws)) return out;
+  out.workspace = ws;
+  const pane = params.pane;
+  if (typeof pane === "string" && (SPACES_PANES as readonly string[]).includes(pane)) out.pane = pane as SpacesPane;
+  const thread = params.thread;
+  if (typeof thread === "string" && THREAD_ID_RE.test(thread)) out.thread = thread;
+  return out;
 }
 
 /** The rail tab a whole link names: agenticos://workbench?tab=<id>, or the older obsidian://agenticos?tab=<id>. Any

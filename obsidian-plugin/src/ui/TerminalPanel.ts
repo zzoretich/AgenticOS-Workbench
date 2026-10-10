@@ -21,8 +21,8 @@ import { FIND_LIMIT } from "../data/termFind";
 import { shell } from "../host";
 import { ConfirmModal } from "./ConfirmModal";
 import { LinkRepoModal } from "./LinkRepoModal";
-import { groupTerminals, stepRow, type TermGroup, type TermRowInput } from "../data/termGroups";
-import { TERM_ACCESS_LABEL, TERM_HOST_LABEL, placeOf, type Place, type PlaceWorld } from "../data/terminalLaunch";
+import { groupKey, groupTerminals, scopeOf, stepRow, type TermGroup, type TermRowInput, type TermScope } from "../data/termGroups";
+import { TERM_ACCESS_LABEL, TERM_HOST_LABEL, placeOf, workspacePlace, type Place, type PlaceWorld } from "../data/terminalLaunch";
 
 interface XtermBinding {
   term: Terminal;
@@ -44,6 +44,8 @@ export interface TerminalPanelOptions {
   launch?: NewTerminalActions;
   /** The Term tab's deck (spec 2026-10-08-term-agent-deck T1): a grouped list beside the terminal instead of tabs. */
   deck?: boolean;
+  /** The deck's Open workspace on a workspace group: Spaces on that workspace (spaces-redesign D12). */
+  openWorkspace?: (name: string) => void;
 }
 
 /** How long the "Started … · Change" note stays after a launch. */
@@ -66,6 +68,9 @@ export class TerminalPanel {
   private headMainEl: HTMLElement | null = null;
   private placeMenu: HTMLElement | null = null;
   private groups: TermGroup[] = [];
+  /** The workspace another tab opened Code on (reveal): the deck lists only its group until Show all or a launch
+   *  elsewhere (spaces-redesign D12). */
+  private scope: TermScope | null = null;
   private worldCache: { at: number; w: PlaceWorld } | null = null;
 
   private bindings = new Map<string, XtermBinding>();
@@ -103,6 +108,8 @@ export class TerminalPanel {
         close: (id) => this.closeSession(id),
         startIn: (g) => this.startIn(g.place, "quick"),
         clearEnded: () => { for (const s of this.plugin.terminalPool.list()) if (s.isExited) this.plugin.terminalPool.remove(s.id); },
+        openWorkspace: this.opts.openWorkspace ? (name) => this.opts.openWorkspace?.(name) : undefined,
+        clearScope: () => { this.scope = null; this.renderTabs(); },
       }, () => this.renderTabs());
       frame = host.createDiv({ cls: "aos-term-main" });
     }
@@ -168,7 +175,13 @@ export class TerminalPanel {
     // three listeners per visit alive until the plugin unloaded (spec 2026-09-24-hud-deck-fixes D1)
     this.disposePool?.();
     this.disposePool = listen(pool, {
-      "session-add": () => { if (this.host) this.renderTabs(); },
+      "session-add": (s: TerminalSession) => {
+        if (!this.host) return;
+        // A terminal that starts outside the scoped workspace (⌘T in the vault, a skill's button) ends the scope, so the
+        // new row is never hidden.
+        if (this.scope && s && groupKey(this.placeOfSession(s)) !== this.scope.key) this.scope = null;
+        this.renderTabs();
+      },
       "session-remove": (id: string) => {
         if (!this.host) return;
         const b = this.bindings.get(id);
@@ -237,6 +250,22 @@ export class TerminalPanel {
     this.ensureBindingForActive();
   }
 
+  /**
+   * Scopes the deck to a workspace (spaces-redesign D12): only its group, by key, with "Show all" above it; its newest
+   * terminal is selected when the selected one is elsewhere (a running one first). Select only: it never starts a
+   * terminal. No workspace, or one that is not a folder under workspaces/, shows every group again.
+   */
+  reveal(target: { workspace?: string | null }): void {
+    const w = this.plugin.termLauncher.world();
+    const name = target.workspace ?? null;
+    this.scope = name && w.workspaces.includes(name) ? scopeOf(workspacePlace(name, w)) : null;
+    this.renderTabs();
+    if (!this.scope) return;
+    const rows = this.groups.flatMap((g) => g.rows);
+    if (!rows.length || rows.some((r) => r.id === this.activeId)) return;
+    this.activate((rows.find((r) => r.end === "running") ?? rows[0]).id);
+  }
+
   /** Opens the New menu (⇧⌘T), or its New workspace sheet (⇧⌘N); `reason` says why ⌘T could not start at once. */
   openNewMenu(mode: "menu" | "create" = "menu", reason: string | null = null): void {
     this.newMenu?.open(mode, reason);
@@ -291,8 +320,8 @@ export class TerminalPanel {
 
   private renderTabs(): void {
     if (this.opts.deck && this.list) {
-      this.groups = groupTerminals(this.rowInputs(), this.list.query());
-      this.list.render(this.groups, this.activeId, this.plugin.terminalPool.list().filter((s) => !s.isExited).length);
+      this.groups = groupTerminals(this.rowInputs(), this.list.query(), this.scope);
+      this.list.render(this.groups, this.activeId, this.plugin.terminalPool.list().filter((s) => !s.isExited).length, this.scope);
       this.renderHead();
       return;
     }
@@ -398,10 +427,18 @@ export class TerminalPanel {
     if (s.isExited) {
       const end = el.createDiv({ cls: "aos-term-endbar", attr: { role: "status" } });
       end.createSpan({ text: s.exitCode ? `Ended · Exited ${s.exitCode}` : "Ended" });
-      const btn = (label: string, fn: () => void) => { const b = end.createEl("button", { cls: "aos-term-endbtn", text: label, attr: { type: "button" } }); b.addEventListener("click", fn); };
+      const btn = (label: string, fn: () => void, title?: string) => {
+        const b = end.createEl("button", { cls: "aos-term-endbtn", text: label, attr: { type: "button", ...(title ? { title } : {}) } });
+        b.addEventListener("click", fn);
+      };
       if (s.meta.host !== "shell") {
-        btn("Restart", () => this.startIn(place, s.meta.host));
-        btn(s.meta.host === "claude" && s.meta.claudeSessionId ? "Resume" : "Resume latest", () => this.startIn(place, s.meta.host, s.meta.host === "claude" && s.meta.claudeSessionId ? { id: s.meta.claudeSessionId } : "last"));
+        const host = s.meta.host;
+        btn("Restart", () => this.startIn(place, host));
+        // By id on either host when the terminal knows its conversation (a new Claude Code one, or any resume by id);
+        // otherwise the latest one in this folder (spaces-redesign D7).
+        const id = s.meta.sessionId;
+        if (id) btn("Resume", () => this.startIn(place, host, { id }), `Resume this conversation (${id.slice(0, 8)}…)`);
+        else btn("Resume latest", () => this.startIn(place, host, "last"), "Resume the latest conversation in this folder");
       }
       btn("Open a shell here", () => this.startIn(place, "shell"));
     }

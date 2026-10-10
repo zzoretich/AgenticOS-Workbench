@@ -3,7 +3,7 @@ import { SidebarHUDView, VIEW_TYPE_SIDEBAR_HUD } from "./src/views/SidebarHUD";
 import { BRAND } from "./src/brand";
 import { MemoryInspectorView, VIEW_TYPE_MEMORY_INSPECTOR, consumePendingMemory } from "./src/views/MemoryInspectorView";
 import { RunInspectorView, VIEW_TYPE_RUN_INSPECTOR, consumePendingRunId } from "./src/views/RunInspectorView";
-import { WorkbenchView, VIEW_TYPE_WORKBENCH, WORKBENCH_TAB_IDS } from "./src/views/WorkbenchView";
+import { WorkbenchView, VIEW_TYPE_WORKBENCH, WORKBENCH_TAB_IDS, type WorkbenchTarget } from "./src/views/WorkbenchView";
 import type { PulseTab } from "./src/views/PulseTab";
 import type { RunsTab } from "./src/views/RunsTab";
 import type { FilesTab } from "./src/views/FilesTab";
@@ -16,7 +16,7 @@ import type { TermHost } from "./src/data/terminalLaunch";
 import { AgenticOSSettings, AgenticOSSettingTab, DEFAULT_SETTINGS } from "./src/settings";
 import { loadSnapshot, SNAPSHOT_PATH, visibleWorkspaces } from "./src/data/snapshot";
 import { loadRuns, RUNS_PATH, touchesRuns, formatRelative } from "./src/data/runs";
-import { loadStatusline, isStale as statuslineStale, barSegments, workbenchTabFrom, STATUSLINE_PATH } from "./src/data/statusline";
+import { loadStatusline, isStale as statuslineStale, barSegments, workbenchLinkFrom, workbenchTabFrom, STATUSLINE_PATH } from "./src/data/statusline";
 import type { BarTone } from "./src/data/statusline";
 import { CaptureModal } from "./src/ui/CaptureModal";
 import { HeartbeatClient } from "./src/data/heartbeatClient";
@@ -157,11 +157,9 @@ export default class AgenticOSPlugin extends Plugin {
 
     // Terminal status lines link here (statusline spec D10): agenticos://workbench?tab=<rail id>, which the app routes to
     // this handler, or obsidian://agenticos?vault=<name>&tab=<rail id> from before the app. Only a rail tab id opens a
-    // tab; anything else just opens the Workbench.
-    this.registerObsidianProtocolHandler("agenticos", (params) => {
-      const tab = workbenchTabFrom(params, WORKBENCH_TAB_IDS);
-      void (tab ? this.openWorkbenchTab(tab) : this.activate(VIEW_TYPE_WORKBENCH));
-    });
+    // tab; anything else just opens the Workbench. A Spaces link may also select a workspace (spaces-redesign D12):
+    // agenticos://workbench?tab=spaces&workspace=<name>[&pane=<p>][&thread=<id>], each checked (workbenchLinkFrom).
+    this.registerObsidianProtocolHandler("agenticos", (params) => { void this.openLink(params); });
 
     this.app.workspace.onLayoutReady(async () => {
       if (this.settings.autoOpenSidebarOnStart) await this.activate(VIEW_TYPE_SIDEBAR_HUD, "right");
@@ -514,6 +512,30 @@ export default class AgenticOSPlugin extends Plugin {
     const view = leaf?.view;
     if (!(view instanceof WorkbenchView)) return;
     try { await run(view); } catch (e) { new Notice(`Terminal: ${e instanceof Error ? e.message : String(e)}`); }
+  }
+
+  /** A link into the Workbench (statusline spec D10, spaces-redesign D12). The workspace must be a name in the
+   *  snapshot, so the snapshot is read only when the link names one. It only selects: never a resume, a terminal, a
+   *  draft or a verb. */
+  private async openLink(params: Record<string, string | undefined>): Promise<void> {
+    const tab = workbenchTabFrom(params, WORKBENCH_TAB_IDS);
+    if (!tab) { await this.activate(VIEW_TYPE_WORKBENCH); return; }
+    let names: string[] = [];
+    if (tab === "spaces" && params.workspace) {
+      try { names = ((await loadSnapshot(this.app))?.workspaces ?? []).map((w) => w.name).filter((n): n is string => typeof n === "string"); } catch { /* no snapshot: no workspace */ }
+    }
+    const link = workbenchLinkFrom(params, WORKBENCH_TAB_IDS, names) ?? { tab };
+    if (!(await this.openWorkbench(link))) await this.openWorkbenchTab(tab);
+  }
+
+  /** Opens the Workbench on `target` through WorkbenchView.open (spaces-redesign D12): the tab, then what it selects.
+   *  False when the view is not there or the tab cannot be shown. */
+  async openWorkbench(target: WorkbenchTarget): Promise<boolean> {
+    await this.activate(VIEW_TYPE_WORKBENCH);
+    const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_WORKBENCH)[0];
+    if (leaf && typeof leaf.loadIfDeferred === "function") await leaf.loadIfDeferred();
+    const view = leaf?.view;
+    return view instanceof WorkbenchView ? view.open(target) : false;
   }
 
   async openWorkbenchTab(tab: string): Promise<void> {

@@ -27,6 +27,7 @@ import { HOST_APP_SETTINGS, HOST_TOGGLE_THEME, runHostCommand } from "../ui/host
 import { currentTheme, onThemeChange } from "../ui/theme";
 import type { NewTerminalActions } from "../ui/NewTerminalMenu";
 import { TERM_HOST_LABEL, isContextPlace, placeOf, workspacePlace, type Place, type TermHost } from "../data/terminalLaunch";
+import type { SpacesPane } from "../data/statusline";
 
 export const VIEW_TYPE_WORKBENCH = "agentic-os-workbench";
 
@@ -68,6 +69,39 @@ const MARK_PATH = "M6 6V26a14 14 0 0 0 28 0V6 M48 6V40H60a17 17 0 0 0 0-34H48Z M
 /** Every tab id setTab() can build: what an agenticos://workbench?tab=<id> link may name (statusline spec D10). */
 export const WORKBENCH_TAB_IDS: readonly string[] = [...RAIL.map((t) => t.id), SETTINGS_TAB.id];
 
+/**
+ * Where open() lands (spaces-redesign D12): a tab, and for Spaces, Sessions and Code what to show in it. Every field
+ * only selects; none starts anything.
+ */
+export interface WorkbenchTarget {
+  /** A tab id (WORKBENCH_TAB_IDS); Sessions keeps the id "chat" and Code "term". */
+  tab: string;
+  /** A workspace name: Spaces selects it; Sessions and Code scope their lists to it. */
+  workspace?: string | null;
+  /** Spaces only: the pane to show for the workspace (statusline.ts SPACES_PANES). */
+  pane?: SpacesPane | null;
+  /** A thread id: Sessions opens that thread; Spaces shows it in the workspace's history. */
+  thread?: string | null;
+}
+/** What a tab's reveal() is handed: the target without its tab, only the fields that were set. */
+export type RevealTarget = Omit<WorkbenchTarget, "tab">;
+
+/** A built tab. */
+interface WorkbenchTab {
+  mount(h: HTMLElement): void;
+  refresh(): Promise<void>;
+  unmount(): void;
+}
+
+/**
+ * A tab's public reveal(target: RevealTarget), when it has one (Spaces, Sessions, Code): what open() hands the rest of
+ * its target to, after setTab() has mounted the tab (spaces-redesign D12). Read by name so each tab owns its signature.
+ */
+function revealOf(tab: unknown): ((target: RevealTarget) => void) | null {
+  const fn = (tab as { reveal?: unknown } | null | undefined)?.reveal;
+  return typeof fn === "function" ? (target: RevealTarget) => { (fn as (t: RevealTarget) => void).call(tab, target); } : null;
+}
+
 export class WorkbenchView extends ItemView {
   private plugin: AgenticOSPlugin;
   private contentHost!: HTMLElement;
@@ -77,7 +111,7 @@ export class WorkbenchView extends ItemView {
   private badgeTimer: number | null = null;
   private teamsReads = 0;
   private teamsShown = 0;
-  private tabs: Partial<Record<string, { mount(h: HTMLElement): void; refresh(): Promise<void>; unmount(): void }>> = {};
+  private tabs: Partial<Record<string, WorkbenchTab>> = {};
   private activeTab = "pulse";
   private unwatchTheme: (() => void) | null = null;
 
@@ -326,8 +360,13 @@ export class WorkbenchView extends ItemView {
     return null;
   }
 
-  /** Starts `host` ("quick": the one ⌘T starts) and shows it. A host that is not ready opens the menu with why. */
-  async launchTerminal(host: TermHost | "quick", o: { picked?: Place | null; resume?: "last" | { id: string } | null } = {}): Promise<void> {
+  /**
+   * Starts `host` ("quick": the one ⌘T starts) and shows it. A host that is not ready opens the menu with why; one that
+   * is off throws. `origin` names what started it when it was not the deck ("Spaces"): the row's "from …" subtitle, and
+   * the remembered host and workspace stay as they were. A resume by id (`resume: { id }`) types `claude --resume <id>`
+   * or `codex resume -C <folder> <id>` in `picked`'s folder, and the terminal keeps the id for its end bar.
+   */
+  async launchTerminal(host: TermHost | "quick", o: { picked?: Place | null; resume?: "last" | { id: string } | null; origin?: string | null } = {}): Promise<void> {
     const launcher = this.plugin.termLauncher;
     const context = this.termContext();
     let h: TermHost;
@@ -339,7 +378,7 @@ export class WorkbenchView extends ItemView {
     const choice = launcher.choices().find((c) => c.host === h);
     if (!choice || choice.hidden) throw new Error(`${TERM_HOST_LABEL[h]} is off on this Mac: run aos init --host ${h}`);
     if (!choice.ready) { this.openTermMenu("menu", choice.reason); return; }
-    await launcher.launch({ host: h, picked: o.picked ?? null, context, resume: o.resume ?? null });
+    await launcher.launch({ host: h, picked: o.picked ?? null, context, resume: o.resume ?? null, origin: o.origin ?? null });
     if (this.activeTab !== "term") this.setTab("term");
   }
 
@@ -353,6 +392,26 @@ export class WorkbenchView extends ItemView {
   openTermMenu(mode: "menu" | "create", reason: string | null = null): void {
     if (this.activeTab !== "term") this.setTab("term");
     (this.tabs.term as TermTab | undefined)?.openNewMenu(mode, reason);
+  }
+
+  /**
+   * The one way into a tab from another tab or a link (spaces-redesign D12): shows `target.tab` (left as it is when it
+   * is already shown), then hands the rest to that tab's reveal(): Spaces selects the workspace, its pane and thread;
+   * Sessions scopes its list to the workspace and opens the thread; Code scopes its list to the workspace's group.
+   * Select only: it never resumes, opens a terminal, drafts or runs a verb. False when the tab cannot be shown: not a
+   * tab id, or Sessions with no provider (its rail button is hidden, D32).
+   */
+  open(target: WorkbenchTarget): boolean {
+    const { tab } = target;
+    if (!WORKBENCH_TAB_IDS.includes(tab)) return false;
+    if (tab === "chat" && !this.plugin.chatAvailable()) return false;
+    if (this.activeTab !== tab || !this.tabs[tab]) this.setTab(tab);
+    const reveal: RevealTarget = {};
+    if (target.workspace) reveal.workspace = target.workspace;
+    if (target.pane) reveal.pane = target.pane;
+    if (target.thread) reveal.thread = target.thread;
+    if (Object.keys(reveal).length) revealOf(this.tabs[tab])?.(reveal);
+    return true;
   }
 
   private onRailClick(tab: RailTab): void {

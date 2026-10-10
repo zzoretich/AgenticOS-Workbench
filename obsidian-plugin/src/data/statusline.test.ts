@@ -2,7 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as path from "path";
 import { createRequire } from "module";
-import { parseStatusline, isStale, barSegments, workbenchTabFrom, workbenchTabFromUrl, StatuslineModel } from "./statusline";
+import * as fs from "fs";
+import { parseStatusline, isStale, barSegments, workbenchTabFrom, workbenchTabFromUrl, workbenchLinkFrom, SPACES_PANES, THREAD_ID_RE, StatuslineModel } from "./statusline";
 
 // The on-disk contract is shared with brain/scripts/lib/statusline-model.js (spec 2026-09-28-statusline-design D3): the
 // runtime builds the model from a fixture vault and this parser must read it back field for field.
@@ -84,4 +85,60 @@ test("workbenchTabFromUrl: the app's agenticos://workbench links and the older o
   // The runtime's own builder round-trips through the HUD's parser.
   const hudHost = createRequire(__filename)(path.join(REPO, "brain/scripts/lib/hud-host.js"));
   assert.equal(workbenchTabFromUrl(hudHost.links().tab("pulse"), ids), "pulse");
+});
+
+// ── the Spaces deep link (spaces-redesign D12) ──
+
+const RAIL = ["pulse", "term", "chat", "spaces", "files", "settings"];
+const NAMES = ["harbor-map", "tide-chart", "_archive/pier-repairs"];
+const THREAD = "3f2c9d1e-0a4b-4c8d-9e7f-1a2b3c4d5e6f";
+/** The query a link hands the HUD's handler, as the app's protocol.ts passes it (every parameter, as text). */
+const paramsOf = (url: string): Record<string, string> => Object.fromEntries(new URL(url).searchParams);
+
+test("workbenchLinkFrom: a Spaces link selects a workspace from the snapshot, a pane from the set, a thread id", () => {
+  assert.deepEqual(workbenchLinkFrom(paramsOf("agenticos://workbench?tab=spaces&workspace=harbor-map"), RAIL, NAMES), { tab: "spaces", workspace: "harbor-map" });
+  assert.deepEqual(
+    workbenchLinkFrom(paramsOf(`agenticos://workbench?tab=spaces&workspace=tide-chart&pane=files&thread=${THREAD}`), RAIL, NAMES),
+    { tab: "spaces", workspace: "tide-chart", pane: "files", thread: THREAD },
+  );
+  // A hidden entry is still a snapshot name (Spaces shows it behind its toggle); the encoded slash round-trips.
+  assert.deepEqual(workbenchLinkFrom(paramsOf("agenticos://workbench?tab=spaces&workspace=_archive%2Fpier-repairs"), RAIL, NAMES), { tab: "spaces", workspace: "_archive/pier-repairs" });
+  for (const p of SPACES_PANES) assert.equal(workbenchLinkFrom({ tab: "spaces", workspace: "harbor-map", pane: p }, RAIL, NAMES)?.pane, p);
+});
+
+test("workbenchLinkFrom: a value that fails its check is dropped, never passed on", () => {
+  const sel = (q: string) => workbenchLinkFrom(paramsOf(`agenticos://workbench?${q}`), RAIL, NAMES);
+  // workspace: only an exact snapshot name; not a near miss, a path, a case change or an empty value
+  for (const ws of ["harbor", "Harbor-Map", "harbor-map%2F..", "..%2F..%2Fetc", "", "harbor-map%00"]) assert.deepEqual(sel(`tab=spaces&workspace=${ws}`), { tab: "spaces" }, ws);
+  // pane and thread go with a dropped workspace
+  assert.deepEqual(sel(`tab=spaces&workspace=nope&pane=files&thread=${THREAD}`), { tab: "spaces" });
+  assert.deepEqual(sel(`tab=spaces&pane=files&thread=${THREAD}`), { tab: "spaces" });
+  // pane: one of the fixed set
+  assert.deepEqual(sel("tab=spaces&workspace=harbor-map&pane=terminal"), { tab: "spaces", workspace: "harbor-map" });
+  assert.deepEqual(sel("tab=spaces&workspace=harbor-map&pane=Files"), { tab: "spaces", workspace: "harbor-map" });
+  // thread: a thread id or nothing (uppercase, a flag, a short id, a path)
+  for (const t of [THREAD.toUpperCase(), `-${THREAD.slice(1)}`, "3f2c9d1e", `${THREAD}x`, "..%2Fsessions"]) {
+    assert.deepEqual(sel(`tab=spaces&workspace=harbor-map&thread=${t}`), { tab: "spaces", workspace: "harbor-map" }, t);
+  }
+  // a workspace on another tab is not read: only Spaces takes one from a link
+  assert.deepEqual(sel("tab=term&workspace=harbor-map"), { tab: "term" });
+  assert.deepEqual(sel("tab=chat&workspace=harbor-map&thread=" + THREAD), { tab: "chat" });
+  // not a rail tab: nothing (the handler then opens the Workbench as it was)
+  assert.equal(sel("tab=..%2F..&workspace=harbor-map"), null);
+  assert.equal(sel("workspace=harbor-map"), null);
+});
+
+test("workbenchLinkFrom: a link with extra parameters only selects (no resume, launch, draft or verb)", () => {
+  const link = workbenchLinkFrom(paramsOf(
+    `agenticos://workbench?tab=spaces&workspace=harbor-map&pane=history&thread=${THREAD}&resume=1&host=claude&run=aos%20workspace%20archive&draft=1&command=rm&cwd=%2F`,
+  ), RAIL, NAMES);
+  assert.deepEqual(link, { tab: "spaces", workspace: "harbor-map", pane: "history", thread: THREAD });
+  assert.deepEqual(Object.keys(link ?? {}).sort(), ["pane", "tab", "thread", "workspace"]);
+});
+
+test("THREAD_ID_RE is the app's ThreadId (app/src/main/ipc/schemas.ts)", () => {
+  const schemas = fs.readFileSync(path.join(REPO, "app/src/main/ipc/schemas.ts"), "utf8");
+  const m = /const ThreadId = z\.string\(\)\.regex\(\/(.+)\/\);/.exec(schemas);
+  assert.ok(m, "schemas.ts declares ThreadId as z.string().regex(/…/)");
+  assert.equal(THREAD_ID_RE.source, new RegExp(m[1]).source);
 });

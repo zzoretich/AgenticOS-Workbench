@@ -2,6 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert";
 import { isIgnored } from "./workspaceFiles";
 import { sortEntries, type DirEntry } from "./workspaceFiles";
+import { mapSkipReason, mapSkipsDir, MAP_MAX_SIZE } from "./workspaceFiles";
+import { createRequire } from "module";
 
 test("isIgnored drops .git, node_modules, .DS_Store", () => {
   assert.equal(isIgnored(".git"), true);
@@ -132,6 +134,78 @@ test("readPreview: large file is flagged truncated and capped", async () => {
     assert.equal(r.kind, "text");
     assert.equal(r.truncated, true);
     assert.ok(Buffer.byteLength(r.text ?? "", "utf8") <= MAX_PREVIEW_BYTES);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("listDir records each file's size", async () => {
+  const dir = await fs.mkdtemp(nodePath.join(os.tmpdir(), "wssize-"));
+  try {
+    await fs.mkdir(nodePath.join(dir, "src"));
+    await fs.writeFile(nodePath.join(dir, "a.md"), "hello");
+    const entries = await listDir(dir);
+    assert.deepEqual(entries, [{ name: "src", isDir: true }, { name: "a.md", isDir: false, size: 5 }]);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("mapSkipReason: dot segments but .github, skipped folders, lock files, binary types, over 1 MB", () => {
+  assert.equal(mapSkipReason("src/main.ts", 10), null);
+  assert.equal(mapSkipReason(".github/workflows/ci.yml", 10), null);
+  assert.equal(mapSkipReason(".env", 10), "hidden");
+  assert.equal(mapSkipReason("a/.cache/x.md", 10), "hidden");
+  assert.equal(mapSkipReason("dist/app.js", 10), "folder");
+  assert.equal(mapSkipReason("pkg/node_modules/x.js", 10), "folder");
+  assert.equal(mapSkipReason("package-lock.json", 10), "name");
+  assert.equal(mapSkipReason("art/Logo.PNG", 10), "type");
+  assert.equal(mapSkipReason("data.json", MAP_MAX_SIZE + 1), "size");
+  assert.equal(mapSkipReason("data.json", MAP_MAX_SIZE), null);
+  assert.equal(mapSkipReason("data.json"), null, "an unknown size passes");
+  assert.equal(mapSkipsDir("dist"), true);
+  assert.equal(mapSkipsDir(".github"), false);
+  assert.equal(mapSkipsDir("src/.venv/lib"), true);
+  assert.equal(mapSkipsDir("src"), false);
+});
+
+/**
+ * collectors/fileMap.js resolves a vault as it loads (lib/paths.js): give it an empty temp vault and no agenticos.json,
+ * so this never reads the developer's own config or vault (terminalLaunch.test.ts's loadCollector precedent).
+ */
+async function loadFileMap(): Promise<{ mappableFile: (abs: string, rel: string) => boolean }> {
+  const vault = await fs.mkdtemp(nodePath.join(os.tmpdir(), "aos-filemap-vault-"));
+  await fs.mkdir(nodePath.join(vault, "brain", "_index"), { recursive: true });
+  const saved = { vault: process.env.AOS_VAULT, config: process.env.AOS_CONFIG };
+  process.env.AOS_VAULT = vault;
+  process.env.AOS_CONFIG = nodePath.join(vault, "no-agenticos.json");
+  try {
+    return createRequire(__filename)(nodePath.resolve(__dirname, "../../../brain/scripts/collectors/fileMap.js"));
+  } finally {
+    for (const [k, v] of [["AOS_VAULT", saved.vault], ["AOS_CONFIG", saved.config]] as const) {
+      if (v === undefined) delete process.env[k]; else process.env[k] = v;
+    }
+    await fs.rm(vault, { recursive: true, force: true });
+  }
+}
+
+test("mapSkipReason mirrors the runtime's fileMap.js mappableFile, case for case", async () => {
+  const runtime = await loadFileMap();
+  const dir = await fs.mkdtemp(nodePath.join(os.tmpdir(), "wsmap-"));
+  const cases: Array<[string, number]> = [
+    ["README.md", 10], ["src/main.ts", 10], [".github/workflows/ci.yml", 10], [".env", 10], ["a/.cache/x.md", 10],
+    ["dist/app.js", 10], ["build/x.js", 10], [".obsidian/app.json", 10], ["__pycache__/x.pyc", 10], [".venv/bin/x", 10],
+    ["pkg/node_modules/x.js", 10], ["package-lock.json", 10], ["yarn.lock", 10], ["Cargo.lock", 10], [".DS_Store", 10],
+    ["art/logo.png", 10], ["art/Logo.SVG", 10], ["deck.pptx", 10], ["lib.dylib", 10], ["fonts/a.woff2", 10],
+    ["big.json", MAP_MAX_SIZE + 1], ["edge.json", MAP_MAX_SIZE], ["_notes/x.md", 10], ["Makefile", 10],
+  ];
+  try {
+    for (const [rel, size] of cases) {
+      const abs = nodePath.join(dir, rel);
+      await fs.mkdir(nodePath.dirname(abs), { recursive: true });
+      await fs.writeFile(abs, Buffer.alloc(size, 97));
+      assert.equal(mapSkipReason(rel, size) === null, runtime.mappableFile(abs, rel), rel);
+    }
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }

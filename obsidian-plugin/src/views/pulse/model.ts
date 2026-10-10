@@ -18,7 +18,8 @@ import { parseTodos, localDay, type Todo } from "../../data/todos";
 import { proposalTitle } from "../../data/pulseFacts";
 import { ageDays } from "../../data/proposals";
 import { readAgenticosJson, readVaultConfig } from "../../data/aosConfig";
-import { TERM_HOST_LABEL } from "../../data/terminalLaunch";
+import { TERM_HOST_LABEL, placeOf, type PlaceWorld } from "../../data/terminalLaunch";
+import { liveByWorkspace, type LiveState, type LiveTerminalInput } from "../../data/spacesModel";
 import { diskAdapter, memberStatus, pendingGates, readTeams } from "../../data/teams";
 import { env, fs, sessionsHost } from "../../host";
 
@@ -59,6 +60,9 @@ export interface PulseModel {
   staff: StaffAgent[];
   heartbeat: PersonaHeartbeat | null;
   live: LiveRow[];
+  /** What runs in each workspace now, by the rule Spaces' live dot uses (spaces-redesign D26): Code terminals placed
+   *  there, shells included, and Sessions threads mid-turn. Read with `live`, from the same thread list. */
+  liveBy: Map<string, LiveState>;
   routineRows: RoutineRow[];
   todos: Todo[];
   spendDays: { day: string; usd: number }[];
@@ -155,22 +159,32 @@ function countBackfillable(plugin: AgenticOSPlugin, runs: AgentRun[]): number {
   }
 }
 
-/** The running agents: Sessions threads with a turn running, and Term's agent terminals that have not ended. */
-async function liveRows(plugin: AgenticOSPlugin): Promise<LiveRow[]> {
+/**
+ * The running agents: Sessions threads with a turn running, and Term's agent terminals that have not ended; and from
+ * the same reads, what runs in each workspace (liveByWorkspace, spaces-redesign D26), so Pulse lists the threads once.
+ */
+async function liveRows(plugin: AgenticOSPlugin): Promise<{ rows: LiveRow[]; byWorkspace: Map<string, LiveState> }> {
   const out: LiveRow[] = [];
+  const threads: Array<{ workspace: string; running: boolean }> = [];
+  const terminals: LiveTerminalInput[] = [];
   try {
     const h = sessionsHost();
     const r = h ? await h.sessions.list() : null;
-    if (r && r.ok) for (const t of r.data.filter((x) => x.running)) out.push({ title: t.title || "Session", sub: `${TERM_HOST_LABEL[t.host] ?? t.host} · ${t.workspace} · Sessions`, host: t.host });
+    if (r && r.ok) {
+      for (const t of r.data) threads.push({ workspace: t.workspace, running: t.running });
+      for (const t of r.data.filter((x) => x.running)) out.push({ title: t.title || "Session", sub: `${TERM_HOST_LABEL[t.host] ?? t.host} · ${t.workspace} · Sessions`, host: t.host });
+    }
   } catch { /* no sessions host (plain Node, tests) */ }
   try {
+    let world: PlaceWorld | null = null;
     for (const s of plugin.terminalPool.list()) {
+      terminals.push({ place: s.meta.place ?? placeOf(s.cwd, (world ??= plugin.termLauncher.world())), exited: s.isExited });
       if (s.isExited || s.meta.host === "shell") continue;
       const place = s.meta.place ? s.meta.place.label : path.basename(s.cwd);
       out.push({ title: s.getTitle(), sub: `${TERM_HOST_LABEL[s.meta.host]} · ${place} · Code`, host: s.meta.host });
     }
   } catch { /* no terminals */ }
-  return out;
+  return { rows: out, byWorkspace: liveByWorkspace(threads, terminals) };
 }
 
 export async function loadPulseModel(plugin: AgenticOSPlugin, seenAt: string | null, now: Date = new Date()): Promise<PulseModel> {
@@ -239,6 +253,7 @@ export async function loadPulseModel(plugin: AgenticOSPlugin, seenAt: string | n
   for (const n of facts.needsYou.filter((x) => x.kind === "flag")) decisions.push({ kind: "flag", title: n.title, sub: `flag${n.since ? ` · since ${n.since}` : ""} · persona/STATE.md`, ref: n.ref, days: n.since ? ageDays(n.since, now) : null });
   if (inputs.drafts) decisions.push({ kind: "drafts", title: `${inputs.drafts} feedback rule draft${inputs.drafts === 1 ? "" : "s"}`, sub: "brain/memory/feedback/_drafts · feedback-review", ref: "feedback-drafts", days: null });
 
+  const live = await liveRows(plugin);
   return {
     now, inputs, facts, briefing,
     paragraph: chooseParagraph(briefing, facts, now, staleHours),
@@ -249,7 +264,8 @@ export async function loadPulseModel(plugin: AgenticOSPlugin, seenAt: string | n
     trailRows,
     staff: await loadStaff(app).catch(() => []),
     heartbeat: await loadPersonaHeartbeat(app).catch(() => null),
-    live: await liveRows(plugin),
+    live: live.rows,
+    liveBy: live.byWorkspace,
     routineRows,
     todos: parseTodos(inputs.todo ?? ""),
     spendDays: spendDays(ledger, now),

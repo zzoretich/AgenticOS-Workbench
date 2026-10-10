@@ -7,7 +7,7 @@ import { createRequire } from "module";
 import {
   slugify, isReserved, workspaceStubs, scratchStubs, stubWrites, workspaceNameProblem, gitInitWanted, TEMPLATE_TEXT, isTemplateText,
   workspacePlace, placeOf, resolvePlace, isContextPlace, vaultPlace, homePlace, parseRepoLink, withRepoLink, repoValue,
-  termHostChoices, quickHost, launchLine, launchArgs, previewLine, SCRATCH, menuRows, firstActionable,
+  termHostChoices, quickHost, launchLine, launchArgs, launchIds, previewLine, SCRATCH, menuRows, firstActionable,
 } from "./terminalLaunch";
 import type { PlaceWorld } from "./terminalLaunch";
 import type { AgenticosJson, ProviderState } from "./aosConfig";
@@ -245,6 +245,59 @@ test("launchArgs per host and access level; Host default passes no flags", () =>
   assert.deepEqual(launchArgs({ host: "codex", bin: null, model: "gpt-6-sol", access: "read" }), ["-m", "gpt-6-sol", "-s", "read-only", "-a", "on-request"]);
   assert.deepEqual(launchArgs({ host: "codex", bin: null, model: null, access: "edit" }), ["-s", "workspace-write", "-a", "on-request"]);
   assert.deepEqual(launchArgs({ host: "codex", bin: null, model: "x", access: "edit", resume: "last" }), ["resume", "--last"]);
+});
+
+test("a Spaces resume by id: codex resume <id> names the terminal's folder first with -C, so Codex does not ask (spaces-redesign D7)", () => {
+  const id = "019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a5b";
+  const dir = path.join(vault, "workspaces", "bz-wedding");
+  assert.deepEqual(launchArgs({ host: "codex", bin: null, model: null, access: "host", resume: { id }, cwd: dir }), ["resume", "-C", dir, id]);
+  // The model and access of a new session are not passed to a resume: the thread keeps its own settings.
+  assert.deepEqual(launchArgs({ host: "codex", bin: null, model: "gpt-6-sol", access: "edit", resume: { id }, cwd: dir }), ["resume", "-C", dir, id]);
+  assert.equal(
+    launchLine({ host: "codex", bin: null, model: null, access: "host", resume: { id }, cwd: dir }),
+    ` command -v 'codex' >/dev/null 2>&1 && exec 'codex' resume -C ${dir} ${id} || echo 'Codex was not found: run aos doctor'`,
+  );
+  // A folder with a space is quoted; with no folder the line is the plain resume (Codex then asks which folder).
+  assert.match(launchLine({ host: "codex", bin: null, model: null, access: "host", resume: { id }, cwd: path.join(home, "My Code", "app") }), /resume -C '[^']*My Code[^']*' [0-9a-f-]+ \|\|/);
+  assert.deepEqual(launchArgs({ host: "codex", bin: null, model: null, access: "host", resume: { id } }), ["resume", id]);
+  // --last needs no folder: it only looks at threads recorded in this one.
+  assert.deepEqual(launchArgs({ host: "codex", bin: null, model: null, access: "host", resume: "last", cwd: dir }), ["resume", "--last"]);
+  // Claude Code finds a thread from any folder (D7's build check): no flag for the folder.
+  assert.deepEqual(launchArgs({ host: "claude", bin: null, model: null, access: "host", resume: { id }, cwd: dir }), ["--resume", id]);
+  assert.equal(previewLine({ host: "codex", bin: null, model: null, access: "host", resume: { id }, cwd: dir }), `exec codex resume -C ${dir} ${id}`);
+});
+
+test("launchIds: the terminal keeps the conversation's id on either host when it is known, for the end bar's Resume", () => {
+  const mint = () => "11111111-2222-4333-a444-555555555555";
+  const id = "019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a5b";
+  // a new Claude Code conversation gets an id up front (--session-id) and keeps it
+  assert.deepEqual(launchIds("claude", null, mint), { fresh: mint(), known: mint() });
+  // any resume by id keeps that id, Codex included (spaces-redesign D7); nothing new is minted
+  assert.deepEqual(launchIds("claude", { id }, mint), { fresh: null, known: id });
+  assert.deepEqual(launchIds("codex", { id }, mint), { fresh: null, known: id });
+  // a new Codex session and a resume of the latest know no id: the end bar offers Resume latest
+  assert.deepEqual(launchIds("codex", null, mint), { fresh: null, known: null });
+  assert.deepEqual(launchIds("claude", "last", mint), { fresh: null, known: null });
+  assert.deepEqual(launchIds("codex", "last", mint), { fresh: null, known: null });
+  assert.deepEqual(launchIds("shell", { id }, mint), { fresh: null, known: null });
+});
+
+test("launchArgs refuses a free value that starts with '-': a model, an id or a folder never reads as a flag", () => {
+  const base = { bin: null, access: "host" as const };
+  const bad: Array<Parameters<typeof launchArgs>[0]> = [
+    { ...base, host: "claude", model: null, resume: { id: "--dangerously-skip-permissions" } },
+    { ...base, host: "codex", model: null, resume: { id: "-c" } },
+    { ...base, host: "claude", model: "--allowedTools", resume: null },
+    { ...base, host: "codex", model: "-s", resume: null },
+    { ...base, host: "claude", model: null, sessionId: "-x" },
+    { ...base, host: "codex", model: null, resume: { id: "019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a5b" }, cwd: "--add-dir" },
+  ];
+  for (const s of bad) {
+    assert.throws(() => launchArgs(s), /starts with "-"/, JSON.stringify(s));
+    assert.throws(() => launchLine(s), /starts with "-"/, JSON.stringify(s));
+  }
+  // A dash inside a value is fine (ids, models).
+  assert.deepEqual(launchArgs({ ...base, host: "claude", model: "claude-opus-5", resume: { id: "3f2c-1" } }), ["--model", "claude-opus-5", "--resume", "3f2c-1"]);
 });
 
 test("launchLine: leading space, the not-found guard, exec, quoting of the binary and of glob-like ids", () => {

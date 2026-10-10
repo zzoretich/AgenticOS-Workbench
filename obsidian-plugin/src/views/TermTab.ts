@@ -17,9 +17,15 @@ export class TermTab {
     // the pool's session-add/remove/exit listeners.
     if (this.panel) { this.panel.unmount(); this.panel = null; }
     // Full pane, no drag handle; the New button launches through the view (spec 2026-10-08-term-agent-deck T3).
-    this.panel = new TerminalPanel(this.plugin, { resizable: false, fullPane: true, launch: this.view.termActions(), deck: true });
+    // A workspace group's Open workspace goes back to Spaces on it (spaces-redesign D12).
+    this.panel = new TerminalPanel(this.plugin, {
+      resizable: false, fullPane: true, launch: this.view.termActions(), deck: true,
+      openWorkspace: (name) => { this.view.open({ tab: "spaces", workspace: name }); },
+    });
     this.panel.mount(host);
   }
+  /** Code scoped to a workspace's group (spaces-redesign D12): WorkbenchView.open({tab: "term", workspace}). Select only. */
+  reveal(target: { workspace?: string | null }): void { this.panel?.reveal(target); }
   async refresh(): Promise<void> { this.panel?.focus(); }
   unmount(): void { this.panel?.unmount(); this.panel = null; this.host = null; }
   newSession(): void { void this.panel?.createNewSession(); }

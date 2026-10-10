@@ -10,6 +10,49 @@ export function isIgnored(name: string): boolean {
 export interface DirEntry {
   name: string;
   isDir: boolean;
+  /** A file's size in bytes, when listDir could stat it (the Files tree's "not mapped" over 1 MB, spaces-redesign D9). */
+  size?: number;
+}
+
+// ── what the file map skips (spaces-redesign D9) ──
+// A mirror of brain/scripts/collectors/fileMap.js walkFiles/mappableFile, pinned by workspaceFiles.test.ts against the
+// runtime's own mappableFile: a file the map skips shows "not mapped" with no badge in the Files tree, and Describe N new
+// never counts it.
+
+export const MAP_IGNORED_DIRS: ReadonlySet<string> = new Set(["node_modules", ".git", ".obsidian", "dist", "build", "__pycache__", ".venv"]);
+export const MAP_IGNORED_FILES: ReadonlySet<string> = new Set([".DS_Store", "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "Cargo.lock", "poetry.lock"]);
+export const MAP_IGNORED_EXTS: ReadonlySet<string> = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".ico", ".pdf", ".zip", ".gz", ".tar",
+  ".mp3", ".mp4", ".mov", ".wav", ".woff", ".woff2", ".ttf", ".otf", ".pptx", ".xlsx", ".docx", ".bin", ".dylib", ".node"]);
+export const MAP_MAX_SIZE = 1024 * 1024;
+
+/** Why the map skips a file, for the "not mapped" tooltip. */
+export type MapSkip = "hidden" | "folder" | "name" | "type" | "size";
+export const MAP_SKIP_TEXT: Record<MapSkip, string> = {
+  hidden: "Not mapped: a dot file or folder",
+  folder: "Not mapped: inside a folder the map skips (node_modules, dist, build…)",
+  name: "Not mapped: a lock file or .DS_Store",
+  type: "Not mapped: an image, media, archive or binary type",
+  size: "Not mapped: over 1 MB",
+};
+
+/**
+ * Why the map skips the file at `relPath` (relative to the workspace, `/`-separated), or null when the map describes
+ * it. `size` is its byte size when known; an unknown size passes, as the map would stat it.
+ */
+export function mapSkipReason(relPath: string, size?: number | null): MapSkip | null {
+  const segs = String(relPath).split("/").filter((s) => s !== "");
+  const name = segs[segs.length - 1] ?? "";
+  if (segs.some((s) => s.startsWith(".") && s !== ".github")) return "hidden";
+  if (segs.slice(0, -1).some((s) => MAP_IGNORED_DIRS.has(s))) return "folder";
+  if (MAP_IGNORED_FILES.has(name)) return "name";
+  if (MAP_IGNORED_EXTS.has(path.extname(name).toLowerCase())) return "type";
+  if (typeof size === "number" && size > MAP_MAX_SIZE) return "size";
+  return null;
+}
+
+/** Whether the map never walks into the folder at `relDir` (a dot folder other than .github, or a skipped name). */
+export function mapSkipsDir(relDir: string): boolean {
+  return String(relDir).split("/").filter((s) => s !== "").some((s) => (s.startsWith(".") && s !== ".github") || MAP_IGNORED_DIRS.has(s));
 }
 
 export function sortEntries(entries: DirEntry[]): DirEntry[] {
@@ -49,12 +92,17 @@ export function truncate(text: string): { text: string; truncated: boolean } {
   return { text: out, truncated };
 }
 
+/** One folder's entries, IGNORED left out, folders first; each file with its size when a stat answers. */
 export async function listDir(absDir: string): Promise<DirEntry[]> {
   const dirents = await fs.promises.readdir(absDir, { withFileTypes: true });
   const entries: DirEntry[] = [];
   for (const d of dirents) {
     if (isIgnored(d.name)) continue;
-    entries.push({ name: d.name, isDir: d.isDirectory() });
+    const e: DirEntry = { name: d.name, isDir: d.isDirectory() };
+    if (!e.isDir) {
+      try { e.size = (await fs.promises.stat(path.join(absDir, d.name))).size; } catch { /* a dangling link: no size */ }
+    }
+    entries.push(e);
   }
   return sortEntries(entries);
 }

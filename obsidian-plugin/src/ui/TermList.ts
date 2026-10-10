@@ -7,6 +7,10 @@ export interface TermListActions {
   /** The group header's +: start the host ⌘T starts in that group's place. */
   startIn(group: TermGroup): void;
   clearEnded(): void;
+  /** A workspace group's Open workspace: Spaces, with that workspace selected (spaces-redesign D12). Select only. */
+  openWorkspace?(name: string): void;
+  /** Show every group again after the list was scoped to one workspace (reveal). */
+  clearScope?(): void;
 }
 
 /** Each group's icon, in the table form the compat scanner reads. */
@@ -26,6 +30,7 @@ const GROUP_ICONS: { id: string; icon: string }[] = [
  */
 export class TermList {
   private filterEl: HTMLInputElement;
+  private scopeEl: HTMLElement;
   private groupsEl: HTMLElement;
   private footEl: HTMLElement;
   private filter = "";
@@ -34,23 +39,38 @@ export class TermList {
   constructor(parent: HTMLElement, private actions: TermListActions, private onFilter: (q: string) => void) {
     this.filterEl = parent.createEl("input", { cls: "aos-tl-filter", attr: { type: "text", placeholder: "Filter terminals", "aria-label": "Filter terminals", spellcheck: "false" } });
     this.filterEl.addEventListener("input", () => { this.filter = this.filterEl.value; this.onFilter(this.filter); });
+    this.scopeEl = parent.createDiv({ cls: "aos-tl-scope" });
     this.groupsEl = parent.createDiv({ cls: "aos-tl-groups", attr: { role: "listbox", "aria-label": "Terminals" } });
     this.footEl = parent.createDiv({ cls: "aos-tl-foot" });
   }
 
   query(): string { return this.filter; }
 
-  render(groups: TermGroup[], active: string | null, open: number): void {
+  /** `scope`: the workspace the list is scoped to (reveal), which a bar above the groups names with Show all. */
+  render(groups: TermGroup[], active: string | null, open: number, scope: { label: string } | null = null): void {
     this.last = { groups, active, open };
+    this.renderScope(scope);
     this.groupsEl.empty();
     for (const g of groups) {
       const head = this.groupsEl.createDiv({ cls: `aos-tl-group is-${g.kind}`, attr: { "data-group": g.key } });
       const icon = head.createSpan({ cls: "aos-tl-groupicon" });
       setIcon(icon, GROUP_ICONS.find((x) => x.id === g.kind)?.icon ?? "folder");
       head.createSpan({ cls: "aos-tl-grouplabel", text: g.label, attr: { title: g.place.dir } });
+      // A workspace's group links back to it in Spaces (spaces-redesign D12); Scratch, the vault and other folders are
+      // not workspaces there.
+      const ws = g.kind === "workspace" ? g.place.workspace : undefined;
+      if (ws && this.actions.openWorkspace) {
+        const open = head.createEl("button", {
+          cls: "aos-tl-plus aos-tl-openws",
+          attr: { type: "button", "data-workspace": ws, "aria-label": `Open workspace ${g.label} in Spaces`, title: "Open workspace" },
+        });
+        setIcon(open, "arrow-up-right");
+        open.addEventListener("click", () => this.actions.openWorkspace?.(ws));
+      }
       const plus = head.createEl("button", { cls: "aos-tl-plus", attr: { type: "button", "aria-label": `New terminal in ${g.label}`, title: `New terminal in ${g.label}` } });
       setIcon(plus, "plus");
       plus.addEventListener("click", () => this.actions.startIn(g));
+      if (!g.rows.length) this.groupsEl.createDiv({ cls: "aos-tl-empty", text: `No terminal in ${g.label} yet: + starts one.` });
       for (const r of g.rows) {
         const on = r.id === active;
         const row = this.groupsEl.createDiv({
@@ -70,6 +90,16 @@ export class TermList {
     }
     if (!groups.length) this.groupsEl.createDiv({ cls: "aos-tl-empty", text: this.filter ? "No terminal matches." : "No terminals yet." });
     this.renderFoot();
+  }
+
+  /** "Showing <workspace> only · Show all" while another tab scoped the list (spaces-redesign D12). */
+  private renderScope(scope: { label: string } | null): void {
+    this.scopeEl.empty();
+    this.scopeEl.toggleClass("is-on", !!scope);
+    if (!scope) return;
+    this.scopeEl.createSpan({ cls: "aos-tl-scopetext", text: `Showing ${scope.label} only` });
+    const all = this.scopeEl.createEl("button", { cls: "aos-tl-clear aos-tl-scopeall", text: "Show all", attr: { type: "button" } });
+    all.addEventListener("click", () => this.actions.clearScope?.());
   }
 
   private renderFoot(): void {
