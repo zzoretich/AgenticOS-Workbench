@@ -5,8 +5,12 @@ All notable changes to UniDeX (AgenticOS Workbench before 1.1). Versions follow 
 ## [Unreleased]
 
 ### Changed
+- **Spaces is a three-pane dossier.** A searchable list grouped by status, a pick-up card (last thread, the handoff's Now line, next step, the insight), Overview and a Files tree with map descriptions inline, and a History and Linked pane.
 - **`_` folders are hidden from Spaces and Pulse counts**, and the outside list drops temp, scratch and job folders.
 - **Workspace status is active, stalled or idle**, worked out from sessions and commits, unless `workspace.md` sets `active`, `paused` or `done`; session counts cover the last 30 days on both hosts.
+
+### Added
+- **Resume in Code** reopens a workspace's last Claude Code or Codex thread in a Code terminal; a Codex terminal started by Resume (from Spaces or the end bar) resumes that same thread by its id when it ends; Spaces, Sessions, Code and Pulse link to each other by workspace.
 
 ### Fixed
 - **Spaces counts Claude Code sessions.** Sessions are read from each transcript's own folder, worktrees and team seats are credited to their workspace, and sessions started at the vault root count for the workspace whose files they touched.
