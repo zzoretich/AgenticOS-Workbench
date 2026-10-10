@@ -231,7 +231,8 @@ function read(vault, { now = new Date() } = {}) {
     drafts: part(() => fs.readdirSync(path.join(vault, 'brain', 'memory', 'feedback', '_drafts')).filter((n) => n.endsWith('.md')).length, 0),
     gates: part(() => SL.gatesOf(SL.readTeams(vault)), []),
     issues: snapshot.health && Array.isArray(snapshot.health.issues) ? snapshot.health.issues.map((i) => ({ severity: i.severity, area: i.area, message: i.message })) : [],
-    workspaces: Array.isArray(snapshot.workspaces) ? snapshot.workspaces.map((w) => ({ name: w.name, status: w.status })) : [],
+    // Hidden entries (`_` folders, _archive/) are never counted (spaces-redesign D22); the twin read in pulseFacts.ts filters the same way.
+    workspaces: Array.isArray(snapshot.workspaces) ? snapshot.workspaces.filter((w) => w && !w.hidden).map((w) => ({ name: w.name, status: w.status })) : [],
     pipelines: part(() => readJson(path.join(idx, 'pipelines.json')).pipelines || {}, {}),
     routines: part(() => readJson(path.join(idx, 'routines.json')).routines || {}, {}),
     todo: readText(path.join(vault, 'TODO.md')),

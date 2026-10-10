@@ -7,6 +7,10 @@ const os = require('os');
 const path = require('path');
 const W = require('./workspace.js');
 
+// A scan reads host folders through the runtime: point them at empty temp folders, never the developer's own.
+process.env.CLAUDE_CONFIG_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-ws-cli-cfg-'));
+process.env.CODEX_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-ws-cli-codex-'));
+
 function sandbox() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-ws-cli-'));
   const home = path.join(dir, 'home');
@@ -95,8 +99,10 @@ test('list reads the snapshot when it carries hostSessions, prints per-host coun
   fs.writeFileSync(path.join(sb.vault, 'brain', '_index', 'snapshot.json'), JSON.stringify({
     scannedAt: '2026-09-21T20:00:00.000Z',
     workspaces: [
-      { name: 'alpha', status: 'active', sessions: { claude: 12, codex: 3, total: 15, lastAt: day.toISOString() } },
+      { name: 'alpha', status: 'active', sessions: { claude: 12, codex: 3, total: 15, lastAt: day.toISOString() },
+        next: { text: 'Merge PR 2', source: 'derived', from: 'HANDOFF-alpha.md › Next' }, git: { kind: 'vault' }, commits: [], hidden: false },
       { name: 'beta', status: 'idle' },
+      { name: '_archive/old', label: 'old', status: 'idle', hidden: true, hiddenReason: 'archived' },
     ],
     hostSessions: { byCwd: {}, outsideWorkspaces: [{ cwd: path.join(sb.home, 'Documents', 'Codex', 'x'), claude: 0, codex: 2, total: 2, lastAt: day.toISOString() }] },
   }));
@@ -107,6 +113,8 @@ test('list reads the snapshot when it carries hostSessions, prints per-host coun
   assert.match(out, /outside workspaces\/ \(1\):/);
   assert.match(out, /~\/Documents\/Codex\/x\s+claude\s+0\s+codex\s+2\s+2d ago\s+aos workspace adopt ~\/Documents\/Codex\/x/);
   assert.match(out, /from the snapshot of 2026-09-21T20:00:00.000Z/);
+  assert.doesNotMatch(out, /_archive\/old/, 'a hidden entry is left out of the table');
+  assert.match(out, /\(1 hidden: _ folders and _archive\/; --json lists them\)/);
   sb.lines.length = 0;
   assert.equal(await W.main(['list', '--json'], sb.opts), 0);
   const j = JSON.parse(sb.lines.join('\n'));
@@ -114,17 +122,98 @@ test('list reads the snapshot when it carries hostSessions, prints per-host coun
   assert.equal(j.workspaces[0].sessions.total, 15);
   assert.deepEqual(j.workspaces[1].sessions, { claude: 0, codex: 0, total: 0, lastAt: null });
   assert.equal(j.outsideWorkspaces.length, 1);
+  // spaces-redesign D22, D23: each entry passes through whole, hidden ones included.
+  assert.deepEqual(j.workspaces[0].next, { text: 'Merge PR 2', source: 'derived', from: 'HANDOFF-alpha.md › Next' });
+  assert.deepEqual(j.workspaces[0].git, { kind: 'vault' });
+  assert.deepEqual(j.workspaces.map((w) => [w.name, w.hidden]), [['alpha', false], ['beta', undefined], ['_archive/old', true]]);
+  assert.equal(j.workspaces[2].hiddenReason, 'archived');
 });
 
-test('list without a snapshot scans the vault directly', async () => {
+test('list without a snapshot scans the vault directly, finalizes the entries, and --json passes them through whole', async () => {
   const sb = sandbox();
   fs.mkdirSync(path.join(sb.vault, 'workspaces', 'gamma'));
-  fs.writeFileSync(path.join(sb.vault, 'workspaces', 'gamma', 'AGENTS.md'), '# Gamma\n\nA Codex-shaped project.\n');
+  fs.writeFileSync(path.join(sb.vault, 'workspaces', 'gamma', 'AGENTS.md'), '# Gamma\n\nA Codex-shaped project.\n\n## Next\n\n- Write the plan\n');
+  fs.mkdirSync(path.join(sb.vault, 'workspaces', 'held'));
+  fs.writeFileSync(path.join(sb.vault, 'workspaces', 'held', 'workspace.md'), '---\nstatus: parked\npinned: true\n---\n');
+  fs.mkdirSync(path.join(sb.vault, 'workspaces', '_spikes'));
+  fs.mkdirSync(path.join(sb.vault, 'workspaces', '_worktrees', 'team', 'item', 'member'), { recursive: true });
   const r = await W.main(['list', '--json'], { ...sb.opts, vault: sb.vault });
   assert.equal(r, 0);
   const j = JSON.parse(sb.lines.join('\n'));
   assert.equal(j.source, 'scan');
-  assert.deepEqual(j.workspaces.map((w) => w.name), ['gamma']);
+  assert.deepEqual(j.workspaces.map((w) => w.name), ['held', 'gamma', '_spikes'], 'pinned first, hidden last, no _worktrees entry');
+  const [held, gamma, spikes] = j.workspaces;
+  // spaces-redesign D11: finalize ran after the sessions were attached.
+  assert.deepEqual([held.status, held.statusOverride, held.statusAuto, held.pinned], ['paused', 'paused', 'idle', true]);
+  assert.deepEqual([gamma.status, gamma.statusAuto, gamma.statusOverride], ['idle', 'idle', null]);
+  assert.deepEqual(gamma.activity, { at: null, ageDays: null, from: null }, 'files just written are not activity');
+  assert.deepEqual(gamma.next, { text: 'Write the plan', source: 'derived', from: 'AGENTS.md › Next' });
+  assert.equal(typeof gamma.inputHash, 'string');
+  assert.equal(gamma.git, null);
+  assert.deepEqual(gamma.commits, []);
+  assert.deepEqual([spikes.hidden, spikes.hiddenReason], [true, 'underscore']);
+  sb.lines.length = 0;
+  assert.equal(await W.main(['list'], { ...sb.opts, vault: sb.vault }), 0);
+  const out = sb.lines.join('\n');
+  assert.match(out, /^held\s+paused\s+claude\s+0\s+codex\s+0\s+never$/m);
+  assert.match(out, /^gamma\s+idle\s+/m);
+  assert.doesNotMatch(out, /_spikes/);
+  assert.match(out, /\(1 hidden: /);
+  assert.match(out, /\(fresh scan\)/);
+});
+
+test('list without a snapshot counts both hosts through the folders agenticos.json names, and keeps the session index in the vault', async () => {
+  const sb = sandbox();
+  // Both hosts on, as `aos init --host both` writes them; the Claude folder is the config dir this command read.
+  fs.writeFileSync(path.join(sb.cfg, 'agenticos.json'), JSON.stringify({ vault: sb.vault, hosts: { claude: { enabled: true }, codex: { enabled: true, home: sb.codex } } }));
+  const ws = path.join(sb.vault, 'workspaces', 'tide');
+  fs.mkdirSync(path.join(ws, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(ws, 'README.md'), '# Tide\n\nTide tables for the harbour.\n');
+  const ts = new Date(Date.now() - 2 * 3600 * 1000).toISOString();
+  const jsonl = (file, rows) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, rows.map((r) => JSON.stringify(r)).join('\n') + '\n'); };
+  const cid = '0199bbbb-0000-4000-8000-000000000001';
+  const xid = '0199bbbb-0000-4000-8000-000000000002';
+  jsonl(path.join(sb.cfg, 'projects', 'tide-slug', `${cid}.jsonl`), [
+    { type: 'user', sessionId: cid, cwd: path.join(ws, 'src'), timestamp: ts, entrypoint: 'cli', message: { role: 'user', content: 'Parse the tide table' } },
+  ]);
+  jsonl(path.join(sb.codex, 'sessions', '2026', '10', '01', `rollout-2026-10-01T10-00-00-${xid}.jsonl`), [
+    { timestamp: ts, type: 'session_meta', payload: { id: xid, timestamp: ts, cwd: ws, originator: 'codex_cli_rs', source: 'cli' } },
+    { timestamp: ts, type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Fix the tide parser' }] } },
+  ]);
+  assert.equal(await W.main(['list', '--json'], { ...sb.opts, vault: sb.vault }), 0);
+  const j = JSON.parse(sb.lines.join('\n'));
+  const tide = j.workspaces.find((w) => w.name === 'tide');
+  assert.deepEqual([tide.sessions.claude, tide.sessions.codex, tide.sessions.total], [1, 1, 2]);
+  assert.deepEqual(tide.sessions.recent.map((r) => [r.host, r.via, r.resumable]).sort(), [['claude', 'cwd', true], ['codex', 'cwd', true]]);
+  // spaces-redesign D11: finalize read the attached sessions.
+  assert.deepEqual([tide.status, tide.activity.from], ['active', 'session']);
+  assert.deepEqual(j.outsideWorkspaces, []);
+  assert.ok(fs.existsSync(path.join(sb.vault, 'brain', '_index', 'session-index.json')), 'the incremental cache sits in the vault');
+});
+
+test('a run from the vault root finds the configured vault; with none configured it is refused from anywhere', async () => {
+  const sb = sandbox();
+  // The real path, so the cwd after chdir (macOS reports /private/var for /var) equals the configured vault exactly.
+  const vault = fs.realpathSync(sb.vault);
+  fs.writeFileSync(path.join(sb.cfg, 'agenticos.json'), JSON.stringify({ vault, hosts: { codex: { enabled: true, home: sb.codex } } }));
+  // A scan in an earlier test sets AOS_VAULT for the collectors; this test reads agenticos.json alone.
+  const cwd = process.cwd();
+  const envVault = process.env.AOS_VAULT;
+  delete process.env.AOS_VAULT;
+  try {
+    process.chdir(vault);
+    assert.equal(W.resolveCtx({ configDir: sb.cfg, home: sb.home }).vault, vault);
+    assert.equal(await W.main(['new', 'kelp-watch'], sb.opts), 0);
+    assert.ok(fs.existsSync(path.join(vault, 'workspaces', 'kelp-watch', 'README.md')));
+    fs.writeFileSync(path.join(sb.cfg, 'agenticos.json'), JSON.stringify({ hosts: {} }));
+    assert.throws(() => W.resolveCtx({ configDir: sb.cfg, home: sb.home }), /no vault configured/);
+    process.chdir(sb.dir);
+    assert.throws(() => W.resolveCtx({ configDir: sb.cfg, home: sb.home }), /no vault configured/);
+    assert.throws(() => W.resolveCtx({ configDir: sb.cfg, home: sb.home, vault: '  ' }), /no vault configured/);
+  } finally {
+    process.chdir(cwd);
+    if (envVault === undefined) delete process.env.AOS_VAULT; else process.env.AOS_VAULT = envVault;
+  }
 });
 
 test('ago renders today, 1d ago, Nd ago and never', () => {

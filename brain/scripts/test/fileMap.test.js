@@ -15,6 +15,11 @@ fs.writeFileSync(path.join(TMP, 'workspaces', 'Alpha', 'README.md'), '# alpha re
 fs.writeFileSync(path.join(TMP, 'workspaces', 'Alpha', 'src', 'main.js'), 'console.log(1)');
 fs.writeFileSync(path.join(TMP, 'workspaces', 'Alpha', 'node_modules', 'x', 'index.js'), 'ignored');
 fs.writeFileSync(path.join(TMP, 'workspaces', 'Alpha', 'photo.png'), Buffer.from([0x89, 0x50]));
+// Hidden folders (spaces-redesign D22): archived workspaces, team seats, and any other `_` folder get no map.
+for (const d of ['_archive/old', '_worktrees/team/item/member', '_spikes', '.hidden']) {
+  fs.mkdirSync(path.join(TMP, 'workspaces', d), { recursive: true });
+  fs.writeFileSync(path.join(TMP, 'workspaces', d, 'notes.md'), '# not mapped');
+}
 process.env.BRAIN_VAULT = TMP;
 const { collectFileMaps, describeOneFile, listWorkspaces, MAPS_DIR } = require('../collectors/fileMap.js');
 
@@ -24,8 +29,10 @@ const readMap = () => JSON.parse(fs.readFileSync(mapPath(), 'utf8'));
 
 beforeEach(() => { try { fs.rmSync(MAPS_DIR, { recursive: true }); } catch {} });
 
-test('lists workspaces (non-hidden dirs only)', () => {
+test('lists workspaces: no dot or `_` folders (spaces-redesign D22)', async () => {
   assert.deepEqual(listWorkspaces(), ['Alpha']);
+  await collectFileMaps({ budget: 0, chatFn: fakeChat });
+  assert.deepEqual(fs.readdirSync(MAPS_DIR).sort(), ['Alpha.json'], 'no map is written for a hidden folder');
 });
 
 test('first run describes all eligible files, skips ignored', async () => {

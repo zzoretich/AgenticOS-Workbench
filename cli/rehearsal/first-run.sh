@@ -70,6 +70,30 @@ node "$ROOT/cli/rehearsal/mcp-call.js" wrap_session '{"facts":["The first-run re
 [ -f "$VAULT/brain/memory/reference/rehearsal-marker.md" ]
 grep -q 'rehearsal-marker.md' "$VAULT/MEMORY.md"
 
+echo "== Spaces counts a Claude Code session started in a workspace (spaces-redesign D20)"
+# Claude Code keeps a transcript in projects/<slug>/<id>.jsonl, the slug being the start folder's real path with every
+# character but a letter or digit turned into "-". The workspace's own "-" is lost in the slug, so only the cwd inside
+# the transcript can attribute it.
+sh "$AOS" workspace new reh-claude > /dev/null
+WS=$(cd "$VAULT/workspaces/reh-claude" && pwd -P)
+SLUG=$(printf '%s' "$WS" | sed 's/[^A-Za-z0-9]/-/g')
+SID=c1a0de00-0000-4000-8000-0000000000aa
+NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+mkdir -p "$CLAUDE_CONFIG_DIR/projects/$SLUG"
+printf '{"type":"user","sessionId":"%s","cwd":"%s","entrypoint":"cli","timestamp":"%s","message":{"role":"user","content":"Plan the rehearsal workspace"}}\n' \
+  "$SID" "$WS" "$NOW" > "$CLAUDE_CONFIG_DIR/projects/$SLUG/$SID.jsonl"
+AOS_DETACHED=1 sh "$AOS" scan-vault --quiet
+sh "$AOS" workspace list --json > "$TMP/workspaces.json"
+node -e '
+const j = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+const w = j.workspaces.find((x) => x.name === "reh-claude");
+const s = w && w.sessions;
+if (!s || !(s.claude >= 1)) throw new Error("reh-claude sessions: " + JSON.stringify(s));
+if (!(s.recent || []).some((r) => r.id === process.argv[2] && r.host === "claude")) throw new Error("no recent row for " + process.argv[2]);
+' "$TMP/workspaces.json" "$SID"
+# The config dir must end as it began: the uninstall leg compares its listing with the one taken at the start.
+rm -rf "$CLAUDE_CONFIG_DIR/projects"
+
 echo "== update notice degrades silently and renders a seeded update"
 # Nothing has been checked yet: the notice must print nothing and still exit 0.
 OUT=$(AOS_NO_SPAWN=1 sh "$AOS" update-notice 2>&1)

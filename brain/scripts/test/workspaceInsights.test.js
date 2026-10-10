@@ -1,6 +1,6 @@
 'use strict';
 const { test } = require('node:test');
-const assert = require('node:assert');
+const assert = require('node:assert/strict');
 const { buildPrompt, parseInsightReply, generateInsight } = require('../collectors/workspaceInsights');
 
 test('buildPrompt includes name, status, objectives, subproject names', () => {
@@ -32,8 +32,9 @@ test('generateInsight returns unavailable when the chat fn throws (offline)', as
   assert.equal(res.insight.text, null);
 });
 
-test('generateInsight fills insight + next from a stubbed chat fn', async () => {
-  const entry = { name: 'X', status: 'active', summary: '', objectives: [], subprojects: [], next: { text: null, source: 'derived' }, lastEvent: { ageDays: 0 } };
+test('generateInsight puts the model\'s next on the insight, never on the entry (spaces-redesign D23)', async () => {
+  const entry = { name: 'X', status: 'active', summary: '', objectives: [], subprojects: [], next: { text: null, source: 'derived', from: null }, lastEvent: { ageDays: 0 } };
+  const before = JSON.stringify(entry);
   const res = await generateInsight(entry, {
     chatFn: async () => 'INSIGHT: All good.\nNEXT: Ship it.',
     model: 'qwen3.5:9b',
@@ -41,8 +42,33 @@ test('generateInsight fills insight + next from a stubbed chat fn', async () => 
   assert.equal(res.insight.status, 'ok');
   assert.equal(res.insight.text, 'All good.');
   assert.equal(res.insight.model, 'qwen3.5:9b');
-  assert.equal(res.next.text, 'Ship it.');
-  assert.equal(res.next.source, 'ai');
+  assert.equal(res.insight.next, 'Ship it.');
+  assert.equal('next' in res, false, 'no next comes back to assign to the workspace');
+  assert.equal(JSON.stringify(entry), before, 'the entry is untouched');
+  const none = await generateInsight(entry, { chatFn: async () => 'INSIGHT: Steady.\nNEXT: NONE', model: 'm' });
+  assert.equal(none.insight.next, null);
+  const offline = await generateInsight(entry, { chatFn: async () => { throw new Error('ECONNREFUSED'); } });
+  assert.equal(offline.insight.next, null);
+});
+
+test('the insight\'s next is carried forward with the insight while its inputs are unchanged (spaces-redesign D23)', async () => {
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const { collectWorkspaces, finalizeWorkspaces } = require('../collectors/workspaces');
+  const vault = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-ins-carry-'));
+  fs.mkdirSync(path.join(vault, 'workspaces', 'w'), { recursive: true });
+  fs.writeFileSync(path.join(vault, 'workspaces', 'w', 'README.md'), '# W\n\nA real summary.\n');
+  const scan = (prev) => finalizeWorkspaces(collectWorkspaces({ vault }), { vault, prev, cfg: {}, now: Date.parse('2026-10-09T12:00:00Z') });
+  const [first] = scan([]);
+  first.insight = (await generateInsight(first, { chatFn: async () => 'INSIGHT: Quiet.\nNEXT: Write the plan.', model: 'm' })).insight;
+  assert.equal(first.next.text, null);
+  const [again] = scan([first]);
+  assert.equal(again.insight.next, 'Write the plan.');
+  assert.equal(again.next.text, null, 'the suggestion never becomes the workspace\'s next');
+  fs.writeFileSync(path.join(vault, 'workspaces', 'w', 'README.md'), '# W\n\nA different summary.\n');
+  const [changed] = scan([first]);
+  assert.equal(changed.insight.status, 'unavailable', 'changed inputs drop the cached insight and its next');
 });
 
 const NONE = { name: 'none', reason: 'forced', capabilities: { chat: false, embed: false, structured: false }, chat: async () => { throw new Error('must not be called'); } };
@@ -54,7 +80,8 @@ test('provider none → heuristic insight, status ok, model heuristic', async ()
   assert.equal(res.insight.model, 'heuristic');
   assert.equal(res.insight.text, 'Stalled 12d · 3 objectives open · next step unset');
   assert.equal(res.insight.inputHash, 'h1');
-  assert.deepEqual(res.next, ENTRY.next);
+  assert.equal(res.insight.next, null);
+  assert.equal('next' in res, false);
 });
 
 test('provider claude → heuristic unless scan.insightsUnderClaude is on', async () => {

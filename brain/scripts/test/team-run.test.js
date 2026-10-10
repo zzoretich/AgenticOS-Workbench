@@ -45,7 +45,8 @@ if (process.env.FAKE_MODE !== 'nocommit') {
   execFileSync('git', ['-C', cwd, 'add', '-A']); execFileSync('git', ['-C', cwd, 'commit', '-qm', member + ': codex work']);
 }
 fs.writeFileSync(out, 'All waves ran.\\nhandoff: ' + member + ' finished wave 1 on codex');
-process.stdout.write(JSON.stringify({ type: 'thread.started' }) + '\\n' + JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 1000, cached_input_tokens: 0, output_tokens: 100 } }) + '\\n');
+const thread = process.env.FAKE_THREAD_ID === 'none' ? {} : { thread_id: process.env.FAKE_THREAD_ID || '0199c0de-0000-4000-8000-0000000000aa' };
+process.stdout.write(JSON.stringify({ type: 'thread.started', ...thread }) + '\\n' + JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 1000, cached_input_tokens: 0, output_tokens: 100 } }) + '\\n');
 `;
 const FAKE_LOGGER = `#!/usr/bin/env node
 const fs = require('fs'); const args = process.argv.slice(2);
@@ -217,7 +218,28 @@ test('a codex seat gets the agent inlined, its final line posted, an estimated c
   assert.deepEqual([post.from, post.kind, post.text], ['platform', 'handoff', 'platform finished wave 1 on codex']);
   const run = jsonl(path.join(w.t().dir, 'runs.jsonl'))[0];
   assert.ok(run.usd > 0, 'priced from the token usage');
+  assert.equal(run.session, '0199c0de-0000-4000-8000-0000000000aa', 'the thread id from thread.started, as Claude seats record session_id (spaces-redesign D34)');
   assert.match(r.out, /codex run \(~\$/);
+});
+
+test('a codex seat whose events carry no thread id records session null (spaces-redesign D34)', async () => {
+  const w = world();
+  put(w, base({ stage: 'execute', owner: ['platform'], gate: APPROVED }));
+  const r = await dispatch(w, ['platform', 'demo-01'], { FAKE_THREAD_ID: 'none' });
+  assert.equal(r.code, 0, r.err || r.out);
+  assert.equal(jsonl(path.join(w.t().dir, 'runs.jsonl'))[0].session, null);
+});
+
+test('codexThreadId reads the thread id from exec --json output and never throws', () => {
+  const ev = (o) => JSON.stringify(o);
+  const out = [ev({ type: 'thread.started', thread_id: '0199c0de-0000-4000-8000-0000000000bb' }), ev({ type: 'turn.started' }), ev({ type: 'turn.completed', usage: {} })].join('\n');
+  assert.equal(TR.codexThreadId(out), '0199c0de-0000-4000-8000-0000000000bb');
+  assert.equal(TR.codexThreadId(`${out}\n`), '0199c0de-0000-4000-8000-0000000000bb');
+  assert.equal(TR.codexThreadId(ev({ type: 'thread.started', thread_id: 'x-1' })), 'x-1', 'a last line with no newline still counts');
+  assert.equal(TR.codexThreadId(ev({ type: 'turn.completed', usage: {} })), null);
+  assert.equal(TR.codexThreadId('not json\n'), null);
+  assert.equal(TR.codexThreadId(''), null);
+  assert.equal(TR.codexThreadId(undefined), null);
 });
 
 test('a seat that commits nothing is not a builder; a failed run is charged and reported', async () => {

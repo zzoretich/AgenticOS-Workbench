@@ -35,12 +35,13 @@ function parseInsightReply(text) {
 function heuristicInsight(entry) {
   const { insightHeuristic } = require('../lib/heuristics.js');
   return {
-    insight: { text: insightHeuristic(entry), status: 'ok', model: 'heuristic', generatedAt: nowIso(), inputHash: entry.inputHash },
-    next: entry.next,
+    insight: { text: insightHeuristic(entry), status: 'ok', model: 'heuristic', generatedAt: nowIso(), inputHash: entry.inputHash, next: null },
   };
 }
 
-// generateInsight(entry, { chatFn, model, provider, numPredict }) -> { insight, next }
+// generateInsight(entry, { chatFn, model, provider, numPredict }) -> { insight }
+// The model's NEXT stays on the insight (insight.next, a suggestion shown as such) and never becomes the workspace's
+// own next step: entry.next names its source or stays empty (spaces-redesign D23).
 // chatFn injected → used as-is (tests). Otherwise the provider decides:
 //   ollama → chat; claude → chat only when scan.insightsUnderClaude; codex → only when scan.insightsUnderCodex; none → heuristic.
 async function generateInsight(entry, opts = {}) {
@@ -64,13 +65,11 @@ async function generateInsight(entry, opts = {}) {
     const parsed = parseInsightReply(reply);
     const insight = {
       text: parsed.insight, status: parsed.insight ? 'ok' : 'unavailable',
-      model, generatedAt: nowIso(), inputHash: entry.inputHash,
+      model, generatedAt: nowIso(), inputHash: entry.inputHash, next: parsed.next,
     };
-    let next = entry.next;
-    if ((!next || !next.text) && parsed.next) next = { text: parsed.next, source: 'ai' };
-    return { insight, next };
+    return { insight };
   } catch {
-    return { insight: { text: null, status: 'unavailable', model, generatedAt: nowIso(), inputHash: entry.inputHash }, next: entry.next };
+    return { insight: { text: null, status: 'unavailable', model, generatedAt: nowIso(), inputHash: entry.inputHash, next: null } };
   }
 }
 

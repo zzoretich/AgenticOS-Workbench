@@ -53,6 +53,8 @@ function hostDirs(host, { env = process.env, userConfig } = {}) {
       sessions: path.join(home, 'sessions'),
       archived: path.join(home, 'archived_sessions'),
       history: path.join(home, 'history.jsonl'),
+      // Codex appends { id, thread_name, updated_at } here when a thread is named (spaces-redesign D25: titles).
+      index: path.join(home, 'session_index.jsonl'),
     };
   }
   const configDir = path.resolve((cfg && cfg.claudeConfigDir) || claudeConfigDir(env));
@@ -143,6 +145,67 @@ function findTranscript(host, sessionId, dirs) {
   return null;
 }
 
+const UUID_TAIL_RE = /-([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\.jsonl$/;
+
+/**
+ * The session id a transcript's file name carries, as written (case kept, so a caller can insist on lowercase):
+ *   claude: <id>.jsonl                          codex: rollout-<timestamp>-<uuid>.jsonl
+ * null when the name has none. Resume needs the id inside the file to equal this one (spaces-redesign §4).
+ */
+function sessionIdFromFile(host, file) {
+  const base = path.basename(String(file || ''));
+  if (host === 'codex') {
+    const m = /^rollout-.*\.jsonl$/.test(base) && base.match(UUID_TAIL_RE);
+    return m ? m[1] : null;
+  }
+  return base.endsWith('.jsonl') && base.length > 6 ? base.slice(0, -6) : null;
+}
+
+function listEntries(dir) {
+  try { return fs.readdirSync(dir, { withFileTypes: true }); } catch { return []; }
+}
+
+function walkRollouts(dir, depth, onFile) {
+  for (const e of listEntries(dir)) {
+    const full = path.join(dir, e.name);
+    if (e.isDirectory()) { if (depth > 0) walkRollouts(full, depth - 1, onFile); continue; }
+    if (e.isFile() && e.name.startsWith('rollout-') && e.name.endsWith('.jsonl')) onFile(full);
+  }
+}
+
+/**
+ * Every session transcript a host keeps, newest first (spaces-redesign D25, the seam the session index reads):
+ *   claude: the top-level <configDir>/projects/<slug>/*.jsonl; a subagent's <slug>/<id>/subagents/*.jsonl is skipped
+ *   codex:  rollout-*.jsonl under <home>/sessions/YYYY/MM/DD/ and <home>/archived_sessions/ (`archived: true`)
+ * Rows are { file, host, id (from the file name), size, mtimeMs, archived }. Listing only: whether the host is on is
+ * the caller's call. Missing folders give an empty list.
+ */
+function sessionFiles(host, { env = process.env, userConfig, dirs } = {}) {
+  if (!isHost(host)) return [];
+  const d = dirs || hostDirs(host, { env, userConfig });
+  const out = [];
+  const take = (file, archived) => {
+    let st;
+    try { st = fs.statSync(file); } catch { return; }
+    if (!st.isFile()) return;
+    out.push({ file, host, id: sessionIdFromFile(host, file), size: st.size, mtimeMs: st.mtimeMs, archived });
+  };
+  if (host === 'codex') {
+    if (d.sessions) walkRollouts(d.sessions, 3, (f) => take(f, false));
+    if (d.archived) walkRollouts(d.archived, 3, (f) => take(f, true));
+  } else if (d.sessions) {
+    for (const slug of listEntries(d.sessions)) {
+      if (!slug.isDirectory()) continue;
+      const dir = path.join(d.sessions, slug.name);
+      for (const e of listEntries(dir)) {
+        if (e.isFile() && e.name.endsWith('.jsonl')) take(path.join(dir, e.name), false);
+      }
+    }
+  }
+  out.sort((a, b) => (b.mtimeMs - a.mtimeMs) || (a.file < b.file ? -1 : a.file > b.file ? 1 : 0));
+  return out;
+}
+
 /** How the user invokes a plugin command on `host`: Claude Code `/name`; Codex `$agenticos:name`, or `$name` when wired directly. */
 function invocation(name, host, { userConfig } = {}) {
   if (host !== 'codex') return `/${name}`;
@@ -162,4 +225,4 @@ function invocationHint(name, { userConfig } = {}) {
   return invocation(name, hosts[0] || 'claude', { userConfig: cfg });
 }
 
-module.exports = { HOSTS, resolveHost, enabledHosts, currentHost, isHookInvocation, hostDirs, findTranscript, codexHome, claudeConfigDir, invocation, invocationHint };
+module.exports = { HOSTS, resolveHost, enabledHosts, currentHost, isHookInvocation, hostDirs, findTranscript, sessionFiles, sessionIdFromFile, codexHome, claudeConfigDir, invocation, invocationHint };

@@ -27,7 +27,7 @@ const { collectGsd } = require('./collectors/gsd');
 const { collectHealth, renderHealthMarkdown } = require('./collectors/health');
 const { collectHistory, writeDailyRecord, prune } = require('./collectors/history');
 const { sweepOrphans } = require('./sweep-orphans');
-const { collectWorkspaces } = require('./collectors/workspaces');
+const { collectWorkspaces, finalizeWorkspaces } = require('./collectors/workspaces');
 const { collectHostSessions, attachSessions } = require('./collectors/hostSessions');
 const { generateInsight } = require('./collectors/workspaceInsights');
 const { withLock } = require('./lib/snapshotLock');
@@ -61,14 +61,20 @@ function scan() {
     gsd: collectGsd(),
     folderAtlas: collectFolderAtlas(),
   };
-  snapshot.workspaces = collectWorkspaces({ prevWorkspaces: prev && prev.workspaces ? prev.workspaces : [] });
-  // Both hosts' sessions, pinned to the workspace they ran in (workspace hub D2); the rest is what runs outside workspaces/.
-  const hostSessions = collectHostSessions();
+  // One merged config for the three workspace steps, so hosts on/off and the workspaces.* keys agree (spaces-redesign D30).
+  const cfg = loadConfig();
+  snapshot.workspaces = collectWorkspaces({ vault: VAULT });
+  // Both hosts' sessions, pinned to the workspace they ran in (workspace hub D2; spaces-redesign D20), read through the
+  // incremental cache brain/_index/session-index.json (D25); the rest is what runs outside workspaces/ (D21).
+  const hostSessions = collectHostSessions({ vault: VAULT, cfg, indexFile: path.join(VAULT, 'brain', '_index', 'session-index.json') });
   snapshot.hostSessions = {
     byCwd: hostSessions.byCwd,
     scannedAt: hostSessions.scannedAt,
-    outsideWorkspaces: attachSessions(snapshot.workspaces, hostSessions.byCwd),
+    windowDays: hostSessions.windowDays, // the days the counts cover, on both hosts and the outside rows (D34)
+    outsideWorkspaces: attachSessions(snapshot.workspaces, hostSessions, { vault: VAULT }),
   };
+  // Then activity, status, git and the insight's carry-forward, which read the attached sessions (spaces-redesign D11).
+  finalizeWorkspaces(snapshot.workspaces, { prev: prev && Array.isArray(prev.workspaces) ? prev.workspaces : [], cfg, vault: VAULT });
   snapshot.health = collectHealth(snapshot);
   snapshot.history = collectHistory(snapshot);
   snapshot.elapsedMs = Date.now() - start;
@@ -380,6 +386,7 @@ function renderMarkdown(s) {
     lines.push('| Workspace | Status | Summary | Next | Insight |');
     lines.push('|---|---|---|---|---|');
     for (const w of s.workspaces) {
+      if (w.hidden) continue; // _ folders and _archive/ (spaces-redesign D22)
       const esc = (t) => (t ? String(t).replace(/\|/g, '\\|').slice(0, 80) : '—');
       lines.push(`| \`${w.name}\` | ${w.status || '—'} | ${esc(w.summary)} | ${esc(w.next && w.next.text)} | ${esc(w.insight && w.insight.text)} |`);
     }
@@ -404,14 +411,15 @@ function renderMarkdown(s) {
   return lines.join('\n') + '\n';
 }
 
-// Generate/refresh insights (model or heuristic per provider) for workspaces whose cache is empty or stale.
+// Generate/refresh insights (model or heuristic per provider) for workspaces whose cache is empty or stale. The
+// model's suggested next stays on the insight; the workspace's own next is never assigned here (spaces-redesign D23).
+// Hidden entries (`_` folders, _archive/: D22) spend no model call.
 async function enrichWorkspaceInsights(snapshot, provider) {
   if (!Array.isArray(snapshot.workspaces)) return;
   for (const ws of snapshot.workspaces) {
+    if (ws.hidden) continue;
     if (ws.insight && ws.insight.status === 'ok' && ws.insight.inputHash === ws.inputHash) continue;
-    const { insight, next } = await generateInsight(ws, { provider });
-    ws.insight = insight;
-    ws.next = next;
+    ws.insight = (await generateInsight(ws, { provider })).insight;
   }
 }
 
@@ -553,4 +561,4 @@ if (require.main === module) {
     await main(report);
   }).catch((e) => { console.error('[scan-vault]', e.message); process.exit(1); });
 }
-module.exports = { scan, renderMarkdown };
+module.exports = { scan, renderMarkdown, enrichWorkspaceInsights };

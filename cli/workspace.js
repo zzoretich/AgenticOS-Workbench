@@ -2,7 +2,8 @@
 /**
  * workspace.js — `aos workspace <verb>` over <vault>/workspaces/ (workspace hub spec D3).
  *   list [--json]                  every workspace with status and per-host session counts, then the
- *                                  working directories sessions ran in outside workspaces/
+ *                                  working directories sessions ran in outside workspaces/; --json prints the
+ *                                  snapshot's entries whole, hidden ones (`_` folders, _archive/) included
  *   new <name>                     create workspaces/<slug>/ with README.md, CLAUDE.md and AGENTS.md stubs
  *   adopt <path> [--name <slug>]   move an existing project directory into workspaces/ and add the missing stubs
  * Slugs are lowercase kebab-case. CLAUDE.md and AGENTS.md carry the same text: Claude Code reads the first,
@@ -32,8 +33,11 @@ function isDir(p) { try { return fs.statSync(p).isDirectory(); } catch { return 
 function resolveCtx(opts = {}) {
   const configDir = opts.configDir || claudeConfigDir();
   const cfg = readJson(process.env.AOS_CONFIG || path.join(configDir, 'agenticos.json')) || {};
-  const vault = path.resolve(opts.vault || process.env.AOS_VAULT || cfg.vault || '');
-  if (!vault || vault === path.resolve('')) throw new Error('no vault configured (run `aos init` first)');
+  // Test the configured value before resolving it: path.resolve('') is the cwd, so comparing the resolved path with it
+  // refused every run from the vault root (`aos workspace new <name>` there said "no vault configured").
+  const configured = String(opts.vault || process.env.AOS_VAULT || cfg.vault || '').trim();
+  if (!configured) throw new Error('no vault configured (run `aos init` first)');
+  const vault = path.resolve(configured);
   const codexHome = path.resolve((cfg.hosts && cfg.hosts.codex && cfg.hosts.codex.home) || process.env.CODEX_HOME || path.join(os.homedir(), '.codex'));
   return { configDir, cfg, vault, workspacesDir: path.join(vault, 'workspaces'), codexHome, home: opts.home || os.homedir() };
 }
@@ -148,10 +152,19 @@ function workspaceRows(ctx) {
     return { workspaces: snap.workspaces, outside: snap.hostSessions.outsideWorkspaces || [], source: 'snapshot', scannedAt: snap.scannedAt };
   }
   process.env.AOS_VAULT = ctx.vault;
-  const { collectWorkspaces } = resolveModule('collectors/workspaces.js');
+  const { collectWorkspaces, finalizeWorkspaces } = resolveModule('collectors/workspaces.js');
   const { collectHostSessions, attachSessions } = resolveModule('collectors/hostSessions.js');
-  const workspaces = collectWorkspaces({ vault: ctx.vault });
-  const outside = attachSessions(workspaces, collectHostSessions().byCwd, { vault: ctx.vault });
+  // The merged config as lib/config.js builds it, for this vault and the agenticos.json this command read, so the
+  // hosts that are on and the workspaces.* keys are the ones scan-vault.js would use (spaces-redesign D30).
+  const { DEFAULTS, deepMerge } = resolveModule('lib/config.js');
+  const cfg = structuredClone(deepMerge(deepMerge(DEFAULTS, readJson(path.join(ctx.vault, 'brain', 'config.json')) || {}), ctx.cfg));
+  const workspaces = collectWorkspaces({ vault: ctx.vault, home: ctx.home });
+  // Host folders through lib/host.js hostDirs: agenticos.json's claudeConfigDir, else the config dir this command used.
+  const userConfig = { ...cfg, claudeConfigDir: cfg.claudeConfigDir || ctx.configDir };
+  const collected = collectHostSessions({ vault: ctx.vault, cfg, userConfig, indexFile: path.join(ctx.vault, 'brain', '_index', 'session-index.json') });
+  const outside = attachSessions(workspaces, collected, { vault: ctx.vault, home: ctx.home });
+  // Status, activity and git read the attached sessions, as in scan-vault.js (spaces-redesign D11).
+  finalizeWorkspaces(workspaces, { vault: ctx.vault, cfg, prev: snap && Array.isArray(snap.workspaces) ? snap.workspaces : [] });
   return { workspaces, outside, source: 'scan', scannedAt: new Date().toISOString() };
 }
 
@@ -165,18 +178,22 @@ function shorten(p, home) { return home && p.startsWith(home) ? '~' + p.slice(ho
 function listWorkspaces(ctx, { io = console, json = false, now = Date.now() } = {}) {
   const { workspaces, outside, source, scannedAt } = workspaceRows(ctx);
   if (json) {
+    // Every entry whole, hidden ones included (they carry `hidden`; consumers filter on it): spaces-redesign D22.
     io.log(JSON.stringify({
       source, scannedAt,
-      workspaces: workspaces.map((w) => ({ name: w.name, status: w.status, sessions: w.sessions || { claude: 0, codex: 0, total: 0, lastAt: null } })),
+      workspaces: workspaces.map((w) => ({ ...w, sessions: w.sessions || { claude: 0, codex: 0, total: 0, lastAt: null } })),
       outsideWorkspaces: outside,
     }, null, 2));
     return 0;
   }
-  if (!workspaces.length) io.log(`no workspaces under ${ctx.workspacesDir} (aos workspace new <name>)`);
-  for (const w of workspaces) {
+  const shown = workspaces.filter((w) => !w.hidden);
+  if (!shown.length) io.log(`no workspaces under ${ctx.workspacesDir} (aos workspace new <name>)`);
+  for (const w of shown) {
     const s = w.sessions || { claude: 0, codex: 0, lastAt: null };
     io.log(`${w.name.padEnd(28)} ${String(w.status || '-').padEnd(8)} claude ${String(s.claude).padStart(3)}  codex ${String(s.codex).padStart(3)}  ${ago(s.lastAt, now)}`);
   }
+  const hidden = workspaces.length - shown.length;
+  if (hidden) io.log(`(${hidden} hidden: _ folders and _archive/; --json lists them)`);
   if (outside.length) {
     io.log('');
     io.log(`outside workspaces/ (${outside.length}):`);
