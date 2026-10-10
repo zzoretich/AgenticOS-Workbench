@@ -199,6 +199,18 @@ const r = (s.recent || []).find((x) => x.id === process.argv[2] && x.host === "c
 if (!r || r.title !== "Rehearsal thread" || r.titleSource !== "index") throw new Error("recent row: " + JSON.stringify(r));
 ' "$TMP/workspaces.json" "$SID"
 
+echo "== PR 3's verbs through the launcher the Codex skills fall back to (spaces-redesign D27, D17, D18)"
+# `which` names the workspace from its folder, and none at the vault root; it writes nothing.
+(cd "$WS" && sh "$PLUGIN/bin/aos" workspace which --json) | grep -q '"name": "reh-codex"'
+(cd "$VAULT" && sh "$PLUGIN/bin/aos" workspace which --json) | grep -q '"name": null'
+sh "$PLUGIN/bin/aos" workspace set reh-codex --set '{"pinned":true}' --expect none --json | grep -q '"written": true'
+grep -q '^pinned: true$' "$WS/workspace.md"
+sh "$PLUGIN/bin/aos" workspace new reh-throwaway --json > /dev/null
+sh "$PLUGIN/bin/aos" workspace archive reh-throwaway --json | grep -q '"archivedAs": "_archive/reh-throwaway"'
+[ -d "$VAULT/workspaces/_archive/reh-throwaway" ] && [ ! -e "$VAULT/workspaces/reh-throwaway" ]
+sh "$PLUGIN/bin/aos" workspace restore reh-throwaway --json | grep -q '"path": "workspaces/reh-throwaway"'
+[ -d "$VAULT/workspaces/reh-throwaway" ]
+
 echo "== 3. uninstall --keep-vault removes the plugin and its marketplace"
 OUT=$(node "$ROOT/cli/aos.js" uninstall --keep-vault --yes)
 echo "$OUT"

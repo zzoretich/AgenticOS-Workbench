@@ -91,6 +91,17 @@ const s = w && w.sessions;
 if (!s || !(s.claude >= 1)) throw new Error("reh-claude sessions: " + JSON.stringify(s));
 if (!(s.recent || []).some((r) => r.id === process.argv[2] && r.host === "claude")) throw new Error("no recent row for " + process.argv[2]);
 ' "$TMP/workspaces.json" "$SID"
+echo "== PR 3's verbs through the Claude Code plugin's launcher (spaces-redesign D27, D17, D18)"
+# `which` names the workspace from its folder, and none at the vault root; it writes nothing.
+(cd "$WS" && sh "$ROOT/plugin/bin/aos" workspace which --json) | grep -q '"name": "reh-claude"'
+(cd "$VAULT" && sh "$ROOT/plugin/bin/aos" workspace which --json) | grep -q '"name": null'
+sh "$ROOT/plugin/bin/aos" workspace set reh-claude --set '{"pinned":true}' --expect none --json | grep -q '"written": true'
+grep -q '^pinned: true$' "$WS/workspace.md"
+sh "$ROOT/plugin/bin/aos" workspace new reh-throwaway --json > /dev/null
+sh "$ROOT/plugin/bin/aos" workspace archive reh-throwaway --json | grep -q '"archivedAs": "_archive/reh-throwaway"'
+[ -d "$VAULT/workspaces/_archive/reh-throwaway" ] && [ ! -e "$VAULT/workspaces/reh-throwaway" ]
+sh "$ROOT/plugin/bin/aos" workspace restore reh-throwaway --json | grep -q '"path": "workspaces/reh-throwaway"'
+[ -d "$VAULT/workspaces/reh-throwaway" ]
 # The config dir must end as it began: the uninstall leg compares its listing with the one taken at the start.
 rm -rf "$CLAUDE_CONFIG_DIR/projects"
 
