@@ -374,11 +374,17 @@ export function resumeTarget(ref: ResumeRef, snapshot: Pick<Snapshot, "workspace
     return { kind: "terminal", disabled: false, host, id: row.id, cwd: row.cwd, place, hint: `Resumes at ${short} where it started`, startFolder: true };
   }
   const where = base.linked ? `${shortenCwd(base.dir, home)}, its code folder` : `workspaces/${entry.name}`;
-  // D7 as written: a thread the scan credited through a worktree (workspaces/.worktrees/<ws>/<branch>) resumes in the
-  // workspace's place too, not on its worktree's branch; the hint says so rather than letting it pass unnoticed.
+  // D7, amended 2026-10-10 by the user: a thread the scan credited through a worktree (workspaces/.worktrees/<ws>/<branch>,
+  // <repo>.worktrees/<x>) resumes in that worktree while it still exists, so the agent stays on its branch; the place
+  // keeps workspace=<name>, so Code still groups it under ws:<name>. A worktree that is gone, or not known to exist,
+  // falls back to the workspace's place, and the hint says which.
   const fromWorktree = row.via === "worktree" && !!row.cwd && path.resolve(row.cwd) !== path.resolve(base.dir);
-  const hint = `Resumes in ${where}${fromWorktree ? ", not the worktree it started in" : ""}`;
-  return { kind: "terminal", disabled: false, host, id: row.id, cwd: base.dir, place: base, hint, startFolder: false };
+  if (fromWorktree && row.startExists === true) {
+    const cwd = row.cwd as string;
+    return { kind: "terminal", disabled: false, host, id: row.id, cwd, place: { ...base, dir: cwd, linked: false }, hint: `Resumes in ${shortenCwd(cwd, home)}, its worktree`, startFolder: true };
+  }
+  const why = !fromWorktree ? "" : row.startExists === false ? ", as its worktree is gone" : ", not the worktree it started in";
+  return { kind: "terminal", disabled: false, host, id: row.id, cwd: base.dir, place: base, hint: `Resumes in ${where}${why}`, startFolder: false };
 }
 
 /** A row of Resume's split menu that starts a new session (D5, D31). */

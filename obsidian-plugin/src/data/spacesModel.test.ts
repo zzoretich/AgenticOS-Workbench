@@ -242,14 +242,26 @@ test("resumeTarget with the start-folder fallback on: a Claude row resumes where
   assert.equal(resumeTarget({ workspace: "site", id: ID1 }, noCwd, choices(), CTX).kind, "terminal", "with the fallback off the workspace's place is used");
 });
 
-test("resumeTarget: a thread credited through a worktree resumes in the workspace's place, and the hint says so (D7)", () => {
+test("resumeTarget: a worktree thread resumes in its worktree while it exists, else in the workspace's place (D7, amended)", () => {
   const wt = `${VAULT}/workspaces/.worktrees/site/feat-x`;
-  const s = snap([row(ID2, { host: "codex", format: "codex", via: "worktree", cwd: wt })]);
-  const t = resumeTarget({ workspace: "site", id: ID2 }, s, choices(), CTX);
-  assert.equal(t.kind, "terminal");
-  if (t.kind !== "terminal") return;
-  assert.equal(t.cwd, `${VAULT}/workspaces/site`);
-  assert.equal(t.hint, "Resumes in workspaces/site, not the worktree it started in");
+  for (const host of ["claude", "codex"] as const) {
+    const at = (extra: Partial<WorkspaceSessionRow>) =>
+      resumeTarget({ workspace: "site", id: ID2 }, snap([row(ID2, { host, format: host, via: "worktree", cwd: wt, ...extra })]), choices(), CTX);
+    const live = at({ startExists: true });
+    assert.equal(live.kind, "terminal");
+    if (live.kind !== "terminal") return;
+    assert.equal(live.cwd, wt, `${host}: the worktree, so the agent stays on its branch`);
+    assert.equal(live.place.dir, wt);
+    assert.equal(live.place.workspace, "site", `${host}: Code still groups it under ws:site`);
+    assert.equal(live.startFolder, true);
+    assert.equal(live.hint, "Resumes in ~/vault/workspaces/.worktrees/site/feat-x, its worktree");
+    const gone = at({ startExists: false });
+    assert.equal(gone.kind === "terminal" && gone.cwd, `${VAULT}/workspaces/site`, `${host}: a removed worktree falls back to the workspace`);
+    assert.equal(gone.kind === "terminal" && gone.hint, "Resumes in workspaces/site, as its worktree is gone");
+    const unknown = at({ startExists: undefined });
+    assert.equal(unknown.kind === "terminal" && unknown.cwd, `${VAULT}/workspaces/site`, `${host}: not known to exist, so the workspace`);
+    assert.equal(unknown.kind === "terminal" && unknown.hint, "Resumes in workspaces/site, not the worktree it started in");
+  }
   const plain = resumeTarget({ workspace: "site", id: ID2 }, snap([row(ID2, { host: "codex", format: "codex" })]), choices(), CTX);
   assert.equal(plain.kind === "terminal" && plain.hint, "Resumes in workspaces/site");
 });
