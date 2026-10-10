@@ -10,11 +10,12 @@ Add this todo: **the text the user wrote after `$agenticos:todo`**
 
 Vault: the `vault` value in `${CLAUDE_CONFIG_DIR:-~/.claude}/agenticos.json` (also visible in the injected `<brain-context>`). The list is `<vault>/TODO.md`.
 
-1. Turn the text into ONE Obsidian Tasks line body, in this order: the task text, a priority emoji, `📅 YYYY-MM-DD`, then the `#tags`.
+1. **Workspace.** Run `aos workspace which --json` in the shell from the folder this session runs in, without changing directory first (fallback: `sh "<plugin root>/bin/aos" workspace which --json`). It prints `{"name": "<name>", "slug": "<slug>", "via": "<how it matched>"}` when the folder belongs to a workspace (the workspace itself, a worktree of it, or a code folder linked to it), or `{"name": null}` when it does not. Only when `name` is set, the line gets the tag `#ws/<slug>` (step 2), which links it to that workspace in the Workbench Spaces tab. When `name` is null, or the command fails or prints anything else, add no workspace tag and carry on.
+2. Turn the text into ONE Obsidian Tasks line body, in this order: the task text, a priority emoji, `📅 YYYY-MM-DD`, then the `#tags`, with `#ws/<slug>` from step 1 last.
    - A date or deadline ("by Oct 1", "tomorrow", "next Friday", "on 2026-10-01") becomes `📅 YYYY-MM-DD`, resolved against today's local date, and the phrase leaves the text. No date mentioned → no 📅.
    - "urgent", "asap", "important" or a `!` → `⏫`; "medium" → `🔼`; "low priority", "someday", "whenever" → `🔽`. Otherwise no priority emoji.
-   - Keep `#tags` and any Tasks emoji the user typed (`📅`, `⏫`, `🔼`, `🔽`) exactly as written. Keep the wording; add nothing the user did not say.
-2. Read `<vault>/TODO.md`. If it does not exist, create it with exactly this content:
+   - Keep `#tags` and any Tasks emoji the user typed (`📅`, `⏫`, `🔼`, `🔽`) exactly as written. Keep the wording; add nothing the user did not say beyond the workspace tag. When the user already typed a `#ws/` tag, keep theirs and add no second one.
+3. Read `<vault>/TODO.md`. If it does not exist, create it with exactly this content:
 
 ```markdown
 # To-Do
@@ -27,5 +28,5 @@ Ticking an item moves it to Done with its completion date (✅).
 ## Done
 ```
 
-3. Insert `- [ ] <body>` as the last item under `## Open` — after that item and its indented lines, before the blank line and the next `##` heading. Change nothing else in the file.
-4. Confirm the saved line in one sentence. No preamble.
+4. Insert `- [ ] <body>` as the last item under `## Open` — after that item and its indented lines, before the blank line and the next `##` heading. Change nothing else in the file.
+5. Confirm the saved line in one sentence, naming the workspace when it was tagged. No preamble.

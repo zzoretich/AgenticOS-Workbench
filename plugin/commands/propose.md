@@ -14,6 +14,7 @@ Vault: the `vault` value in `${CLAUDE_CONFIG_DIR:-~/.claude}/agenticos.json` (al
    - `kind`: `vault` for a change inside the vault that the review would apply; `self` for a change to the Chief of Staff's own files (IDENTITY.md, duties, persona scripts, schedules); `workflow` for an idea about how the user works, including a plan for another project; `product` for an idea for UniDeX itself.
    - `surface`, on a `product` proposal only: `cli` | `plugin` | `brain` | `hud` | `vault-template` | `docs`, where most of the change lands.
    - `slug`: kebab-case, `[a-z0-9-]`, 2–61 characters, not used by a file in `persona/proposals/` or a section of `persona/backlog.md`.
+   - `workspace`: run `aos workspace which --json` in the shell from the folder this session runs in, without changing directory first (fallback: `sh "${CLAUDE_PLUGIN_ROOT}/bin/aos" workspace which --json`). It prints `{"name": "<name>", "slug": "<slug>", "via": "<how it matched>"}` when the folder belongs to a workspace (the workspace itself, a worktree of it, or a code folder linked to it), or `{"name": null}` when it does not. Only when `name` is set, the proposal records it as `workspace: <name>`, which links it to that workspace in the Workbench Spaces tab. When `name` is null, or the command fails or prints anything else, the proposal has no `workspace:` line.
 2. **Recheck.** One read-only `/bin/sh` command, under 15 seconds, no network, that exits 0 while the situation behind the proposal still holds and nonzero once it is resolved (a file still lacks a line, a version is still below a number). For an idea with nothing to check, use `true`. It must pass the read-only grammar in the proposals README — `grep`, `test`, `ls`, `wc`, `head`, `tail`, `cat`, `diff` and read-only `git` joined by `|`, `&&`, `||`, a leading `!`, `$HOME` the only expansion; no `;`, redirections or `$(…)` — or it never runs; check it with `node <vault>/brain/scripts/persona/ledger.js run-recipe '<recipe>'` (it prints `refused: <reason>` when it does not pass).
 3. **Write** `<vault>/persona/proposals/<today>-<slug>.md` (local date; create the folder when missing) in exactly this shape:
 
@@ -23,6 +24,7 @@ slug: <slug>
 filed: <today>
 kind: <kind>
 surface: <surface — product proposals only; leave the line out otherwise>
+workspace: <name — only when step 1's `which` printed one; leave the line out otherwise>
 target: <one line — what the change touches, or what the idea is about>
 recheck: "<the recipe, with any inner double quote written as \">"
 ---

@@ -29,13 +29,35 @@ test("every fixture proposal parses to the same fields and lint as collect.js", 
   for (const [i, p] of ours.entries()) {
     const t = theirs[i];
     assert.deepEqual(
-      { slug: p.slug, filed: p.filed, kind: p.kind, surface: p.surface, target: p.target, recheck: p.recheck,
-        autoapplyClass: p.autoapplyClass, premises: p.premises, lint: p.lint },
-      { slug: t.slug, filed: t.filed, kind: t.kind, surface: t.surface, target: t.target, recheck: t.recheck,
-        autoapplyClass: t.autoapply_class, premises: t.premises, lint: t.lint },
+      { slug: p.slug, filed: p.filed, kind: p.kind, surface: p.surface, workspace: p.workspace, target: p.target,
+        recheck: p.recheck, autoapplyClass: p.autoapplyClass, premises: p.premises, lint: p.lint },
+      { slug: t.slug, filed: t.filed, kind: t.kind, surface: t.surface, workspace: t.workspace, target: t.target,
+        recheck: t.recheck, autoapplyClass: t.autoapply_class, premises: t.premises, lint: t.lint },
       p.name,
     );
   }
+});
+
+test("the workspace key (spaces-redesign D27): /propose's line is read on both sides, absent is null", () => {
+  const byName = Object.fromEntries(proposals().map((p) => [p.name, p]));
+  assert.equal(byName["2026-09-20-todo-in-sitrep.md"].workspace, "site");
+  assert.equal(byName["2026-09-18-trim-playbook.md"].workspace, null);
+  // Hand-written forms read as a memory note's `workspace:` is (memories.ts workspaceKey), the same in collect.js.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aos-prop-ws-"));
+  const raws: Array<[string, string | null]> = [
+    ["site", "site"], ['"My App"', "My App"], ["'site'", "site"], ["workspaces/site/", "site"],
+    ["\"[[workspaces/site|Site]]\"", "site"], ["", null], ['""', null], ["workspaces/", null],
+  ];
+  fs.mkdirSync(path.join(dir, PROPOSALS_DIR), { recursive: true });
+  const names = raws.map((_, i) => `2026-10-0${i + 1}-ws-${i}.md`);
+  raws.forEach(([raw], i) => fs.writeFileSync(path.join(dir, PROPOSALS_DIR, names[i]), `---\nslug: ws-${i}\nworkspace: ${raw}\n---\n## What\nx\n`));
+  const theirs = collectJs.collect(dir, { stateDir: path.join(dir, "state") }).proposals;
+  raws.forEach(([raw, want], i) => {
+    const ours = parseProposal(names[i], fs.readFileSync(path.join(dir, PROPOSALS_DIR, names[i]), "utf8"));
+    assert.equal(ours.workspace, want, `ours: ${raw}`);
+    assert.equal(theirs[i].workspace, want, `collect.js: ${raw}`);
+  });
+  fs.rmSync(dir, { recursive: true, force: true });
 });
 
 test("the README is not a proposal, and each lint path fires", () => {

@@ -2,10 +2,12 @@
 // Pure: file text in, rows out. The tab is read-only; every decision goes through the
 // persona-flag-closer skill, which owns the ledger, the backlog and the commits.
 // Mirrors, rule for rule: plugin/skills/persona-flag-closer/scripts/collect.js (frontmatter, premise
-// table, kinds, surfaces, lint), brain/scripts/persona/backlog.js (section shape),
+// table, kinds, surfaces, lint, the workspace key), brain/scripts/persona/backlog.js (section shape),
 // brain/scripts/persona/ledger.js summary() (28-day rates) and brain/scripts/persona/recheck.js
 // readConfirmations(), and brain/scripts/persona/proposal-html.js pagePath() (spec 2026-09-22-proposal-pages D7).
 // proposals.test.ts runs both sides on the same fixtures.
+
+import { workspaceKey } from "./memories";
 
 export const PROPOSALS_DIR = "persona/proposals";
 export const LEDGER_PATH = "persona/ledger.jsonl";
@@ -30,6 +32,8 @@ export interface Proposal {
   filed: string;              // YYYY-MM-DD
   kind: string;
   surface: string | null;
+  /** The workspace `/propose` filed it from (frontmatter `workspace:`, read as a memory note's is; spaces-redesign D27). */
+  workspace: string | null;
   target: string;
   recheck: string | null;
   autoapplyClass: string | null;
@@ -114,6 +118,7 @@ export function parseProposal(name: string, text: string): Proposal {
     slug: fm.slug || name.replace(/^\d{4}-\d{2}-\d{2}-/, "").replace(/\.md$/, ""),
     filed: fm.filed || name.slice(0, 10),
     kind, surface,
+    workspace: workspaceKey(fm.workspace ?? null),
     target: fm.target || "(unspecified)",
     recheck: fm.recheck || null,
     autoapplyClass: fm.autoapply_class || null,
