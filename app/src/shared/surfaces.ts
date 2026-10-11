@@ -226,8 +226,9 @@ export const SURFACES: readonly Surface[] = [
       { script: "regen-workspace-insight.js", args: argv(WS) },
       ...WORKSPACE_VERBS,
     ],
-    // Live check of the workspace verbs (spaces-redesign D29): pending; its date goes here once one Draft per host and an
-    // Archive then Restore of a throwaway workspace on each host pass, before PR 3 merges.
+    // Live check of the workspace verbs (spaces-redesign D29), 2026-10-10 on a real vault with both hosts enabled: new
+    // (--pin), which, one draft with the provider pinned to Claude and one pinned to Codex (each labelled by who answered),
+    // set --dry-run, set --expect and its refusal of a stale hash, archive, restore, archive again.
     verified: true,
   },
   {
