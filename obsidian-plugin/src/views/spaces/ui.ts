@@ -1,14 +1,16 @@
-// ui.ts — what the Spaces panes share (spaces-redesign D3–D10, D19): the context the tab hands each pane, the menus as
-// data, the file events each pane redraws on, and small render helpers. Kept apart from SpacesTab.ts so the panes never
+// ui.ts — what the Spaces panes share (spaces-redesign D3–D10, D19; PR 3's actions D15–D18, D35): the context the tab
+// hands each pane, the menus as data (Resume's, More's, the status menu, the outside list's adopt popover), the file
+// events each pane redraws on, and small render helpers. Kept apart from SpacesTab.ts so the panes never
 // import the tab (the views/teams pattern), and free of runtime imports from "obsidian" (the tab passes `icon`), so the
 // pure parts load under node:test.
 import * as path from "path";
 import type { Snapshot, WorkspaceEntry } from "../../data/snapshot";
 import type { Place, PlaceWorld, TermHostChoice } from "../../data/terminalLaunch";
 import { workspacePlace } from "../../data/terminalLaunch";
-import type { LinkedCounts, Linked, LiveState, ResumeRef, ResumeTarget, HistoryFilter, SpaceGroupKey, StatusPill } from "../../data/spacesModel";
+import type { LinkedCounts, Linked, LiveState, ManifestStatus, ResumeRef, ResumeTarget, HistoryFilter, SpaceGroupKey, StatusPill } from "../../data/spacesModel";
 import { lastThread } from "../../data/hostSessions";
-import { newSessionRows, resumeTarget, sessionsLink, SESSIONS_OFF_TEXT } from "../../data/spacesModel";
+import type { OutsideListRow } from "../../data/hostSessions";
+import { WS_RE, newSessionRows, resumeTarget, sessionsLink, statusPill, SESSIONS_OFF_TEXT } from "../../data/spacesModel";
 import type { FileFilter, MapIndex, WorkspaceMap } from "../../data/workspaceMaps";
 import type { DirEntry, PreviewResult } from "../../data/workspaceFiles";
 import type { HostSessionThread } from "../../host";
@@ -19,7 +21,7 @@ import { PROPOSALS_DIR } from "../../data/proposals";
 
 // ── state ──
 
-/** The centre pane: the dossier's Overview or Files, or the outside list (the PR 2 stand-in for Adopt, D21). */
+/** The centre pane: the dossier's Overview or Files, or the outside list (D21; Adopt and Hide on its rows, D16). */
 export type CentreView = "overview" | "files" | "outside";
 export type Pane = "list" | "centre" | "right";
 
@@ -46,7 +48,10 @@ export function freshUiState(): SpacesUiState {
   };
 }
 
-/** What a pane can ask the tab to do. Each one only selects or opens: a terminal, a tab, a menu, the OS. */
+/**
+ * What a pane can ask the tab to do. Most only select or open (a terminal, a tab, a menu, the OS); PR 3's actions open
+ * a dialog or run one `aos workspace` verb through the spaces surface (D28, D29), a move only after its confirmation.
+ */
 export interface SpacesActions {
   select(name: string): void;
   /** Check the selection against the list's rules again (the hidden toggle), then redraw every pane. */
@@ -57,7 +62,8 @@ export interface SpacesActions {
   tree(): void;
   /** Opens or closes the outside list; closing it with `select` selects that workspace (a Matches link). */
   showOutside(on: boolean, select?: string): void;
-  newWorkspace(): void;
+  /** New space (D15): the dialog; the tab runs `aos workspace new`. */
+  newSpace(): void;
   resume(ref: ResumeRef): void;
   newSession(host: "claude" | "codex"): void;
   terminal(): void;
@@ -77,7 +83,46 @@ export interface SpacesActions {
   menu(anchor: HTMLElement, items: MenuItem[], label: string): void;
   /** Reads the head of a file for the preview; the result is kept for `SpacesCtx.cachedPreview`. */
   readPreview(abs: string): Promise<PreviewResult>;
+  // ── PR 3 (D15–D18, D35) ──
+  /** The status menu, opened on the dossier's pill (Set status… in More opens it there too). */
+  statusMenu(): void;
+  /** `aos workspace set <n> --set {"status": …}`: "" is Automatic (clears the override). */
+  setStatus(status: ManifestStatus | ""): void;
+  togglePin(): void;
+  rename(): void;
+  archive(): void;
+  restore(): void;
+  /** Draft workspace.md (D13). */
+  draft(): void;
+  /** The outside list's row: alias it into a workspace (D16), after its confirmation. */
+  adoptInto(row: OutsideListRow, workspace: string): void;
+  /** The outside list's row as a workspace's code folder (`repo:` through set, D24). */
+  linkFolder(row: OutsideListRow, workspace: string): void;
+  /** Adopt into… / Link as code folder of… for a folder whose name matches no workspace: the picker first. */
+  pickWorkspace(mode: "adopt" | "link", row: OutsideListRow): void;
+  hide(row: OutsideListRow): void;
+  /** A stored hidden path, exactly as brain/_index/workspaces-hidden.json holds it. */
+  unhide(stored: string): void;
+  /** + to-do with #ws/<slug> (D35), through the To-Do surface's writer. */
+  addTodo(): void;
+  /** Link to-dos… (D35). */
+  linkTodos(): void;
+  /** After a clone line ends: start an agent in the fresh clone (D15: never on its own). */
+  startHere(host: "claude" | "codex"): void;
+  dismissClone(): void;
 }
+
+/** A clone New space typed into a Code terminal (D15): what the dossier offers once its line has ended. */
+export interface CloneState {
+  url: string;
+  /** The host New space's "Open with" named; null for Terminal. */
+  host: "claude" | "codex" | null;
+  /** The line has ended: `aos workspace stubs --pin`, its last step, wrote workspace.md. */
+  done: boolean;
+}
+
+/** A hidden outside folder (brain/_index/workspaces-hidden.json): the stored value Unhide passes, and how it reads. */
+export interface HiddenFolder { stored: string; label: string }
 
 /** What the tab hands each pane on a draw. */
 export interface SpacesCtx {
@@ -119,6 +164,14 @@ export interface SpacesCtx {
   /** Obsidian's setIcon (lucide ids). Named so, and called with a literal id, so `npm run check:compat` sees each icon. */
   setIcon(el: HTMLElement, id: string): void;
   act: SpacesActions;
+  // ── PR 3 ──
+  /** Whether the To-Do surface may write TODO.md (compat's canWrite; display only, main checks the write): + to-do and
+   *  Link to-dos… are off with TODO_WRITES_OFF_TEXT otherwise (D35). */
+  todoWritable: boolean;
+  /** Outside folders the user hid, for Unhide (D16, D21). */
+  hiddenOutside: HiddenFolder[];
+  /** A clone typed into the selected workspace's folder (D15), or null. */
+  clone: CloneState | null;
 }
 
 // ── file events → what to read again (the tab's watch list, Mechanics › PR 2 › Files and wiring) ──
@@ -206,6 +259,10 @@ export interface MenuItem {
   detail?: string | null;
   disabled?: boolean;
   run?: () => void;
+  /** A choice of one (the status menu): drawn as menuitemradio with aria-checked. */
+  checked?: boolean;
+  /** A separator above it (Archive…, Hide). */
+  sep?: boolean;
 }
 
 /** The target of a session row, looked up again in the current snapshot (D7, D31, D32), or why it is off. */
@@ -269,20 +326,96 @@ export function splitMenuItems(ctx: Pick<SpacesCtx, "choices" | "world" | "sessi
   return items;
 }
 
-/** More ⋯ (the PR 2 stand-in, D5): Copy path, Reveal in Finder and today's Link code folder. */
+/** Why a workspace's own verbs (Rename, Pin, status, Draft, Archive) are off, or null when they are on. */
+export function verbsOff(e: Pick<WorkspaceEntry, "name" | "hidden" | "hiddenReason">, world: PlaceWorld): string | null {
+  if (e.hidden) return e.hiddenReason === "archived" ? "Archived: restore it first" : "A _ folder is not a workspace Spaces manages";
+  if (!world.workspaces.includes(e.name)) return "Its folder is not under workspaces/ any more: rescan the vault";
+  if (!WS_RE.test(e.name)) return "Its folder's name is not one Spaces can pass to aos: rename it in Finder";
+  return null;
+}
+
+/**
+ * More ⋯ (D5; the Manage mock's menu): Rename…, Pin or Unpin, Set status…, Link code folder…, Draft workspace.md, Copy
+ * path, Reveal in Finder, then Archive… (Restore… on an archived workspace). An item that cannot run stays, off, with
+ * why (D31).
+ */
 export function moreMenuItems(ctx: Pick<SpacesCtx, "world" | "act" | "vault">, e: WorkspaceEntry): MenuItem[] {
   const abs = entryAbs(e, ctx.vault);
   const linked = !!ctx.world.links[e.name];
-  const listed = ctx.world.workspaces.includes(e.name);
-  return [
+  const off = verbsOff(e, ctx.world);
+  const items: MenuItem[] = [];
+  if (!e.hidden) {
+    const own = (key: string, label: string, run: () => void, detail: string | null = null): MenuItem =>
+      ({ key, label, detail: off ?? detail, disabled: !!off, run: off ? undefined : run });
+    items.push(
+      own("rename", "Rename…", () => ctx.act.rename(), "Moves the folder, its map and its threads; the old name stays an alias"),
+      own("pin", e.pinned ? "Unpin" : "Pin", () => ctx.act.togglePin(), e.pinned ? "Back into its status group" : "Keeps it at the top of the list"),
+      own("status", "Set status…", () => ctx.act.statusMenu(), "Automatic, Active, Paused or Done, in workspace.md"),
+      own("link", linked ? "Change code folder…" : "Link code folder…", () => ctx.act.linkCodeFolder(), "Terminals here start in that folder"),
+      own("draft", "Draft workspace.md", () => ctx.act.draft(), "A summary, objectives and next step to review; nothing is saved until you press Save"),
+    );
+  }
+  items.push(
     { key: "copy", label: "Copy path", run: () => ctx.act.copy(abs) },
     { key: "reveal", label: "Reveal in Finder", run: () => ctx.act.revealInFinder(abs) },
-    {
-      key: "link", label: linked ? "Change code folder…" : "Link code folder…", disabled: !listed,
-      detail: listed ? "Terminals here start in that folder" : "Only a listed workspace can link a code folder",
-      run: listed ? () => ctx.act.linkCodeFolder() : undefined,
-    },
+  );
+  if (!e.hidden) {
+    items.push({ key: "archive", label: "Archive…", sep: true, detail: off ?? "Moves it to workspaces/_archive/; restorable", disabled: !!off, run: off ? undefined : () => ctx.act.archive() });
+  } else if (e.hiddenReason === "archived") {
+    const name = e.label || e.name.replace(/^_archive\//, "");
+    const ok = WS_RE.test(name);
+    items.push({ key: "restore", label: "Restore…", sep: true, detail: ok ? `Moves it back to workspaces/${name}` : "Its name is not one Spaces can pass to aos", disabled: !ok, run: ok ? () => ctx.act.restore() : undefined });
+  }
+  return items;
+}
+
+/** The status menu (D18): Automatic (the scan's word), Active, Paused, Done; the one workspace.md sets is checked. */
+export function statusMenuItems(ctx: Pick<SpacesCtx, "act">, e: WorkspaceEntry): MenuItem[] {
+  const current = e.statusOverride ?? null;
+  const auto = e.statusAuto ?? (statusPill(e).auto ? statusPill(e).word : null);
+  const set = (s: ManifestStatus | "") => () => ctx.act.setStatus(s);
+  return [
+    { key: "status:auto", label: "Automatic", detail: auto ? `${auto} now, from sessions and commits` : "Worked out from sessions and commits", checked: !current, run: current ? set("") : undefined },
+    { key: "status:active", label: "Active", detail: "Set in workspace.md", checked: current === "active", run: current === "active" ? undefined : set("active") },
+    { key: "status:paused", label: "Paused", detail: "Set in workspace.md; muted, never an alarm", checked: current === "paused", run: current === "paused" ? undefined : set("paused") },
+    { key: "status:done", label: "Done", detail: "Set in workspace.md", checked: current === "done", run: current === "done" ? undefined : set("done") },
   ];
+}
+
+/**
+ * The outside list's popover (D16, D24): "Adopt into <name>" for a folder whose name matches a workspace (an alias,
+ * nothing moves), "Link as code folder of <name>" when that workspace has no repository of its own, and Hide; a folder
+ * that matches none gets "Adopt into a workspace…" and "Link as code folder of…", which pick the workspace first.
+ */
+export function outsideMenuItems(ctx: Pick<SpacesCtx, "act" | "entries" | "world">, row: OutsideListRow): MenuItem[] {
+  // A row inside the vault (a workspaces/<old> left by a rename by hand, a vanished _archive/<n>): the runtime takes
+  // only folders outside the vault for adopt, link and hide (cli/workspace.js checkOutsidePath), so say so here.
+  const rel = path.relative(path.resolve(ctx.world.vault), path.resolve(row.cwd));
+  const inVault = rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel)) ? "Inside the vault: rename or remove it in Files" : null;
+  const match = row.match ? ctx.entries.find((e) => e.name === row.match && !e.hidden) ?? null : null;
+  const items: MenuItem[] = [];
+  const gone = row.exists ? null : "The folder no longer exists";
+  if (match) {
+    const n = match.label || match.name;
+    const off = inVault ?? verbsOff(match, ctx.world);
+    items.push({ key: "adopt", label: `Adopt into ${n}`, detail: off ?? "Records this folder as an alias: its sessions count there; nothing moves", disabled: !!off, run: off ? undefined : () => ctx.act.adoptInto(row, match.name) });
+    const own = match.git?.kind === "repo" && !match.repoPath ? `${n} is a repository of its own` : null;
+    // Linking never replaces a code folder without a word: that change is More › Link code folder…'s, which shows it.
+    const linked = match.repoPath ? `Already linked to ${shortenHome(match.repoPath, ctx.world.home)}: change it in More › Link code folder…` : null;
+    const why = off ?? gone ?? own ?? linked;
+    items.push({ key: "link", label: `Link as code folder of ${n}`, detail: why ?? "Terminals in it start in this folder", disabled: !!why, run: why ? undefined : () => ctx.act.linkFolder(row, match.name) });
+  } else {
+    items.push({ key: "adopt", label: "Adopt into a workspace…", detail: inVault ?? "Pick the workspace; nothing moves", disabled: !!inVault, run: inVault ? undefined : () => ctx.act.pickWorkspace("adopt", row) });
+    const why = inVault ?? gone;
+    items.push({ key: "link", label: "Link as code folder of…", detail: why ?? "Pick the workspace whose terminals start here", disabled: !!why, run: why ? undefined : () => ctx.act.pickWorkspace("link", row) });
+  }
+  items.push({ key: "hide", label: "Hide", sep: true, detail: inVault ?? "Leaves this list; Unhide under Hidden brings it back", disabled: !!inVault, run: inVault ? undefined : () => ctx.act.hide(row) });
+  return items;
+}
+
+/** A path as it reads, `~/…` under home. */
+function shortenHome(p: string, home: string): string {
+  return home && (p === home || p.startsWith(`${home}/`)) ? `~${p.slice(home.length)}` : p;
 }
 
 /** The app's Sessions threads in a workspace (D32: Sessions lists app threads only). */

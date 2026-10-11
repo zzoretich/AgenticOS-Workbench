@@ -46,6 +46,17 @@ function parseFrontmatter(text) {
   return fm;
 }
 
+/** A `workspace:` value as a workspace name (spaces-redesign D27), as the Workbench reads a memory note's: quotes, a
+ *  `[[link]]` and a leading `workspaces/` stripped; null when empty. Mirrored by obsidian-plugin memories.ts workspaceKey. */
+function workspaceKey(raw) {
+  if (raw == null) return null;
+  let v = String(raw).trim();
+  const q = /^(["'])(.*)\1$/.exec(v); if (q) v = q[2].trim();
+  const link = /^\[\[([^\]|#]+)(?:[|#][^\]]*)?\]\]$/.exec(v); if (link) v = link[1].trim();
+  v = v.replace(/^workspaces\//, '').replace(/\/+$/, '').trim();
+  return v || null;
+}
+
 function parsePremiseTable(text) {
   const sec = text.split(/^## Premises\s*$/m)[1];
   if (!sec) return null;
@@ -75,7 +86,7 @@ function collectProposals(root) {
     if (surface && !SURFACES.includes(surface)) lint.push(`unknown surface "${surface}" (${SURFACES.join(' | ')})`);
     const slug = fm.slug || f.replace(/^\d{4}-\d{2}-\d{2}-/, '').replace(/\.md$/, '');
     return { file: path.join(dir, f), slug, filed: fm.filed || f.slice(0, 10), kind, surface, verbs: verbsFor(kind),
-             target: fm.target || '(unspecified)', recheck: fm.recheck || null,
+             workspace: workspaceKey(fm.workspace), target: fm.target || '(unspecified)', recheck: fm.recheck || null,
              autoapply_class: fm.autoapply_class || null, premises: premises || [], lint };
   });
 }
@@ -157,4 +168,4 @@ if (require.main === module) {
     console.log(JSON.stringify(out, null, 2));
   }
 }
-module.exports = { collect, parseFrontmatter, parsePremiseTable, collectFlags, stripAnsi, defaultRoot, defaultLogDir, verbsFor, KINDS, IDEA_KINDS, SURFACES };
+module.exports = { collect, parseFrontmatter, parsePremiseTable, workspaceKey, collectFlags, stripAnsi, defaultRoot, defaultLogDir, verbsFor, KINDS, IDEA_KINDS, SURFACES };

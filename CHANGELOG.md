@@ -4,6 +4,10 @@ All notable changes to UniDeX (AgenticOS Workbench before 1.1). Versions follow 
 
 ## [Unreleased]
 
+### Upgrading
+- **Adopting from Spaces records the folder as an alias** of a workspace and moves nothing; `aos workspace adopt <path>` without `--into` still moves the folder.
+- **The `aos workspace` verbs refuse linked folders**: a `workspaces/` or `workspaces/_archive` that is a symlink, or a linked map, thread or project-note folder under `brain/`, is refused with the reason (scanning is unchanged). A name must match its folder's case exactly. Restore flips back only the project notes Archive flipped, and returns a dated archive to its original name.
+
 ### Changed
 - **Spaces is a three-pane dossier.** A searchable list grouped by status, a pick-up card (last thread, the handoff's Now line, next step, the insight), Overview and a Files tree with map descriptions inline, and a History and Linked pane.
 - **`_` folders are hidden from Spaces and Pulse counts**, and the outside list drops temp, scratch and job folders.
@@ -11,6 +15,11 @@ All notable changes to UniDeX (AgenticOS Workbench before 1.1). Versions follow 
 
 ### Added
 - **Resume in Code** reopens a workspace's last Claude Code or Codex thread in a Code terminal; a Codex terminal started by Resume (from Spaces or the end bar) resumes that same thread by its id when it ends; Spaces, Sessions, Code and Pulse link to each other by workspace.
+- **Spaces can create, adopt, archive, restore, rename and pin workspaces and set their status**, through new `aos workspace` verbs that any Claude Code or Codex session can run too; `/todo`, `/propose` and `/project` link what they write to the workspace you are in, and **Link to-dos…** tags existing to-dos with their workspace in one click.
+- **Draft workspace.md** writes a summary, objectives and next step for review; nothing is saved until you press Save.
+
+### Security
+- **The Spaces surface runs named `aos workspace` verbs**, with the names and paths checked by the runtime, writes kept to `workspaces/` and `brain/_index/` plus a project note's status tag, and a confirmation before any folder moves.
 
 ### Fixed
 - **Spaces counts Claude Code sessions.** Sessions are read from each transcript's own folder, worktrees and team seats are credited to their workspace, and sessions started at the vault root count for the workspace whose files they touched.

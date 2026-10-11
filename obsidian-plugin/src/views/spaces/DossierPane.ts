@@ -1,11 +1,13 @@
-// DossierPane.ts — the centre pane's header (spaces-redesign D5): the name, the status pill (static until PR 3), the
-// pin mark when pinned, the mono meta line (path, linked code folder, git), and the actions grouped on the left:
-// Resume in Code as a split button (aria-haspopup), Terminal, Finder, More ⋯. Under it the Overview · Files tabs (D8).
+// DossierPane.ts — the centre pane's header (spaces-redesign D5): the name, the status pill (PR 3: the status menu,
+// D18), the pin toggle (PR 3), the mono meta line (path, linked code folder, git), and the actions grouped on the left:
+// Resume in Code as a split button (aria-haspopup), Terminal, Finder, More ⋯ (PR 3: Rename…, Pin, Set status…, Link
+// code folder…, Draft workspace.md, Copy path, Archive…). A fresh clone's card sits under them (D15). Under it the
+// Overview · Files tabs (D8).
 import type { WorkspaceEntry } from "../../data/snapshot";
 import { gitMetaParts, statusPill } from "../../data/spacesModel";
 import { lastThread } from "../../data/hostSessions";
 import { filterCounts, mapSummary } from "../../data/workspaceMaps";
-import { button, entryAbs, entryPlace, moreMenuItems, primaryAction, splitMenuItems, statusDot, tilde, whyLine, type SpacesCtx } from "./ui";
+import { button, entryAbs, entryPlace, moreMenuItems, primaryAction, splitMenuItems, statusDot, tilde, verbsOff, whyLine, type SpacesCtx } from "./ui";
 
 export function renderDossier(host: HTMLElement, ctx: SpacesCtx, e: WorkspaceEntry): void {
   const head = host.createEl("header", { cls: "aos-spc-head" });
@@ -13,16 +15,35 @@ export function renderDossier(host: HTMLElement, ctx: SpacesCtx, e: WorkspaceEnt
   // Focusable from code only: leaving the outside list through a Matches link lands here (spaces-redesign D21).
   bar.createEl("h1", { cls: "aos-spc-h1", text: e.label || e.name, attr: { title: e.name, tabindex: "-1", "data-spc-key": "title" } });
   const pill = statusPill(e);
+  const off = verbsOff(e, ctx.world);
+  const pillTitle = pill.auto ? `Status ${pill.word}, worked out from sessions and commits` : `Status ${pill.word}, set in workspace.md`;
   // The word as a class too: a paused pill is muted like idle, its hollow amber dot the only colour (D19: warn is
-  // stalled's; a deliberately paused space is no alarm).
-  const p = bar.createSpan({
-    cls: `aos-spc-pill is-${pill.tone} is-${pill.word}`,
-    attr: { title: pill.auto ? `Status ${pill.word}, worked out from sessions and commits` : `Status ${pill.word}, set in workspace.md` },
-  });
+  // stalled's; a deliberately paused space is no alarm). PR 3: a listed workspace's pill opens the status menu (D18).
+  const pillCls = `aos-spc-pill is-${pill.tone} is-${pill.word}`;
+  const p = off
+    ? bar.createSpan({ cls: pillCls, attr: { title: pillTitle } })
+    : button(bar, `${pillCls} aos-spc-pillbtn`, null, {
+      key: "status", title: `${pillTitle}: change it`, label: `Status: ${pill.word}${pill.auto ? ", automatic" : ""}. Change status`,
+      attr: { "aria-haspopup": "menu", "aria-expanded": "false" },
+    });
   statusDot(p, pill);
   p.createSpan({ cls: "aos-spc-pillword", text: pill.word });
   if (pill.auto) p.createSpan({ cls: "aos-spc-pillauto", text: "· auto" });
-  if (e.pinned) {
+  if (!off) {
+    const chev = p.createSpan({ cls: "aos-spc-chev" });
+    ctx.setIcon(chev, "chevron-down");
+    p.addEventListener("click", () => ctx.act.statusMenu());
+  }
+  if (!off) {
+    // The pin mark is the toggle (D18): `pinned: true` in workspace.md, through aos workspace set. Pinned, it is the
+    // filled mark PR 2 drew (.aos-spc-pin, "Pinned"); unpinned, an outline pin that pins.
+    const pin = button(bar, `aos-spc-iconbtn aos-spc-pinbtn${e.pinned ? " aos-spc-pin is-on" : ""}`, null, {
+      key: "pin", label: e.pinned ? "Pinned" : "Pin", title: e.pinned ? "Pinned in workspace.md: unpin" : "Pin it to the top of the list",
+      attr: { "aria-pressed": String(!!e.pinned) },
+    });
+    ctx.setIcon(pin, "pin");
+    pin.addEventListener("click", () => ctx.act.togglePin());
+  } else if (e.pinned) {
     const pin = bar.createSpan({ cls: "aos-spc-pin", attr: { role: "img", "aria-label": "Pinned", title: "Pinned in workspace.md" } });
     ctx.setIcon(pin, "pin");
   }
@@ -53,6 +74,33 @@ export function renderDossier(host: HTMLElement, ctx: SpacesCtx, e: WorkspaceEnt
   }
 
   renderActions(head, ctx, e);
+  if (ctx.clone) renderClone(head, ctx, e);
+}
+
+/**
+ * A fresh clone (D15): the clone line runs in a Code terminal; once it ends (its last step, `aos workspace stubs
+ * --pin`, wrote workspace.md) the card offers "Start <host> here". No agent starts on its own in a fresh clone.
+ */
+function renderClone(head: HTMLElement, ctx: SpacesCtx, e: WorkspaceEntry): void {
+  const c = ctx.clone;
+  if (!c) return;
+  const card = head.createDiv({ cls: "aos-spc-clone", attr: { role: "status" } });
+  const text = card.createDiv({ cls: "aos-spc-clonetext" });
+  text.createSpan({ text: c.done ? "Cloned " : "Cloning " });
+  text.createSpan({ cls: "aos-spc-mono", text: c.url });
+  text.createSpan({ text: c.done ? ` into ${e.label || e.name}.` : " in a Code terminal." });
+  const acts = card.createDiv({ cls: "aos-spc-cloneacts" });
+  if (c.host) {
+    const label = c.host === "claude" ? "Claude Code" : "Codex";
+    const go = button(acts, "aos-spc-btn aos-spc-primary aos-spc-small", `Start ${label} here`, {
+      key: "clone-start", disabled: !c.done,
+      title: c.done ? `A new ${label} session in this clone, in Code` : "Waiting for the clone line to end in Code",
+    });
+    go.addEventListener("click", () => { if (c.host) ctx.act.startHere(c.host); });
+  }
+  const dismiss = button(acts, "aos-spc-linkbtn", "Dismiss", { key: "clone-dismiss", title: "Hide this card; the workspace stays" });
+  dismiss.addEventListener("click", () => ctx.act.dismissClone());
+  if (!c.done) whyLine(card, "No agent starts on its own: the button turns on when the clone line ends (a failed clone leaves an empty workspace to archive).", { div: true });
 }
 
 function renderActions(head: HTMLElement, ctx: SpacesCtx, e: WorkspaceEntry): void {

@@ -71,6 +71,14 @@ const WS = /[^\s\0._\/\\-][^\/\\\0\n\r\u2028\u2029]{0,127}/;
 // A file inside a workspace (map-workspace.js --file), which the runtime checks again: relative, no "." or ".." segment,
 // no NUL or line break. The segment check spans any character, so no line separator can hide a "..".
 const REL = /(?![-\/])(?!(?:[\s\S]*\/)?\.\.?(?:\/|$))[^\0\n\r\u2028\u2029]+/;
+// The page's workspace verbs (spaces-redesign D15–D18, D29; the plan's Mechanics › PR 3 › Security). cli/workspace.js
+// checks each again: a name against the folders under workspaces/, a path against the scan's outside rows.
+// A new workspace's name (new, rename): kebab-case, at most 64 characters, no dash at either end.
+const KEBAB = /[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?/;
+// workspace.md's hash as `draft` read it (set --expect), or `none` when the workspace has no workspace.md yet.
+const HASH = /none|[0-9a-f]{16,64}/;
+// An outside folder (adopt, hide, unhide): absolute or under ~/, no NUL or line break (U+2028 and U+2029 included).
+const PATH = /(?:\/|~\/)[^\0\n\r\u2028\u2029]+/;
 // Chat's question. recall-cli.js and ask.js read only whole `--…` arguments as flags, so a question may start with one
 // dash ("- what is due?"), as it may in Obsidian; `--` never, which keeps out `--warm` and ask.js's `--write=<file>`.
 const QUESTION = /(?!--)[\s\S]+/;
@@ -99,6 +107,25 @@ const claudeAsk = (effort: boolean): SpawnRule => ({
   args: argv("-p", ANY, "--model", WORD, ...(effort ? ["--effort", /low|medium|high|xhigh|max/] : []), "--tools", "", "--setting-sources", "",
     "--strict-mcp-config", "--no-session-persistence", "--system-prompt", ANY, "--max-budget-usd", USD, "--output-format", "json"),
 });
+
+/** Every subset of `flags`, each keeping the order given: a command's optional flags as data, in one fixed order. */
+const inOrder = (flags: readonly string[]): string[][] => flags.reduce<string[][]>((all, f) => [...all, ...all.map((s) => [...s, f])], [[]]);
+
+/**
+ * The `aos workspace` verbs Spaces runs (spaces-redesign D28, D29; spec §4 PR 3), each with --json last. Never `list`,
+ * `which`, `stubs` or adopt's move form (adopt without --into): only a terminal or a session types those.
+ */
+const WORKSPACE_VERBS: readonly SpawnRule[] = [
+  ...inOrder(["--git", "--pin", "--empty"]).map((flags): SpawnRule => ({ script: "cli/aos.js", args: argv("workspace", "new", KEBAB, ...flags, "--json") })),
+  { script: "cli/aos.js", args: argv("workspace", "draft", WS, "--json") },
+  // The Draft dialog's Save: only the keys that changed, compare-and-set on the hash the draft read.
+  ...inOrder(["--dry-run"]).map((flags): SpawnRule => ({ script: "cli/aos.js", args: argv("workspace", "set", WS, "--set", JSON_OBJ, "--expect", HASH, ...flags, "--json") })),
+  { script: "cli/aos.js", args: argv("workspace", /archive|restore/, WS, "--json") },
+  { script: "cli/aos.js", args: argv("workspace", "rename", WS, KEBAB, "--json") },
+  // An alias only: the folder stays where it is.
+  { script: "cli/aos.js", args: argv("workspace", "adopt", PATH, "--into", WS, "--json") },
+  { script: "cli/aos.js", args: argv("workspace", /hide|unhide/, PATH, "--json") },
+];
 
 // What the Files tab and the note editor never touch: the runtime's caches and vendored scripts, dependency folders, and
 // every dot-path. The Files tree and the vault index never show a dot-path; refusing them also keeps a compromised page
@@ -189,13 +216,19 @@ export const SURFACES: readonly Surface[] = [
   {
     id: "spaces",
     label: "Spaces",
-    source: "views/SpacesTab.ts (map now, ↻ one file, regen), main.ts regenWorkspaceInsight",
+    source: "views/SpacesTab.ts and views/spaces/* (map now, ↻ one file, regen; New, Adopt, Hide, Archive, Restore, Rename, Pin, status), ui/spaces/{DraftModal,NewSpaceModal}.ts, data/terminalLauncher.ts (createAndLaunch, linkRepo), main.ts regenWorkspaceInsight",
+    // The verbs write through the runtime (cli/workspace.js), never the page: workspaces/** and brain/_index/**, plus a
+    // linked project note's status tag (spaces-redesign §6).
     writes: [],
     spawns: [
       { script: "map-workspace.js", args: argv(WS) },
       { script: "map-workspace.js", args: argv(WS, "--file", REL) },
       { script: "regen-workspace-insight.js", args: argv(WS) },
+      ...WORKSPACE_VERBS,
     ],
+    // Live check of the workspace verbs (spaces-redesign D29), 2026-10-10 on a real vault with both hosts enabled: new
+    // (--pin), which, one draft with the provider pinned to Claude and one pinned to Codex (each labelled by who answered),
+    // set --dry-run, set --expect and its refusal of a stale hash, archive, restore, archive again.
     verified: true,
   },
   {

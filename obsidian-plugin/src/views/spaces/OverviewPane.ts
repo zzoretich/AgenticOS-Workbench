@@ -3,7 +3,7 @@
 // Typographic sections, no boxed panels. A collection keeps today's subproject list.
 import type { WorkspaceEntry } from "../../data/snapshot";
 import { overviewFor } from "../../data/spacesModel";
-import { button, sectionHead, type SpacesCtx } from "./ui";
+import { button, sectionHead, verbsOff, type SpacesCtx } from "./ui";
 
 export function renderOverview(host: HTMLElement, ctx: SpacesCtx, e: WorkspaceEntry): void {
   const o = overviewFor(e, { now: ctx.now });
@@ -15,6 +15,13 @@ export function renderOverview(host: HTMLElement, ctx: SpacesCtx, e: WorkspaceEn
     else if (o.summary.source) sh.createSpan({ cls: "aos-spc-src", text: o.summary.source });
     sum.createEl("p", { cls: `aos-spc-summary${o.summary.template ? " is-template" : ""}`, text: o.summary.text });
   } else sum.createEl("p", { cls: "aos-spc-emptyval", text: "No summary yet: add one to workspace.md or the README." });
+  // A summary that is missing or only the stub's text offers the draft (spaces-redesign D13, D23): a review dialog that
+  // writes nothing until Save.
+  if ((!o.summary.text || o.summary.template) && !verbsOff(e, ctx.world)) {
+    sh.createSpan({ cls: "aos-spc-grow" });
+    const d = button(sh, "aos-spc-linkbtn aos-spc-draftlink", "Draft workspace.md…", { key: "draft-summary", title: "A summary, objectives and next step from the folder's own files, for review" });
+    d.addEventListener("click", () => ctx.act.draft());
+  }
 
   const obj = host.createEl("section", { cls: "aos-spc-sec", attr: { "aria-label": "Objectives" } });
   const oh = sectionHead(obj, "OBJECTIVES");

@@ -227,6 +227,37 @@ test('parseArgs handles value flags, --no-flags, booleans and positionals', () =
   assert.throws(() => parseArgs(['init', '-y']), /unknown flag -y/);
 });
 
+test('aos workspace: its flags parse, reach cli/workspace.js, and --dry-run passes only for `workspace set` (spaces-redesign D28)', () => {
+  const { parseArgs } = require('./aos.js');
+  assert.deepEqual(parseArgs(['workspace', 'set', 'alpha', '--set', '{"pinned":true}', '--expect', 'none', '--dry-run', '--json']),
+    { cmd: 'workspace', sub: ['set', 'alpha'], flags: { set: '{"pinned":true}', expect: 'none', dryRun: true, json: true } });
+  assert.deepEqual(parseArgs(['workspace', 'new', 'kite', '--git', '--pin', '--empty', '--json']).flags, { git: true, pin: true, empty: true, json: true });
+  assert.deepEqual(parseArgs(['workspace', 'adopt', '~/code/x', '--into', 'alpha', '--json']).flags, { into: 'alpha', json: true });
+  assert.deepEqual(parseArgs(['workspace', 'which', '--cwd=/somewhere']).flags, { cwd: '/somewhere' });
+  assert.throws(() => parseArgs(['workspace', 'set', 'alpha', '--set']), /--set needs a value/);
+  assert.throws(() => parseArgs(['workspace', 'rename', 'a', '-b']), /unknown flag -b/);
+
+  const sb = sandbox();
+  const vault = path.join(sb.dir, 'vault');
+  fs.mkdirSync(path.join(vault, 'workspaces', 'alpha'), { recursive: true });
+  fs.mkdirSync(path.join(vault, 'brain', '_index'), { recursive: true });
+  const env = { AOS_VAULT: vault, CODEX_HOME: path.join(sb.home, '.codex') };
+  // The forwarder hands every flag to cli/workspace.js, which holds each verb to its own.
+  const set = aos(sb, ['workspace', 'set', 'alpha', '--set', '{"pinned":true}', '--expect', 'none', '--dry-run', '--json'], env);
+  assert.equal(set.status, 0, set.stderr);
+  assert.deepEqual([JSON.parse(set.stdout).dryRun, JSON.parse(set.stdout).text], [true, '---\npinned: true\n---\n']);
+  assert.ok(!fs.existsSync(path.join(vault, 'workspaces', 'alpha', 'workspace.md')));
+  const which = aos(sb, ['workspace', 'which', '--cwd', path.join(vault, 'workspaces', 'alpha'), '--json'], env);
+  assert.deepEqual(JSON.parse(which.stdout), { name: 'alpha', slug: 'alpha', via: 'cwd' });
+  const dry = aos(sb, ['workspace', 'archive', 'alpha', '--dry-run', '--json'], env);
+  assert.equal(dry.status, 2);
+  assert.match(dry.stderr, /--dry-run is only supported by `aos workspace set`/);
+  assert.ok(fs.existsSync(path.join(vault, 'workspaces', 'alpha')), 'a refused --dry-run moves nothing');
+  const headless = aos(sb, ['workspace', 'archive', 'alpha', '--json'], { ...env, AOS_HEADLESS: '1' });
+  assert.equal(headless.status, 1);
+  assert.match(headless.stderr, /^aos: aos workspace archive moves a folder, and a headless run \(AOS_HEADLESS=1/);
+});
+
 test('mcpProbe rejects at once on an initialize error and on an early server exit (no timeout wait)', async () => {
   const { mcpProbe } = require('./aos.js');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aos-mcpprobe-'));

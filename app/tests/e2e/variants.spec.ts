@@ -358,6 +358,58 @@ test.describe("a Codex-only machine", () => {
   });
 });
 
+test.describe("a Codex-only machine, the Spaces surface on", () => {
+  const app = useApp({
+    env: { AOS_APP_WRITE: "spaces" },
+    prepare: () => {
+      editJson(agenticos, (j) => { j.hosts.claude.enabled = false; j.hosts.codex.enabled = true; });
+      editJson(FX.v("brain/_index/provider-state.json"), (j) => {
+        j.name = "codex"; j.reason = "fixture"; j.codex = { ...(j.codex ?? {}), loggedIn: true, checkedAt: new Date().toISOString() };
+      });
+    },
+  });
+
+  test("New space: Blank folder starts Codex in ws:<slug>; Open with offers no Claude Code (spaces-redesign D15, host parity)", async () => {
+    const h = app();
+    const { win } = h;
+    await openTab(win, "spaces");
+    const C = content(win);
+    await C.locator(".aos-spc-list button.aos-spc-newbtn").click();
+    const d = win.locator(".modal.mod-spc-new");
+    await expect(d.locator(".aos-spc-dlgtitle")).toHaveText("New space");
+    // Claude Code is off on this machine: no option at all; Codex, the host ⌘T starts, is picked.
+    await expect(d.locator(".aos-spc-hostopt")).toHaveText(["Codex", "Terminal"]);
+    await expect(d.locator(".aos-spc-hostopt[data-host='codex'] input")).toBeChecked();
+    await d.locator("input[data-spc-field='name']").fill("Kelp Lab");
+    await expect(d.locator(".aos-spc-dlgnote")).toHaveText("Pinned, then opened in Code with Codex.");
+    await d.locator("button.aos-spc-confirm", { hasText: "Create space" }).click();
+    await expect(d).toHaveCount(0);
+    const dir = FX.v("workspaces/kelp-lab");
+    expect(fs.readFileSync(path.join(dir, "workspace.md"), "utf8")).toMatch(/^pinned: true$/m);
+    for (const f of ["README.md", "CLAUDE.md", "AGENTS.md"]) expect(fs.existsSync(path.join(dir, f)), f).toBe(true);
+    await expect(rail(win, "term")).toHaveClass(/is-active/);
+    // The fixture's stub `codex` echoes what the line gave it; never a `claude` line.
+    await expect.poll(() => terminalText(win), { timeout: 10_000 }).toContain("[fixture codex stub]");
+    expect(await terminalText(win)).not.toContain("[fixture claude stub]");
+    const s = await win.evaluate(() => {
+      const p = (window as unknown as { aosHost: { plugin: { terminalPool: { selectedId(): string | null; get(id: string): { cwd: string; meta: { host: string; place: { workspace?: string } | null } } | undefined } } } }).aosHost.plugin.terminalPool;
+      const t = p.get(p.selectedId() ?? "");
+      return t ? { cwd: t.cwd, host: t.meta.host, workspace: t.meta.place?.workspace ?? null } : null;
+    });
+    expect(s).toEqual({ cwd: dir, host: "codex", workspace: "kelp-lab" });
+    expect(await win.evaluate(() => {
+      let n = document.querySelector(".aos-tl-row.aos-term-tab-active")?.previousElementSibling ?? null;
+      while (n && !n.matches(".aos-tl-group")) n = n.previousElementSibling;
+      return n?.getAttribute("data-group") ?? null;
+    })).toBe("ws:kelp-lab");
+    // Back in Spaces it is selected, pinned at the top.
+    await openTab(win, "spaces");
+    await expect(C.locator('.aos-spc-row[data-workspace="kelp-lab"]')).toHaveAttribute("aria-selected", "true", { timeout: 30_000 });
+    await expect(C.locator(".aos-spc-list .aos-spc-ghead .aos-spc-glabel").first()).toHaveText("PINNED");
+    expect((await h.guard()).filter((e) => e.kind !== "read")).toEqual([]);
+  });
+});
+
 test.describe("both hosts", () => {
   // Both hosts on and ready: every host button is on.
   const app = useApp({

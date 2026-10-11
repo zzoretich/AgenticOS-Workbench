@@ -1,4 +1,4 @@
-import { Component, MarkdownRenderer, Notice, TFile, setIcon } from "obsidian";
+import { Component, MarkdownRenderer, Notice, TFile, canWrite, setIcon } from "obsidian";
 import type { TAbstractFile } from "obsidian";
 import * as path from "path";
 import type AgenticOSPlugin from "../../main";
@@ -7,23 +7,31 @@ import { LinkRepoModal } from "../ui/LinkRepoModal";
 import { loadSnapshot, type Snapshot, type WorkspaceEntry } from "../data/snapshot";
 import { indexMap, loadWorkspaceMap, type MapIndex, type WorkspaceMap } from "../data/workspaceMaps";
 import { listDir, readPreview, type DirEntry, type PreviewResult } from "../data/workspaceFiles";
-import { TODO_PATH, parseTodos, type Todo } from "../data/todos";
+import { StaleTodoError, TODO_PATH, addTodo as addTodoLine, composeBody, editTodo, parseTodos, type Todo } from "../data/todos";
+import { adapterOf as todoAdapter, applyTodoEdit } from "../data/todoWriter";
 import { PROPOSALS_DIR, isProposalFile, parseProposal, type Proposal } from "../data/proposals";
 import { parseMemoryMeta, type MemoryMeta } from "../data/memories";
 import { readProviderState } from "../data/aosConfig";
 import {
-  entryByName, groupOf, linkedCounts, linkedFor, liveByWorkspace, matchesQuery, spaceList, SESSIONS_OFF_TEXT,
-  type Linked, type LinkedCounts, type LinkedSources, type LiveState, type LiveTerminalInput, type ResumeRef,
+  KEBAB_RE, WS_RE, entryByName, flippingNotes, groupOf, linkedCounts, linkedFor, liveByWorkspace, manifestList, matchesQuery, movePlan,
+  noteHoldsStatus, spaceList, todoLinkSuggestions, workspaceArgs, workspaceSlug, SESSIONS_OFF_TEXT,
+  type Linked, type LinkedCounts, type LinkedSources, type LiveState, type LiveTerminalInput, type ManifestStatus, type ResumeRef,
 } from "../data/spacesModel";
-import { launchLine, placeOf, quickHost, type PlaceWorld, type TermHost, type TermHostChoice } from "../data/terminalLaunch";
+import { launchLine, placeOf, quickHost, repoValue, workspacePlace, type PlaceWorld, type TermHost, type TermHostChoice } from "../data/terminalLaunch";
+import type { OutsideListRow } from "../data/hostSessions";
+import { shortenCwd } from "../data/hostSessions";
 import { sanitizeTerminalChoice } from "../settingsDefaults";
 import { listen } from "../data/listen";
 import type { TerminalSession } from "../data/terminalSession";
-import { env, sessionsHost, shell, type HostSessionThread } from "../host";
+import { env, fs, sessionsHost, shell, type HostSessionThread } from "../host";
 import {
-  PROJECT_NOTES_DIR, entryAbs, entryPlace, freshUiState, keepPlace, panesFor, targetFor, threadSignature, watchFlags,
-  type Flag, type MenuItem, type Pane, type SpacesActions, type SpacesCtx, type SpacesUiState,
+  PROJECT_NOTES_DIR, entryAbs, entryPlace, freshUiState, keepPlace, panesFor, statusMenuItems, targetFor, threadSignature, threadsIn,
+  verbsOff, watchFlags,
+  type CloneState, type Flag, type HiddenFolder, type MenuItem, type Pane, type SpacesActions, type SpacesCtx, type SpacesUiState,
 } from "./spaces/ui";
+import { NewSpaceModal, cloneLine, newSpaceArgs, renameName, type NewSpaceRequest } from "../ui/spaces/NewSpaceModal";
+import { DraftModal, draftBase } from "../ui/spaces/DraftModal";
+import { LinkTodosModal, MoveConfirmModal, TodoForSpaceModal, WorkspacePickerModal } from "../ui/spaces/SpaceDialogs";
 import { openPopover, type PopoverHandle } from "./spaces/Popover";
 import { renderList, renderOutside } from "./spaces/ListPane";
 import { renderDossier, renderViewTabs } from "./spaces/DossierPane";
@@ -38,6 +46,13 @@ const ALL_FLAGS: readonly Flag[] = ["snapshot", "threads", "linked", "live", "wo
 const ALL_PANES: readonly Pane[] = ["list", "centre", "right"];
 /** A Sessions event that can start or end a turn (D26's live dot); the text and tool events of a running turn are not. */
 const TURN_EVENTS = new Set(["prompt", "session", "done", "error"]);
+/** The outside folders the user hid (collectors/hostSessions.js readHidden): `{schema: 1, paths: [...]}`. */
+const HIDDEN_OUTSIDE_PATH = "brain/_index/workspaces-hidden.json";
+/** How long a workspace a verb just made or renamed is waited for in the snapshot before it is selected. */
+const SELECT_WAIT_MS = 60_000;
+/** Archive, Restore and Rename move, rebuild BRAIN.md and rescan before they answer: on a large vault that outlasts the
+ *  default 60 s, and a kill then would report a failure for a move that happened. */
+const MOVE_TIMEOUT_MS = 180_000;
 /** The most folders the Files tree reads at once (open ones and, under a filter, the ones holding a match). */
 const MAX_LISTINGS = 400;
 const DEBOUNCE_MS = 250;
@@ -49,8 +64,11 @@ const DEBOUNCE_MS = 250;
  * (PreviewPane). This class is the orchestrator: it watches what the panes read (snapshot.json, the maps,
  * brain/_index/sessions/**, workspaces/x/workspace.md, TODO.md, persona/proposals/, brain/memory/projects/), the
  * terminal pool and the Sessions events, through one 250 ms debounce, reads only what changed, and redraws only the
- * panes that show it, keeping focus and scroll (the AgentTeamsTab pattern). It writes nothing itself: Resume, Terminal
- * and New session are Code terminals, map and regen are runtime scripts, Link code folder is today's write (D2).
+ * panes that show it, keeping focus and scroll (the AgentTeamsTab pattern). It writes no workspace file itself: Resume,
+ * Terminal and New session are Code terminals, map and regen are runtime scripts, and PR 3's actions (New, Adopt, Hide,
+ * Archive, Restore, Rename, Pin, status, Draft, Link code folder; D13–D18) run named `aos workspace` verbs through the
+ * spaces surface, every move after its confirmation (§6). + to-do and Link to-dos… go through the To-Do surface's
+ * writer (D35).
  */
 export class SpacesTab {
   private host: HTMLElement | null = null;
@@ -66,6 +84,9 @@ export class SpacesTab {
   private threads: HostSessionThread[] = [];
   private live = new Map<string, LiveState>();
   private sources: LinkedSources = {};
+  /** Each project note's frontmatter as last read, so Archive's and Restore's confirmations name only the notes whose
+   *  status/ tag flips now (flippingNotes `holds`; spaces-redesign D17). */
+  private noteFront = new Map<string, string>();
   private linkedBy = new Map<string, Linked>();
   private counts = new Map<string, LinkedCounts>();
   private envCache: { at: number; world: PlaceWorld; choices: TermHostChoice[]; provider: string; sessions: boolean } | null = null;
@@ -87,6 +108,14 @@ export class SpacesTab {
   private previewCache: { abs: string; res: PreviewResult } | null = null;
   /** Owns what the preview's Markdown renderer attaches; loaded per mount. */
   private md: Component | null = null;
+  /** Outside folders the user hid, for Unhide (read with the snapshot). */
+  private hiddenOutside: HiddenFolder[] = [];
+  /** Clones New space typed into a Code terminal, by workspace name (D15): the dossier offers Start <host> here. */
+  private clones = new Map<string, { url: string; host: "claude" | "codex" | null }>();
+  /** A workspace a verb made, renamed or restored: selected once the snapshot lists it. */
+  private wantSelect: { name: string; until: number } | null = null;
+  /** A verb that is running (one at a time from this tab). */
+  private acting: string | null = null;
 
   constructor(private plugin: AgenticOSPlugin, private view: WorkbenchView) {}
 
@@ -224,6 +253,8 @@ export class SpacesTab {
       // selection, the Files state and the preview; only a vault that never had one reads as none.
       if (next || !this.snapshot) this.snapshot = next;
       this.loaded = true;
+      this.hiddenOutside = await this.loadHiddenOutside();
+      this.applyWantSelect();
     }
     if (flags.has("threads")) {
       // A re-list that reads the same (no thread came or went, none started or stopped) redraws nothing.
@@ -292,10 +323,18 @@ export class SpacesTab {
       for (const n of names) { try { proposals.push(parseProposal(n, await a.read(`${PROPOSALS_DIR}/${n}`))); } catch { /* gone */ } }
     } catch { /* no persona/ yet */ }
     const memories: MemoryMeta[] = [];
+    const front = new Map<string, string>();
     try {
       const files = (await a.list(PROJECT_NOTES_DIR)).files.filter((f) => f.endsWith(".md"));
-      for (const f of files) { try { memories.push(parseMemoryMeta(f, await a.read(f))); } catch { /* gone */ } }
+      for (const f of files) {
+        try {
+          const text = await a.read(f);
+          memories.push(parseMemoryMeta(f, text));
+          front.set(f, /^---\r?\n[\s\S]*?\r?\n---/.exec(text)?.[0] ?? "");
+        } catch { /* gone */ }
+      }
     } catch { /* no project notes yet */ }
+    this.noteFront = front;
     return { todos, proposals, memories };
   }
 
@@ -308,6 +347,35 @@ export class SpacesTab {
       this.linkedBy.set(e.name, l);
       this.counts.set(e.name, linkedCounts(l));
     }
+  }
+
+  /** brain/_index/workspaces-hidden.json's paths, as stored (Unhide passes them back exactly). */
+  private async loadHiddenOutside(): Promise<HiddenFolder[]> {
+    let j: unknown = null;
+    try {
+      const a = this.plugin.app.vault.adapter;
+      if (await a.exists(HIDDEN_OUTSIDE_PATH)) j = JSON.parse(await a.read(HIDDEN_OUTSIDE_PATH));
+    } catch { return []; }
+    const list: unknown[] = Array.isArray(j) ? j : j && typeof j === "object" && Array.isArray((j as { paths?: unknown }).paths) ? (j as { paths: unknown[] }).paths : [];
+    const home = env.homedir();
+    const out: HiddenFolder[] = [];
+    for (const p of list) {
+      const stored = typeof p === "string" ? p : p && typeof p === "object" && typeof (p as { path?: unknown }).path === "string" ? (p as { path: string }).path : null;
+      if (!stored || out.some((h) => h.stored === stored)) continue;
+      out.push({ stored, label: stored.startsWith("/") ? shortenCwd(stored, home) : stored });
+    }
+    return out;
+  }
+
+  /** Selects the workspace a verb made, renamed or restored, once the snapshot lists it (or gives up after a minute). */
+  private applyWantSelect(): void {
+    const w = this.wantSelect;
+    if (!w) return;
+    if (Date.now() > w.until) { this.wantSelect = null; return; }
+    const e = entryByName(this.snapshot, w.name);
+    if (!e) return;
+    this.wantSelect = null;
+    this.pendingReveal = { workspace: e.name };
   }
 
   /** D26: Code terminals placed in a workspace and Sessions threads mid-turn. */
@@ -426,7 +494,25 @@ export class SpacesTab {
       },
       setIcon: (el, id) => setIcon(el, id),
       act: this.actions(),
+      todoWritable: this.todoWritable(),
+      hiddenOutside: this.hiddenOutside,
+      clone: entry ? this.cloneState(entry.name) : null,
     };
+  }
+
+  /** Whether the To-Do surface may write TODO.md: compat's canWrite asks the host's page policy (display only; main
+   *  checks the write itself). */
+  private todoWritable(): boolean {
+    try { return canWrite(path.join(this.plugin.vaultRoot(), TODO_PATH)); } catch { return false; }
+  }
+
+  /** A clone typed into this workspace's folder, and whether its line has ended (its stubs step wrote workspace.md). */
+  private cloneState(name: string): CloneState | null {
+    const c = this.clones.get(name);
+    if (!c) return null;
+    let done = false;
+    try { done = fs.existsSync(path.join(this.plugin.vaultRoot(), "workspaces", name, "workspace.md")); } catch { /* unreadable: not yet */ }
+    return { url: c.url, host: c.host, done };
   }
 
   /** The agent ⌘T would start (the one last launched from the deck, else the first ready one), for Start in Code. */
@@ -519,7 +605,7 @@ export class SpacesTab {
         if (!on) this.after.focus = "outside";
         this.draw(ALL_PANES);
       },
-      newWorkspace: () => this.view.openTermMenu("create"),
+      newSpace: () => this.newSpace(),
       resume: (ref) => void this.resume(ref),
       newSession: (host) => void this.launch(host),
       terminal: () => void this.launch("shell"),
@@ -554,6 +640,27 @@ export class SpacesTab {
         (res) => { this.previewCache = { abs, res }; return res; },
         (err: unknown) => { if (this.previewCache?.abs === abs) this.previewCache = null; throw err; },
       ),
+      statusMenu: () => this.statusMenu(),
+      setStatus: (st) => void this.setStatus(st),
+      togglePin: () => void this.togglePin(),
+      rename: () => this.rename(),
+      archive: () => this.archive(),
+      restore: () => this.restore(),
+      draft: () => this.draft(),
+      adoptInto: (row, name) => this.adoptInto(row, name),
+      linkFolder: (row, name) => void this.linkFolder(row, name),
+      pickWorkspace: (mode, row) => this.pickWorkspace(mode, row),
+      hide: (row) => void this.hide(row),
+      unhide: (stored) => void this.unhide(stored),
+      addTodo: () => this.addTodo(),
+      linkTodos: () => this.linkTodos(),
+      startHere: (host) => {
+        const e = this.entry();
+        if (!e) return;
+        this.clones.delete(e.name);
+        void this.launch(host);
+      },
+      dismissClone: () => { const e = this.entry(); if (e) { this.clones.delete(e.name); this.draw(["centre"]); } },
     };
   }
 
@@ -601,13 +708,322 @@ export class SpacesTab {
     if (!e) return;
     const name = e.name;
     const current = this.env().world.links[name] ?? null;
-    new LinkRepoModal(this.plugin.app, name, current, (typed) => {
-      const abs = this.plugin.termLauncher.linkRepo(name, typed);
+    new LinkRepoModal(this.plugin.app, name, current, async (typed) => {
+      const abs = await this.plugin.termLauncher.linkRepo(name, typed);
       new Notice(abs ? `${name} is linked to ${abs}` : `${name} is no longer linked`);
       this.envCache = null;
       this.kick(["world"]);
+      this.rescan();
       return abs;
     }).open();
+  }
+
+  // ── PR 3: the workspace verbs (spaces-redesign D13–D18, D28, D29, D35) ──
+
+  /** The scan again (a background spawn, BACKGROUND in surfaces.ts): what a verb changed shows in the list. */
+  private rescan(): void {
+    this.envCache = null;
+    this.plugin.runBrainScript("brain/scripts/scan-vault.js", ["--quiet"], undefined, { quiet: true });
+  }
+
+  /** Runs `fn` unless another verb from this tab is still running; says which. */
+  private async once<T>(what: string, fn: () => Promise<T>): Promise<T | null> {
+    if (this.acting) { new Notice(`Wait: ${this.acting} is still running`); return null; }
+    this.acting = what;
+    try { return await fn(); } finally { this.acting = null; }
+  }
+
+  /** Folder names under workspaces/ and the names archived workspaces hold, for New space's and Rename's checks. */
+  private names(): { existing: string[]; archived: string[] } {
+    const all = this.entries();
+    const existing = new Set<string>(this.env().world.workspaces);
+    for (const e of all) if (!e.hidden) existing.add(e.name);
+    return { existing: [...existing], archived: all.filter((e) => e.hiddenReason === "archived").map((e) => e.label || e.name.replace(/^_archive\//, "")) };
+  }
+
+  /** New space (D15): `new <slug> [--git] --pin` then the host in ws:<slug>; Clone: `new <slug> --empty`, then the
+   *  clone line typed in a shell there, and no agent until the dossier's Start <host> here. */
+  private newSpace(): void {
+    const en = this.env();
+    const { existing, archived } = this.names();
+    new NewSpaceModal(this.plugin.app, {
+      vault: this.plugin.vaultRoot(), home: env.homedir(), existing, archived, choices: en.choices,
+      quick: this.plugin.termLauncher.quickHost().host,
+      create: (req) => this.createSpace(req),
+    }).open();
+  }
+
+  private async createSpace(req: NewSpaceRequest): Promise<string | null> {
+    const launcher = this.plugin.termLauncher;
+    let args: string[];
+    try { args = newSpaceArgs(req.template, req.slug); } catch (e) { return e instanceof Error ? e.message : String(e); }
+    const r = await this.once(`New space ${req.slug}`, () => launcher.verb<{ slug?: unknown; name?: unknown }>(args));
+    if (!r) return "Another action is still running";
+    if (!r.ok) return r.reason;
+    // Only the slug the runtime answers, checked against KEBAB again, goes on to a terminal line (D15).
+    const slug = String(r.json.slug ?? r.json.name ?? req.slug);
+    if (!KEBAB_RE.test(slug)) return `aos workspace new answered a name Spaces will not use: ${JSON.stringify(slug.slice(0, 60))}`;
+    this.wantSelect = { name: slug, until: Date.now() + SELECT_WAIT_MS };
+    this.rescan();
+    const place = workspacePlace(slug, launcher.world());
+    try {
+      if (req.template === "clone") {
+        const line = cloneLine(req.url ?? "", slug);
+        const { session } = await launcher.launch({ host: "shell", picked: place, origin: "Spaces" });
+        session.write(`${line}\r`);
+        // Only a clone that started gets the dossier's "Cloning …" card.
+        this.clones.set(slug, { url: req.url ?? "", host: req.host === "shell" ? null : req.host });
+      } else {
+        // Code repo: `--git` made the repository; the typed `[ -e .git ] || git init -q` is a no-op then.
+        await launcher.launch({ host: req.host, picked: place, gitInit: req.template === "code", origin: "Spaces" });
+      }
+    } catch (e) {
+      new Notice(`${slug} was made, but no terminal opened: ${e instanceof Error ? e.message : String(e)}`);
+      return null;
+    }
+    this.view.open({ tab: "term", workspace: slug });
+    return null;
+  }
+
+  /** The status menu on the dossier's pill (D18), looked up again: a More item that opens it has just redrawn. */
+  private statusMenu(): void {
+    const e = this.entry();
+    const anchor = this.els?.root.querySelector<HTMLElement>('[data-spc-key="status"]') ?? this.els?.root.querySelector<HTMLElement>('[data-spc-key="more"]');
+    if (!e || !anchor || verbsOff(e, this.env().world)) return;
+    this.menu(anchor, statusMenuItems(this.ctx(), e), "Status");
+  }
+
+  /** Patches the entry the page holds until the rescan lands, so the pill and the pin answer at once. */
+  private patch(name: string, fn: (e: WorkspaceEntry) => void): void {
+    const e = this.entries().find((x) => x.name === name);
+    if (!e) return;
+    fn(e);
+    this.draw(ALL_PANES);
+  }
+
+  private async setStatus(status: ManifestStatus | ""): Promise<void> {
+    const e = this.entry();
+    if (!e || verbsOff(e, this.env().world)) return;
+    const name = e.name;
+    const r = await this.once("Set status", () => this.plugin.termLauncher.setManifest(name, { status }));
+    if (!r) return;
+    if (!r.ok) { new Notice(`Status not set: ${r.reason}`); return; }
+    this.patch(name, (x) => {
+      x.statusOverride = status || null;
+      x.statusSource = status ? "manifest" : "derived";
+      x.status = status || x.statusAuto || x.status;
+    });
+    new Notice(status ? `${name} is ${status}` : `${name}'s status is automatic again`);
+    this.rescan();
+  }
+
+  private async togglePin(): Promise<void> {
+    const e = this.entry();
+    if (!e || verbsOff(e, this.env().world)) return;
+    const name = e.name;
+    const next = !e.pinned;
+    const r = await this.once(next ? "Pin" : "Unpin", () => this.plugin.termLauncher.setManifest(name, { pinned: next }));
+    if (!r) return;
+    if (!r.ok) { new Notice(`${next ? "Pin" : "Unpin"}: ${r.reason}`); return; }
+    this.patch(name, (x) => { x.pinned = next; });
+    new Notice(next ? `${name} is pinned` : `${name} is unpinned`);
+    this.rescan();
+  }
+
+  /** Rename (D17): the new name, then the confirmation of what moves; the folder, its map and its threads follow. */
+  private rename(): void {
+    const e = this.entry();
+    if (!e || verbsOff(e, this.env().world)) return;
+    const name = e.name;
+    const threads = threadsIn(this.threads, name).length;
+    const claudeThreads = (e.sessions?.recent ?? []).filter((r) => r && r.host === "claude" && r.kind !== "app").length;
+    const ownRepo = e.git?.kind === "repo";
+    const o = { vault: this.plugin.vaultRoot(), home: env.homedir(), ...this.names() };
+    new MoveConfirmModal(this.plugin.app, {
+      plan: movePlan("rename", e, { threads, to: "", claudeThreads, ownRepo }),
+      rename: {
+        value: KEBAB_RE.test(name) ? name : "",
+        check: (typed) => renameName(typed, name, o),
+        plan: (slug) => movePlan("rename", e, { threads, to: slug, claudeThreads, ownRepo }),
+      },
+      run: async (slug) => {
+        if (!slug) return "Type the new name";
+        const r = await this.once(`Rename ${name}`, () => this.plugin.termLauncher.verb(workspaceArgs.rename(name, slug), MOVE_TIMEOUT_MS));
+        if (!r) return "Another action is still running";
+        if (!r.ok) return r.reason;
+        this.clones.delete(name);
+        this.wantSelect = { name: slug, until: Date.now() + SELECT_WAIT_MS };
+        new Notice(`Renamed ${name} to ${slug}`);
+        this.rescan();
+        return null;
+      },
+    }).open();
+  }
+
+  /** Archive (D17): into workspaces/_archive/, restorable; its threads stay listed, read-only until Restore. */
+  private archive(): void {
+    const e = this.entry();
+    if (!e || verbsOff(e, this.env().world)) return;
+    const name = e.name;
+    const taken = !!entryByName(this.snapshot, `_archive/${name}`) || this.exists(path.join("workspaces", "_archive", name));
+    // The notes Archive flips: linked by workspace: or slug, and holding status/active now (cli/workspace.js).
+    const notes = flippingNotes(this.linkedBy.get(name), { holds: (p) => noteHoldsStatus(this.noteFront.get(p), "active") });
+    const plan = movePlan("archive", e, { threads: threadsIn(this.threads, name).length, sessions: e.sessions?.total ?? 0, notes, archiveTaken: taken });
+    new MoveConfirmModal(this.plugin.app, {
+      plan,
+      run: async () => {
+        const r = await this.once(`Archive ${name}`, () => this.plugin.termLauncher.verb(workspaceArgs.archive(name), MOVE_TIMEOUT_MS));
+        if (!r) return "Another action is still running";
+        if (!r.ok) return r.reason;
+        this.clones.delete(name);
+        new Notice(`Archived ${name}: Show archived and _ folders lists it, and More › Restore… brings it back`);
+        this.rescan();
+        return null;
+      },
+    }).open();
+  }
+
+  /** Restore (D17): back to workspaces/<n> (the name Archive recorded, for a dated archive), its tags and threads with it. */
+  private restore(): void {
+    const e = this.entry();
+    if (!e || e.hiddenReason !== "archived") return;
+    const name = e.label || e.name.replace(/^_archive\//, "");
+    // Archive's record in the archived workspace.md: the notes it flipped and the name it came from (cli/workspace.js).
+    let md = "";
+    try { md = fs.readFileSync(path.join(this.plugin.vaultRoot(), "workspaces", "_archive", name, "workspace.md"), "utf8"); } catch { /* none: nothing recorded */ }
+    const from = manifestList(md, "archivedFrom")[0];
+    const back = from && from !== name && WS_RE.test(from) ? from : name;
+    const notes = flippingNotes(this.linkedBy.get(e.name), { only: manifestList(md, "archivedNotes"), holds: (p) => noteHoldsStatus(this.noteFront.get(p), "archived") });
+    const plan = movePlan("restore", e, { threads: threadsIn(this.threads, back).length, notes, to: back });
+    new MoveConfirmModal(this.plugin.app, {
+      plan,
+      run: async () => {
+        let args: string[];
+        try { args = workspaceArgs.restore(name); } catch (err) { return err instanceof Error ? err.message : String(err); }
+        const r = await this.once(`Restore ${name}`, () => this.plugin.termLauncher.verb(args, MOVE_TIMEOUT_MS));
+        if (!r) return "Another action is still running";
+        if (!r.ok) return r.reason;
+        const restored = typeof r.json.name === "string" && WS_RE.test(r.json.name) ? r.json.name : back;
+        this.wantSelect = { name: restored, until: Date.now() + SELECT_WAIT_MS };
+        new Notice(restored === name ? `Restored ${name}` : `Restored ${name} as ${restored}`);
+        this.rescan();
+        return null;
+      },
+    }).open();
+  }
+
+  /** Draft workspace.md (D13, D14): one model call on this click, reviewed before anything is written. */
+  private draft(): void {
+    const e = this.entry();
+    if (!e || verbsOff(e, this.env().world)) return;
+    const launcher = this.plugin.termLauncher;
+    new DraftModal(this.plugin.app, {
+      name: e.name, label: e.label || e.name, base: draftBase(e),
+      run: (args, timeoutMs) => launcher.verb(args, timeoutMs),
+      saved: () => { this.kick(["world"]); this.rescan(); },
+    }).open();
+  }
+
+  /** Adopt into (D16): an alias in the workspace's workspace.md, after its confirmation; nothing moves. */
+  private adoptInto(row: OutsideListRow, workspace: string): void {
+    const e = entryByName(this.snapshot, workspace);
+    if (!e || verbsOff(e, this.env().world)) return;
+    const plan = movePlan("adopt", e, { threads: 0, sessions: row.total, folder: row.label });
+    new MoveConfirmModal(this.plugin.app, {
+      plan,
+      run: async () => {
+        let args: string[];
+        try { args = workspaceArgs.adopt(row.cwd, workspace); } catch (err) { return err instanceof Error ? err.message : String(err); }
+        const r = await this.once(`Adopt into ${workspace}`, () => this.plugin.termLauncher.verb(args));
+        if (!r) return "Another action is still running";
+        if (!r.ok) return r.reason;
+        new Notice(`${row.label} is now an alias of ${workspace}: its sessions count there after the scan`);
+        this.rescan();
+        return null;
+      },
+    }).open();
+  }
+
+  /** Link as code folder of (D24): `repo:` through `aos workspace set`. */
+  private async linkFolder(row: OutsideListRow, workspace: string): Promise<void> {
+    const r = await this.once(`Link ${row.label}`, () => this.plugin.termLauncher.setManifest(workspace, { repo: repoValue(row.cwd, env.homedir()) }));
+    if (!r) return;
+    if (!r.ok) { new Notice(`Not linked: ${r.reason}`); return; }
+    new Notice(`${workspace}'s code folder is ${row.label}: terminals there start in it`);
+    this.kick(["world"]);
+    this.rescan();
+  }
+
+  /** Adopt into… / Link as code folder of… for a folder whose name matches no workspace: pick it first. */
+  private pickWorkspace(mode: "adopt" | "link", row: OutsideListRow): void {
+    const world = this.env().world;
+    const items = this.entries().filter((e) => !verbsOff(e, world) && (mode === "adopt" || !(e.git?.kind === "repo" && !e.repoPath)));
+    if (!items.length) { new Notice(mode === "adopt" ? "No workspace to adopt it into" : "No workspace without a repository of its own"); return; }
+    new WorkspacePickerModal(this.plugin.app, items, mode === "adopt" ? `Adopt ${row.label} into…` : `Link ${row.label} as the code folder of…`, (e) => {
+      if (mode === "adopt") this.adoptInto(row, e.name);
+      else void this.linkFolder(row, e.name);
+    }, mode === "adopt" ? "adopt the folder into it (a confirmation follows; nothing moves)" : "make the folder its code folder").open();
+  }
+
+  private async hide(row: OutsideListRow): Promise<void> {
+    let args: string[];
+    try { args = workspaceArgs.hide(row.cwd); } catch (e) { new Notice(e instanceof Error ? e.message : String(e)); return; }
+    const r = await this.once(`Hide ${row.label}`, () => this.plugin.termLauncher.verb(args));
+    if (!r) return;
+    if (!r.ok) { new Notice(`Not hidden: ${r.reason}`); return; }
+    new Notice(`${row.label} is hidden: Unhide under Hidden brings it back`);
+    // The entry as the runtime stored it (`~/…` under home), so Unhide passes back what workspaces-hidden.json holds.
+    const stored = typeof r.json.path === "string" && r.json.path ? r.json.path : row.cwd;
+    this.hiddenOutside = [...this.hiddenOutside.filter((h) => h.stored !== row.cwd && h.stored !== stored), { stored, label: row.label }];
+    this.rescan();
+  }
+
+  private async unhide(stored: string): Promise<void> {
+    let args: string[];
+    try { args = workspaceArgs.unhide(stored); } catch (e) { new Notice(e instanceof Error ? e.message : String(e)); return; }
+    const r = await this.once("Unhide", () => this.plugin.termLauncher.verb(args));
+    if (!r) return;
+    if (!r.ok) { new Notice(`Not unhidden: ${r.reason}`); return; }
+    this.hiddenOutside = this.hiddenOutside.filter((h) => h.stored !== stored);
+    this.draw(["list", "centre"]);
+    this.rescan();
+  }
+
+  /** + to-do (D35): one line in TODO.md tagged #ws/<slug>, through the To-Do surface's writer. */
+  private addTodo(): void {
+    const e = this.entry();
+    if (!e || e.hidden) return;
+    const slug = workspaceSlug(e);
+    new TodoForSpaceModal(this.plugin.app, e.label || e.name, slug, async (text) => {
+      try {
+        await applyTodoEdit(todoAdapter(this.plugin.app), (t) => addTodoLine(t, composeBody({ text, tags: [`ws/${slug}`] })));
+      } catch (err) { return `TODO.md not written: ${err instanceof Error ? err.message : String(err)}`; }
+      this.kick(["linked"]);
+      return null;
+    }).open();
+  }
+
+  /** Link to-dos… (D35): the untagged to-dos that name the workspace; one click each adds #ws/<slug> to that line. */
+  private linkTodos(): void {
+    const e = this.entry();
+    if (!e || e.hidden) return;
+    const slug = workspaceSlug(e);
+    const others = this.entries().filter((x) => x !== e).map((x) => x.label || x.name);
+    const items = todoLinkSuggestions(this.sources.todos ?? [], e, { vault: this.plugin.vaultRoot(), others });
+    new LinkTodosModal(this.plugin.app, e.label || e.name, slug, items, async (sug) => {
+      try {
+        await applyTodoEdit(todoAdapter(this.plugin.app), (t) => editTodo(t ?? "", sug.todo.raw, `${sug.todo.body.trim()} #ws/${slug}`));
+      } catch (err) {
+        return err instanceof StaleTodoError ? "TODO.md changed since this list was made: open Link to-dos… again" : `TODO.md not written: ${err instanceof Error ? err.message : String(err)}`;
+      }
+      this.kick(["linked"]);
+      return null;
+    }).open();
+  }
+
+  /** Whether a vault path exists (the folder Archive would move onto). */
+  private exists(rel: string): boolean {
+    try { return fs.existsSync(path.join(this.plugin.vaultRoot(), rel)); } catch { return false; }
   }
 
   private menu(anchor: HTMLElement, items: MenuItem[], label: string): void {

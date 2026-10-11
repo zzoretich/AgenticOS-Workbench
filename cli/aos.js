@@ -62,7 +62,10 @@ const USAGE = `usage:
   aos skills [list [--all] [--json] | sync [--dry-run] [--json] | exclude <name> | include <name> | reset <name>]
   aos agents [list [--all] [--json] | sync [--dry-run] [--json] | exclude <name> | include <name> | reset <name>]
   aos config [list [--json] | get <key> [--json] | set <key> <value> [--dry-run] [--json] | unset <key> [--dry-run]]
-  aos workspace [list [--json] | new <name> | adopt <path> [--name <slug>]]
+  aos workspace [list [--json] | which [--cwd <path>] [--json] | new <name> [--git] [--pin] [--empty] [--json] | stubs <name> [--pin]
+                | adopt <path> --into <workspace> [--json] | adopt <path> [--name <slug>] | archive|restore <workspace> [--json]
+                | rename <workspace> <new-name> [--json] | hide|unhide <path> [--json] | draft <workspace> [--json]
+                | set <workspace> --set <json> [--expect <hash>] [--dry-run] [--json]]
   aos statusline [install [--host claude|codex] [--force] [--chain-output] | uninstall [--host claude|codex] | status [--json] | preview [--width N] | refresh]
   aos update-status [--statusline | --snooze <N>d|<N>h | --off]
   aos update-check [--quiet]`;
@@ -1090,11 +1093,17 @@ function migrateRoutines(ctx) {
   out.log(`   schedules re-rendered: ${r.labels.join(', ') || 'none'}${r.removed.length ? ` (removed ${r.removed.map((x) => path.basename(x)).join(', ')})` : ''}`);
 }
 
-/** `aos workspace <verb>` — cli/workspace.js (workspace hub D3). */
+/** `aos workspace <verb>` — cli/workspace.js (workspace hub D3; spaces-redesign D28: every flag its verbs take). */
 async function workspace(sub, flags) {
   const W = require('./workspace.js');
+  const value = (flag, v) => (v !== undefined ? [`--${flag}`, v] : []);
+  const bool = (flag, v) => (v ? [`--${flag}`] : []);
   try {
-    return await W.main([...sub, ...(flags.json ? ['--json'] : []), ...(flags.name ? ['--name', flags.name] : [])], { io: console });
+    return await W.main([
+      ...sub, ...value('name', flags.name), ...value('into', flags.into), ...value('cwd', flags.cwd), ...value('set', flags.set),
+      ...value('expect', flags.expect), ...bool('git', flags.git), ...bool('pin', flags.pin), ...bool('empty', flags.empty),
+      ...bool('dry-run', flags.dryRun), ...bool('json', flags.json),
+    ], { io: console });
   } catch (e) {
     if (e instanceof W.UsageError) throw new UsageError(e.message);
     throw e;
@@ -1378,8 +1387,9 @@ function updateNotice() {
 }
 
 // ── args and main ─────────────────────────────────────────────────────────────
-const VALUE_FLAGS = new Set(['vault', 'provider', 'persona-json', 'from-local', 'budget', 'snooze', 'host', 'name']);
-const BOOL_FLAGS = new Set(['dry-run', 'yes', 'terminal', 'cost', 'keep-vault', 'statusline', 'off', 'quiet', 'json', 'refresh', 'semantic', 'all']);
+// `aos workspace`'s own (spaces-redesign D28): --into, --cwd, --set, --expect take a value; --git, --pin, --empty do not.
+const VALUE_FLAGS = new Set(['vault', 'provider', 'persona-json', 'from-local', 'budget', 'snooze', 'host', 'name', 'into', 'cwd', 'set', 'expect']);
+const BOOL_FLAGS = new Set(['dry-run', 'yes', 'terminal', 'cost', 'keep-vault', 'statusline', 'off', 'quiet', 'json', 'refresh', 'semantic', 'all', 'git', 'pin', 'empty']);
 // --no-obsidian is parsed and ignored: Obsidian is no longer installed, and a script written for an older release keeps working.
 const NEGATABLE_FLAGS = new Set(['obsidian']);
 function camel(s) { return s.replace(/-([a-z])/g, (_, c) => c.toUpperCase()); }
@@ -1419,7 +1429,7 @@ function parseArgs(argv) {
 async function main(argv) {
   const { cmd, sub, flags } = parseArgs(argv);
   // --dry-run is an init-only preview (contract §4.3); on a mutating command it must be a loud error, never a silent no-op.
-  if (flags.dryRun && !['init', 'routines', 'skills', 'agents', 'config'].includes(cmd)) throw new UsageError('--dry-run is only supported by `aos init`, `aos routines run`, `aos skills sync`, `aos agents sync`, `aos config set` and `aos config unset`');
+  if (flags.dryRun && !['init', 'routines', 'skills', 'agents', 'config', 'workspace'].includes(cmd)) throw new UsageError('--dry-run is only supported by `aos init`, `aos routines run`, `aos skills sync`, `aos agents sync`, `aos config set`, `aos config unset` and `aos workspace set`');
   switch (cmd) {
     case 'init': return init(flags);
     case 'upgrade': return upgrade(flags);

@@ -4,6 +4,7 @@ filed: 2026-09-20
 target: the morning sitrep
 kind: product
 surface: hud
+workspace: site
 recheck: "test -f TODO.md"
 ---
 ## What

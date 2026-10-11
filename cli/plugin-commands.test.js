@@ -45,6 +45,25 @@ test('script-driven commands name the launcher and its fallback', () => {
   }
 });
 
+test('/todo, /propose and /project link what they write to the workspace `aos workspace which --json` names (spaces-redesign D27)', () => {
+  const link = { todo: /#ws\/<slug>/, propose: /^workspace: <name/m, project: /^workspace: <name>$/m };
+  for (const [name, re] of Object.entries(link)) {
+    const text = fs.readFileSync(path.join(DIR, `${name}.md`), 'utf8');
+    const fm = /^---\n([\s\S]*?)\n---\n/.exec(text);
+    assert.match(fm[1], /^allowed-tools: .*\bBash\b/m, `${name}: runs the launcher`);
+    // /todo needs one command: its Bash is scoped to it, so text in the arguments or a folder name never runs a shell
+    // command unprompted (the launcher fallback asks first).
+    if (name === 'todo') assert.match(fm[1], /^allowed-tools: Read, Edit, Write, Bash\(aos workspace which:\*\)$/m, 'todo: Bash scoped to the which call');
+    assert.match(text, /`aos workspace which --json`/, `${name}: which call`);
+    assert.match(text, /`sh "\$\{CLAUDE_PLUGIN_ROOT\}\/bin\/aos" workspace which --json`/, `${name}: fallback`);
+    assert.match(text, /Only when `name` is set/, `${name}: links only when a workspace is named`);
+    assert.match(text, /`\{"name": null\}`/, `${name}: the no-workspace answer`);
+    assert.match(text, re, `${name}: the link it writes`);
+    // Host-neutral: the same answer on both hosts, from the session's folder (no host variable, no host config path).
+    assert.ok(!/CLAUDE_PROJECT_DIR|CLAUDE_CODE|~\/\.claude\//.test(text), `${name}: host-specific workspace lookup`);
+  }
+});
+
 test('MCP tools use the plugin-prefixed names Claude Code exposes for a plugin-declared server', () => {
   // mcp__plugin_<plugin>_<server>__<tool> (contract §0); the bare mcp__agenticos__ form never matches allowed-tools.
   for (const name of ['wrap', 'ask-brain']) {

@@ -5,6 +5,9 @@ const path = require('path');
 const crypto = require('crypto');
 const { VAULT, safeStat, listDir, exists, iso, runGit, lastCommit, gitState, recentCommits, vaultPathCommits, workspaceFile } = require('./util');
 const { stripMd } = require('./projects');
+// The manifest parser and `repo:` rule live in lib/workspace-manifest.js, shared with the `aos workspace` verbs that
+// write workspace.md, so what a verb writes is what this scan reads (spaces-redesign D18, D28).
+const { parseManifest, repoPath } = require('../lib/workspace-manifest.js');
 
 const NOISE_DIRS = new Set([
   'node_modules', 'assets', 'images', 'img', 'scripts', 'bin', 'docs',
@@ -57,92 +60,6 @@ function statusOverride(raw) {
   if (raw == null) return null;
   const v = String(raw).trim().toLowerCase().replace(/[\s_-]+/g, ' ');
   return STATUS_OVERRIDE.get(v) || null;
-}
-
-// ── manifest parser ──────────────────────────────────────────────
-// Tolerant, supports exactly the fields we render:
-//   scalar: status, summary, next, type, repo (a linked code folder outside the vault: spec 2026-10-08-term-agent-deck T8),
-//           pinned (true/false), archived (a date, set by Archive) — spaces-redesign D18, D22
-//   block list: objectives:\n  - item   (a list item may also sit unindented under its key, as YAML allows)
-//   aliases: block list or [a, b]: former folders, `workspaces/<old>` or `~/…` (spaces-redesign D16, D17)
-//   subprojects:\n  - { name: x, path: y }   |   - bareName
-function parseManifest(text) {
-  const empty = () => ({ status: null, summary: null, objectives: [], subprojects: [], documents: [], next: null, repo: null, pinned: false, archived: null, aliases: [] });
-  if (!text) return empty();
-  const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-  if (!m) return empty();
-  const lines = m[1].split(/\r?\n/);
-  const out = empty();
-  const unquote = (s) => s.trim().replace(/^["']|["']$/g, '');
-  let mode = null; // 'objectives' | 'subprojects' | 'documents' | 'aliases'
-  for (const raw of lines) {
-    if (!raw.trim()) continue;
-    const listItem = raw.match(/^\s*-(?:\s+(.*))?$/);
-    if (listItem && mode) {
-      const val = (listItem[1] || '').trim();
-      if (!val) continue; // an empty `- ` placeholder
-      if (mode === 'objectives') {
-        out.objectives.push(unquote(val));
-      } else if (mode === 'documents') {
-        out.documents.push(unquote(val));
-      } else if (mode === 'aliases') {
-        const a = unquote(val);
-        if (a) out.aliases.push(a);
-      } else if (mode === 'subprojects') {
-        const flow = val.match(/^\{\s*(.*?)\s*\}$/);
-        if (flow) {
-          const obj = {};
-          for (const pair of flow[1].split(',')) {
-            const kv = pair.split(':');
-            if (kv.length >= 2) obj[kv[0].trim()] = unquote(kv.slice(1).join(':'));
-          }
-          const name = obj.name || obj.path;
-          if (name) out.subprojects.push({ name, path: obj.path || name });
-        } else {
-          const name = unquote(val);
-          if (name) out.subprojects.push({ name, path: name });
-        }
-      }
-      continue;
-    }
-    const kv = raw.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
-    if (!kv) continue;
-    const key = kv[1].trim();
-    const value = kv[2].trim();
-    if (key === 'objectives') { mode = 'objectives'; continue; }
-    if (key === 'documents') { mode = 'documents'; continue; }
-    if (key === 'subprojects') { mode = 'subprojects'; continue; }
-    if (key === 'aliases') {
-      mode = 'aliases';
-      const flow = value.match(/^\[(.*)\]$/);
-      const inline = flow ? flow[1].split(',') : value ? [value] : [];
-      for (const a of inline.map(unquote)) if (a) out.aliases.push(a);
-      continue;
-    }
-    mode = null;
-    if (key === 'status') out.status = value ? unquote(value) : null;
-    else if (key === 'summary') out.summary = value ? unquote(value) : null;
-    else if (key === 'next') out.next = value ? unquote(value) : null;
-    else if (key === 'repo') out.repo = value ? unquote(value) : null;
-    else if (key === 'pinned') out.pinned = /^(true|yes|on|1)$/i.test(unquote(value));
-    else if (key === 'archived') { const v = unquote(value); out.archived = v && !/^(false|no|off|0|null|~)$/i.test(v) ? v : null; }
-  }
-  return out;
-}
-
-/**
- * A manifest's `repo:` as an absolute folder: `~/…` or absolute, and outside the vault (a workspace's own folder is
- * already its place). Anything else is null, so a typo never points a workspace somewhere unexpected.
- */
-function repoPath(value, vaultRoot, home = os.homedir()) {
-  if (!value || typeof value !== 'string') return null;
-  const v = value.trim();
-  const p = v === '~' ? home : v.startsWith('~/') ? path.join(home, v.slice(2)) : v;
-  if (!path.isAbsolute(p)) return null;
-  const abs = path.resolve(p);
-  const rel = path.relative(path.resolve(vaultRoot), abs);
-  if (rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))) return null;
-  return abs;
 }
 
 function within(child, parent) {
@@ -727,6 +644,7 @@ function finalizeWorkspaces(list, opts = {}) {
 }
 
 module.exports = {
-  parseManifest, repoPath, aliasPaths, detectChildren, extractObjectives, extractNext, parseHandoff, computeInputHash,
-  statusOverride, statusFromActivity, isTemplateText, TEMPLATE_TEXT, collectWorkspaces, finalizeWorkspaces,
+  parseManifest, repoPath, aliasPaths, detectChildren, extractObjectives, extractNext, parseHandoff, bodyLine,
+  computeInputHash, statusOverride, statusFromActivity, isTemplateText, TEMPLATE_TEXT, collectWorkspaces, finalizeWorkspaces,
+  SUMMARY_FILES, OBJECTIVE_FILES, NEXT_FILES,
 };
