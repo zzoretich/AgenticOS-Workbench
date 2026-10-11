@@ -4,6 +4,8 @@ All notable changes to UniDeX (AgenticOS Workbench before 1.1). Versions follow 
 
 ## [Unreleased]
 
+## [1.7.0] — 2026-10-10
+
 ### Upgrading
 - **Adopting from Spaces records the folder as an alias** of a workspace and moves nothing; `aos workspace adopt <path>` without `--into` still moves the folder.
 - **The `aos workspace` verbs refuse linked folders**: a `workspaces/` or `workspaces/_archive` that is a symlink, or a linked map, thread or project-note folder under `brain/`, is refused with the reason (scanning is unchanged). A name must match its folder's case exactly. Restore flips back only the project notes Archive flipped, and returns a dated archive to its original name.
@@ -493,7 +495,8 @@ The first public release: an `aos` CLI, the AgenticOS runtime, a Claude Code plu
 - Update notifications: a GitHub release check surfaced as a session-start notice.
 - Docs: README, install guide, and a release acceptance runbook.
 
-[Unreleased]: https://github.com/zzoretich/UniDeX-Agent-Harness/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/zzoretich/UniDeX-Agent-Harness/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v1.7.0
 [1.6.0]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v1.6.0
 [1.5.0]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v1.5.0
 [1.4.1]: https://github.com/zzoretich/UniDeX-Agent-Harness/releases/tag/v1.4.1
